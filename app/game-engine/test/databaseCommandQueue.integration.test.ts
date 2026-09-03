@@ -15,6 +15,20 @@ integration('database command queue', () => {
     let close: (() => Promise<void>) | undefined;
     let db: GamePrismaClient;
 
+    const cleanupFixtures = async (): Promise<void> => {
+        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: 'integration:engine:' } } });
+        await db.clockProjectionOutbox.deleteMany({
+            where: { suspensionId: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
+        });
+        await db.clockSuspension.deleteMany({
+            where: { id: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
+        });
+        await db.message.deleteMany({ where: { mailbox: 991_199 } });
+        await db.worldState.deleteMany({
+            where: { scenarioCode: { in: ['queue-clock-test', 'queue-unification-clock-test'] } },
+        });
+    };
+
     beforeAll(async () => {
         const connector = createGamePostgresConnector({ url: databaseUrl! });
         await connector.connect();
@@ -25,22 +39,10 @@ integration('database command queue', () => {
         });
     });
 
-    beforeEach(async () => {
-        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: 'integration:engine:' } } });
-        await db.clockProjectionOutbox.deleteMany({
-            where: { suspensionId: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
-        });
-        await db.clockSuspension.deleteMany({
-            where: { id: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
-        });
-        await db.message.deleteMany({ where: { mailbox: 991_199 } });
-        await db.worldState.updateMany({ data: { clockPhase: 'RUNNING' } });
-    });
+    beforeEach(cleanupFixtures);
 
     afterAll(async () => {
-        await db.inputEvent.deleteMany({
-            where: { requestId: { startsWith: 'integration:engine:' } },
-        });
+        await cleanupFixtures();
         await close?.();
     });
 

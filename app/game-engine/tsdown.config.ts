@@ -10,6 +10,8 @@ export default defineConfig({
         'scenario/gameCancellation': 'src/scenario/gameCancellation.ts',
         'scenario/scenarioSeeder': 'src/scenario/scenarioSeeder.ts',
         'scenario/unitSetLoader': 'src/scenario/unitSetLoader.ts',
+        'turn/clockProjectionOutbox': 'src/turn/clockProjectionOutbox.ts',
+        'turn/clockReconciliation': 'src/turn/clockReconciliation.ts',
         'turn/databaseHooks': 'src/turn/databaseHooks.ts',
         'turn/inMemoryWorld': 'src/turn/inMemoryWorld.ts',
         'turn/monthlyDisasterAction': 'src/turn/monthlyDisasterAction.ts',

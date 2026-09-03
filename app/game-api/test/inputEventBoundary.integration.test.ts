@@ -18,6 +18,7 @@ import {
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const journalGeneralIds = [9_980_081, 9_980_082] as const;
+const clockScenarioCode = 'input-event-boundary';
 
 const journalBoundaryRouter = router({
     mutate: procedure
@@ -56,6 +57,21 @@ integration('API input event boundary', () => {
         await db.readModelRevision.deleteMany({
             where: { domain: 'front.general', entityId: { in: [...journalGeneralIds] } },
         });
+        await db.worldState.deleteMany({ where: { scenarioCode: clockScenarioCode } });
+        const base = new Date('2099-09-03T00:00:00.000Z');
+        await db.worldState.create({
+            data: {
+                scenarioCode: clockScenarioCode,
+                currentYear: 200,
+                currentMonth: 1,
+                tickSeconds: 600,
+                clockBaseTime: base,
+                clockTick: 0n,
+                clockMode: 'realtime',
+                clockWallAnchor: base,
+                clockPhase: 'RUNNING',
+            },
+        });
     });
 
     afterAll(async () => {
@@ -68,6 +84,7 @@ integration('API input event boundary', () => {
         await db.readModelRevision.deleteMany({
             where: { domain: 'front.general', entityId: { in: [...journalGeneralIds] } },
         });
+        await db.worldState.deleteMany({ where: { scenarioCode: clockScenarioCode } });
         await close?.();
     });
 

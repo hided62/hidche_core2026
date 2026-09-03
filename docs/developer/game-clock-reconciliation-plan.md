@@ -53,9 +53,9 @@ mean deployment or production validation.
 
 ## Milestone 5 - test-branch release gate
 
-- [ ] Full typecheck, architecture, lint, unit, build, and non-conditional
+- [x] Full typecheck, architecture, lint, unit, build, and non-conditional
       integration suites.
-- [ ] Dedicated PostgreSQL/Redis conditional integration suite with skip count
+- [x] Dedicated PostgreSQL/Redis conditional integration suite with skip count
       recorded.
 - [x] Recovery runbook exercised from each incomplete status.
 - [x] Admin status/readiness exposes revision, phase, participant checksums, and
@@ -126,3 +126,16 @@ mean deployment or production validation.
 - The dedicated PostgreSQL/Redis fixture reached `RUNNING@2/2` only after the
   Redis projection. DB-wall versus a mocked 12-hour host drift and concurrent
   general-access lock acquisition completed without drift or deadlock.
+- `CI=1 TURBO_CONCURRENCY=1 pnpm typecheck` passed 21/21 tasks,
+  `CI=1 TURBO_CONCURRENCY=1 pnpm test` passed 12/12 package tasks,
+  `CI=1 TURBO_CONCURRENCY=1 pnpm build` passed 26/26 tasks, and workspace lint
+  passed. `pnpm check:architecture` registered 22 authoritative clock fields
+  and 18 participants.
+- Dedicated sequential PostgreSQL/Redis runs passed clock reconciliation 3/3,
+  atomic unification 1/1, command queue 7/7, runtime clock persistence 3/3,
+  API input-event boundary 13/13, and tournament revision 4/4: 31/31 enabled
+  tests with zero skips. The queue and API suites now create and remove their
+  own clock fixtures so a completed file cannot leak phase or initialization
+  state into the next file.
+- User-test deployment and public runtime evidence remain deliberately open:
+  Git push is not deployment, and no deployment was authorized in this work.
