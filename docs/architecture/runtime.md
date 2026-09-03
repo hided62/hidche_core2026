@@ -222,6 +222,11 @@ claim 가능한 상태에서 attempts를 증가시켜 재처리합니다.
 5. `EngineStateManager`가 in-memory mutation과 transaction flush를 묶습니다.
 6. `TurnDaemonLifecycle`이 control queue와 schedule을 실행합니다.
 
+`turn_daemon_lease`는 운영 WALL_TIME입니다. 모든 write와 active 비교는 DB
+session timezone과 무관하게 UTC wall expression을 사용합니다. Lease migration은
+profile process가 멈춘 배포 경계에서 기존 ephemeral row를 만료시켜 구버전
+writer가 만든 KST timestamp도 새 daemon의 fresh fencing epoch를 막지 않습니다.
+
 Lifecycle은 가장 빠른 장수 턴과 다음 tick 중 앞선 시각을 선택합니다.
 pause gate, 수동 run, shutdown과 budget을 같은 loop에서 처리합니다.
 
@@ -290,6 +295,12 @@ event catalog, in-memory state, dirty marking, flush와 reload 검증까지
 - Worker timeout은 요청 실패로 반환하며 DB commit 여부를 별도로 확인합니다.
 - API·daemon process 재시작은 `InputEvent`, lease, checkpoint와 operation
   상태에서 이어집니다.
+- `UNIFICATION_WAIT` 중 operational STOP/재시작은 profile process만 복구하며
+  suspension을 일반 RESUME으로 소비하지 않습니다. 선택 응답의 daemon fence가
+  clock alignment와 이민족 생성을 함께 commit합니다.
+- test-only `ManualClock`과 `StepClock`의 sleep은 논리 시간을 즉시 전진한 뒤
+  event loop에 한 번 양보합니다. terminal/suspended polling이 timer 기반
+  shutdown과 test timeout을 굶기지 않아야 합니다.
 - 운영 process와 외부 Caddy 상태는 local build·mock E2E로 증명되지 않습니다.
 
 ## Build와 배포

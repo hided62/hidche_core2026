@@ -44,6 +44,12 @@ Redis 투영은 DB commit 뒤 action ID로 멱등 적용됩니다.
 phase/revision/generation을 다시 잠가 검증합니다. 단계 전환·마감·정산은 실행하지
 않으며, 원자적 reconciliation이 진행되는 `RECONCILING`에서는 새 베팅도 받지 않습니다.
 
+daemon lease는 게임 schedule이 아니라 운영 `WALL_TIME`입니다. 게임 DB session이
+`Asia/Seoul`이어도 acquire/renew/assert/release는 모두
+`CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`를 사용합니다. 따라서 정지한 게임의
+lease도 현실 시간에 만료되며, KST session에서 UTC `timestamp without time zone`
+column을 9시간 미래로 쓰지 않습니다.
+
 ## 중단 후 재개
 
 realtime daemon은 재개할 때 Ref `checkDelay()`와 같은 한도를 적용합니다.
@@ -59,6 +65,14 @@ realtime daemon은 재개할 때 Ref `checkDelay()`와 같은 한도를 적용�
 이 작업은 `clock_base_time`과 DateTime 투영값을 같이 이동하고, game tick 및
 장수 턴 tick은 바꾸지 않습니다. 동시에 `clock_wall_anchor`를 작업 실행
 시각으로 다시 고정합니다.
+
+통일 후 이민족 선택을 기다리는 `UNIFICATION_WAIT`는 일반 maintenance 재개와
+다릅니다. 운영상 STOP된 profile을 RESUME하면 Gateway는 프로세스만 다시 띄우고
+게임 clock은 `SUSPENDED`로 유지합니다. daemon이 수신자 소유권과 command fence를
+확인한 `raiseInvader` 응답만 suspension을 원자적으로 reconciliation할 수 있습니다.
+한 난이도를 수락하면 같은 통일 tick의 다른 선택지는 모두 resolved 처리됩니다.
+이민족전이 끝나 `isUnited=3`이 되면 clock phase도 같은 월 transaction에서
+`COMPLETED`가 되어 이후 GAME_TIME이 진행하지 않습니다.
 
 DB migration은 GAME 규칙의 기존 DateTime 투영에서 tick을 채웁니다. 새 설치와 migration
 재실행은 `prisma:migrate:deploy:game`으로 수행합니다. 메시지의 연도 9999 같은

@@ -70,6 +70,13 @@ as the archive, prompts, and final unification state. Only a `raiseInvader`
 message response tied to that active suspension may pass the suspended command
 queue; all other gameplay remains pending.
 
+If the profile processes are operationally stopped during this wait, Gateway
+RESUME starts the runtime without consuming the suspension. The database remains
+`SUSPENDED`; the daemon-authorized response is still the only transition that may
+reconcile it. Selecting one difficulty resolves every pending `raiseInvader`
+alternative created at the same game tick, while preserving each message's wall
+envelope as history.
+
 The response transaction verifies daemon authority, performs the exact
 alignment, applies all participant shifts, optionally changes the turn rate,
 then creates the invader nation, deterministic general IDs/RNG results, first
@@ -77,7 +84,8 @@ turns, and the final target-revision outbox. The optional rate change refreshes
 the outbox with the final base/rate before commit. DB remains `RECONCILING`
 until the daemon projection worker applies Redis and verifies the target
 revision/generation. Games without an invader choice move directly to
-`COMPLETED`.
+`COMPLETED`. After an invader game reaches `isUnited=3`, `InvaderEnding` also
+changes the clock to `COMPLETED` in the terminal monthly transaction.
 
 ## DB to Redis boundary
 
@@ -162,6 +170,12 @@ columns remain temporarily for old readers. A missing GAME tick fails closed;
 it never changes the rule to WALL_TIME. A WALL rule likewise never derives an
 authority tick. See [`time-domains.md`](./time-domains.md) for the complete
 inventory and migration policy.
+
+Migration `20260903183000_turn_daemon_lease_utc_wall` expires ephemeral daemon
+leases at deployment and installs UTC wall defaults. Migration
+`20260903201500_complete_invader_game_clock` repairs legacy `isUnited=3` worlds
+left in a running/manual phase and resolves obsolete unchosen invader actions at
+the terminal authoritative game tick.
 
 No active participant remains `FORBID`. Tournament writes carry
 tick/revision/generation coordinates and are revision-fenced in Redis.

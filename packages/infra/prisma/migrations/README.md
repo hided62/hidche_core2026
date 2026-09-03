@@ -27,6 +27,8 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 - `world_state`, `nation`, `city`, `general`, `message`, `troop`
 - `general_turn`, `nation_turn`과 revision·lease field
 - `input_event`, `turn_daemon_lease`
+- KST session에서도 `turn_daemon_lease` acquire/renew/release가 DB UTC wall
+  deadline을 기록하며, migration 시 기존 ephemeral lease가 만료되는지
 - `read_model_revision`, `read_model_outbox`, `read_model_revision_meta`, `web_push_outbox`
 - 두 outbox의 `available_at`, `locked_at`, `delivered_at`, `created_at`은
   millisecond 정밀도 `timestamp without time zone`을 유지한다. 이 migration
@@ -60,6 +62,19 @@ pnpm --filter @sammo-ts/infra verify:migration:time-domains
 
 검증이 끝나면 이름을 직접 확인한 임시 database와 role만 제거합니다. 공유
 database나 Compose volume을 삭제하지 않습니다.
+
+## Daemon lease와 이민족 종료 upgrade
+
+`20260903183000_turn_daemon_lease_utc_wall`은 `timestamp without time zone`
+lease를 DB UTC 기준으로 통일하고 배포 시 기존 lease를 만료시킵니다. 이는
+영속 gameplay history가 아니라 재획득 가능한 운영 authority이므로 새 daemon이
+fresh fencing epoch를 얻는 것이 backfill 계약입니다.
+
+`20260903201500_complete_invader_game_clock`은 이미 `isUnited=3`인데
+`RUNNING`/`MANUAL`인 legacy world를 `COMPLETED`로 바꾸고, 더 이상 선택할 수 없는
+pending `raiseInvader` action을 terminal game tick에 resolve합니다. 메시지
+`created_at_wall`, `delete_until_wall`과 기타 WALL_TIME envelope 값은 변경하지
+않습니다.
 
 ## Game outbox UTC-wall populated upgrade 검증
 
