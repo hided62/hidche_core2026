@@ -338,6 +338,12 @@ integration('RaiseInvader database persistence', () => {
                 currentYear: 199,
                 currentMonth: 12,
                 tickSeconds: 600,
+                clockBaseTime: new Date('0200-01-01T00:00:00.000Z'),
+                clockTick: 0n,
+                clockMode: 'realtime',
+                clockWallAnchor: new Date('0200-01-01T00:00:00.000Z'),
+                lastTurnTick: 0n,
+                clockPhase: 'RUNNING',
                 config: {},
                 meta: {
                     hiddenSeed: serverId,
@@ -354,6 +360,14 @@ integration('RaiseInvader database persistence', () => {
             currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
+            clockBaseTime: new Date('0200-01-01T00:00:00.000Z'),
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: new Date('0200-01-01T00:00:00.000Z'),
+            lastTurnTick: 0,
+            clockPhase: 'RUNNING',
+            clockRevision: 1,
+            deadlineGeneration: 1,
             meta: {
                 hiddenSeed: serverId,
                 lastGeneralId: firstCreatedGeneralId - 1,
@@ -610,6 +624,7 @@ integration('RaiseInvader database persistence', () => {
                 leasedNationKeys: [],
             });
             expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
+                clockPhase: 'COMPLETED',
                 meta: expect.objectContaining({ isunited: 3, isUnited: 3, refreshLimit: 300 }),
             });
             expect(

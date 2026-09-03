@@ -549,6 +549,7 @@ export const createInvaderEndingHandler = (options: {
             isUnited: 3,
             refreshLimit: readNumber(meta.refreshLimit) * 100,
         });
+        world.completeGameClock();
         world.removeEvent(environment.currentEventID);
     };
 };

@@ -126,6 +126,7 @@ const buildHarness = (options?: {
         currentMonth: 1,
         tickSeconds: 600,
         lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
+        clockPhase: 'RUNNING',
         meta: {
             hiddenSeed: 'raise-invader-fixture',
             serverId: 'fixture-server',
@@ -410,6 +411,7 @@ describe('invader monthly actions', () => {
         await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
 
         expect(world.getState().meta).toMatchObject({ isunited: 3, isUnited: 3, refreshLimit: 300 });
+        expect(world.getState().clockPhase).toBe('COMPLETED');
         expect(world.listEvents()).toHaveLength(0);
         expect(world.peekDirtyState().logs.map((log) => log.text)).toEqual([
             '<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!',
@@ -449,6 +451,7 @@ describe('invader monthly actions', () => {
         await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
 
         expect(world.getState().meta).toMatchObject({ isunited: 3, isUnited: 3, refreshLimit: 300 });
+        expect(world.getState().clockPhase).toBe('COMPLETED');
         expect(world.listEvents()).toHaveLength(0);
         expect(world.peekDirtyState().logs.map((log) => log.text)).toEqual([
             '<L><b>【이벤트】</b></>중원은 이민족에 의해 혼란에 빠졌습니다.',
