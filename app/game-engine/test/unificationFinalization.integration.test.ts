@@ -312,7 +312,17 @@ integration('unification finalization transaction', () => {
         const bidWorld = new InMemoryTurnWorld(beforeBid.state, beforeBid.snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
         });
+        const bidProcessingTick = bidWorld.getGameClockState().tick;
+        const futureCloseTick = BigInt(bidProcessingTick) + 86_400_000n;
+        await db.auction.updateMany({
+            where: { id: { in: [uniqueAuction.id, resourceAuction.id] } },
+            data: { closeTick: futureCloseTick },
+        });
         const bidder = await createAuctionBidder({ databaseUrl: databaseUrl!, world: bidWorld });
+        const bidClockContext = {
+            processingGameTick: bidProcessingTick,
+            requestedAtWall: new Date('2026-09-03T00:00:00.000Z'),
+        };
         try {
             await expect(
                 bidder.bid({
@@ -322,7 +332,8 @@ integration('unification finalization transaction', () => {
                     generalId: fixtureId,
                     amount: 30,
                     tryExtendCloseDate: false,
-                })
+                    ...bidClockContext,
+                } as Parameters<typeof bidder.bid>[0])
             ).resolves.toMatchObject({ ok: true, auctionId: uniqueAuction.id });
             await expect(
                 bidder.bid({
@@ -332,7 +343,8 @@ integration('unification finalization transaction', () => {
                     generalId: fixtureId,
                     amount: 50,
                     tryExtendCloseDate: false,
-                })
+                    ...bidClockContext,
+                } as Parameters<typeof bidder.bid>[0])
             ).resolves.toMatchObject({ ok: true, auctionId: uniqueAuction.id });
         } finally {
             await bidder.close();
@@ -699,6 +711,24 @@ integration('unification finalization transaction', () => {
             });
             const commandResult = await stateManager.transaction(executeCommand);
             expect(commandResult).toMatchObject({ type: 'messageRespond', ok: true, action: 'raiseInvader' });
+            const selectedPromptAction = await db.messageAction.findUniqueOrThrow({
+                where: { messageId: invaderPrompt!.id },
+            });
+            const siblingPromptActions = await db.messageAction.findMany({
+                where: {
+                    actionType: 'raiseInvader',
+                    createdGameTick: selectedPromptAction.createdGameTick,
+                },
+            });
+            expect(siblingPromptActions.length).toBeGreaterThan(1);
+            expect(
+                siblingPromptActions.every(
+                    (action) =>
+                        action.status === 'RESOLVED' &&
+                        action.resolvedGameTick !== null &&
+                        action.resolvedGameTick >= action.createdGameTick
+                )
+            ).toBe(true);
             const reconciledWorld = await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } });
             const appliedSuspension = await db.clockSuspension.findUniqueOrThrow({ where: { id: suspension.id } });
             expect(reconciledWorld).toMatchObject({

@@ -86,9 +86,9 @@ export class DatabaseTurnDaemonLease {
             VALUES (
                 ${this.profile},
                 ${this.ownerId},
-                CURRENT_TIMESTAMP + (${this.leaseDurationMs} * INTERVAL '1 millisecond'),
+                (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + (${this.leaseDurationMs} * INTERVAL '1 millisecond'),
                 1,
-                CURRENT_TIMESTAMP
+                CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             )
             ON CONFLICT ("profile") DO UPDATE
             SET
@@ -99,10 +99,10 @@ export class DatabaseTurnDaemonLease {
                         THEN "turn_daemon_lease"."fencing_epoch"
                     ELSE "turn_daemon_lease"."fencing_epoch" + 1
                 END,
-                "heartbeat_at" = CURRENT_TIMESTAMP
+                "heartbeat_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             WHERE
                 "turn_daemon_lease"."owner_id" = EXCLUDED."owner_id"
-                OR "turn_daemon_lease"."lease_until" <= CURRENT_TIMESTAMP
+                OR "turn_daemon_lease"."lease_until" <= CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             RETURNING "profile", "owner_id", "fencing_epoch"
         `);
         const row = rows[0];
@@ -141,13 +141,13 @@ export class DatabaseTurnDaemonLease {
             const rows = await this.db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
                 UPDATE "turn_daemon_lease"
                 SET
-                    "lease_until" = CURRENT_TIMESTAMP + (${this.leaseDurationMs} * INTERVAL '1 millisecond'),
-                    "heartbeat_at" = CURRENT_TIMESTAMP
+                    "lease_until" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + (${this.leaseDurationMs} * INTERVAL '1 millisecond'),
+                    "heartbeat_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                 WHERE
                     "profile" = ${token.profile}
                     AND "owner_id" = ${token.ownerId}
                     AND "fencing_epoch" = ${token.fencingEpoch}
-                    AND "lease_until" > CURRENT_TIMESTAMP
+                    AND "lease_until" > CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                 RETURNING "profile", "owner_id", "fencing_epoch"
             `);
             if (rows.length === 0) {
@@ -177,7 +177,7 @@ export class DatabaseTurnDaemonLease {
                 "profile" = ${token.profile}
                 AND "owner_id" = ${token.ownerId}
                 AND "fencing_epoch" = ${token.fencingEpoch}
-                AND "lease_until" > CURRENT_TIMESTAMP
+                AND "lease_until" > CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             FOR UPDATE
         `);
         if (rows.length === 0) {
@@ -196,7 +196,8 @@ export class DatabaseTurnDaemonLease {
         }
         await this.db.$executeRaw(GamePrisma.sql`
             UPDATE "turn_daemon_lease"
-            SET "lease_until" = CURRENT_TIMESTAMP, "heartbeat_at" = CURRENT_TIMESTAMP
+            SET "lease_until" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                "heartbeat_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             WHERE
                 "profile" = ${token.profile}
                 AND "owner_id" = ${token.ownerId}

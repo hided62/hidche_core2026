@@ -9,6 +9,8 @@ import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
 import { createGamePostgresConnector, createRedisConnector, type GamePrisma } from '@sammo-ts/infra';
+import { applyNextClockProjection } from '../../../app/game-engine/src/turn/clockProjectionOutbox.js';
+import { reconcileClockSuspension } from '../../../app/game-engine/src/turn/clockReconciliation.js';
 import { createTurnDaemonRuntime } from '../../../app/game-engine/src/turn/turnDaemon.js';
 
 const gatewayUrl = process.env.SAMMO_LIVE_GATEWAY_URL ?? 'http://caddy/gateway/api/trpc';
@@ -530,7 +532,10 @@ const databaseStatus = async (): Promise<void> => {
             monitorMessages,
             betting,
             unification,
+            unificationActions,
             suspensions,
+            dbWallRows,
+            daemonLeases,
         ] = await Promise.all([
             db.prisma.worldState.findFirstOrThrow({
                 select: {
@@ -572,6 +577,21 @@ const databaseStatus = async (): Promise<void> => {
                 select: { id: true, name: true, finished: true, openYearMonth: true, closeYearMonth: true, bets: true },
             }),
             db.prisma.unificationFinalization.findMany({ orderBy: { createdAt: 'asc' } }),
+            db.prisma.messageAction.findMany({
+                where: { actionType: 'raiseInvader' },
+                orderBy: { messageId: 'asc' },
+                include: {
+                    message: {
+                        select: {
+                            id: true,
+                            mailbox: true,
+                            createdAtWall: true,
+                            occurredGameTick: true,
+                            message: true,
+                        },
+                    },
+                },
+            }),
             db.prisma.clockSuspension.findMany({
                 orderBy: { createdAt: 'asc' },
                 select: {
@@ -586,6 +606,10 @@ const databaseStatus = async (): Promise<void> => {
                     alignedTick: true,
                 },
             }),
+            db.prisma.$queryRaw<Array<{ dbNow: Date }>>`
+                SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS "dbNow"
+            `,
+            db.prisma.turnDaemonLease.findMany({ orderBy: { profile: 'asc' } }),
         ]);
         log('database-status', {
             world: {
@@ -623,7 +647,28 @@ const databaseStatus = async (): Promise<void> => {
                 closeYearMonth: row.closeYearMonth,
                 bets: row.bets.length,
             })),
-            unification: unification.length,
+            unification,
+            unificationActions: unificationActions.map((action) => ({
+                messageId: action.messageId,
+                status: action.status,
+                createdGameTick: action.createdGameTick.toString(),
+                expiresGameTick: action.expiresGameTick?.toString() ?? null,
+                resolvedGameTick: action.resolvedGameTick?.toString() ?? null,
+                clockRevision: action.clockRevision.toString(),
+                deadlineGeneration: action.deadlineGeneration.toString(),
+                message: {
+                    ...action.message,
+                    createdAtWall: action.message.createdAtWall.toISOString(),
+                    occurredGameTick: action.message.occurredGameTick?.toString() ?? null,
+                },
+            })),
+            dbWallNow: dbWallRows[0]?.dbNow.toISOString() ?? null,
+            daemonLeases: daemonLeases.map((lease) => ({
+                ...lease,
+                leaseUntil: lease.leaseUntil.toISOString(),
+                heartbeatAt: lease.heartbeatAt.toISOString(),
+                fencingEpoch: lease.fencingEpoch.toString(),
+            })),
             suspensions: suspensions.map((row) => ({
                 ...row,
                 sourceRevision: row.sourceRevision.toString(),
@@ -1788,9 +1833,60 @@ const npcActionAudit = async (): Promise<void> => {
                 where: { status: 'FAILED' },
                 orderBy: { createdAt: 'desc' },
                 take: 30,
-                select: { id: true, eventType: true, error: true, createdAt: true },
+                select: { sequence: true, requestId: true, eventType: true, error: true, createdAt: true },
             }),
         ]);
+        const activeNations = await db.prisma.nation.findMany({
+            where: { id: { gt: 0 }, level: { gt: 0 } },
+            orderBy: { id: 'asc' },
+        });
+        const activeNationIds = activeNations.map((nation) => nation.id);
+        const [activeNationStats, activeRulers, reservedNationActions, recentNationActions, activeDiplomacy] =
+            await Promise.all([
+                db.prisma.$queryRaw<
+                    Array<{
+                        nationId: number;
+                        cities: bigint;
+                        generals: bigint;
+                        armedGenerals: bigint;
+                        totalCrew: bigint;
+                    }>
+                >`
+                    SELECT
+                        n.id AS "nationId",
+                        (SELECT COUNT(*) FROM city c WHERE c.nation_id = n.id) AS cities,
+                        (SELECT COUNT(*) FROM general g WHERE g.nation_id = n.id) AS generals,
+                        (SELECT COUNT(*) FROM general g WHERE g.nation_id = n.id AND g.crew > 0) AS "armedGenerals",
+                        (SELECT COALESCE(SUM(g.crew), 0)::bigint FROM general g WHERE g.nation_id = n.id) AS "totalCrew"
+                    FROM nation n
+                    WHERE n.id = ANY(${activeNationIds}::int[])
+                    ORDER BY n.id
+                `,
+                db.prisma.general.findMany({
+                    where: { nationId: { in: activeNationIds }, officerLevel: 12 },
+                    orderBy: [{ nationId: 'asc' }, { id: 'asc' }],
+                    select: { id: true, name: true, nationId: true, npcState: true, crew: true, lastTurn: true },
+                }),
+                db.prisma.$queryRaw<Array<{ nationId: number; actionCode: string; reservations: bigint }>>`
+                    SELECT nation_id AS "nationId", action_code AS "actionCode", COUNT(*) AS reservations
+                    FROM nation_turn
+                    WHERE nation_id = ANY(${activeNationIds}::int[])
+                    GROUP BY nation_id, action_code
+                    ORDER BY nation_id, reservations DESC, action_code
+                `,
+                db.prisma.logEntry.findMany({
+                    where: { nationId: { in: activeNationIds }, category: 'ACTION' },
+                    orderBy: { id: 'desc' },
+                    take: 80,
+                    select: { id: true, year: true, month: true, nationId: true, generalId: true, text: true },
+                }),
+                db.prisma.diplomacy.findMany({
+                    where: { srcNationId: { in: activeNationIds }, destNationId: { in: activeNationIds } },
+                    orderBy: [{ srcNationId: 'asc' }, { destNationId: 'asc' }],
+                    select: { srcNationId: true, destNationId: true, stateCode: true, term: true, isDead: true },
+                }),
+            ]);
+        const statByNation = new Map(activeNationStats.map((entry) => [entry.nationId, entry]));
         log('npc-action-audit', {
             label,
             world: {
@@ -1814,8 +1910,29 @@ const npcActionAudit = async (): Promise<void> => {
             errors: errors.map((error) => ({ ...error, createdAt: error.createdAt.toISOString() })),
             failedInputEvents: failedInputEvents.map((event) => ({
                 ...event,
+                sequence: event.sequence.toString(),
                 createdAt: event.createdAt.toISOString(),
             })),
+            activeNationStrategy: activeNations.map((nation) => {
+                const stats = statByNation.get(nation.id);
+                return {
+                    id: nation.id,
+                    name: nation.name,
+                    level: nation.level,
+                    gold: nation.gold,
+                    rice: nation.rice,
+                    cities: Number(stats?.cities ?? 0),
+                    generals: Number(stats?.generals ?? 0),
+                    armedGenerals: Number(stats?.armedGenerals ?? 0),
+                    totalCrew: Number(stats?.totalCrew ?? 0),
+                    rulers: activeRulers.filter((general) => general.nationId === nation.id),
+                    reservedNationActions: reservedNationActions
+                        .filter((entry) => entry.nationId === nation.id)
+                        .map((entry) => ({ actionCode: entry.actionCode, reservations: Number(entry.reservations) })),
+                };
+            }),
+            activeDiplomacy,
+            recentNationActions: recentNationActions.reverse(),
         });
     } finally {
         await db.disconnect();
@@ -1947,6 +2064,57 @@ const fastForward = async (): Promise<void> => {
     if (!Number.isInteger(stopNationCount) || stopNationCount < 0) {
         throw new Error('SAMMO_FAST_FORWARD_STOP_NATIONS must be a non-negative integer.');
     }
+    const clockDb = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    const clockRedis = createRedisConnector({ url: redisUrl() });
+    await clockDb.connect();
+    await clockRedis.connect();
+    try {
+        const worldBefore = await clockDb.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        let reconciliation = null;
+        let projection: 'IDLE' | 'APPLIED' | 'RECOVERED' | null = null;
+        if (worldBefore.clockPhase === 'SUSPENDED' || worldBefore.clockPhase === 'RECONCILING') {
+            const suspension = await clockDb.prisma.clockSuspension.findFirstOrThrow({
+                where: { status: { in: ['SUSPENDED', 'RECONCILING'] } },
+                orderBy: { createdAt: 'desc' },
+            });
+            if (worldBefore.clockPhase === 'SUSPENDED') {
+                reconciliation = await reconcileClockSuspension({
+                    db: clockDb.prisma,
+                    suspensionId: suspension.id,
+                    authority: {
+                        kind: 'OFFLINE',
+                        profileName,
+                        reason: 'exclusive ten-user lifecycle fast-forward',
+                    },
+                });
+            }
+            projection = await applyNextClockProjection({
+                db: clockDb.prisma,
+                redis: clockRedis.client,
+                workerId: `lifecycle-fast-forward:${state.runId.slice(0, 8)}`,
+            });
+            if (projection === 'IDLE') {
+                throw new Error('Offline fast-forward reconciliation had no claimable clock projection.');
+            }
+        } else if (!['RUNNING', 'MANUAL'].includes(worldBefore.clockPhase)) {
+            throw new Error(`Offline fast-forward cannot start from clock phase ${worldBefore.clockPhase}.`);
+        }
+        const worldAfter = await clockDb.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        if (!['RUNNING', 'MANUAL'].includes(worldAfter.clockPhase)) {
+            throw new Error(`Offline fast-forward clock preparation ended in ${worldAfter.clockPhase}.`);
+        }
+        log('fast-forward-clock-prepared', {
+            phaseBefore: worldBefore.clockPhase,
+            phaseAfter: worldAfter.clockPhase,
+            revisionBefore: worldBefore.clockRevision.toString(),
+            revisionAfter: worldAfter.clockRevision.toString(),
+            reconciliation,
+            projection,
+        });
+    } finally {
+        await clockRedis.disconnect();
+        await clockDb.disconnect();
+    }
     const runtime = await createTurnDaemonRuntime({
         profile: profileName.split(':', 1)[0] ?? 'hwe',
         databaseUrl: gameDatabaseUrl(),
@@ -1963,6 +2131,14 @@ const fastForward = async (): Promise<void> => {
         while (months < maxMonths) {
             const before = runtime.world.getState();
             const targetTime = new Date(before.lastTurnTime.getTime() + before.tickSeconds * 1000);
+            // The production lifecycle advances the authoritative game clock
+            // before processing a requested target. This fixture drives the
+            // processor directly to reset memory between long batches, so it
+            // must preserve that same boundary explicitly. Otherwise monthly
+            // turns move while world_state.clock_tick stays behind, producing
+            // impossible action histories such as resolvedGameTick <
+            // createdGameTick at the unification/invader hand-off.
+            runtime.world.advanceGameClockTo(targetTime, new Date());
             let checkpoint;
             do {
                 const result = await runtime.processor.run(
@@ -2023,8 +2199,8 @@ const placeInvaderRecipients = async (): Promise<void> => {
             orderBy: [{ level: 'desc' }, { id: 'asc' }],
             take: 5,
         });
-        if (nations.length < 2 || nations.length > 5) {
-            throw new Error(`Recipient fixture requires two to five active nations, found ${nations.length}.`);
+        if (nations.length < 1 || nations.length > 5) {
+            throw new Error(`Recipient fixture requires one to five active nations, found ${nations.length}.`);
         }
         const placements = [];
         for (const [index, user] of state.users.entries()) {
@@ -2032,7 +2208,7 @@ const placeInvaderRecipients = async (): Promise<void> => {
             const city = nation.capitalCityId
                 ? { id: nation.capitalCityId }
                 : await db.prisma.city.findFirstOrThrow({ where: { nationId: nation.id }, orderBy: { id: 'asc' } });
-            const officerLevel = 5 + Math.floor(index / nations.length);
+            const officerLevel = Math.min(11, 5 + Math.floor(index / nations.length));
             const general = await db.prisma.general.update({
                 where: { id: (await db.prisma.general.findFirstOrThrow({ where: { name: user.generalName } })).id },
                 data: { nationId: nation.id, cityId: city.id, officerLevel },

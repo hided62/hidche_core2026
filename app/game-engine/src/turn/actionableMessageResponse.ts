@@ -98,11 +98,12 @@ const invalidateMessageIds = async (
     db: GamePrisma.TransactionClient,
     world: InMemoryTurnWorld,
     ids: number[],
-    now: Date
+    now: Date,
+    authoritativeGameTick?: bigint
 ): Promise<void> => {
     const uniqueIds = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
     if (uniqueIds.length === 0) return;
-    const resolvedGameTick = BigInt(world.dateToGameTick(now));
+    const resolvedGameTick = authoritativeGameTick ?? BigInt(world.dateToGameTick(now));
     await db.messageAction.updateMany({
         where: { messageId: { in: uniqueIds }, status: 'PENDING' },
         data: { status: 'RESOLVED', resolvedGameTick },
@@ -348,7 +349,27 @@ const respondToRaiseInvader = async (options: {
         },
         event
     );
-    await invalidateMessageIds(db, world, [row.id], world.gameTickToDate(alignment.alignedTick));
+    const resolvedGameTick = BigInt(alignment.alignedTick);
+    if (resolvedGameTick < row.createdGameTick) {
+        throw new Error(
+            `RaiseInvader resolved tick ${resolvedGameTick} precedes prompt tick ${row.createdGameTick}; clock authority is inconsistent.`
+        );
+    }
+    const promptRows = await db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
+        SELECT message_id AS id
+        FROM message_action
+        WHERE action_type = 'raiseInvader'
+          AND status = 'PENDING'
+          AND created_game_tick = ${row.createdGameTick}
+        FOR UPDATE
+    `);
+    await invalidateMessageIds(
+        db,
+        world,
+        promptRows.map(({ id }) => id),
+        world.gameTickToDate(alignment.alignedTick),
+        resolvedGameTick
+    );
     return { ok: true, action: 'raiseInvader', reason: 'success' };
 };
 

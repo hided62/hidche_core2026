@@ -207,6 +207,57 @@ integration('database turn daemon lease and fencing', () => {
         expect(row.ownerId).toBe(firstToken ? 'owner-a' : 'owner-b');
     });
 
+    it('persists and evaluates lease wall time as UTC under a non-UTC database session', async () => {
+        const profile = `${profilePrefix}utc-wall`;
+        const zonedUrl = new URL(databaseUrl!);
+        const schema = zonedUrl.searchParams.get('schema') ?? 'public';
+        zonedUrl.searchParams.delete('schema');
+        zonedUrl.searchParams.set('options', `-c search_path=${schema} -c TimeZone=Asia/Seoul`);
+        const zonedConnector = createGamePostgresConnector({ url: zonedUrl.toString() });
+        await zonedConnector.connect();
+        const lease = await DatabaseTurnDaemonLease.connect(zonedUrl.toString(), {
+            profile,
+            ownerId: 'utc-owner',
+            leaseDurationMs: 60_000,
+            heartbeat: false,
+        });
+        leases.push(lease);
+        try {
+            await expect(lease.acquire()).resolves.toMatchObject({ profile, ownerId: 'utc-owner' });
+            const [leaseRows, wallRows] = await Promise.all([
+                zonedConnector.prisma.$queryRaw<Array<{ leaseUntil: Date }>>`
+                    SELECT lease_until AS "leaseUntil"
+                    FROM turn_daemon_lease
+                    WHERE profile = ${profile}
+                `,
+                zonedConnector.prisma.$queryRaw<Array<{ zone: string; wallNow: Date }>>`
+                    SELECT current_setting('TimeZone') AS zone,
+                           (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS "wallNow"
+                `,
+            ]);
+            expect(wallRows[0]?.zone).toBe('Asia/Seoul');
+            expect(leaseRows[0]!.leaseUntil.getTime() - wallRows[0]!.wallNow.getTime()).toBeGreaterThan(50_000);
+            expect(leaseRows[0]!.leaseUntil.getTime() - wallRows[0]!.wallNow.getTime()).toBeLessThanOrEqual(60_000);
+
+            await lease.release();
+            const [releasedRows, releasedWall] = await Promise.all([
+                zonedConnector.prisma.$queryRaw<Array<{ leaseUntil: Date }>>`
+                    SELECT lease_until AS "leaseUntil"
+                    FROM turn_daemon_lease
+                    WHERE profile = ${profile}
+                `,
+                zonedConnector.prisma.$queryRaw<Array<{ wallNow: Date }>>`
+                    SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS "wallNow"
+                `,
+            ]);
+            expect(Math.abs(releasedRows[0]!.leaseUntil.getTime() - releasedWall[0]!.wallNow.getTime())).toBeLessThan(
+                1_000
+            );
+        } finally {
+            await zonedConnector.disconnect();
+        }
+    });
+
     it('increments the epoch on expiry takeover and fences the stale owner', async () => {
         const profile = `${profilePrefix}takeover`;
         const first = await createLease(profile, 'owner-a');

@@ -222,6 +222,14 @@ export const planProfileReconcile = (
     };
 };
 
+/**
+ * A stopped process may be restarted while the world remains in unification
+ * wait. Only the daemon-authorized raise-invader response may reconcile that
+ * suspension, so Gateway RESUME must start the runtime without consuming it.
+ */
+export const shouldStartRuntimeInUnificationWait = (clockPhase: string, suspensionSource: string): boolean =>
+    clockPhase === 'SUSPENDED' && suspensionSource === 'UNIFICATION_WAIT';
+
 export const resolveResetLifecycleStatus = (
     now: Date,
     preopenAt: Date | null,
@@ -1311,6 +1319,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 orderBy: { createdAt: 'desc' },
             });
             if (!suspension) throw new Error('Profile resume requires a durable suspended clock ledger.');
+            if (shouldStartRuntimeInUnificationWait(world.clockPhase, suspension.source)) {
+                return { phase: 'SUSPENDED', revision: clockRevisionAsNumber(world.clockRevision) };
+            }
             if (world.clockPhase === 'SUSPENDED') {
                 await reconcileClockSuspension({ db: postgres.prisma, suspensionId: suspension.id, authority });
             } else if (world.clockPhase !== 'RECONCILING') {

@@ -391,7 +391,10 @@ const replaceCurrentSeason = async (
     await client.query('BEGIN');
     try {
         const activeLease = await client.query(
-            `SELECT 1 FROM turn_daemon_lease WHERE lease_until > CURRENT_TIMESTAMP LIMIT 1`
+            `SELECT 1
+             FROM turn_daemon_lease
+             WHERE lease_until > CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+             LIMIT 1`
         );
         if (activeLease.rowCount) {
             throw new Error('Refusing to replace a current season while a turn daemon lease is active');

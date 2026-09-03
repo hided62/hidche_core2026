@@ -13,6 +13,7 @@ import {
     planProfileReconcile,
     resolveProfileArchiveServerName,
     resolveResetLifecycleStatus,
+    shouldStartRuntimeInUnificationWait,
 } from '../src/orchestrator/gatewayOrchestrator.js';
 import { GATEWAY_PROFILE_ORDER } from '../src/profileOrder.js';
 import { sanitizeManagedProcessEnv } from '../src/orchestrator/processManager.js';
@@ -111,6 +112,20 @@ describe('planProfileReconcile', () => {
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
+    });
+});
+
+describe('shouldStartRuntimeInUnificationWait', () => {
+    it('starts a stopped runtime without consuming its daemon-authorized unification suspension', () => {
+        expect(shouldStartRuntimeInUnificationWait('SUSPENDED', 'UNIFICATION_WAIT')).toBe(true);
+    });
+
+    it.each([
+        ['SUSPENDED', 'MAINTENANCE'],
+        ['RECONCILING', 'UNIFICATION_WAIT'],
+        ['RUNNING', 'UNIFICATION_WAIT'],
+    ])('keeps ordinary resume reconciliation for %s / %s', (phase, source) => {
+        expect(shouldStartRuntimeInUnificationWait(phase, source)).toBe(false);
     });
 });
 
@@ -471,7 +486,9 @@ describe('buildWorkspaceCommands', () => {
         );
         const migrationUrl = new URL(command.env?.DATABASE_URL ?? '');
 
-        expect(migrationUrl.searchParams.getAll('options')).toEqual(['-c statement_timeout=30000 -c TimeZone=Asia/Seoul']);
+        expect(migrationUrl.searchParams.getAll('options')).toEqual([
+            '-c statement_timeout=30000 -c TimeZone=Asia/Seoul',
+        ]);
     });
 
     it('keeps an already explicit KST migration contract without adding another override', () => {
