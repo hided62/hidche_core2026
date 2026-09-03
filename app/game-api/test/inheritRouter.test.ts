@@ -285,6 +285,21 @@ describe('inherit router actor and permission boundaries', () => {
         });
     });
 
+    it('rejects an out-of-range inheritance buff level with a user-facing message', async () => {
+        const fixture = buildContext({});
+
+        await expect(
+            appRouter.createCaller(fixture.context).inherit.buyHiddenBuff({
+                type: 'warAvoidRatio',
+                level: 6,
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '유산 강화는 1단계부터 5단계까지만 구입할 수 있습니다.',
+        });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
+    });
+
     it('reports the Ref S100 stat-reset ban and maps the authoritative daemon rejection', async () => {
         const fixture = buildContext({
             configMap: { targetGeneralPool: 'SPoolUnderU100' },

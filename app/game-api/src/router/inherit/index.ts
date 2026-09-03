@@ -38,6 +38,8 @@ const BUFF_KEYS: InheritBuffType[] = [
 const UNIQUE_ITEM_SLOT_ORDER: readonly ItemSlot[] = ['horse', 'weapon', 'book', 'item'];
 
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
+const MIN_INHERIT_BUFF_LEVEL = 1;
+const MAX_INHERIT_BUFF_LEVEL = 5;
 
 const parseBuffRecord = (raw: unknown): Record<string, number> => {
     if (typeof raw === 'string') {
@@ -302,13 +304,19 @@ export const inheritRouter = router({
         .input(
             z.object({
                 type: z.enum(BUFF_KEYS),
-                level: z.number().int().min(1).max(5),
+                level: z.number().int(),
             })
         )
         .mutation(async ({ ctx, input }) => {
             const userId = ctx.auth?.user.id;
             if (!userId) {
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            if (input.level < MIN_INHERIT_BUFF_LEVEL || input.level > MAX_INHERIT_BUFF_LEVEL) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: '유산 강화는 1단계부터 5단계까지만 구입할 수 있습니다.',
+                });
             }
 
             const result = await requestInheritanceAction(ctx, userId, {

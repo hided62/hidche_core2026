@@ -9,6 +9,13 @@ const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 const gameUrl = `http://127.0.0.1:${process.env.FRONTEND_PARITY_GAME_PORT ?? '15102'}/che/inherit`;
 
 const response = (data: unknown) => ({ result: { data } });
+const errorResponse = (path: string, message: string) => ({
+    error: {
+        message,
+        code: -32000,
+        data: { code: 'BAD_REQUEST', httpStatus: 400, path },
+    },
+});
 
 const operations = (route: Route): string[] => {
     const pathname = new URL(route.request().url()).pathname;
@@ -149,9 +156,11 @@ const installFixture = async (
         const requestBody: unknown = route.request().postData() ? route.request().postDataJSON() : null;
         if (options.failBuff && names.includes('inherit.buyHiddenBuff')) {
             await route.fulfill({
-                status: 500,
+                status: 400,
                 contentType: 'application/json',
-                body: JSON.stringify({ error: { message: '의도한 유산 구입 오류' } }),
+                body: JSON.stringify([
+                    errorResponse('inherit.buyHiddenBuff', '유산 강화는 1단계부터 5단계까지만 구입할 수 있습니다.'),
+                ]),
             });
             return;
         }
@@ -451,6 +460,9 @@ test.describe('inheritance management legacy parity', () => {
         await page.locator('#buff-warAvoidRatio').fill('1');
         await page.locator('#buff-warAvoidRatio').locator('xpath=../..').getByRole('button', { name: '구입' }).click();
         await expect(page.locator('[role="alert"]')).toBeVisible();
+        await expect(page.locator('[role="alert"]')).toContainText(
+            '유산 강화는 1단계부터 5단계까지만 구입할 수 있습니다.'
+        );
         await expect(page.locator('#buff-warAvoidRatio')).toHaveValue('1');
         await expect(page.locator('#buff-warAvoidRatio')).toBeEnabled();
     });
