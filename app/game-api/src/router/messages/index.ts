@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
+
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, ChangeJournal } from '@sammo-ts/common';
+import { writeReadModelChangeJournal } from '@sammo-ts/infra';
 import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { isMessageAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
@@ -9,7 +12,9 @@ import {
     accessLimitAuthedInputProcedure,
     accessWallAuthedInputProcedure,
     authedProcedure,
+    engineAuthedProcedure,
     router,
+    scopeApiInputEventRequestId,
     wallAuthedProcedure,
 } from '../../trpc.js';
 import {
@@ -32,6 +37,7 @@ import {
 import { getOwnedGeneral } from '../shared/general.js';
 import { resolveNationPermission } from '../nation/shared.js';
 import { respondToDiplomaticMessage } from '../../messages/diplomaticResponse.js';
+import { executeInputEvent } from '../../inputEventBoundary.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
@@ -315,7 +321,7 @@ export const messagesRouter = router({
             markMessageMailboxes(ctx, [message.mailbox, ...(receiverMailbox === null ? [] : [receiverMailbox])]);
             return { ok: true, deletedIds };
         }),
-    respond: authedProcedure
+    respond: engineAuthedProcedure
         .input(
             z.object({
                 generalId: z.number().int().positive(),
@@ -346,29 +352,54 @@ export const messagesRouter = router({
                 }
                 return { result: commandResult.ok, reason: commandResult.reason };
             }
-            const result = await respondToDiplomaticMessage({
+            const ownsChangeJournal = !ctx.changeJournal;
+            const changeJournal = ctx.changeJournal ?? new ChangeJournal();
+            let journalPersisted = false;
+            const response = await executeInputEvent({
                 db: ctx.db,
-                actor: general,
-                messageId: input.messageId,
-                response: input.response,
+                requestId: scopeApiInputEventRequestId(ctx.requestId ?? randomUUID(), 'messages.respond.diplomatic', 0),
+                eventType: 'messages.respond.diplomatic',
+                payload: input,
+                actorUserId: ctx.auth?.user.id,
+                execute: async (transaction) => {
+                    const transactionContext = { ...ctx, db: transaction, changeJournal };
+                    const transactionGeneral = ownsChangeJournal
+                        ? await getOwnedGeneral(transactionContext, input.generalId)
+                        : general;
+                    const result = await respondToDiplomaticMessage({
+                        db: transaction,
+                        actor: transactionGeneral,
+                        messageId: input.messageId,
+                        response: input.response,
+                    });
+                    markMessageMailboxes(transactionContext, result.affectedMailboxes);
+                    for (const generalId of result.affectedGeneralRecordIds) {
+                        changeJournal.mark('records.general', generalId);
+                    }
+                    for (const nationId of result.affectedNationIds) {
+                        changeJournal.mark('nation.content', nationId);
+                    }
+                    for (const cityId of result.affectedCityIds) {
+                        changeJournal.mark('city.content', cityId);
+                    }
+                    if (result.affectedCityIds.length > 0) {
+                        changeJournal.mark('map.world');
+                    }
+                    if (result.affectedNationIds.length > 0 || result.affectedCityIds.length > 0) {
+                        changeJournal.mark('dashboard.global');
+                    }
+                    if (ownsChangeJournal) {
+                        journalPersisted = Boolean(
+                            await writeReadModelChangeJournal(transaction, changeJournal.snapshot())
+                        );
+                    }
+                    return { result: result.result, reason: result.reason };
+                },
             });
-            markMessageMailboxes(ctx, result.affectedMailboxes);
-            for (const generalId of result.affectedGeneralRecordIds) {
-                ctx.changeJournal?.mark('records.general', generalId);
+            if (journalPersisted) {
+                ctx.readModelOutbox?.wake();
             }
-            for (const nationId of result.affectedNationIds) {
-                ctx.changeJournal?.mark('nation.content', nationId);
-            }
-            for (const cityId of result.affectedCityIds) {
-                ctx.changeJournal?.mark('city.content', cityId);
-            }
-            if (result.affectedCityIds.length > 0) {
-                ctx.changeJournal?.mark('map.world');
-            }
-            if (result.affectedNationIds.length > 0 || result.affectedCityIds.length > 0) {
-                ctx.changeJournal?.mark('dashboard.global');
-            }
-            return { result: result.result, reason: result.reason };
+            return response;
         }),
     getOld: authedProcedure
         .input(

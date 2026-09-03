@@ -801,8 +801,11 @@ describe('messages router missing-flow compatibility', () => {
                 action,
                 reason: 'success',
             }));
+            const transaction = vi.fn(async () => {
+                throw new Error('ENGINE message response must not enter the API input-event transaction.');
+            });
             const { caller } = buildContext(
-                { $queryRaw: vi.fn(async () => [messageRow]) },
+                { $queryRaw: vi.fn(async () => [messageRow]), $transaction: transaction },
                 { turnDaemon: { requestCommand } }
             );
 
@@ -822,6 +825,7 @@ describe('messages router missing-flow compatibility', () => {
                     response: true,
                 })
             );
+            expect(transaction).not.toHaveBeenCalled();
         }
     );
 
