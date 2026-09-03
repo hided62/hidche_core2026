@@ -27,6 +27,7 @@ type State = {
     preopenAt: string;
     openAt: string;
     resetOperationId: string;
+    deployOperationId?: string;
     users?: Array<{
         username: string;
         displayName: string;
@@ -189,14 +190,13 @@ const reset = async (): Promise<void> => {
     });
 };
 
-const waitReset = async (): Promise<void> => {
-    const state = await readState();
+const waitOperation = async (operationId: string, eventPrefix: string): Promise<void> => {
     const gateway = await loginAdmin();
     let cursor: string | undefined;
     let lastHeartbeatAt = 0;
     while (true) {
         const result = await gateway.admin.operations.logs.query({
-            id: state.resetOperationId,
+            id: operationId,
             afterCursor: cursor,
             limit: 200,
             timeoutMs: 20_000,
@@ -205,14 +205,14 @@ const waitReset = async (): Promise<void> => {
         const notable = result.entries.filter((entry) => entry.level !== 'OUTPUT');
         if (notable.length > 0 || Date.now() - lastHeartbeatAt >= 20_000) {
             lastHeartbeatAt = Date.now();
-            log('reset-progress', {
+            log(`${eventPrefix}-progress`, {
                 status: result.operation.status,
                 receivedLogEntries: result.entries.length,
                 phases: notable.map((entry) => `${entry.level}:${entry.phase}`),
             });
         }
         if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(result.operation.status)) {
-            log('reset-terminal', {
+            log(`${eventPrefix}-terminal`, {
                 status: result.operation.status,
                 error: result.operation.error ?? null,
                 completedAt: result.operation.completedAt ?? null,
@@ -221,6 +221,31 @@ const waitReset = async (): Promise<void> => {
             return;
         }
     }
+};
+
+const waitReset = async (): Promise<void> => {
+    const state = await readState();
+    await waitOperation(state.resetOperationId, 'reset');
+};
+
+const deploy = async (): Promise<void> => {
+    const state = await readState();
+    const gateway = await loginAdmin();
+    const operation = await gateway.admin.operations.requestDeploy.mutate({
+        profileName,
+        sourceMode: 'BRANCH',
+        sourceRef,
+        reason: 'deploy suspended-action lifecycle fixes without resetting the isolated season',
+    });
+    state.deployOperationId = operation.id;
+    await writeState(state);
+    log('deploy-requested', { operationId: operation.id, profileName, sourceMode: 'BRANCH', sourceRef });
+};
+
+const waitDeploy = async (): Promise<void> => {
+    const state = await readState();
+    if (!state.deployOperationId) throw new Error('No lifecycle deploy operation was requested.');
+    await waitOperation(state.deployOperationId, 'deploy');
 };
 
 const status = async (): Promise<void> => {
@@ -2149,6 +2174,8 @@ const monitorUsers = async (): Promise<void> => {
 const command = process.argv[2];
 if (command === 'reset') await reset();
 else if (command === 'wait-reset') await waitReset();
+else if (command === 'deploy') await deploy();
+else if (command === 'wait-deploy') await waitDeploy();
 else if (command === 'status') await status();
 else if (command === 'prepare-users') await prepareUsers();
 else if (command === 'preopen-messages') await preopenMessages();
@@ -2181,5 +2208,5 @@ else if (command === 'wait-runtime-action') await waitRuntimeAction();
 else if (command === 'monitor-users') await monitorUsers();
 else
     throw new Error(
-        'usage: live-ten-user-lifecycle.ts <reset|wait-reset|status|prepare-users|preopen-messages|verified-preopen-messages|repair-preopen-fixture|database-status|prepare-paused-betting|submit-paused-betting|reserve-user-enlistments|prepare-action-fixture|exercise-paused-actions|verify-paused-wall-expiry|exercise-paused-tournament-bet|reserve-actionable-commands|wait-actionable-messages|respond-actionable-messages|reserve-no-aggression-cancellation|wait-no-aggression-cancellation|respond-no-aggression-cancellation|npc-action-audit|repair-opening-clock-runtime|verify-monitor-message|resume-daemon|fast-forward|place-invader-recipients|respond-invader-browser|action|wait-profile-status|wait-runtime-action|monitor-users>'
+        'usage: live-ten-user-lifecycle.ts <reset|wait-reset|deploy|wait-deploy|status|prepare-users|preopen-messages|verified-preopen-messages|repair-preopen-fixture|database-status|prepare-paused-betting|submit-paused-betting|reserve-user-enlistments|prepare-action-fixture|exercise-paused-actions|verify-paused-wall-expiry|exercise-paused-tournament-bet|reserve-actionable-commands|wait-actionable-messages|respond-actionable-messages|reserve-no-aggression-cancellation|wait-no-aggression-cancellation|respond-no-aggression-cancellation|npc-action-audit|repair-opening-clock-runtime|verify-monitor-message|resume-daemon|fast-forward|place-invader-recipients|respond-invader-browser|action|wait-profile-status|wait-runtime-action|monitor-users>'
     );
