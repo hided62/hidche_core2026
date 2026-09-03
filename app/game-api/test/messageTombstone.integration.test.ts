@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { createGamePostgresConnector, persistMessageEnvelope, type GamePrismaClient } from '@sammo-ts/infra';
 
 import { tombstoneMessages, tombstoneMessagesWithinDeleteWindow } from '../src/messages/store.js';
 
@@ -22,6 +22,51 @@ integration('message deletion tombstone persistence', () => {
     });
 
     afterAll(async () => close?.());
+
+    it('persists an ordinary wall-time envelope without creating a game action', async () => {
+        const rollback = new Error('rollback ordinary message envelope fixture');
+        await expect(
+            db.$transaction(async (transaction) => {
+                const target = {
+                    generalId: 7,
+                    generalName: '보낸이',
+                    nationId: 0,
+                    nationName: '재야',
+                    color: '#000000',
+                    icon: '',
+                };
+                const id = await persistMessageEnvelope(
+                    transaction,
+                    {
+                        mailbox: 9999,
+                        msgType: 'public',
+                        srcId: target.generalId,
+                        destId: 9999,
+                        time: new Date('0200-01-01T00:00:00.000Z'),
+                        validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                        payload: {
+                            src: target,
+                            dest: target,
+                            text: '일반 메시지는 WALL_TIME envelope만 저장한다.',
+                            option: {},
+                        },
+                    },
+                    null
+                );
+
+                const message = await transaction.message.findUniqueOrThrow({
+                    where: { id },
+                    include: { action: true },
+                });
+                expect(message.createdAtWall).toBeInstanceOf(Date);
+                expect(message.deleteUntilWall.getTime() - message.createdAtWall.getTime()).toBe(5 * 60_000);
+                expect(message.occurredGameTick).toBeNull();
+                expect(message.action).toBeNull();
+
+                throw rollback;
+            })
+        ).rejects.toBe(rollback);
+    });
 
     it('keeps sender and receiver rows readable while replacing their bodies', async () => {
         const rollback = new Error('rollback message tombstone fixture');

@@ -87,7 +87,7 @@ export const persistMessageEnvelope = async (
                 ${gameContext?.clockRevision ?? 0n},
                 ${gameContext?.deadlineGeneration ?? 0n}
             FROM inserted
-            WHERE ${actionType} IS NOT NULL
+            WHERE CAST(${actionType} AS text) IS NOT NULL
             RETURNING message_id
         )
         SELECT id FROM inserted

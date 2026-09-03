@@ -217,15 +217,15 @@ const status = async (): Promise<void> => {
 
 const prepareUsers = async (): Promise<void> => {
     const state = await readState();
-    if (state.users?.length) throw new Error('Lifecycle users are already recorded.');
+    if ((state.users?.length ?? 0) > 10) throw new Error('Lifecycle state contains more than ten users.');
     const browser = await chromium.launch({ headless: true });
     const runSlug = state.runId.replaceAll('-', '').slice(0, 8);
     const password = `Live-${state.runId}`;
-    const users: NonNullable<State['users']> = [];
+    const users: NonNullable<State['users']> = [...(state.users ?? [])];
     let browserErrors = 0;
     let applicationHttpErrors = 0;
     try {
-        for (let index = 1; index <= 10; index += 1) {
+        for (let index = users.length + 1; index <= 10; index += 1) {
             const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
             const page = await context.newPage();
             page.setDefaultTimeout(30_000);
@@ -239,7 +239,7 @@ const prepareUsers = async (): Promise<void> => {
             });
             const suffix = String(index).padStart(2, '0');
             const username = `live${runSlug}${suffix}`;
-            const displayName = `통합사용자${suffix}`;
+            const displayName = `통합${runSlug.slice(0, 4)}${suffix}`;
             const generalName = `통합장수${suffix}`;
             await page.goto(`${webOrigin}/gateway/signup`, { waitUntil: 'networkidle' });
             await page.locator('#signup-username').fill(username);
@@ -249,12 +249,32 @@ const prepareUsers = async (): Promise<void> => {
             await page.locator('#signup-form input[type="checkbox"]').nth(0).check();
             await page.locator('#signup-form input[type="checkbox"]').nth(1).check();
             await page.getByRole('button', { name: '가입', exact: true }).click();
-            await page.waitForURL(/\/gateway\/lobby/u);
+            const registrationResult = await Promise.race([
+                page.waitForURL(/\/gateway\/lobby/u).then(() => 'registered' as const),
+                page
+                    .locator('.signup-error')
+                    .waitFor({ state: 'visible' })
+                    .then(() => 'rejected' as const),
+            ]);
+            if (registrationResult === 'rejected') {
+                const registrationError = (await page.locator('.signup-error').innerText()).trim();
+                if (!registrationError.includes('이미 사용')) {
+                    throw new Error(`Gateway registration failed for viewer ${index}: ${registrationError}`);
+                }
+                await page.goto(`${webOrigin}/gateway/`, { waitUntil: 'networkidle' });
+                await page.locator('#username').fill(username);
+                await page.locator('#password').fill(password);
+                await page.getByRole('button', { name: '로그인', exact: true }).click();
+                await page.waitForURL(/\/gateway\/lobby/u);
+            }
             const gatewayToken = await page.evaluate(() => window.localStorage.getItem('sammo-session-token'));
             if (!gatewayToken) throw new Error(`Gateway session was not persisted for viewer ${index}.`);
 
             const createButton = page.getByRole('button', { name: '장수생성', exact: true });
-            await createButton.waitFor({ state: 'visible' });
+            await createButton.waitFor({ state: 'visible' }).catch(async () => {
+                await page.reload({ waitUntil: 'networkidle' });
+                await createButton.waitFor({ state: 'visible', timeout: 60_000 });
+            });
             await createButton.click();
             await page.waitForURL(/\/hwe\/join/u);
             await page.getByLabel('장수명').fill(generalName);
@@ -274,6 +294,8 @@ const prepareUsers = async (): Promise<void> => {
                 await page.screenshot({ path: path.join(artifactDir, 'preopen-user-01-main.png'), fullPage: true });
             }
             users.push({ username, displayName, gatewayToken, gameToken, generalName });
+            state.users = users;
+            await writeState(state);
             log('user-created', { index, username, displayName, generalName });
             await context.close();
         }
