@@ -6,7 +6,7 @@ import {
     type InputJsonValue,
     type TurnEngineEventCreateManyInput,
 } from '@sammo-ts/infra';
-import { GameClock, asNumber, asRecord, type GameClockMode } from '@sammo-ts/common';
+import { GameClock, asNumber, asRecord, type GameClockMode, type GameClockPhase } from '@sammo-ts/common';
 import {
     buildScenarioBootstrap,
     resolveScenarioGeneralDeathMonth,
@@ -92,6 +92,17 @@ export const calculateInitialTurnTick = (
 ): number => {
     const offsetTicks = Math.floor((initialTurnOffsetMicros * clock.ticksPerSecond) / 1_000_000);
     return clock.addTicks(baseTick, offsetTicks);
+};
+
+export const resolveInitialClockPhase = (
+    mode: GameClockMode,
+    seededAtWall: Date,
+    scheduledOpenAtWall: Date
+): GameClockPhase => {
+    if (mode === 'manual') {
+        return 'MANUAL';
+    }
+    return scheduledOpenAtWall.getTime() > seededAtWall.getTime() ? 'PREOPEN' : 'RUNNING';
 };
 
 const formatDateTime = (date: Date): string => {
@@ -234,14 +245,20 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     // A realtime season prepared before its formal opening must not consume
     // wall time while users are only allowed to edit reserved commands.
     const initialClockWallAnchor = install?.openAt && install.openAt.getTime() > now.getTime() ? install.openAt : now;
+    const initialClockPhase = resolveInitialClockPhase(gameClockMode, now, initialClockWallAnchor);
     const initialClock = new GameClock({
         baseTime: startState.startTime,
         tick: 0,
         mode: gameClockMode,
         wallAnchor: initialClockWallAnchor,
         turnSeconds: tickSeconds,
+        phase: initialClockPhase,
+        revision: 1,
     });
-    const initialClockTick = initialClock.dateToTick(now);
+    // The formal opening wall instant is always logical tick zero. PREOPEN may
+    // project signed negative observed ticks, but executable seed schedules are
+    // derived from this zero coordinate rather than from the seed wall time.
+    const initialClockTick = 0;
 
     const { seed, warnings } = buildScenarioBootstrap({
         scenario: scenarioDefinition,
@@ -327,6 +344,10 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     }
 
     worldMeta.hiddenSeed = hiddenSeed;
+    worldMeta.seededAtWall = now.toISOString();
+    worldMeta.scheduledOpenAtWall = initialClockWallAnchor.toISOString();
+    worldMeta.projectedGameDateAtOpening = initialClock.baseTime.toISOString();
+    worldMeta.calendarStart = startState.startTime.toISOString();
 
     if (install?.preopenAt) {
         worldMeta.preopenAt = formatDateTime(install.preopenAt);
@@ -420,6 +441,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                         clockMode: gameClockMode,
                         clockWallAnchor: initialClock.wallAnchor,
                         lastTurnTick: BigInt(initialClockTick),
+                        clockPhase: initialClockPhase,
+                        clockRevision: 1n,
+                        deadlineGeneration: 1n,
                         config: asJson({ ...scenarioConfig, ...worldConfig }),
                         meta: asJson(worldMeta),
                     },
@@ -590,13 +614,14 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                             weaponCode: general.weapon ?? 'None',
                             bookCode: general.book ?? 'None',
                             itemCode: general.item ?? 'None',
-                            turnTime: new Date(
-                                now.getTime() +
-                                    Math.floor(
-                                        (typeof general.meta.initialTurnOffsetMicros === 'number'
-                                            ? general.meta.initialTurnOffsetMicros
-                                            : 0) / 1_000
-                                    )
+                            turnTime: initialClock.tickToDate(
+                                calculateInitialTurnTick(
+                                    initialClock,
+                                    initialClockTick,
+                                    typeof general.meta.initialTurnOffsetMicros === 'number'
+                                        ? general.meta.initialTurnOffsetMicros
+                                        : 0
+                                )
                             ),
                             turnTick: BigInt(
                                 calculateInitialTurnTick(

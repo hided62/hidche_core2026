@@ -172,7 +172,20 @@ export class TurnDaemonLifecycle {
 
             const nowMs = this.clock.nowMs();
             const wallNow = new Date(nowMs);
-            const gameClock = await this.stateStore.loadGameClock?.(wallNow);
+            let gameClock = await this.stateStore.loadGameClock?.(wallNow);
+            if (gameClock?.phase === 'PREOPEN' && this.stateStore.promotePreopenAtOpening) {
+                await this.stateStore.promotePreopenAtOpening(wallNow);
+                gameClock = await this.stateStore.loadGameClock?.(wallNow);
+            }
+            if (
+                gameClock?.phase &&
+                gameClock.phase !== 'RUNNING' &&
+                gameClock.phase !== 'MANUAL'
+            ) {
+                this.status.nextTurnTime = undefined;
+                await this.clock.sleepMs(500);
+                continue;
+            }
             if (gameClock?.mode === 'manual') {
                 // Ref observes all generals due before one monthly boundary in
                 // a single snapshot. Manual mode advances directly to that

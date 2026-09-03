@@ -1,6 +1,14 @@
 import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
 import type { GamePrisma } from '@sammo-ts/infra';
-import { GameClock, asRecord, type GameClockMode } from '@sammo-ts/common';
+import {
+    GameClock,
+    asObservedGameInstant,
+    asRecord,
+    inferClockPhase,
+    parseGameClockPhase,
+    scheduleNotBefore,
+    type GameClockMode,
+} from '@sammo-ts/common';
 
 export interface AdminSeedUser {
     id: string;
@@ -105,14 +113,22 @@ const ensureAdminGeneral = async (prisma: GamePrisma.TransactionClient, adminUse
     const name = await resolveAdminName(prisma, adminUser);
     const meta = asRecord(worldState.meta);
     const rawTurnTime = typeof meta.turntime === 'string' ? new Date(meta.turntime) : null;
-    const turnTime = rawTurnTime && !Number.isNaN(rawTurnTime.getTime()) ? rawTurnTime : new Date();
+    const fallbackTurnTime = rawTurnTime && !Number.isNaN(rawTurnTime.getTime()) ? rawTurnTime : new Date();
+    const mode = worldState.clockMode === 'manual' ? 'manual' : 'realtime';
+    const phase = worldState.clockPhase
+        ? parseGameClockPhase(worldState.clockPhase)
+        : inferClockPhase(mode);
     const gameClock = new GameClock({
-        baseTime: worldState.clockBaseTime ?? turnTime,
+        baseTime: worldState.clockBaseTime ?? fallbackTurnTime,
         tick: Number(worldState.clockTick ?? 0n),
-        mode: worldState.clockMode === 'manual' ? 'manual' : 'realtime',
-        wallAnchor: worldState.clockWallAnchor ?? turnTime,
+        mode,
+        wallAnchor: worldState.clockWallAnchor ?? fallbackTurnTime,
         turnSeconds: worldState.tickSeconds,
+        phase,
+        revision: Number(worldState.clockRevision ?? 1n),
     });
+    const turnTick = scheduleNotBefore(asObservedGameInstant(gameClock.nowTick(new Date())), phase);
+    const turnTime = gameClock.tickToDate(turnTick);
 
     await prisma.general.create({
         data: {
@@ -130,7 +146,7 @@ const ensureAdminGeneral = async (prisma: GamePrisma.TransactionClient, adminUse
             specialCode: 'None',
             special2Code: 'None',
             turnTime,
-            turnTick: BigInt(gameClock.dateToTick(turnTime)),
+            turnTick: BigInt(turnTick),
             meta: {
                 createdBy: 'admin-seed',
                 killturn: 24,

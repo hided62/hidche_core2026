@@ -183,15 +183,41 @@ describe('runtime clock shift', () => {
             clockMode: 'realtime',
             clockWallAnchor: openAt,
             lastTurnTick: 0,
+            clockPhase: 'PREOPEN',
         });
         const preopenAt = new Date('2026-09-02T23:03:00.000Z');
 
         expect(world.getGameNow(preopenAt).getTime()).toBeLessThan(gameBase.getTime());
         expect(world.getRunnableGameNow(preopenAt)).toEqual(gameBase);
         expect(world.getRunnableGameNow(openAt)).toEqual(gameBase);
+        expect(world.promotePreopenAtOpening(openAt)).toBe(true);
         expect(world.getRunnableGameNow(new Date(openAt.getTime() + 60_000))).toEqual(
             new Date(gameBase.getTime() + 60_000)
         );
+    });
+
+    it('promotes PREOPEN only at an opening tick-zero anchor', () => {
+        const openAt = new Date('2026-09-02T23:30:00.000Z');
+        const world = buildWorld({
+            clockBaseTime: new Date('2026-07-30T10:00:00.000Z'),
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: openAt,
+            lastTurnTick: 0,
+            clockPhase: 'PREOPEN',
+        });
+
+        expect(world.promotePreopenAtOpening(new Date(openAt.getTime() - 1))).toBe(false);
+        expect(world.promotePreopenAtOpening(openAt)).toBe(true);
+        expect(world.getGameClockState()).toMatchObject({ phase: 'RUNNING', tick: 0 });
+    });
+
+    it('rejects gameplay commits while the durable clock is suspended', async () => {
+        const world = buildWorld({ clockPhase: 'SUSPENDED', clockMode: 'realtime' });
+
+        expect(() => world.advanceGameClockTo(new Date(), new Date())).toThrow(/SUSPENDED/);
+        expect(() => world.executeGeneralTurn(world.listGenerals()[0]!)).toThrow(/SUSPENDED/);
+        await expect(world.advanceMonth(new Date())).rejects.toThrow(/SUSPENDED/);
     });
 
     it.each([

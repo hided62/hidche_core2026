@@ -1,0 +1,205 @@
+{
+    "schemaVersion": 1,
+    "authority": "game-tick",
+    "tickPerTurn": 36000000,
+    "policies": ["SHIFT", "KEEP", "REBUILD", "FORBID"],
+    "coveredFields": [
+        "input_event.accepted_game_tick",
+        "input_event.accepted_clock_revision",
+        "world_state.clock_tick",
+        "world_state.last_turn_tick",
+        "world_state.clock_revision",
+        "world_state.deadline_generation",
+        "general.turn_tick",
+        "general.recent_war_tick",
+        "select_pool.reserved_until_tick",
+        "select_npc_token.valid_until_tick",
+        "select_npc_token.pick_more_from_tick",
+        "message.time_tick",
+        "message.valid_until_tick",
+        "auction.open_tick",
+        "auction.close_tick",
+        "vote_poll.start_tick",
+        "vote_poll.end_tick",
+        "clock_suspension.source_revision",
+        "clock_suspension.target_revision",
+        "clock_suspension.cut_tick",
+        "clock_suspension.catch_up_ticks",
+        "clock_suspension.gap_ticks",
+        "clock_suspension.shift_ticks",
+        "clock_suspension.aligned_tick",
+        "clock_projection_outbox.target_revision"
+    ],
+    "participants": [
+        {
+            "key": "world-clock",
+            "policy": "REBUILD",
+            "authorityFields": ["world_state.clock_tick", "world_state.clock_revision"],
+            "projectionFields": ["world_state.clock_base_time", "world_state.clock_wall_anchor"],
+            "owner": "game-engine/clock-operation"
+        },
+        {
+            "key": "turn-cursor",
+            "policy": "SHIFT",
+            "authorityFields": ["world_state.last_turn_tick"],
+            "projectionFields": ["world_state.meta.lastTurnTime", "in-memory.checkpoint.turnTime"],
+            "owner": "game-engine/turn-daemon"
+        },
+        {
+            "key": "general-next-turn",
+            "policy": "SHIFT",
+            "authorityFields": ["general.turn_tick"],
+            "projectionFields": ["general.turn_time"],
+            "owner": "game-engine/turn-daemon"
+        },
+        {
+            "key": "general-recent-war-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["general.recent_war_tick"],
+            "projectionFields": ["general.recent_war_time"],
+            "owner": "game-engine/battle"
+        },
+        {
+            "key": "auction-open-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["auction.open_tick"],
+            "projectionFields": ["auction.created_at"],
+            "owner": "game-api/auction"
+        },
+        {
+            "key": "auction-deadline",
+            "policy": "SHIFT",
+            "authorityFields": ["auction.close_tick"],
+            "projectionFields": ["auction.close_at"],
+            "owner": "game-api/auction-worker"
+        },
+        {
+            "key": "auction-finalizing-recovery",
+            "policy": "REBUILD",
+            "authorityFields": ["auction.status", "world_state.deadline_generation"],
+            "projectionFields": ["redis.auction.timer"],
+            "owner": "game-api/auction-worker"
+        },
+        {
+            "key": "message-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["message.time_tick"],
+            "projectionFields": ["message.time"],
+            "owner": "game-engine/message"
+        },
+        {
+            "key": "message-expiry",
+            "policy": "SHIFT",
+            "authorityFields": ["message.valid_until_tick"],
+            "projectionFields": ["message.valid_until"],
+            "owner": "game-engine/message"
+        },
+        {
+            "key": "vote-start-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["vote_poll.start_tick"],
+            "projectionFields": ["vote_poll.start_at"],
+            "owner": "game-api/vote"
+        },
+        {
+            "key": "vote-end-deadline",
+            "policy": "SHIFT",
+            "authorityFields": ["vote_poll.end_tick"],
+            "projectionFields": ["vote_poll.end_at"],
+            "owner": "game-api/vote"
+        },
+        {
+            "key": "select-pool-reservation",
+            "policy": "SHIFT",
+            "authorityFields": ["select_pool.reserved_until_tick"],
+            "projectionFields": ["select_pool.reserved_until"],
+            "owner": "game-engine/select-pool"
+        },
+        {
+            "key": "npc-selection-window",
+            "policy": "SHIFT",
+            "authorityFields": ["select_npc_token.valid_until_tick", "select_npc_token.pick_more_from_tick"],
+            "projectionFields": ["select_npc_token.valid_until", "select_npc_token.pick_more_from"],
+            "owner": "game-engine/npc-selection"
+        },
+        {
+            "key": "accepted-command-coordinate",
+            "policy": "KEEP",
+            "authorityFields": ["input_event.accepted_game_tick", "input_event.accepted_clock_revision"],
+            "projectionFields": [],
+            "owner": "game-api/input-event"
+        },
+        {
+            "key": "tournament-deadlines",
+            "policy": "REBUILD",
+            "authorityFields": ["redis.tournament.state.nextTick", "redis.tournament.state.bettingCloseTick"],
+            "projectionFields": ["redis.tournament.state.nextAt", "redis.tournament.state.bettingCloseAt"],
+            "owner": "game-api/tournament-worker",
+            "migration": "Redis-only legacy dates must dual-write ticks before exact reconciliation is enabled."
+        },
+        {
+            "key": "movable-json-rule-anchors",
+            "policy": "FORBID",
+            "authorityFields": ["world_state.meta.turntime", "world_state.meta.starttime", "world_state.meta.tnmt_time"],
+            "projectionFields": [],
+            "owner": "game-engine/world-meta",
+            "migration": "Register typed columns or explicit participant adapters before exact reconciliation can complete."
+        },
+        {
+            "key": "unification-wait",
+            "policy": "FORBID",
+            "authorityFields": ["world_state.meta.isunited", "world_state.meta.lastTurnTime"],
+            "projectionFields": [],
+            "owner": "game-engine/unification",
+            "migration": "Replace the lastTurnTime workaround with a durable UNIFICATION_WAIT suspension."
+        },
+        {
+            "key": "clock-operation-ledger",
+            "policy": "KEEP",
+            "authorityFields": [
+                "clock_suspension.source_revision",
+                "clock_suspension.target_revision",
+                "clock_suspension.cut_tick",
+                "clock_suspension.catch_up_ticks",
+                "clock_suspension.gap_ticks",
+                "clock_suspension.shift_ticks",
+                "clock_suspension.aligned_tick",
+                "clock_projection_outbox.target_revision"
+            ],
+            "projectionFields": [],
+            "owner": "game-engine/clock-operation"
+        }
+    ],
+    "redis": [
+        {
+            "keyPattern": "sammo:{profile}:clock:active-revision",
+            "policy": "REBUILD",
+            "status": "planned"
+        },
+        {
+            "keyPattern": "sammo:{profile}:auction:timer",
+            "policy": "REBUILD",
+            "status": "implemented-without-clock-revision-fence"
+        },
+        {
+            "keyPattern": "sammo:{profile}:tournament:state",
+            "policy": "REBUILD",
+            "status": "legacy-date-dual-write-required"
+        }
+    ],
+    "wallOnly": [
+        "input_event.created_at",
+        "input_event.processing_at",
+        "input_event.completed_at",
+        "input_event.lease_until",
+        "turn_daemon_lease.lease_until",
+        "turn_daemon_lease.heartbeat_at",
+        "clock_suspension.cut_wall_at",
+        "clock_suspension.resume_wall_at",
+        "clock_projection_outbox.available_at",
+        "clock_projection_outbox.locked_at",
+        "clock_projection_outbox.applied_at",
+        "*.created_at",
+        "*.updated_at"
+    ]
+}

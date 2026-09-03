@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseClient } from '../src/context.js';
 import { loadCurrentGameTime } from '../src/services/gameClock.js';
 
-const buildDatabase = (mode: 'realtime' | 'manual' = 'realtime'): DatabaseClient =>
+const buildDatabase = (
+    mode: 'realtime' | 'manual' = 'realtime',
+    phase: 'PREOPEN' | 'RUNNING' | 'MANUAL' = mode === 'manual' ? 'MANUAL' : 'PREOPEN'
+): DatabaseClient =>
     ({
         worldState: {
             findFirst: vi.fn(async () => ({
@@ -12,6 +15,9 @@ const buildDatabase = (mode: 'realtime' | 'manual' = 'realtime'): DatabaseClient
                 clockMode: mode,
                 clockWallAnchor: new Date('2026-08-21T11:00:00.000Z'),
                 tickSeconds: 600,
+                clockPhase: phase,
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
             })),
         },
     }) as unknown as DatabaseClient;
@@ -26,11 +32,15 @@ describe('current game time projection', () => {
             wallNow: new Date('2026-08-21T10:30:00.000Z'),
             tick: -108_000_000,
             mode: 'realtime',
+            phase: 'PREOPEN',
             running: false,
             startsAt: new Date('2026-08-21T11:00:00.000Z'),
         });
 
-        const opened = await loadCurrentGameTime(db, new Date('2026-08-21T11:00:05.000Z'));
+        const opened = await loadCurrentGameTime(
+            buildDatabase('realtime', 'RUNNING'),
+            new Date('2026-08-21T11:00:05.000Z')
+        );
         expect(opened).toMatchObject({
             now: new Date('2026-08-21T11:00:05.000Z'),
             tick: 300_000,

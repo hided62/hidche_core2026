@@ -7,7 +7,7 @@ import type {
     TurnRunResult,
 } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
-import type { GameClockMode } from '@sammo-ts/common';
+import type { GameClockMode, GameClockPhase } from '@sammo-ts/common';
 
 export type {
     RunReason,
@@ -60,7 +60,14 @@ export interface TurnStateStore {
     loadCheckpoint(): Promise<TurnCheckpoint | undefined>;
     saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void>;
     shouldHaltScheduledRuns?(): Promise<boolean>;
-    loadGameClock?(wallNow?: Date): Promise<{ mode: GameClockMode; now: Date }>;
+    loadGameClock?(wallNow?: Date): Promise<{
+        mode: GameClockMode;
+        now: Date;
+        phase?: GameClockPhase;
+        revision?: number;
+        deadlineGeneration?: number;
+    }>;
+    promotePreopenAtOpening?(wallNow: Date): Promise<boolean>;
     shouldRebaseRealtimeBacklog?(wallNow: Date): Promise<boolean>;
     rebaseRealtimeBacklog?(wallNow: Date): Promise<RealtimeBacklogRebaseResult | null>;
     advanceGameClockTo?(target: Date, wallNow: Date): Promise<void>;

@@ -10,7 +10,14 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import { getNextTurnAt, readScenarioGeneralPoolClaim } from '@sammo-ts/logic';
-import { GAME_TICKS_PER_TURN, GameClock, type GameClockMode } from '@sammo-ts/common';
+import {
+    GAME_TICKS_PER_TURN,
+    GameClock,
+    assertGameplayCommitAllowed,
+    inferClockPhase,
+    type GameClockMode,
+    type GameClockPhase,
+} from '@sammo-ts/common';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
 import type {
@@ -123,6 +130,9 @@ export interface InMemoryGameClockState {
     mode: GameClockMode;
     wallAnchor: Date;
     lastTurnTick: number;
+    phase: GameClockPhase;
+    revision: number;
+    deadlineGeneration: number;
 }
 
 export type InheritancePersistencePhase = 'before_lifecycle' | 'after_lifecycle';
@@ -525,6 +535,9 @@ export class InMemoryTurnWorld {
     constructor(state: TurnWorldState, snapshot: TurnWorldSnapshot, options: InMemoryTurnWorldOptions) {
         const baseTime = new Date((state.clockBaseTime ?? state.lastTurnTime).getTime());
         const mode = state.clockMode ?? 'manual';
+        const phase = state.clockPhase ?? inferClockPhase(mode);
+        const revision = state.clockRevision ?? 1;
+        const deadlineGeneration = state.deadlineGeneration ?? 1;
         const wallAnchor = new Date((state.clockWallAnchor ?? state.lastTurnTime).getTime());
         const bootstrapClock = new GameClock({
             baseTime,
@@ -532,6 +545,8 @@ export class InMemoryTurnWorld {
             mode,
             wallAnchor,
             turnSeconds: state.tickSeconds,
+            phase,
+            revision,
         });
         const lastTurnTick = state.lastTurnTick ?? bootstrapClock.dateToTick(state.lastTurnTime);
         const clockTick = state.clockTick ?? lastTurnTick;
@@ -541,6 +556,8 @@ export class InMemoryTurnWorld {
             mode,
             wallAnchor,
             turnSeconds: state.tickSeconds,
+            phase,
+            revision,
         });
         const lastTurnTime = gameClock.tickToDate(lastTurnTick);
         this.state = {
@@ -550,6 +567,9 @@ export class InMemoryTurnWorld {
             clockMode: mode,
             clockWallAnchor: wallAnchor,
             lastTurnTick,
+            clockPhase: phase,
+            clockRevision: revision,
+            deadlineGeneration,
             lastTurnTime,
             meta: { ...state.meta, lastTurnTime: lastTurnTime.toISOString() },
         };
@@ -621,6 +641,8 @@ export class InMemoryTurnWorld {
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: this.state.clockWallAnchor ?? this.state.lastTurnTime,
             turnSeconds: this.state.tickSeconds,
+            phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
+            revision: this.state.clockRevision ?? 1,
         });
     }
 
@@ -649,6 +671,9 @@ export class InMemoryTurnWorld {
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: new Date((this.state.clockWallAnchor ?? this.state.lastTurnTime).getTime()),
             lastTurnTick: this.state.lastTurnTick ?? 0,
+            phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
+            revision: this.state.clockRevision ?? 1,
+            deadlineGeneration: this.state.deadlineGeneration ?? 1,
         };
     }
 
@@ -656,11 +681,26 @@ export class InMemoryTurnWorld {
         return this.getGameClock().now(wallNow);
     }
 
+    promotePreopenAtOpening(wallNow: Date): boolean {
+        const clock = this.getGameClock();
+        if (clock.phase !== 'PREOPEN' || wallNow.getTime() < clock.wallAnchor.getTime()) {
+            return false;
+        }
+        if (clock.tick !== 0) {
+            throw new Error(`PREOPEN opening invariant requires clock tick zero, found ${clock.tick}.`);
+        }
+        this.state = {
+            ...this.state,
+            clockPhase: 'RUNNING',
+        };
+        return true;
+    }
+
     getRunnableGameNow(wallNow: Date): Date {
         const clock = this.getGameClock();
         // PREOPEN still needs negative game ticks for cooldowns, but executable
         // turn schedules must not precede the wall-clock opening boundary.
-        if (clock.mode === 'realtime' && wallNow.getTime() < clock.wallAnchor.getTime()) {
+        if (clock.phase === 'PREOPEN') {
             return clock.now(clock.wallAnchor);
         }
         return clock.now(wallNow);
@@ -676,6 +716,7 @@ export class InMemoryTurnWorld {
 
     advanceGameClockTo(target: Date, wallNow: Date): void {
         const clock = this.getGameClock();
+        assertGameplayCommitAllowed(clock.phase);
         const targetTick = clock.dateToTick(target);
         // Realtime의 권위 시각은 wall anchor 이후 경과입니다. 밀린 턴을 과거
         // target으로 처리한 완료 시각에 anchor를 다시 고정하면, 처리에 걸린
@@ -696,7 +737,7 @@ export class InMemoryTurnWorld {
         skippedTurns: number;
     } | null {
         const clock = this.getGameClock();
-        if (clock.mode !== 'realtime') {
+        if (clock.mode !== 'realtime' || clock.phase !== 'RUNNING') {
             return null;
         }
         const turnMinutes = Math.max(1, Math.round(this.state.tickSeconds / 60));
@@ -969,6 +1010,8 @@ export class InMemoryTurnWorld {
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: anchorWall,
             turnSeconds: nextTickSeconds,
+            phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
+            revision: this.state.clockRevision ?? 1,
         });
         const lastTurnTick = this.state.lastTurnTick ?? previousClock.dateToTick(this.state.lastTurnTime);
         const nextLastTurnTime = nextClock.tickToDate(lastTurnTick);
@@ -1470,6 +1513,8 @@ export class InMemoryTurnWorld {
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: this.state.clockWallAnchor ?? this.state.lastTurnTime,
             turnSeconds: this.state.tickSeconds,
+            phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
+            revision: this.state.clockRevision ?? 1,
         });
         const nextLastTurnTime = shiftedClock.tickToDate(this.state.lastTurnTick ?? 0);
         const nextMeta = {
@@ -1605,6 +1650,7 @@ export class InMemoryTurnWorld {
     }
 
     executeGeneralTurn(general: TurnGeneral): GeneralTurnExecution {
+        assertGameplayCommitAllowed(this.getGameClock().phase);
         const currentGeneral = this.generals.get(general.id) ?? general;
         const executionYear = this.state.currentYear;
         const executionMonth = this.state.currentMonth;
@@ -1787,6 +1833,7 @@ export class InMemoryTurnWorld {
     }
 
     async advanceMonth(turnTime: Date): Promise<void> {
+        assertGameplayCommitAllowed(this.getGameClock().phase);
         const previousYear = this.state.currentYear;
         const previousMonth = this.state.currentMonth;
         let nextYear = previousYear;

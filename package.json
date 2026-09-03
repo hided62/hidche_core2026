@@ -31,7 +31,7 @@
         "check:legacy:nation": "node tools/compare-command-constraints.mjs --include '^Nation/' --check && node tools/compare-command-logs.mjs --include '^Nation/' --mode action --check",
         "check:legacy:general": "node tools/compare-command-constraints.mjs --include '^General/' --check && node tools/compare-command-logs.mjs --include '^General/' --mode action --check && node tools/compare-general-turn-contracts.mjs --check",
         "check:legacy:scenario": "SAMMO_REQUIRE_REF_SOURCE=1 pnpm --filter @sammo-ts/game-engine test monthlyCatalogCoverage.test.ts scenarioLoader.test.ts scenarioComposition.test.ts",
-        "check:architecture": "node tools/check-package-boundaries.mjs",
+        "check:architecture": "node tools/check-package-boundaries.mjs && node tools/check-game-clock-participants.mjs",
         "check:typescript-toolchain": "node tools/check-typescript-toolchain.mjs",
         "test:architecture": "node --test tools/check-package-boundaries.test.mjs",
         "test:image-sync": "node --test tools/sync-image-repository.test.mjs",

@@ -63,21 +63,23 @@ enum InputEventTarget {
 }
 
 model InputEvent {
-  sequence     BigInt           @id @default(autoincrement())
-  requestId    String           @unique @map("request_id")
-  target       InputEventTarget
-  eventType    String           @map("event_type")
-  payload      Json             @default(dbgenerated("'{}'::jsonb"))
-  actorUserId  String?          @map("actor_user_id")
-  status       InputEventStatus @default(PENDING)
-  result       Json?
-  error        String?
-  attempts     Int              @default(0)
-  lockedBy     String?          @map("locked_by")
-  leaseUntil   DateTime?        @map("lease_until")
-  createdAt    DateTime         @default(now()) @map("created_at")
-  processingAt DateTime?        @map("processing_at")
-  completedAt  DateTime?        @map("completed_at")
+  sequence              BigInt           @id @default(autoincrement())
+  requestId             String           @unique @map("request_id")
+  target                InputEventTarget
+  eventType             String           @map("event_type")
+  payload               Json             @default(dbgenerated("'{}'::jsonb"))
+  actorUserId           String?          @map("actor_user_id")
+  acceptedGameTick      BigInt?          @map("accepted_game_tick")
+  acceptedClockRevision BigInt?          @map("accepted_clock_revision")
+  status                InputEventStatus @default(PENDING)
+  result                Json?
+  error                 String?
+  attempts              Int              @default(0)
+  lockedBy              String?          @map("locked_by")
+  leaseUntil            DateTime?        @map("lease_until")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  processingAt          DateTime?        @map("processing_at")
+  completedAt           DateTime?        @map("completed_at")
 
   @@index([target, status, sequence])
   @@map("input_event")
@@ -145,23 +147,99 @@ model TurnDaemonLease {
 }
 
 model WorldState {
-  id              Int       @id @default(autoincrement())
-  scenarioCode    String    @map("scenario_code")
-  currentYear     Int       @map("current_year")
-  currentMonth    Int       @map("current_month")
-  tickSeconds     Int       @map("tick_seconds")
-  clockBaseTime   DateTime? @map("clock_base_time")
-  clockTick       BigInt?   @map("clock_tick")
-  clockMode       String    @default("realtime") @map("clock_mode")
-  clockWallAnchor DateTime? @map("clock_wall_anchor")
-  lastTurnTick    BigInt?   @map("last_turn_tick")
-  config          Json      @default(dbgenerated("'{}'::jsonb"))
-  meta            Json      @default(dbgenerated("'{}'::jsonb"))
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id                 Int       @id @default(autoincrement())
+  scenarioCode       String    @map("scenario_code")
+  currentYear        Int       @map("current_year")
+  currentMonth       Int       @map("current_month")
+  tickSeconds        Int       @map("tick_seconds")
+  clockBaseTime      DateTime? @map("clock_base_time")
+  clockTick          BigInt?   @map("clock_tick")
+  clockMode          String    @default("realtime") @map("clock_mode")
+  clockWallAnchor    DateTime? @map("clock_wall_anchor")
+  lastTurnTick       BigInt?   @map("last_turn_tick")
+  clockPhase         String    @default("RUNNING") @map("clock_phase")
+  clockRevision      BigInt    @default(1) @map("clock_revision")
+  deadlineGeneration BigInt    @default(1) @map("deadline_generation")
+  config             Json      @default(dbgenerated("'{}'::jsonb"))
+  meta               Json      @default(dbgenerated("'{}'::jsonb"))
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  trafficPeriods TrafficPeriod[]
+  trafficPeriods        TrafficPeriod[]
+  clockSuspensions      ClockSuspension[]
+  clockProjectionOutbox ClockProjectionOutbox[]
 
   @@map("world_state")
+}
+
+model ClockSuspension {
+  id                        String    @id @db.VarChar(64)
+  worldStateId              Int       @map("world_state_id")
+  source                    String
+  policy                    String
+  status                    String    @default("SUSPENDED")
+  sourceRevision            BigInt    @map("source_revision")
+  targetRevision            BigInt    @map("target_revision")
+  cutTick                   BigInt    @map("cut_tick")
+  cutWallAt                 DateTime  @map("cut_wall_at") @db.Timestamp(3)
+  resumeWallAt              DateTime? @map("resume_wall_at") @db.Timestamp(3)
+  rateTicksPerSecond        Int       @map("rate_ticks_per_second")
+  catchUpTicks              BigInt    @default(0) @map("catch_up_ticks")
+  gapTicks                  BigInt?   @map("gap_ticks")
+  shiftTicks                BigInt?   @map("shift_ticks")
+  alignedTick               BigInt?   @map("aligned_tick")
+  participantChecksumBefore String?   @map("participant_checksum_before")
+  participantChecksumAfter  String?   @map("participant_checksum_after")
+  detail                    Json      @default(dbgenerated("'{}'::jsonb"))
+  createdAt                 DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("created_at") @db.Timestamp(3)
+  updatedAt                 DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  worldState       WorldState                       @relation(fields: [worldStateId], references: [id], onDelete: Cascade)
+  participants     ClockReconciliationParticipant[]
+  projectionOutbox ClockProjectionOutbox[]
+
+  @@unique([worldStateId, targetRevision])
+  @@index([status, createdAt])
+  @@map("clock_suspension")
+}
+
+model ClockReconciliationParticipant {
+  suspensionId   String @map("suspension_id") @db.VarChar(64)
+  participantKey String @map("participant_key") @db.VarChar(96)
+  policy         String
+  beforeChecksum String @map("before_checksum") @db.VarChar(128)
+  afterChecksum  String @map("after_checksum") @db.VarChar(128)
+  affectedCount  Int    @default(0) @map("affected_count")
+  detail         Json   @default(dbgenerated("'{}'::jsonb"))
+
+  suspension ClockSuspension @relation(fields: [suspensionId], references: [id], onDelete: Cascade)
+
+  @@id([suspensionId, participantKey])
+  @@map("clock_reconciliation_participant")
+}
+
+model ClockProjectionOutbox {
+  id             BigInt    @id @default(autoincrement())
+  worldStateId   Int       @map("world_state_id")
+  suspensionId   String?   @map("suspension_id") @db.VarChar(64)
+  targetRevision BigInt    @map("target_revision")
+  status         String    @default("PENDING")
+  payload        Json      @default(dbgenerated("'{}'::jsonb"))
+  checksum       String    @db.VarChar(128)
+  attempts       Int       @default(0)
+  availableAt    DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("available_at") @db.Timestamp(3)
+  lockedAt       DateTime? @map("locked_at") @db.Timestamp(3)
+  lockedBy       String?   @map("locked_by") @db.VarChar(128)
+  appliedAt      DateTime? @map("applied_at") @db.Timestamp(3)
+  lastError      String?   @map("last_error")
+  createdAt      DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  worldState WorldState       @relation(fields: [worldStateId], references: [id], onDelete: Cascade)
+  suspension ClockSuspension? @relation(fields: [suspensionId], references: [id], onDelete: Cascade)
+
+  @@unique([worldStateId, targetRevision])
+  @@index([status, availableAt, id])
+  @@map("clock_projection_outbox")
 }
 
 model Nation {

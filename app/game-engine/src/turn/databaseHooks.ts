@@ -1,5 +1,6 @@
 import {
     acquireGameSchemaAdvisoryXactLock,
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
     createGamePostgresConnector,
     GENERAL_ACCESS_PERSISTENCE_LOCK,
     GamePrisma,
@@ -122,6 +123,10 @@ const CLOCK_ONLY_WORLD_META_KEYS = new Set([
     'clock_base_time',
     'clockMode',
     'clock_mode',
+    'clockPhase',
+    'clock_phase',
+    'clockRevision',
+    'clock_revision',
     'clockTick',
     'clock_tick',
     'clockWallAnchor',
@@ -135,6 +140,8 @@ const CLOCK_ONLY_WORLD_META_KEYS = new Set([
     'last_turn_tick',
     'lastTurnTime',
     'last_turn_time',
+    'deadlineGeneration',
+    'deadline_generation',
     'lease',
     'leaseOwner',
     'lease_owner',
@@ -1122,9 +1129,20 @@ export const createDatabaseTurnHooks = async (
             clockMode: state.clockMode ?? 'manual',
             clockWallAnchor: state.clockWallAnchor ?? state.lastTurnTime,
             lastTurnTick: BigInt(state.lastTurnTick ?? world.dateToGameTick(state.lastTurnTime)),
+            clockPhase: state.clockPhase ?? (state.clockMode === 'realtime' ? 'RUNNING' : 'MANUAL'),
+            clockRevision: BigInt(state.clockRevision ?? 1),
+            deadlineGeneration: BigInt(state.deadlineGeneration ?? 1),
             config: asJson(world.getWorldConfig()),
             meta: asJson(state.meta),
         };
+        const writesGeneralAccess =
+            accessScoreResetGeneralIds.length > 0 ||
+            lifecycleEvents.length > 0 ||
+            deletedGenerals.length > 0 ||
+            generals.some(
+                (general) =>
+                    typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
+            );
         const persist = async (
             prisma: GamePrisma.TransactionClient
         ): Promise<{
@@ -1157,6 +1175,49 @@ export const createDatabaseTurnHooks = async (
             // world mutation. A stale daemon can finish calculating, but it can
             // never commit after another owner has advanced the epoch.
             await options?.turnDaemonLease?.assertActive(prisma);
+            await acquireGameSchemaAdvisoryXactLock(prisma, CLOCK_OPERATION_PERSISTENCE_LOCK);
+            if (writesGeneralAccess) {
+                // General-access API writers take this lock before touching
+                // world rows. Clock operations use the same global order.
+                await acquireGameSchemaAdvisoryXactLock(prisma, GENERAL_ACCESS_PERSISTENCE_LOCK);
+            }
+            const persistedClock = await prisma.$queryRaw<
+                Array<{
+                    clock_phase: string;
+                    clock_revision: bigint;
+                    deadline_generation: bigint;
+                    opening_reached: boolean;
+                }>
+            >(GamePrisma.sql`
+                SELECT clock_phase,
+                       clock_revision,
+                       deadline_generation,
+                       clock_wall_anchor <= CURRENT_TIMESTAMP AS opening_reached
+                FROM world_state
+                WHERE id = ${state.id}
+                FOR UPDATE
+            `);
+            const durableClock = persistedClock[0];
+            if (!durableClock) {
+                throw new Error(`world_state ${state.id} is missing during a fenced turn flush.`);
+            }
+            const expectedPhase = state.clockPhase ?? (state.clockMode === 'realtime' ? 'RUNNING' : 'MANUAL');
+            const expectedRevision = BigInt(state.clockRevision ?? 1);
+            const expectedGeneration = BigInt(state.deadlineGeneration ?? 1);
+            const openingPhaseTransition =
+                durableClock.clock_phase === 'PREOPEN' &&
+                expectedPhase === 'RUNNING' &&
+                durableClock.opening_reached;
+            if (
+                (!openingPhaseTransition && durableClock.clock_phase !== expectedPhase) ||
+                durableClock.clock_revision !== expectedRevision ||
+                durableClock.deadline_generation !== expectedGeneration
+            ) {
+                throw new Error(
+                    `Game clock fence changed before flush: expected ${expectedPhase}@${expectedRevision}/${expectedGeneration}, ` +
+                        `found ${durableClock.clock_phase}@${durableClock.clock_revision}/${durableClock.deadline_generation}.`
+                );
+            }
             let neutralAuctionsToCreate = pendingNeutralAuctions;
             if (pendingNeutralAuctions.length > 0) {
                 const latestRegistrationKey =
@@ -1322,20 +1383,6 @@ export const createDatabaseTurnHooks = async (
             );
             const beforeLifecycleLogs = pendingInheritanceLogs.filter((entry) => entry.phase !== 'after_lifecycle');
             const afterLifecycleLogs = pendingInheritanceLogs.filter((entry) => entry.phase === 'after_lifecycle');
-
-            const writesGeneralAccess =
-                accessScoreResetGeneralIds.length > 0 ||
-                lifecycleEvents.length > 0 ||
-                deletedGenerals.length > 0 ||
-                generals.some(
-                    (general) =>
-                        typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
-                );
-            if (writesGeneralAccess) {
-                // API access writers acquire this before traffic/access rows.
-                // Match that order before lifecycle and monthly score writes.
-                await acquireGameSchemaAdvisoryXactLock(prisma, GENERAL_ACCESS_PERSISTENCE_LOCK);
-            }
 
             await persistInheritancePointAdjustments(beforeLifecycleAdjustments);
             await persistInheritanceLogs(beforeLifecycleLogs);

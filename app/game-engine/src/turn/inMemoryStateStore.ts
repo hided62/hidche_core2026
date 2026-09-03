@@ -35,11 +35,25 @@ export class InMemoryTurnStateStore implements TurnStateStore {
         return asNumber(meta.isunited ?? meta.isUnited, 0) >= 2;
     }
 
-    async loadGameClock(wallNow = new Date(Date.now())): Promise<{ mode: 'realtime' | 'manual'; now: Date }> {
+    async loadGameClock(wallNow = new Date(Date.now())): Promise<{
+        mode: 'realtime' | 'manual';
+        now: Date;
+        phase: ReturnType<InMemoryTurnWorld['getGameClockState']>['phase'];
+        revision: number;
+        deadlineGeneration: number;
+    }> {
+        const state = this.world.getGameClockState();
         return {
-            mode: this.world.getGameClockState().mode,
+            mode: state.mode,
             now: this.world.getGameNow(wallNow),
+            phase: state.phase,
+            revision: state.revision,
+            deadlineGeneration: state.deadlineGeneration,
         };
+    }
+
+    async promotePreopenAtOpening(wallNow: Date): Promise<boolean> {
+        return this.world.promotePreopenAtOpening(wallNow);
     }
 
     async rebaseRealtimeBacklog(wallNow: Date) {

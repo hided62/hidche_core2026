@@ -219,6 +219,8 @@ const resolveRuntimeState = (
                   mode: state.clockMode ?? 'manual',
                   wallAnchor: state.clockWallAnchor ?? state.lastTurnTime,
                   turnSeconds: state.tickSeconds,
+                  phase: state.clockPhase,
+                  revision: state.clockRevision,
               }).tickToDate(state.clockTick ?? state.lastTurnTick ?? 0),
               state.clockTick ?? state.lastTurnTick ?? 0,
               nextTickSeconds

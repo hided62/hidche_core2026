@@ -8,6 +8,8 @@ interface TryLockRow {
 
 /** Serializes score/traffic writers whose table lock order otherwise differs by entry point. */
 export const GENERAL_ACCESS_PERSISTENCE_LOCK = 'general-access:persistence';
+/** Serializes phase/revision changes with every gameplay flush in one game schema. */
+export const CLOCK_OPERATION_PERSISTENCE_LOCK = 'game-clock:operation';
 
 const lockKeySql = (logicalKey: string): GamePrisma.Sql =>
     GamePrisma.sql`hashtextextended(current_schema() || chr(31) || ${logicalKey}, 0)`;

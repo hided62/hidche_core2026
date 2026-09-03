@@ -16,6 +16,9 @@ export interface TurnEngineWorldStateRow {
     clockMode: string;
     clockWallAnchor: Date | null;
     lastTurnTick: bigint | null;
+    clockPhase: string;
+    clockRevision: bigint;
+    deadlineGeneration: bigint;
     config: JsonValue;
     meta: JsonValue;
     updatedAt?: Date | null;
@@ -181,6 +184,9 @@ export interface TurnEngineWorldStateUpdateInput {
     clockMode: string;
     clockWallAnchor: Date;
     lastTurnTick: bigint;
+    clockPhase: string;
+    clockRevision: bigint;
+    deadlineGeneration: bigint;
     config: InputJsonValue;
     meta: InputJsonValue;
 }
@@ -195,6 +201,9 @@ export interface TurnEngineWorldStateCreateInput {
     clockMode: string;
     clockWallAnchor: Date;
     lastTurnTick: bigint;
+    clockPhase: string;
+    clockRevision: bigint;
+    deadlineGeneration: bigint;
     config: InputJsonValue;
     meta: InputJsonValue;
 }

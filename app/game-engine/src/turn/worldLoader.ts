@@ -26,7 +26,14 @@ import { normalizeScenarioEffect } from '@sammo-ts/logic';
 import { parseScenarioGeneralPoolCandidate } from '@sammo-ts/logic';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { z } from 'zod';
-import { GameClock, asRecord, isRecord, type GameClockMode } from '@sammo-ts/common';
+import {
+    GameClock,
+    asRecord,
+    inferClockPhase,
+    isRecord,
+    parseGameClockPhase,
+    type GameClockMode,
+} from '@sammo-ts/common';
 
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
@@ -433,6 +440,14 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             worldState.clockWallAnchor !== null &&
             worldState.lastTurnTick !== null;
         const clockMode = hasPersistedClock ? parseClockMode(worldState.clockMode) : 'manual';
+        const clockPhase = hasPersistedClock
+            ? parseGameClockPhase(worldState.clockPhase)
+            : inferClockPhase(clockMode);
+        const clockRevision = toSafeTick(worldState.clockRevision, 'world_state.clock_revision');
+        const deadlineGeneration = toSafeTick(
+            worldState.deadlineGeneration,
+            'world_state.deadline_generation'
+        );
         const clockBaseTime = worldState.clockBaseTime ?? legacyLastTurnTime;
         const clockWallAnchor = worldState.clockWallAnchor ?? legacyLastTurnTime;
         const bootstrapClock = new GameClock({
@@ -441,6 +456,8 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             mode: clockMode,
             wallAnchor: clockWallAnchor,
             turnSeconds: worldState.tickSeconds,
+            phase: clockPhase,
+            revision: clockRevision,
         });
         const legacyLastTurnTick = bootstrapClock.dateToTick(legacyLastTurnTime);
         const gameClock = new GameClock({
@@ -452,6 +469,8 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             mode: clockMode,
             wallAnchor: clockWallAnchor,
             turnSeconds: worldState.tickSeconds,
+            phase: clockPhase,
+            revision: clockRevision,
         });
 
         const ranksByGeneral = new Map<number, TurnEngineRankDataRow[]>();
@@ -519,6 +538,9 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
                 clockMode,
                 clockWallAnchor: gameClock.wallAnchor,
                 lastTurnTick,
+                clockPhase,
+                clockRevision,
+                deadlineGeneration,
                 meta,
             },
             snapshot: {

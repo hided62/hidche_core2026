@@ -65,7 +65,15 @@ export type WorldStateMeta = z.infer<typeof zWorldStateMeta>;
 
 type PrismaWorldStateRow = GamePrisma.WorldStateGetPayload<Record<string, never>>;
 type PrismaGeneralRow = GamePrisma.GeneralGetPayload<Record<string, never>>;
-type WorldClockFields = 'clockBaseTime' | 'clockTick' | 'clockMode' | 'clockWallAnchor' | 'lastTurnTick';
+type WorldClockFields =
+    | 'clockBaseTime'
+    | 'clockTick'
+    | 'clockMode'
+    | 'clockWallAnchor'
+    | 'lastTurnTick'
+    | 'clockPhase'
+    | 'clockRevision'
+    | 'deadlineGeneration';
 type GeneralClockFields = 'turnTick' | 'recentWarTick';
 
 // Transitional API fixtures may still model the pre-clock row. Runtime Prisma
