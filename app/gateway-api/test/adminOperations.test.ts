@@ -87,6 +87,7 @@ const buildCaller = async (
     const updatedStatuses: GatewayProfileRecord['status'][] = [];
     const updatedMetas: Record<string, unknown>[] = [];
     const auditEvents: AdminAuditEventRecord[] = [];
+    const lifecycle: string[] = [];
     let reconcileCount = 0;
     let runtimeStateListCount = 0;
     let storedNotice = options.initialNotice ?? '';
@@ -111,6 +112,7 @@ const buildCaller = async (
         updateCurrentScenario: async () => profile,
         updateStatus: async (_profileName, status) => {
             updatedStatuses.push(status);
+            lifecycle.push(`status:${status}`);
             return { ...profile, status };
         },
         updateBuildStatus: async () => profile,
@@ -288,6 +290,7 @@ const buildCaller = async (
                 stop: async () => {},
                 reconcileNow: async () => {
                     reconcileCount += 1;
+                    lifecycle.push('runtime:reconcile');
                 },
                 runScheduleNow: async () => {},
                 runBuildQueueNow: async () => {},
@@ -297,6 +300,13 @@ const buildCaller = async (
                     }
                 },
                 cleanupStaleWorkspaces: async () => ({ removed: [], skipped: [] }),
+                transitionProfileClock: async (_profileName, action) => {
+                    lifecycle.push(`clock:${action}`);
+                    return {
+                        phase: action === 'SUSPEND' ? 'SUSPENDED' : 'RUNNING',
+                        revision: 1,
+                    };
+                },
                 listRuntimeSettings: async () => [
                     {
                         profileName: 'che:2',
@@ -363,6 +373,7 @@ const buildCaller = async (
         updatedStatuses,
         updatedMetas,
         auditEvents,
+        lifecycle,
         getReconcileCount: () => reconcileCount,
         getRuntimeStateListCount: () => runtimeStateListCount,
         getStoredNotice: () => storedNotice,
@@ -1384,6 +1395,7 @@ describe('admin runtime clock action API', () => {
             })
         ).resolves.toMatchObject({ ok: true });
         expect(harness.updatedStatuses).toEqual(['RUNNING']);
+        expect(harness.lifecycle).toEqual(['clock:RESUME', 'status:RUNNING', 'runtime:reconcile']);
         expect(harness.getReconcileCount()).toBe(1);
         expect(harness.updatedMetas).toHaveLength(2);
         expect(harness.updatedMetas.at(-1)).toMatchObject({
@@ -1410,6 +1422,11 @@ describe('admin runtime clock action API', () => {
         });
 
         expect(harness.updatedStatuses).toEqual([expectedStatus]);
+        expect(harness.lifecycle).toEqual(
+            action === 'STOP'
+                ? ['clock:SUSPEND', `status:${expectedStatus}`, 'runtime:reconcile']
+                : [`status:${expectedStatus}`, 'runtime:reconcile']
+        );
         expect(harness.getReconcileCount()).toBe(1);
         expect(harness.updatedMetas).toHaveLength(2);
         expect(harness.updatedMetas[0]).toMatchObject({

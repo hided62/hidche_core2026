@@ -168,6 +168,10 @@ const buildCaller = (
             removed: [],
             skipped: [],
         }),
+        transitionProfileClock: async (_profileName: string, action: 'SUSPEND' | 'RESUME') => ({
+            phase: action === 'SUSPEND' ? 'SUSPENDED' : 'RUNNING',
+            revision: 1,
+        }),
         listRuntimeStates: async () => [],
     };
     const profileStatus = new InMemoryProfileStatusService(

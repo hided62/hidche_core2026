@@ -6,6 +6,12 @@ import { stripVTControlCharacters } from 'node:util';
 
 import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
 import {
+    applyNextClockProjection,
+    reconcileClockSuspension,
+    startClockSuspension,
+    type ClockOperationAuthority,
+} from '@sammo-ts/game-engine';
+import {
     cancelGame as defaultCancelGame,
     GAME_CANCELLATION_GENERAL_MODES,
     GAME_CANCELLATION_HISTORY_MODES,
@@ -17,6 +23,9 @@ import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
     createRedisConnector,
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
+    GamePrisma,
+    acquireGameSchemaAdvisoryXactLock,
     resolvePostgresPoolMax,
     resolveRedisConfigFromEnv,
 } from '@sammo-ts/infra';
@@ -112,6 +121,12 @@ export interface GatewayOrchestratorOptions {
     fetchImpl?: typeof fetch;
     clearTournamentRuntimeState?: (profileName: string) => Promise<void>;
     cancelGame?: typeof defaultCancelGame;
+    transitionProfileClock?: (
+        profileName: string,
+        action: 'SUSPEND' | 'RESUME',
+        reason: string
+    ) => Promise<{ phase: string; revision: number }>;
+    promoteProfileOpening?: (profile: GatewayProfileRecord) => Promise<void>;
 }
 
 const WORKSPACE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -161,6 +176,11 @@ export interface GatewayOrchestratorHandle {
     }>;
     listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]>;
     listRuntimeSettings?(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]>;
+    transitionProfileClock(
+        profileName: string,
+        action: 'SUSPEND' | 'RESUME',
+        reason: string
+    ): Promise<{ phase: string; revision: number }>;
 }
 
 export interface GatewayManagedCleanupResult {
@@ -320,6 +340,14 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string): number | nu
         }
     }
     return null;
+};
+
+const clockRevisionAsNumber = (revision: bigint): number => {
+    const value = Number(revision);
+    if (!Number.isSafeInteger(value) || value < 1) {
+        throw new Error(`Clock revision is outside the safe API integer range: ${revision.toString()}.`);
+    }
+    return value;
 };
 
 export const resolveProfileFirstGameIdx = (meta: Record<string, unknown>): number => {
@@ -842,10 +870,7 @@ const assertProfileMigrationEnvironmentTimeZone = (env?: Record<string, string>)
     if (pgTimeZone) assertProfileMigrationTimeZone(pgTimeZone, 'PGTZ');
 };
 
-const buildProfileMigrationEnv = (
-    profileDatabaseUrl: string,
-    env?: Record<string, string>
-): Record<string, string> => {
+const buildProfileMigrationEnv = (profileDatabaseUrl: string, env?: Record<string, string>): Record<string, string> => {
     assertProfileMigrationEnvironmentTimeZone(env);
     return { ...(env ?? {}), DATABASE_URL: buildProfileMigrationDatabaseUrl(profileDatabaseUrl) };
 };
@@ -942,6 +967,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly fetchImpl: typeof fetch;
     private readonly clearTournamentRuntimeState: (profileName: string) => Promise<void>;
     private readonly cancelGame: typeof defaultCancelGame;
+    private readonly transitionProfileClockOverride?: GatewayOrchestratorOptions['transitionProfileClock'];
+    private readonly promoteProfileOpeningOverride?: GatewayOrchestratorOptions['promoteProfileOpening'];
     private reconcileTimer?: NodeJS.Timeout;
     private scheduleTimer?: NodeJS.Timeout;
     private buildTimer?: NodeJS.Timeout;
@@ -986,6 +1013,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             options.clearTournamentRuntimeState ??
             ((profileName) => this.clearTournamentRuntimeStateFromRedis(profileName));
         this.cancelGame = options.cancelGame ?? defaultCancelGame;
+        this.transitionProfileClockOverride = options.transitionProfileClock;
+        this.promoteProfileOpeningOverride = options.promoteProfileOpening;
     }
 
     private sanitizeOperationLogMessage(message: string): string {
@@ -1171,6 +1200,191 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return snapshots.filter((snapshot): snapshot is ProfileRuntimeSettingsSnapshot => snapshot !== null);
     }
 
+    async transitionProfileClock(
+        profileName: string,
+        action: 'SUSPEND' | 'RESUME',
+        reason: string
+    ): Promise<{ phase: string; revision: number }> {
+        if (this.transitionProfileClockOverride) {
+            return this.transitionProfileClockOverride(profileName, action, reason);
+        }
+        const profile = await this.repository.getProfile(profileName);
+        if (!profile || profile.currentScenario === null) {
+            throw new Error(`Profile clock is unavailable: ${profileName}`);
+        }
+        const postgres = createGamePostgresConnector({ url: this.resolveProfileDatabaseUrl(profile) });
+        const redis = createRedisConnector(resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env));
+        await postgres.connect();
+        await redis.connect();
+        try {
+            const authorityRows = await postgres.prisma.$queryRaw<
+                Array<{ ownerId: string; fencingEpoch: bigint; valid: boolean }>
+            >(GamePrisma.sql`
+                SELECT owner_id AS "ownerId",
+                       fencing_epoch AS "fencingEpoch",
+                       lease_until > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AS valid
+                FROM turn_daemon_lease
+                WHERE profile = ${profileName}
+            `);
+            const liveLease = authorityRows.find((row) => row.valid);
+            const authority: ClockOperationAuthority = liveLease
+                ? {
+                      kind: 'DAEMON',
+                      profileName,
+                      ownerId: liveLease.ownerId,
+                      fencingEpoch: liveLease.fencingEpoch,
+                  }
+                : { kind: 'OFFLINE', profileName, reason };
+            const world = await postgres.prisma.worldState.findFirst({
+                orderBy: { id: 'asc' },
+                select: { clockPhase: true, clockRevision: true, deadlineGeneration: true },
+            });
+            if (!world) throw new Error(`Profile has no world_state: ${profileName}`);
+
+            if (action === 'SUSPEND') {
+                let suspension = await postgres.prisma.clockSuspension.findFirst({
+                    where: { sourceRevision: world.clockRevision, status: 'SUSPENDED' },
+                    orderBy: { createdAt: 'desc' },
+                });
+                if (world.clockPhase === 'RUNNING') {
+                    const suffix = createHash('sha256')
+                        .update(`${profileName}:${world.clockRevision.toString()}`)
+                        .digest('hex')
+                        .slice(0, 20);
+                    const started = await startClockSuspension({
+                        db: postgres.prisma,
+                        suspensionId: `gateway-maintenance-${suffix}`,
+                        source: 'MAINTENANCE',
+                        authority,
+                    });
+                    suspension = await postgres.prisma.clockSuspension.findUniqueOrThrow({
+                        where: { id: started.suspensionId },
+                    });
+                } else if (world.clockPhase !== 'SUSPENDED') {
+                    throw new Error(`Cannot suspend profile clock from ${world.clockPhase}.`);
+                }
+                if (!suspension) throw new Error('Suspended profile is missing its durable clock ledger.');
+                const phaseResult = await redis.client.eval(
+                    `
+                    local active = redis.call('GET', KEYS[1])
+                    if active and active ~= ARGV[1] then return 0 end
+                    redis.call('SET', KEYS[1], ARGV[1])
+                    redis.call('SET', KEYS[2], ARGV[2])
+                    redis.call('SET', KEYS[3], 'SUSPENDED')
+                    return 1
+                    `,
+                    {
+                        keys: [
+                            `sammo:${profileName}:clock:active-revision`,
+                            `sammo:${profileName}:clock:deadline-generation`,
+                            `sammo:${profileName}:clock:phase`,
+                        ],
+                        arguments: [world.clockRevision.toString(), world.deadlineGeneration.toString()],
+                    }
+                );
+                if (Number(phaseResult) !== 1) throw new Error('Redis clock source revision differs from the DB.');
+                return { phase: 'SUSPENDED', revision: clockRevisionAsNumber(suspension.sourceRevision) };
+            }
+
+            if (world.clockPhase === 'RUNNING') {
+                return { phase: 'RUNNING', revision: clockRevisionAsNumber(world.clockRevision) };
+            }
+            const suspension = await postgres.prisma.clockSuspension.findFirst({
+                where: { status: { in: ['SUSPENDED', 'RECONCILING'] } },
+                orderBy: { createdAt: 'desc' },
+            });
+            if (!suspension) throw new Error('Profile resume requires a durable suspended clock ledger.');
+            if (world.clockPhase === 'SUSPENDED') {
+                await reconcileClockSuspension({ db: postgres.prisma, suspensionId: suspension.id, authority });
+            } else if (world.clockPhase !== 'RECONCILING') {
+                throw new Error(`Cannot resume profile clock from ${world.clockPhase}.`);
+            }
+            const projected = await applyNextClockProjection({
+                db: postgres.prisma,
+                redis: redis.client,
+                workerId: `gateway:${this.operationLeaseOwner}`,
+            });
+            if (projected === 'IDLE') throw new Error('Clock reconciliation has no claimable projection outbox.');
+            const resumed = await postgres.prisma.worldState.findFirstOrThrow({
+                orderBy: { id: 'asc' },
+                select: { clockPhase: true, clockRevision: true },
+            });
+            if (resumed.clockPhase !== 'RUNNING') throw new Error('Clock projection did not reach RUNNING.');
+            return { phase: resumed.clockPhase, revision: clockRevisionAsNumber(resumed.clockRevision) };
+        } finally {
+            await redis.disconnect().catch(() => undefined);
+            await postgres.disconnect().catch(() => undefined);
+        }
+    }
+
+    private async promoteProfileOpening(profile: GatewayProfileRecord): Promise<void> {
+        if (this.promoteProfileOpeningOverride) {
+            await this.promoteProfileOpeningOverride(profile);
+            return;
+        }
+        const postgres = createGamePostgresConnector({ url: this.resolveProfileDatabaseUrl(profile) });
+        const redis = createRedisConnector(resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env));
+        await postgres.connect();
+        await redis.connect();
+        try {
+            const clock = await postgres.prisma.$transaction(async (transaction) => {
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                const rows = await transaction.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
+                    SELECT id FROM world_state ORDER BY id LIMIT 2 FOR UPDATE
+                `);
+                if (rows.length !== 1) {
+                    throw new Error(`Opening promotion requires exactly one world_state row; found ${rows.length}.`);
+                }
+                const world = await transaction.worldState.findUniqueOrThrow({ where: { id: rows[0]!.id } });
+                if (world.clockPhase === 'RUNNING') {
+                    return { revision: world.clockRevision, generation: world.deadlineGeneration };
+                }
+                if (world.clockPhase !== 'PREOPEN' || world.clockTick !== 0n || !world.clockWallAnchor) {
+                    throw new Error(
+                        `Opening promotion requires PREOPEN at tick 0; found ${world.clockPhase}@${world.clockTick?.toString() ?? 'null'}.`
+                    );
+                }
+                const [wall] = await transaction.$queryRaw<Array<{ wallNow: Date }>>(GamePrisma.sql`
+                    SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS "wallNow"
+                `);
+                if (!wall || wall.wallNow.getTime() < world.clockWallAnchor.getTime()) {
+                    throw new Error('Opening promotion was requested before the scheduled wall instant.');
+                }
+                await transaction.worldState.update({
+                    where: { id: world.id },
+                    data: { clockPhase: 'RUNNING' },
+                });
+                return { revision: world.clockRevision, generation: world.deadlineGeneration };
+            });
+            const result = await redis.client.eval(
+                `
+                local revision = redis.call('GET', KEYS[1])
+                local generation = redis.call('GET', KEYS[2])
+                if revision and revision ~= ARGV[1] then return 0 end
+                if generation and generation ~= ARGV[2] then return 0 end
+                redis.call('SET', KEYS[1], ARGV[1])
+                redis.call('SET', KEYS[2], ARGV[2])
+                redis.call('SET', KEYS[3], 'RUNNING')
+                return 1
+                `,
+                {
+                    keys: [
+                        `sammo:${profile.profileName}:clock:active-revision`,
+                        `sammo:${profile.profileName}:clock:deadline-generation`,
+                        `sammo:${profile.profileName}:clock:phase`,
+                    ],
+                    arguments: [clock.revision.toString(), clock.generation.toString()],
+                }
+            );
+            if (Number(result) !== 1) {
+                throw new Error('Opening promotion found a different Redis clock revision or generation.');
+            }
+        } finally {
+            await redis.disconnect().catch(() => undefined);
+            await postgres.disconnect().catch(() => undefined);
+        }
+    }
+
     async reconcileNow(): Promise<void> {
         if (this.stopping || this.reconcileInFlight) {
             return;
@@ -1232,14 +1446,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     continue;
                 }
                 if (profile.currentScenario !== null && profile.buildStatus === 'SUCCEEDED' && profile.buildWorkspace) {
-                    await this.repository.updateStatus(
-                        profile.profileName,
-                        resolveResetLifecycleStatus(now, preopenAt, openAt),
-                        {
-                            preopenAt: profile.preopenAt,
-                            openAt: profile.openAt,
-                        }
-                    );
+                    const nextStatus = resolveResetLifecycleStatus(now, preopenAt, openAt);
+                    if (nextStatus === 'RUNNING') {
+                        await this.promoteProfileOpening(profile);
+                    }
+                    await this.repository.updateStatus(profile.profileName, nextStatus, {
+                        preopenAt: profile.preopenAt,
+                        openAt: profile.openAt,
+                    });
                     await this.repository.updateLastError(profile.profileName, null);
                     continue;
                 }
@@ -1255,6 +1469,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const profiles = await this.repository.listProfiles();
             for (const profile of profiles) {
                 if (profile.status === 'PREOPEN' && profile.openAt && new Date(profile.openAt) <= now) {
+                    await this.promoteProfileOpening(profile);
                     await this.repository.updateStatus(profile.profileName, 'RUNNING', {
                         preopenAt: profile.preopenAt ?? null,
                         openAt: profile.openAt ?? null,
@@ -1301,16 +1516,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     error: null,
                 });
                 if (queued.status === 'RESERVED') {
-                    await this.repository.updateStatus(
-                        queued.profileName,
-                        queued.openAt && new Date(queued.openAt) <= this.now() ? 'RUNNING' : 'PREOPEN',
-                        {
-                            preopenAt: queued.preopenAt ?? null,
-                            openAt: queued.openAt ?? null,
-                        }
-                    );
+                    const opensImmediately = Boolean(queued.openAt && new Date(queued.openAt) <= this.now());
+                    if (opensImmediately) {
+                        await this.promoteProfileOpening(queued);
+                    }
+                    await this.repository.updateStatus(queued.profileName, opensImmediately ? 'RUNNING' : 'PREOPEN', {
+                        preopenAt: queued.preopenAt ?? null,
+                        openAt: queued.openAt ?? null,
+                    });
                 } else if (queued.status === 'PREOPEN' && queued.openAt) {
                     if (new Date(queued.openAt) <= this.now()) {
+                        await this.promoteProfileOpening(queued);
                         await this.repository.updateStatus(queued.profileName, 'RUNNING', {
                             preopenAt: queued.preopenAt ?? null,
                             openAt: queued.openAt ?? null,

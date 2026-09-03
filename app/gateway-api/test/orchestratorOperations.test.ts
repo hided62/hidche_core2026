@@ -65,6 +65,7 @@ const createHarness = (
         frontendServeMode?: 'static';
         frontendArtifactRoot?: string;
         activeOperationProfileNames?: string[];
+        promoteProfileOpening?: GatewayOrchestratorOptions['promoteProfileOpening'];
     } = {}
 ) => {
     const harnessProfile = options.profile ?? profile;
@@ -77,6 +78,7 @@ const createHarness = (
     const deleted: string[] = [];
     const buildStatuses: string[] = [];
     const logs: Array<{ phase: string; message: string; level: string }> = [];
+    const lifecycle: string[] = [];
 
     const repository: GatewayProfileRepository = {
         listProfiles: async () => options.profiles ?? [harnessProfile],
@@ -85,6 +87,7 @@ const createHarness = (
         updateCurrentScenario: async () => harnessProfile,
         updateStatus: async (_profileName, status) => {
             statuses.push(status);
+            lifecycle.push(`status:${status}`);
             return { ...harnessProfile, status };
         },
         updateBuildStatus: async (_profileName, status) => {
@@ -192,9 +195,26 @@ const createHarness = (
         adminActionIntervalMs: 60_000,
         now: options.now,
         cancelGame: options.cancelGame,
+        promoteProfileOpening: options.promoteProfileOpening
+            ? async (openingProfile) => {
+                  lifecycle.push(`clock:${openingProfile.profileName}`);
+                  await options.promoteProfileOpening?.(openingProfile);
+              }
+            : undefined,
     });
 
-    return { orchestrator, statuses, buildStatuses, completions, completionFields, started, stopped, deleted, logs };
+    return {
+        orchestrator,
+        statuses,
+        buildStatuses,
+        completions,
+        completionFields,
+        started,
+        stopped,
+        deleted,
+        logs,
+        lifecycle,
+    };
 };
 
 describe('GatewayOrchestrator first-class operations', () => {
@@ -333,12 +353,14 @@ describe('GatewayOrchestrator first-class operations', () => {
             profiles: [],
             reservedToStart: [reservedProfile],
             now: () => now,
+            promoteProfileOpening: async () => {},
         });
 
         await harness.orchestrator.runScheduleNow();
 
         expect(harness.statuses).toEqual(['RUNNING']);
         expect(harness.buildStatuses).toEqual([]);
+        expect(harness.lifecycle).toEqual([`clock:${reservedProfile.profileName}`, 'status:RUNNING']);
     });
 
     it('retains the legacy build queue for an unprepared reserved profile', async () => {
@@ -364,6 +386,26 @@ describe('GatewayOrchestrator first-class operations', () => {
 
         expect(harness.statuses).toEqual([]);
         expect(harness.buildStatuses).toEqual(['QUEUED']);
+    });
+
+    it('promotes the durable clock before a prepared preopen profile becomes running', async () => {
+        const now = new Date('2030-01-01T02:00:00.000Z');
+        const preopenProfile: GatewayProfileRecord = {
+            ...profile,
+            status: 'PREOPEN',
+            openAt: now.toISOString(),
+            preopenAt: '2030-01-01T01:00:00.000Z',
+        };
+        const harness = createHarness(buildOperation('START'), false, false, false, false, undefined, undefined, {
+            profile: preopenProfile,
+            profiles: [preopenProfile],
+            now: () => now,
+            promoteProfileOpening: async () => {},
+        });
+
+        await harness.orchestrator.runScheduleNow();
+
+        expect(harness.lifecycle).toEqual([`clock:${preopenProfile.profileName}`, 'status:RUNNING']);
     });
 
     it('starts every profile process and records success', async () => {

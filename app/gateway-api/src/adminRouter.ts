@@ -2750,6 +2750,19 @@ export const adminRouter = router({
                 };
                 await ctx.profiles.updateMeta(input.profileName, nextMeta);
                 if (mappedStatus) {
+                    if (input.action === 'PAUSE' || input.action === 'STOP') {
+                        await ctx.orchestrator.transitionProfileClock(
+                            input.profileName,
+                            'SUSPEND',
+                            input.reason?.trim() || `gateway ${input.action.toLowerCase()} by ${adminAuth.user.id}`
+                        );
+                    } else if (input.action === 'RESUME') {
+                        await ctx.orchestrator.transitionProfileClock(
+                            input.profileName,
+                            'RESUME',
+                            input.reason?.trim() || `gateway resume by ${adminAuth.user.id}`
+                        );
+                    }
                     await ctx.profiles.updateStatus(input.profileName, mappedStatus);
                     await ctx.orchestrator.reconcileNow();
                     const appliedActionRecord = {

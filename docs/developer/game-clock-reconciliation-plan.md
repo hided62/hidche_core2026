@@ -45,7 +45,7 @@ mean deployment or production validation.
 
 - [x] All durable input events record accepted tick and accepted revision.
 - [x] Processing converts accepted coordinates across revisions or fails closed.
-- [ ] Gateway pause/resume/open orchestration writes the DB clock phase.
+- [x] Gateway pause/resume/open orchestration writes the DB clock phase.
 - [ ] Unification wait becomes a durable `UNIFICATION_WAIT` suspension.
 - [ ] Alignment, optional rate change, invader IDs/RNG, creation, first schedule,
       outbox, verification, and RUNNING transition form one retry-safe workflow.
@@ -101,3 +101,14 @@ mean deployment or production validation.
 - The 24-hour/65m17.250s reconciliation suite passed 2/2 after the other DB
   suites. Conditional files share a deliberately dedicated schema and are run
   sequentially to prevent their fixture cleanup from racing another file.
+
+### 2026-09-03 - Gateway lifecycle authority
+
+- Runtime `PAUSE`/`STOP` starts a durable maintenance suspension before the
+  Gateway status and process reconciliation change. `RESUME` completes the DB
+  reconciliation and Redis outbox before the profile becomes `RUNNING`.
+- Both an already-built overdue `RESERVED` profile and an overdue `PREOPEN`
+  profile promote the game DB from `PREOPEN@0` before the Gateway status changes
+  to `RUNNING`; the Redis clock phase is revision/generation fenced.
+- `pnpm --filter @sammo-ts/gateway-api test` passed 313 tests with 35
+  environment-conditional skips. Gateway typecheck and target lint passed.

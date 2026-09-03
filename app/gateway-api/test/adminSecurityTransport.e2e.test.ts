@@ -123,6 +123,10 @@ const createHarness = async (adminRoles = ['user', 'admin.users.manage', 'admin.
                         runBuildQueueNow: async () => {},
                         runOperationsNow: async () => {},
                         cleanupStaleWorkspaces: async () => ({ removed: [], skipped: [] }),
+                        transitionProfileClock: async (_profileName, action) => ({
+                            phase: action === 'SUSPEND' ? 'SUSPENDED' : 'RUNNING',
+                            revision: 1,
+                        }),
                         listRuntimeStates: async () => [],
                     },
                     profileStatus: new InMemoryProfileStatusService(),
@@ -183,9 +187,7 @@ describe('admin security over HTTP transport', () => {
             },
         });
 
-        const mutationInput = encodeURIComponent(
-            JSON.stringify({ json: { sessionToken: harness.adminSessionToken } })
-        );
+        const mutationInput = encodeURIComponent(JSON.stringify({ json: { sessionToken: harness.adminSessionToken } }));
         const mutation = await fetch(`${harness.baseUrl}/trpc/auth.logout?input=${mutationInput}`);
         expect(mutation.status).toBe(405);
         expect(await mutation.json()).toMatchObject({
