@@ -37,6 +37,24 @@ type State = {
     preopenMessages?: Array<{ index: number; text: string; wallSentAt: string; wallObservedAt: string }>;
     verifiedPreopenMessages?: Array<{ index: number; text: string; wallSentAt: string; wallObservedAt: string }>;
     pausedBettingId?: number;
+    actionFixture?: {
+        nations: Array<{ id: number; name: string; capitalCityId: number }>;
+        generals: Array<{
+            index: number;
+            id: number;
+            nationId: number;
+            cityId: number;
+            officerLevel: number;
+        }>;
+    };
+    pausedWallExpiryMessage?: {
+        generalIndex: number;
+        messageId: number;
+        createdAtWall: string;
+        frozenGameTick: string;
+    };
+    actionableMessages?: { recruitmentId: number; noAggressionId: number };
+    cancelNoAggressionMessageId?: number;
 };
 
 const log = (event: string, detail: Record<string, unknown> = {}): void => {
@@ -130,7 +148,7 @@ const reset = async (): Promise<void> => {
     const gateway = await loginAdmin();
     const requestedAt = new Date();
     const preopenAt = new Date(requestedAt.getTime() + 30_000);
-    const openAt = new Date(requestedAt.getTime() + 15 * 60_000);
+    const openAt = new Date(requestedAt.getTime() + 30 * 60_000);
     const operation = await gateway.admin.operations.requestReset.mutate({
         profileName,
         sourceMode: 'BRANCH',
@@ -758,7 +776,7 @@ const reserveUserEnlistments = async (): Promise<void> => {
             });
             continue;
         }
-        const target = nations[0]!;
+        const target = nations[offset % nations.length]!;
         let snapshot = await game.turns.reserved.getGeneral.query({ generalId: generalResult.general.id });
         for (let turnIndex = 0; turnIndex < 10; turnIndex += 1) {
             snapshot = await game.turns.reserved.setGeneral.mutate({
@@ -777,6 +795,949 @@ const reserveUserEnlistments = async (): Promise<void> => {
         });
     }
     log('user-enlistments-reserved', { reservations });
+};
+
+const prepareActionFixture = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10) throw new Error('Exactly ten lifecycle users are required.');
+    if (state.actionFixture) throw new Error('Action fixture was already prepared.');
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const fixture = await db.prisma.$transaction(async (tx) => {
+            const world = await tx.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+            if (world.clockPhase !== 'SUSPENDED') {
+                throw new Error(`Action fixture requires a stopped or paused SUSPENDED clock, found ${world.clockPhase}.`);
+            }
+            const nations = await tx.nation.findMany({
+                where: { id: { gt: 0 }, level: { gt: 0 } },
+                orderBy: [{ level: 'desc' }, { id: 'asc' }],
+                take: 2,
+            });
+            if (nations.length !== 2) throw new Error(`Action fixture requires two active nations, found ${nations.length}.`);
+            const generalRows = await tx.general.findMany({
+                where: { name: { in: state.users!.map((user) => user.generalName) }, userId: { not: null } },
+                orderBy: { id: 'asc' },
+            });
+            if (generalRows.length !== 10) {
+                throw new Error(`Action fixture requires ten persisted user generals, found ${generalRows.length}.`);
+            }
+            const generalByName = new Map(generalRows.map((general) => [general.name, general]));
+            const resolvedNations = await Promise.all(
+                nations.map(async (nation) => {
+                    const city = nation.capitalCityId
+                        ? await tx.city.findUnique({ where: { id: nation.capitalCityId } })
+                        : await tx.city.findFirst({ where: { nationId: nation.id }, orderBy: { id: 'asc' } });
+                    if (!city) throw new Error(`Nation ${nation.id} has no fixture city.`);
+                    return { nation, city };
+                })
+            );
+            await tx.general.updateMany({
+                where: { nationId: { in: nations.map((nation) => nation.id) }, officerLevel: { gte: 10 } },
+                data: { officerLevel: 5 },
+            });
+            const placements: NonNullable<State['actionFixture']>['generals'] = [];
+            const officerLevels = [12, 11, 5, 1, 1] as const;
+            for (const [offset, user] of state.users!.entries()) {
+                const general = generalByName.get(user.generalName);
+                if (!general) throw new Error(`Lifecycle general is missing: ${user.generalName}`);
+                const nationIndex = offset < 5 ? 0 : 1;
+                const memberIndex = offset % 5;
+                const target = resolvedNations[nationIndex]!;
+                const updated = await tx.general.update({
+                    where: { id: general.id },
+                    data: {
+                        nationId: target.nation.id,
+                        cityId: target.city.id,
+                        officerLevel: officerLevels[memberIndex]!,
+                        gold: 50_000,
+                        rice: 50_000,
+                        ...(memberIndex === 2 ? { weaponCode: 'che_무기_01_단도' } : {}),
+                    },
+                    select: { id: true, nationId: true, cityId: true, officerLevel: true },
+                });
+                if (!general.userId) throw new Error(`Lifecycle general ${general.id} has no user ID.`);
+                await tx.inheritancePoint.upsert({
+                    where: { userId_key: { userId: general.userId, key: 'previous' } },
+                    update: { value: 5_000 },
+                    create: { userId: general.userId, key: 'previous', value: 5_000 },
+                });
+                placements.push({ index: offset + 1, ...updated });
+            }
+            for (const [nationIndex, target] of resolvedNations.entries()) {
+                const ruler = placements[nationIndex * 5]!;
+                await tx.nation.update({
+                    where: { id: target.nation.id },
+                    data: { chiefGeneralId: ruler.id, gold: 1_000_000, rice: 1_000_000 },
+                });
+            }
+            return {
+                clockPhase: world.clockPhase,
+                nations: resolvedNations.map(({ nation, city }) => ({
+                    id: nation.id,
+                    name: nation.name,
+                    capitalCityId: city.id,
+                })),
+                generals: placements,
+            };
+        });
+        state.actionFixture = { nations: fixture.nations, generals: fixture.generals };
+        await writeState(state);
+        log('action-fixture-prepared', {
+            ...fixture,
+            fixtureOnly: [
+                'general.nation_id/city_id/officer_level/resources/weapon_code',
+                'nation.chief_general_id/resources',
+                'inheritance_point.previous',
+            ],
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const rotateFirst = <T>(values: readonly T[]): T[] => (values.length < 2 ? [...values] : [...values.slice(1), values[0]!]);
+
+const exercisePausedActions = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Ten users and the action fixture are required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const worldBefore = await db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        if (worldBefore.clockPhase !== 'SUSPENDED') {
+            throw new Error(`Paused action matrix requires SUSPENDED, found ${worldBefore.clockPhase}.`);
+        }
+        if (worldBefore.clockTick === null) throw new Error('Paused action matrix requires an authoritative clock tick.');
+        const clients = state.users.map((user) => createGame(user.gameToken));
+        const generals = state.actionFixture.generals;
+        const firstNation = state.actionFixture.nations[0]!;
+        const secondNation = state.actionFixture.nations[1]!;
+        const runSlug = state.runId.replaceAll('-', '').slice(0, 8);
+
+        const publicMessage = await clients[0]!.messages.send.mutate({
+            generalId: generals[0]!.id,
+            mailbox: 9999,
+            text: `PAUSED-PUBLIC-${runSlug}`,
+        });
+        const privateMessage = await clients[1]!.messages.send.mutate({
+            generalId: generals[1]!.id,
+            mailbox: generals[2]!.id,
+            text: `PAUSED-PRIVATE-${runSlug}`,
+        });
+        await clients[2]!.messages.readLatest.mutate({
+            generalId: generals[2]!.id,
+            type: 'private',
+            messageId: privateMessage.msgId,
+        });
+        const nationalMessage = await clients[0]!.messages.send.mutate({
+            generalId: generals[0]!.id,
+            mailbox: 9000 + firstNation.id,
+            text: `PAUSED-NATIONAL-${runSlug}`,
+        });
+        const deleteMessage = await clients[3]!.messages.send.mutate({
+            generalId: generals[3]!.id,
+            mailbox: 9999,
+            text: `PAUSED-DELETE-NOW-${runSlug}`,
+        });
+        const deleteResult = await clients[3]!.messages.delete.mutate({
+            generalId: generals[3]!.id,
+            messageId: deleteMessage.msgId,
+        });
+        const expiryMessage = await clients[4]!.messages.send.mutate({
+            generalId: generals[4]!.id,
+            mailbox: 9999,
+            text: `PAUSED-DELETE-AFTER-FIVE-${runSlug}`,
+        });
+
+        let turnSnapshot = await clients[4]!.turns.reserved.getGeneral.query({ generalId: generals[4]!.id });
+        turnSnapshot = await clients[4]!.turns.reserved.setGeneral.mutate({
+            generalId: generals[4]!.id,
+            turnIndex: 0,
+            action: '휴식',
+            args: {},
+            expectedRevision: turnSnapshot.revision,
+        });
+
+        const inheritance = await clients[3]!.inherit.buyHiddenBuff.mutate({ type: 'warAvoidRatio', level: 1 });
+        const dropped = await clients[2]!.general.dropItem.mutate({ itemType: 'weapon' });
+        const permission = await clients[0]!.nation.changePermission.mutate({
+            isAmbassador: true,
+            targetGeneralIds: [generals[2]!.id],
+        });
+        const appointment = await clients[0]!.nation.appoint.mutate({
+            destGeneralId: generals[4]!.id,
+            destCityId: firstNation.capitalCityId,
+            officerLevel: 2,
+        });
+        const rate = await clients[0]!.nation.setRate.mutate({ amount: 20 });
+        const bill = await clients[0]!.nation.setBill.mutate({ amount: 100 });
+        const blockWar = await clients[0]!.nation.setBlockWar.mutate({ value: true });
+
+        const npcPolicy = await clients[0]!.npc.getPolicy.query();
+        const npcPolicyMutation = await clients[0]!.npc.setNationPolicy.mutate({
+            reqNationGold: npcPolicy.currentNationPolicy.reqNationGold + 100,
+        });
+        const npcNationPriority = await clients[0]!.npc.setNationPriority.mutate(
+            rotateFirst(npcPolicy.currentNationPriority)
+        );
+        const npcGeneralPriority = await clients[0]!.npc.setGeneralPriority.mutate(
+            rotateFirst(npcPolicy.currentGeneralActionPriority)
+        );
+
+        const letter = await clients[0]!.diplomacy.sendLetter.mutate({
+            destNationId: secondNation.id,
+            brief: `PAUSED 외교문서 ${runSlug}`,
+            detail: `SUSPENDED 상태의 WALL_TIME 외교문서 ${runSlug}`,
+        });
+        const letterResponse = await clients[5]!.diplomacy.respondLetter.mutate({ letterId: letter.id, agree: true });
+
+        const [worldAfter, persistedGenerals, persistedMessages, persistedLetter, inheritanceLogs, pendingEvents] =
+            await Promise.all([
+                db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+                db.prisma.general.findMany({
+                    where: { id: { in: [generals[2]!.id, generals[4]!.id] } },
+                    select: { id: true, nationId: true, cityId: true, officerLevel: true, weaponCode: true, meta: true },
+                    orderBy: { id: 'asc' },
+                }),
+                db.prisma.message.findMany({
+                    where: { id: { in: [publicMessage.msgId, privateMessage.msgId, nationalMessage.msgId, expiryMessage.msgId] } },
+                    select: {
+                        id: true,
+                        time: true,
+                        timeTick: true,
+                        createdAtWall: true,
+                        deleteUntilWall: true,
+                        tombstonedAtWall: true,
+                        message: true,
+                    },
+                    orderBy: { id: 'asc' },
+                }),
+                db.prisma.diplomacyLetter.findUniqueOrThrow({ where: { id: letter.id } }),
+                db.prisma.inheritanceLog.findMany({
+                    where: { text: { contains: '회피' } },
+                    orderBy: { id: 'desc' },
+                    take: 5,
+                    select: { id: true, userId: true, createdAt: true, year: true, month: true, text: true },
+                }),
+                db.prisma.inputEvent.count({ where: { status: { in: ['PENDING', 'PROCESSING'] } } }),
+            ]);
+        if (worldAfter.clockTick === null) throw new Error('Paused action matrix lost the authoritative clock tick.');
+        if (worldAfter.clockTick !== worldBefore.clockTick) {
+            throw new Error(`Game tick moved during paused actions: ${worldBefore.clockTick} -> ${worldAfter.clockTick}.`);
+        }
+        if (persistedMessages.some((message) => message.timeTick !== null)) {
+            throw new Error('A paused ordinary message unexpectedly persisted a GAME_TIME occurrence tick.');
+        }
+        if (!persistedGenerals.some((general) => general.id === generals[2]!.id && general.weaponCode === 'None')) {
+            throw new Error('Paused item discard did not persist the weapon removal.');
+        }
+        if (!persistedGenerals.some((general) => general.id === generals[4]!.id && general.officerLevel === 2)) {
+            throw new Error('Paused personnel appointment did not persist.');
+        }
+        const expiryRow = persistedMessages.find((message) => message.id === expiryMessage.msgId);
+        if (!expiryRow) throw new Error('Paused wall-expiry message was not persisted.');
+        state.pausedWallExpiryMessage = {
+            generalIndex: 5,
+            messageId: expiryMessage.msgId,
+            createdAtWall: expiryRow.createdAtWall.toISOString(),
+            frozenGameTick: worldAfter.clockTick.toString(),
+        };
+        await writeState(state);
+        log('paused-action-matrix-complete', {
+            clockTickBefore: worldBefore.clockTick.toString(),
+            clockTickAfter: worldAfter.clockTick.toString(),
+            publicMessage,
+            privateMessage,
+            nationalMessage,
+            deleteResult,
+            expiryMessage: state.pausedWallExpiryMessage,
+            turnRevision: turnSnapshot.revision,
+            inheritance,
+            dropped,
+            permission,
+            appointment,
+            rate,
+            bill,
+            blockWar,
+            npcPolicyMutation,
+            npcNationPriority,
+            npcGeneralPriority,
+            diplomacyLetterId: letter.id,
+            letterResponse,
+            persistedGenerals,
+            persistedMessages: persistedMessages.map((message) => ({
+                id: message.id,
+                time: message.time.toISOString(),
+                timeTick: message.timeTick?.toString() ?? null,
+                createdAtWall: message.createdAtWall.toISOString(),
+                deleteUntilWall: message.deleteUntilWall.toISOString(),
+                tombstonedAtWall: message.tombstonedAtWall?.toISOString() ?? null,
+            })),
+            persistedLetter: {
+                id: persistedLetter.id,
+                date: persistedLetter.date.toISOString(),
+                state: persistedLetter.state,
+            },
+            inheritanceLogs: inheritanceLogs.map((entry) => ({
+                ...entry,
+                createdAt: entry.createdAt.toISOString(),
+            })),
+            pendingEvents,
+        });
+        if (!deleteResult.deletedIds.includes(deleteMessage.msgId) || pendingEvents !== 0) process.exitCode = 1;
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const verifyPausedWallExpiry = async (): Promise<void> => {
+    const state = await readState();
+    const expiry = state.pausedWallExpiryMessage;
+    if (!expiry || state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Paused wall-expiry message fixture is required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const before = await db.prisma.message.findUniqueOrThrow({
+            where: { id: expiry.messageId },
+            select: { createdAtWall: true, deleteUntilWall: true, tombstonedAtWall: true },
+        });
+        const wallRows = await db.prisma.$queryRaw<Array<{ nowWall: Date }>>`
+            SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AS "nowWall"
+        `;
+        const nowWall = wallRows[0]?.nowWall;
+        if (!nowWall) throw new Error('DB wall clock query returned no row.');
+        if (nowWall < before.deleteUntilWall) {
+            throw new Error(
+                `Wall delete window has not expired: ${nowWall.toISOString()} < ${before.deleteUntilWall.toISOString()}.`
+            );
+        }
+        const general = state.actionFixture.generals[expiry.generalIndex - 1]!;
+        let rejectedMessage = '';
+        try {
+            await createGame(state.users[expiry.generalIndex - 1]!.gameToken).messages.delete.mutate({
+                generalId: general.id,
+                messageId: expiry.messageId,
+            });
+        } catch (error) {
+            rejectedMessage = error instanceof Error ? error.message : String(error);
+        }
+        if (!rejectedMessage.includes('5분 이내')) {
+            throw new Error(`Expired paused message was not rejected by the wall window: ${rejectedMessage || 'accepted'}`);
+        }
+        const [after, world] = await Promise.all([
+            db.prisma.message.findUniqueOrThrow({
+                where: { id: expiry.messageId },
+                select: { tombstonedAtWall: true },
+            }),
+            db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+        ]);
+        if (after.tombstonedAtWall !== null) throw new Error('Expired message was unexpectedly tombstoned.');
+        if (world.clockPhase !== 'SUSPENDED' || world.clockTick?.toString() !== expiry.frozenGameTick) {
+            throw new Error(
+                `Game clock changed during wall expiry: ${world.clockPhase}@${world.clockTick?.toString() ?? 'null'}.`
+            );
+        }
+        log('paused-wall-expiry-verified', {
+            messageId: expiry.messageId,
+            createdAtWall: before.createdAtWall.toISOString(),
+            deleteUntilWall: before.deleteUntilWall.toISOString(),
+            dbNowWall: nowWall.toISOString(),
+            wallElapsedSeconds: Math.floor((nowWall.getTime() - before.createdAtWall.getTime()) / 1000),
+            frozenGameTick: expiry.frozenGameTick,
+            rejection: rejectedMessage,
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const exercisePausedTournamentBet = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Ten users and the action fixture are required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const world = await db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        if (world.clockPhase !== 'SUSPENDED' || world.clockTick === null || !world.clockWallAnchor) {
+            throw new Error('Paused tournament betting requires a suspended authoritative game clock.');
+        }
+        const bettor = state.actionFixture.generals[6]!;
+        const target = state.actionFixture.generals[7]!;
+        const opponent = state.actionFixture.generals[8]!;
+        const admin = await createAdminGame();
+        const deadline = new Date(world.clockWallAnchor.getTime() + 60 * 60_000).toISOString();
+        await admin.tournament.setParticipants.mutate([
+            { id: target.id, name: state.users[7]!.generalName, leadership: 70, strength: 70, intel: 70, level: 1 },
+            { id: opponent.id, name: state.users[8]!.generalName, leadership: 60, strength: 60, intel: 60, level: 1 },
+        ]);
+        await admin.tournament.setMatches.mutate([
+            {
+                id: 1,
+                stage: 7,
+                roundIndex: 0,
+                attackerId: target.id,
+                defenderId: opponent.id,
+            },
+        ]);
+        await admin.tournament.setBettingEntries.mutate([]);
+        await admin.tournament.setState.mutate({
+            stage: 6,
+            phase: 0,
+            type: 0,
+            auto: false,
+            openYear: world.currentYear,
+            openMonth: world.currentMonth,
+            termSeconds: 60,
+            nextAt: deadline,
+            bettingCloseAt: deadline,
+            bettingSettled: false,
+            rewardSettled: false,
+        });
+        const before = await db.prisma.general.findUniqueOrThrow({ where: { id: bettor.id }, select: { gold: true } });
+        const result = await createGame(state.users[6]!.gameToken).tournament.placeBet.mutate({
+            targetId: target.id,
+            amount: 100,
+        });
+        const [after, snapshot, worldAfter] = await Promise.all([
+            db.prisma.general.findUniqueOrThrow({ where: { id: bettor.id }, select: { gold: true } }),
+            createGame(state.users[6]!.gameToken).tournament.getSnapshot.query(),
+            db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+        ]);
+        if (after.gold !== before.gold - 100 || snapshot.betCount !== 1) {
+            throw new Error(
+                `Paused tournament bet did not persist exactly once: gold ${before.gold}->${after.gold}, bets ${snapshot.betCount}.`
+            );
+        }
+        if (worldAfter.clockPhase !== 'SUSPENDED' || worldAfter.clockTick !== world.clockTick) {
+            throw new Error('Game clock moved while submitting the paused tournament bet.');
+        }
+        log('paused-tournament-bet-complete', {
+            bettorGeneralId: bettor.id,
+            targetGeneralId: target.id,
+            amount: 100,
+            goldBefore: before.gold,
+            goldAfter: after.gold,
+            betCount: snapshot.betCount,
+            clockTick: world.clockTick.toString(),
+            result,
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const reserveActionableCommands = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Ten users and the action fixture are required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const world = await db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        const actor = state.actionFixture.generals[0]!;
+        const target = state.actionFixture.generals[9]!;
+        const destNation = state.actionFixture.nations[1]!;
+        const client = createGame(state.users[0]!.gameToken);
+        let generalTurns = await client.turns.reserved.getGeneral.query({ generalId: actor.id });
+        generalTurns = await client.turns.reserved.setGeneral.mutate({
+            generalId: actor.id,
+            turnIndex: 0,
+            action: 'che_등용',
+            args: { destGeneralId: target.id },
+            expectedRevision: generalTurns.revision,
+        });
+        let nationTurns = await client.turns.reserved.getNation.query({ generalId: actor.id });
+        nationTurns = await client.turns.reserved.setNation.mutate({
+            generalId: actor.id,
+            turnIndex: 0,
+            action: 'che_불가침제의',
+            args: {
+                destNationId: destNation.id,
+                year: world.currentYear + 1,
+                month: world.currentMonth,
+            },
+            expectedRevision: nationTurns.revision,
+        });
+        log('actionable-commands-reserved', {
+            clockPhase: world.clockPhase,
+            actorGeneralId: actor.id,
+            recruitmentTargetGeneralId: target.id,
+            noAggressionTargetNationId: destNation.id,
+            generalTurnRevision: generalTurns.revision,
+            nationTurnRevision: nationTurns.revision,
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const waitActionableMessages = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Ten users and the action fixture are required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const targetGeneral = state.actionFixture.generals[9]!;
+        const targetNation = state.actionFixture.nations[1]!;
+        const deadline = Date.now() + Number(process.env.SAMMO_LIVE_ACTIONABLE_TIMEOUT_MS ?? '300000');
+        let recruitmentId: number | undefined;
+        let noAggressionId: number | undefined;
+        while (Date.now() < deadline && (!recruitmentId || !noAggressionId)) {
+            const actions = await db.prisma.messageAction.findMany({
+                where: { actionType: { in: ['scout', 'noAggression'] }, status: 'PENDING' },
+                orderBy: { createdAtWall: 'desc' },
+                include: {
+                    message: {
+                        select: {
+                            id: true,
+                            mailbox: true,
+                            type: true,
+                            createdAtWall: true,
+                            occurredGameTick: true,
+                        },
+                    },
+                },
+            });
+            recruitmentId = actions.find(
+                (action) => action.actionType === 'scout' && action.message.mailbox === targetGeneral.id
+            )?.messageId;
+            noAggressionId = actions.find(
+                (action) => action.actionType === 'noAggression' && action.message.mailbox === 9000 + targetNation.id
+            )?.messageId;
+            if (!recruitmentId || !noAggressionId) await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+        if (!recruitmentId || !noAggressionId) {
+            throw new Error(
+                `Actionable messages were not both delivered: recruitment=${recruitmentId ?? 'missing'}, noAggression=${noAggressionId ?? 'missing'}.`
+            );
+        }
+        const [recruitmentInbox, diplomacyInbox, actions] = await Promise.all([
+            createGame(state.users[9]!.gameToken).messages.getRecent.query({ generalId: targetGeneral.id }),
+            createGame(state.users[5]!.gameToken).messages.getRecent.query({
+                generalId: state.actionFixture.generals[5]!.id,
+            }),
+            db.prisma.messageAction.findMany({
+                where: { messageId: { in: [recruitmentId, noAggressionId] } },
+                orderBy: { messageId: 'asc' },
+            }),
+        ]);
+        if (!recruitmentInbox.private.some((message) => message.id === recruitmentId)) {
+            throw new Error('Recruitment recipient did not receive the actionable private message.');
+        }
+        if (!diplomacyInbox.diplomacy.some((message) => message.id === noAggressionId)) {
+            throw new Error('Nation ruler did not receive the actionable diplomacy message.');
+        }
+        const noAggressionAction = actions.find((action) => action.actionType === 'noAggression');
+        if (!noAggressionAction || noAggressionAction.expiresGameTick === null) {
+            throw new Error('The time-limited no-aggression proposal is missing its authoritative GAME_TIME deadline.');
+        }
+        state.actionableMessages = { recruitmentId, noAggressionId };
+        await writeState(state);
+        log('actionable-messages-received', {
+            recruitmentId,
+            noAggressionId,
+            actions: actions.map((action) => ({
+                messageId: action.messageId,
+                actionType: action.actionType,
+                status: action.status,
+                createdGameTick: action.createdGameTick.toString(),
+                expiresGameTick: action.expiresGameTick?.toString() ?? null,
+                deadlinePolicy: action.expiresGameTick === null ? 'INDEFINITE_GAME_ACTION' : 'GAME_TIME',
+                clockRevision: action.clockRevision.toString(),
+                deadlineGeneration: action.deadlineGeneration.toString(),
+            })),
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const respondActionableMessages = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture || !state.actionableMessages) {
+        throw new Error('Received actionable message state is required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const worldBefore = await db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        if (worldBefore.clockPhase !== 'SUSPENDED' || worldBefore.clockTick === null) {
+            throw new Error(`Paused actionable response requires SUSPENDED, found ${worldBefore.clockPhase}.`);
+        }
+        const recruitmentTarget = state.actionFixture.generals[9]!;
+        const diplomacyActor = state.actionFixture.generals[5]!;
+        const recruitment = await createGame(state.users[9]!.gameToken).messages.respond.mutate({
+            generalId: recruitmentTarget.id,
+            messageId: state.actionableMessages.recruitmentId,
+            response: true,
+        });
+        const noAggression = await createGame(state.users[5]!.gameToken).messages.respond.mutate({
+            generalId: diplomacyActor.id,
+            messageId: state.actionableMessages.noAggressionId,
+            response: true,
+        });
+        const [targetAfter, actionsAfter, diplomacyRows, worldAfter] = await Promise.all([
+            db.prisma.general.findUniqueOrThrow({ where: { id: recruitmentTarget.id } }),
+            db.prisma.messageAction.findMany({
+                where: { messageId: { in: Object.values(state.actionableMessages) } },
+                orderBy: { messageId: 'asc' },
+            }),
+            db.prisma.diplomacy.findMany({
+                where: {
+                    srcNationId: { in: state.actionFixture.nations.map((nation) => nation.id) },
+                    destNationId: { in: state.actionFixture.nations.map((nation) => nation.id) },
+                },
+                orderBy: { id: 'asc' },
+            }),
+            db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+        ]);
+        if (targetAfter.nationId !== state.actionFixture.nations[0]!.id) {
+            throw new Error(`Recruitment acceptance left target in nation ${targetAfter.nationId}.`);
+        }
+        if (actionsAfter.some((action) => action.status !== 'RESOLVED' || action.resolvedGameTick === null)) {
+            throw new Error('An actionable message was not resolved with an authoritative game tick.');
+        }
+        if (worldAfter.clockTick !== worldBefore.clockTick) {
+            throw new Error('Game tick moved while paused actionable responses were applied.');
+        }
+        log('paused-actionable-responses-complete', {
+            frozenGameTick: worldBefore.clockTick.toString(),
+            recruitment,
+            noAggression,
+            recruitmentTarget: {
+                id: targetAfter.id,
+                nationId: targetAfter.nationId,
+                officerLevel: targetAfter.officerLevel,
+            },
+            actions: actionsAfter.map((action) => ({
+                messageId: action.messageId,
+                actionType: action.actionType,
+                status: action.status,
+                resolvedGameTick: action.resolvedGameTick?.toString() ?? null,
+            })),
+            diplomacyRows: diplomacyRows.map((row) => ({
+                srcNationId: row.srcNationId,
+                destNationId: row.destNationId,
+                stateCode: row.stateCode,
+                term: row.term,
+            })),
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const reserveNoAggressionCancellation = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Ten users and the action fixture are required.');
+    }
+    const actor = state.actionFixture.generals[0]!;
+    const destNation = state.actionFixture.nations[1]!;
+    const client = createGame(state.users[0]!.gameToken);
+    let snapshot = await client.turns.reserved.getNation.query({ generalId: actor.id });
+    snapshot = await client.turns.reserved.setNation.mutate({
+        generalId: actor.id,
+        turnIndex: 0,
+        action: 'che_불가침파기제의',
+        args: { destNationId: destNation.id },
+        expectedRevision: snapshot.revision,
+    });
+    log('no-aggression-cancellation-reserved', {
+        actorGeneralId: actor.id,
+        destNationId: destNation.id,
+        revision: snapshot.revision,
+    });
+};
+
+const waitNoAggressionCancellation = async (): Promise<void> => {
+    const state = await readState();
+    if (state.users?.length !== 10 || !state.actionFixture) {
+        throw new Error('Ten users and the action fixture are required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const targetNation = state.actionFixture.nations[1]!;
+        const deadline = Date.now() + Number(process.env.SAMMO_LIVE_ACTIONABLE_TIMEOUT_MS ?? '300000');
+        let action:
+            | (Awaited<ReturnType<typeof db.prisma.messageAction.findFirst>> & { message: { mailbox: number } })
+            | null = null;
+        while (Date.now() < deadline && !action) {
+            action = await db.prisma.messageAction.findFirst({
+                where: {
+                    actionType: 'cancelNA',
+                    status: 'PENDING',
+                    message: { mailbox: 9000 + targetNation.id },
+                },
+                orderBy: { createdAtWall: 'desc' },
+                include: { message: { select: { mailbox: true } } },
+            });
+            if (!action) await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+        if (!action) throw new Error('Non-aggression cancellation message was not delivered.');
+        state.cancelNoAggressionMessageId = action.messageId;
+        await writeState(state);
+        log('no-aggression-cancellation-received', {
+            messageId: action.messageId,
+            createdGameTick: action.createdGameTick.toString(),
+            expiresGameTick: action.expiresGameTick?.toString() ?? null,
+            clockRevision: action.clockRevision.toString(),
+            deadlineGeneration: action.deadlineGeneration.toString(),
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const respondNoAggressionCancellation = async (): Promise<void> => {
+    const state = await readState();
+    if (
+        state.users?.length !== 10 ||
+        !state.actionFixture ||
+        !state.cancelNoAggressionMessageId
+    ) {
+        throw new Error('Received non-aggression cancellation message is required.');
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const worldBefore = await db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        if (worldBefore.clockPhase !== 'SUSPENDED' || worldBefore.clockTick === null) {
+            throw new Error(`Paused cancellation response requires SUSPENDED, found ${worldBefore.clockPhase}.`);
+        }
+        const diplomacyActor = state.actionFixture.generals[5]!;
+        const result = await createGame(state.users[5]!.gameToken).messages.respond.mutate({
+            generalId: diplomacyActor.id,
+            messageId: state.cancelNoAggressionMessageId,
+            response: true,
+        });
+        const [action, diplomacyRows, worldAfter] = await Promise.all([
+            db.prisma.messageAction.findUniqueOrThrow({ where: { messageId: state.cancelNoAggressionMessageId } }),
+            db.prisma.diplomacy.findMany({
+                where: {
+                    srcNationId: { in: state.actionFixture.nations.map((nation) => nation.id) },
+                    destNationId: { in: state.actionFixture.nations.map((nation) => nation.id) },
+                },
+                orderBy: { id: 'asc' },
+            }),
+            db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+        ]);
+        if (action.status !== 'RESOLVED' || action.resolvedGameTick === null) {
+            throw new Error('Non-aggression cancellation action was not resolved.');
+        }
+        if (diplomacyRows.some((row) => row.stateCode === 7)) {
+            throw new Error('Accepted cancellation left a non-aggression relation active.');
+        }
+        if (worldAfter.clockTick !== worldBefore.clockTick) {
+            throw new Error('Game tick moved while the paused cancellation response was applied.');
+        }
+        log('paused-no-aggression-cancellation-complete', {
+            messageId: state.cancelNoAggressionMessageId,
+            result,
+            resolvedGameTick: action.resolvedGameTick.toString(),
+            diplomacyRows: diplomacyRows.map((row) => ({
+                srcNationId: row.srcNationId,
+                destNationId: row.destNationId,
+                stateCode: row.stateCode,
+                term: row.term,
+            })),
+            frozenGameTick: worldBefore.clockTick.toString(),
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const npcActionAudit = async (): Promise<void> => {
+    const label = process.argv[3]?.trim() || 'checkpoint';
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const [world, population, topActions, recentActions, errors, failedInputEvents] = await Promise.all([
+            db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+            db.prisma.$queryRaw<
+                Array<{
+                    npcState: number;
+                    generals: bigint;
+                    affiliated: bigint;
+                    armed: bigint;
+                    totalCrew: bigint;
+                }>
+            >`
+                SELECT
+                    g.npc_state AS "npcState",
+                    COUNT(*) AS generals,
+                    COUNT(*) FILTER (WHERE g.nation_id > 0) AS affiliated,
+                    COUNT(*) FILTER (WHERE g.crew > 0) AS armed,
+                    COALESCE(SUM(g.crew), 0)::bigint AS "totalCrew"
+                FROM general g
+                WHERE g.npc_state >= 2
+                GROUP BY g.npc_state
+                ORDER BY g.npc_state
+            `,
+            db.prisma.$queryRaw<Array<{ actionText: string; executions: bigint }>>`
+                SELECT
+                    regexp_replace(l.text, '<[^>]+>', '', 'g') AS "actionText",
+                    COUNT(*) AS executions
+                FROM log_entry l
+                JOIN general g ON g.id = l.general_id
+                WHERE g.npc_state >= 2
+                  AND l.category = 'ACTION'::"LogCategory"
+                GROUP BY regexp_replace(l.text, '<[^>]+>', '', 'g')
+                ORDER BY executions DESC, "actionText" ASC
+                LIMIT 40
+            `,
+            db.prisma.$queryRaw<
+                Array<{ id: number; year: number; month: number; generalId: number; generalName: string; text: string }>
+            >`
+                SELECT
+                    l.id,
+                    l.year,
+                    l.month,
+                    l.general_id AS "generalId",
+                    g.name AS "generalName",
+                    regexp_replace(l.text, '<[^>]+>', '', 'g') AS text
+                FROM log_entry l
+                JOIN general g ON g.id = l.general_id
+                WHERE g.npc_state >= 2
+                  AND l.category = 'ACTION'::"LogCategory"
+                ORDER BY l.id DESC
+                LIMIT 40
+            `,
+            db.prisma.errorLog.findMany({
+                orderBy: { id: 'desc' },
+                take: 30,
+                select: { id: true, category: true, source: true, message: true, createdAt: true },
+            }),
+            db.prisma.inputEvent.findMany({
+                where: { status: 'FAILED' },
+                orderBy: { createdAt: 'desc' },
+                take: 30,
+                select: { id: true, eventType: true, error: true, createdAt: true },
+            }),
+        ]);
+        log('npc-action-audit', {
+            label,
+            world: {
+                year: world.currentYear,
+                month: world.currentMonth,
+                clockPhase: world.clockPhase,
+                clockTick: world.clockTick?.toString() ?? null,
+            },
+            population: population.map((row) => ({
+                ...row,
+                generals: Number(row.generals),
+                affiliated: Number(row.affiliated),
+                armed: Number(row.armed),
+                totalCrew: Number(row.totalCrew),
+            })),
+            topExecutedActions: topActions.map((row) => ({
+                text: row.actionText,
+                executions: Number(row.executions),
+            })),
+            recentExecutedActions: recentActions.reverse(),
+            errors: errors.map((error) => ({ ...error, createdAt: error.createdAt.toISOString() })),
+            failedInputEvents: failedInputEvents.map((event) => ({
+                ...event,
+                createdAt: event.createdAt.toISOString(),
+            })),
+        });
+    } finally {
+        await db.disconnect();
+    }
+};
+
+const repairOpeningClockRuntime = async (): Promise<void> => {
+    const gateway = await loginAdmin();
+    const profiles = (await gateway.admin.profiles.list.query()) as unknown as Array<{
+        profileName: string;
+        status: string;
+        openAt: string | null;
+    }>;
+    const profile = profiles.find((entry) => entry.profileName === profileName);
+    if (!profile) throw new Error(`Profile not found: ${profileName}`);
+    if (profile.status !== 'PREOPEN' || !profile.openAt || new Date(profile.openAt).getTime() > Date.now()) {
+        throw new Error(`Opening clock repair requires an overdue PREOPEN profile, found ${profile.status}.`);
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    const redis = createRedisConnector({ url: redisUrl() });
+    await db.connect();
+    await redis.connect();
+    try {
+        const [world, activeSuspensions, pendingOutboxes] = await Promise.all([
+            db.prisma.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } }),
+            db.prisma.clockSuspension.count({ where: { status: { in: ['SUSPENDED', 'RECONCILING'] } } }),
+            db.prisma.clockProjectionOutbox.count({ where: { status: { in: ['PENDING', 'APPLYING'] } } }),
+        ]);
+        if (
+            world.clockPhase !== 'RUNNING' ||
+            world.clockTick !== 0n ||
+            activeSuspensions !== 0 ||
+            pendingOutboxes !== 0
+        ) {
+            throw new Error(
+                `Refusing opening clock repair for ${world.clockPhase}@${world.clockTick?.toString() ?? 'null'} with ${activeSuspensions} suspensions and ${pendingOutboxes} outboxes.`
+            );
+        }
+        const keys = [
+            `sammo:${profileName}:clock:active-revision`,
+            `sammo:${profileName}:clock:deadline-generation`,
+            `sammo:${profileName}:clock:phase`,
+        ];
+        const before = await Promise.all(keys.map((key) => redis.client.get(key)));
+        const result = await redis.client.eval(
+            `
+            for index = 1, 3 do
+                local current = redis.call('GET', KEYS[index])
+                if (current or '') ~= ARGV[index] then return 0 end
+            end
+            redis.call('SET', KEYS[1], ARGV[4])
+            redis.call('SET', KEYS[2], ARGV[5])
+            redis.call('SET', KEYS[3], 'RUNNING')
+            return 1
+            `,
+            {
+                keys,
+                arguments: [
+                    before[0] ?? '',
+                    before[1] ?? '',
+                    before[2] ?? '',
+                    world.clockRevision.toString(),
+                    world.deadlineGeneration.toString(),
+                ],
+            }
+        );
+        if (Number(result) !== 1) throw new Error('Redis clock authority changed during opening repair.');
+        const after = await Promise.all(keys.map((key) => redis.client.get(key)));
+        log('opening-clock-runtime-repaired', {
+            profileStatus: profile.status,
+            worldClock: {
+                phase: world.clockPhase,
+                tick: world.clockTick.toString(),
+                revision: world.clockRevision.toString(),
+                deadlineGeneration: world.deadlineGeneration.toString(),
+            },
+            redisBefore: before,
+            redisAfter: after,
+            activeSuspensions,
+            pendingOutboxes,
+            reason: 'stale season-owned Redis clock authority survived RESET',
+        });
+    } finally {
+        await redis.disconnect();
+        await db.disconnect();
+    }
 };
 
 const verifyExistingMonitorMessage = async (): Promise<void> => {
@@ -990,8 +1951,8 @@ const respondToInvaderMessageInBrowser = async (): Promise<void> => {
 
 const requestAction = async (): Promise<void> => {
     const action = process.argv[3];
-    if (!['PAUSE', 'RESUME', 'DELAY', 'ACCELERATE'].includes(action ?? '')) {
-        throw new Error('action must be PAUSE, RESUME, DELAY, or ACCELERATE');
+    if (!['PAUSE', 'RESUME', 'STOP', 'DELAY', 'ACCELERATE'].includes(action ?? '')) {
+        throw new Error('action must be PAUSE, RESUME, STOP, DELAY, or ACCELERATE');
     }
     const durationMinutes = process.argv[4] ? Number(process.argv[4]) : undefined;
     if (
@@ -1003,7 +1964,7 @@ const requestAction = async (): Promise<void> => {
     const gateway = await loginAdmin();
     const result = await gateway.admin.profiles.requestAction.mutate({
         profileName,
-        action: action as 'PAUSE' | 'RESUME' | 'DELAY' | 'ACCELERATE',
+        action: action as 'PAUSE' | 'RESUME' | 'STOP' | 'DELAY' | 'ACCELERATE',
         ...(durationMinutes ? { durationMinutes } : {}),
         reason: `isolated lifecycle integration ${action.toLowerCase()}`,
     });
@@ -1013,6 +1974,67 @@ const requestAction = async (): Promise<void> => {
         accepted: result.ok,
         runtimeActionId: result.action && 'id' in result.action ? result.action.id : null,
     });
+};
+
+const waitProfileStatus = async (): Promise<void> => {
+    const expectedStatus = process.argv[3]?.trim();
+    if (!expectedStatus) throw new Error('wait-profile-status requires an expected profile status.');
+    const timeoutMs = Number(process.env.SAMMO_LIVE_STATUS_TIMEOUT_MS ?? '300000');
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000) {
+        throw new Error('SAMMO_LIVE_STATUS_TIMEOUT_MS must be an integer of at least 1000.');
+    }
+    const gateway = await loginAdmin();
+    const startedAt = Date.now();
+    let lastStatus: string | null = null;
+    while (Date.now() - startedAt < timeoutMs) {
+        const profiles = (await gateway.admin.profiles.list.query()) as unknown as Array<
+            { profileName: string; status: string } & Record<string, unknown>
+        >;
+        const profile = profiles.find((entry) => entry.profileName === profileName);
+        if (!profile) throw new Error(`Profile not found: ${profileName}`);
+        if (profile.status !== lastStatus) {
+            lastStatus = profile.status;
+            log('profile-status-wait', { expectedStatus, observedStatus: profile.status });
+        }
+        if (profile.status === expectedStatus) {
+            log('profile-status-reached', {
+                expectedStatus,
+                elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+            });
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    throw new Error(`Profile did not reach ${expectedStatus}; last observed status was ${lastStatus ?? 'unknown'}.`);
+};
+
+const waitRuntimeAction = async (): Promise<void> => {
+    const actionId = process.argv[3]?.trim();
+    if (!actionId) throw new Error('wait-runtime-action requires an action ID.');
+    const gateway = await loginAdmin();
+    const deadline = Date.now() + Number(process.env.SAMMO_LIVE_STATUS_TIMEOUT_MS ?? '300000');
+    let lastStatus: string | null = null;
+    while (Date.now() < deadline) {
+        const profiles = (await gateway.admin.profiles.list.query()) as unknown as Array<{
+            profileName: string;
+            runtimeActions?: Array<{ id: string; status: string; detail?: string | null; attempts?: number }>;
+        }>;
+        const action = profiles
+            .find((entry) => entry.profileName === profileName)
+            ?.runtimeActions?.find((entry) => entry.id === actionId);
+        if (!action) throw new Error(`Runtime action not found: ${actionId}`);
+        if (action.status !== lastStatus) {
+            lastStatus = action.status;
+            log('runtime-action-wait', { actionId, status: action.status, detail: action.detail ?? null });
+        }
+        if (['APPLIED', 'FAILED', 'IGNORED'].includes(action.status)) {
+            log('runtime-action-terminal', { actionId, ...action });
+            if (action.status !== 'APPLIED') process.exitCode = 1;
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    throw new Error(`Runtime action did not finish: ${actionId}; last status ${lastStatus ?? 'unknown'}.`);
 };
 
 const monitorUsers = async (): Promise<void> => {
@@ -1136,14 +2158,28 @@ else if (command === 'database-status') await databaseStatus();
 else if (command === 'prepare-paused-betting') await preparePausedBetting();
 else if (command === 'submit-paused-betting') await submitPausedBetting();
 else if (command === 'reserve-user-enlistments') await reserveUserEnlistments();
+else if (command === 'prepare-action-fixture') await prepareActionFixture();
+else if (command === 'exercise-paused-actions') await exercisePausedActions();
+else if (command === 'verify-paused-wall-expiry') await verifyPausedWallExpiry();
+else if (command === 'exercise-paused-tournament-bet') await exercisePausedTournamentBet();
+else if (command === 'reserve-actionable-commands') await reserveActionableCommands();
+else if (command === 'wait-actionable-messages') await waitActionableMessages();
+else if (command === 'respond-actionable-messages') await respondActionableMessages();
+else if (command === 'reserve-no-aggression-cancellation') await reserveNoAggressionCancellation();
+else if (command === 'wait-no-aggression-cancellation') await waitNoAggressionCancellation();
+else if (command === 'respond-no-aggression-cancellation') await respondNoAggressionCancellation();
+else if (command === 'npc-action-audit') await npcActionAudit();
+else if (command === 'repair-opening-clock-runtime') await repairOpeningClockRuntime();
 else if (command === 'verify-monitor-message') await verifyExistingMonitorMessage();
 else if (command === 'resume-daemon') await resumeDaemon();
 else if (command === 'fast-forward') await fastForward();
 else if (command === 'place-invader-recipients') await placeInvaderRecipients();
 else if (command === 'respond-invader-browser') await respondToInvaderMessageInBrowser();
 else if (command === 'action') await requestAction();
+else if (command === 'wait-profile-status') await waitProfileStatus();
+else if (command === 'wait-runtime-action') await waitRuntimeAction();
 else if (command === 'monitor-users') await monitorUsers();
 else
     throw new Error(
-        'usage: live-ten-user-lifecycle.ts <reset|wait-reset|status|prepare-users|preopen-messages|verified-preopen-messages|repair-preopen-fixture|database-status|prepare-paused-betting|submit-paused-betting|reserve-user-enlistments|verify-monitor-message|resume-daemon|fast-forward|place-invader-recipients|respond-invader-browser|action|monitor-users>'
+        'usage: live-ten-user-lifecycle.ts <reset|wait-reset|status|prepare-users|preopen-messages|verified-preopen-messages|repair-preopen-fixture|database-status|prepare-paused-betting|submit-paused-betting|reserve-user-enlistments|prepare-action-fixture|exercise-paused-actions|verify-paused-wall-expiry|exercise-paused-tournament-bet|reserve-actionable-commands|wait-actionable-messages|respond-actionable-messages|reserve-no-aggression-cancellation|wait-no-aggression-cancellation|respond-no-aggression-cancellation|npc-action-audit|repair-opening-clock-runtime|verify-monitor-message|resume-daemon|fast-forward|place-invader-recipients|respond-invader-browser|action|wait-profile-status|wait-runtime-action|monitor-users>'
     );

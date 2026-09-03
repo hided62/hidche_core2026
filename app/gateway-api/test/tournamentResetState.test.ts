@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    buildGameClockRuntimeKeys,
+    buildProfileResetRuntimeKeys,
     buildTournamentRuntimeKeys,
+    clearProfileResetRuntimeKeys,
     clearTournamentRuntimeKeys,
 } from '../src/orchestrator/gatewayOrchestrator.js';
 
@@ -31,5 +34,32 @@ describe('tournament reset state', () => {
 
         expect(deleted).toBe(5);
         expect(calls).toEqual([buildTournamentRuntimeKeys('che:1010')]);
+    });
+
+    it('clears stale clock authority together with tournament projection on season reset', async () => {
+        expect(buildGameClockRuntimeKeys('hwe:default')).toEqual([
+            'sammo:hwe:default:clock:active-revision',
+            'sammo:hwe:default:clock:deadline-generation',
+            'sammo:hwe:default:clock:phase',
+        ]);
+        expect(buildProfileResetRuntimeKeys('hwe:default')).toEqual([
+            ...buildTournamentRuntimeKeys('hwe:default'),
+            ...buildGameClockRuntimeKeys('hwe:default'),
+        ]);
+
+        const calls: string[][] = [];
+        const deleted = await clearProfileResetRuntimeKeys(
+            {
+                del: async (keys) => {
+                    calls.push(keys);
+                    return keys.length;
+                },
+            },
+            'hwe:default'
+        );
+
+        expect(deleted).toBe(8);
+        expect(calls).toEqual([buildProfileResetRuntimeKeys('hwe:default')]);
+        expect(calls[0]).not.toContain('sammo:che:default:clock:phase');
     });
 });

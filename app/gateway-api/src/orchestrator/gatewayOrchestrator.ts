@@ -306,10 +306,26 @@ export const buildTournamentRuntimeKeys = (profileName: string): string[] => [
     `sammo:${profileName}:tournament:source-revision`,
 ];
 
+export const buildGameClockRuntimeKeys = (profileName: string): string[] => [
+    `sammo:${profileName}:clock:active-revision`,
+    `sammo:${profileName}:clock:deadline-generation`,
+    `sammo:${profileName}:clock:phase`,
+];
+
+export const buildProfileResetRuntimeKeys = (profileName: string): string[] => [
+    ...buildTournamentRuntimeKeys(profileName),
+    ...buildGameClockRuntimeKeys(profileName),
+];
+
 export const clearTournamentRuntimeKeys = async (
     redis: { del(keys: string[]): Promise<number> },
     profileName: string
 ): Promise<number> => redis.del(buildTournamentRuntimeKeys(profileName));
+
+export const clearProfileResetRuntimeKeys = async (
+    redis: { del(keys: string[]): Promise<number> },
+    profileName: string
+): Promise<number> => redis.del(buildProfileResetRuntimeKeys(profileName));
 
 const buildServerId = (profileName: string, now: Date, installOperationId?: string): string => {
     const year = String(now.getFullYear()).slice(-2);
@@ -965,6 +981,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly profileReadinessTimeoutMs: number;
     private readonly now: () => Date;
     private readonly fetchImpl: typeof fetch;
+    /** Backwards-compatible injection name; the default clears all season-owned RESET keys. */
     private readonly clearTournamentRuntimeState: (profileName: string) => Promise<void>;
     private readonly cancelGame: typeof defaultCancelGame;
     private readonly transitionProfileClockOverride?: GatewayOrchestratorOptions['transitionProfileClock'];
@@ -2779,7 +2796,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const connector = createRedisConnector(resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env));
         await connector.connect();
         try {
-            await clearTournamentRuntimeKeys(connector.client, profileName);
+            await clearProfileResetRuntimeKeys(connector.client, profileName);
         } finally {
             await connector.disconnect();
         }

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createGatewayPostgresConnector, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createGatewayAdminActionConsumer } from '../src/turn/gatewayAdminActions.js';
+import { createGatewayProfileGate } from '../src/turn/gatewayProfileGate.js';
 
 const databaseUrl = process.env.GATEWAY_RUNTIME_ACTION_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -108,5 +109,36 @@ integration('gateway runtime action consumer', () => {
         });
         expect(handler).toHaveBeenCalledTimes(2);
         expect(onActionApplied).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not overwrite a terminal operator status while reporting a daemon error', async () => {
+        const gate = await createGatewayProfileGate({
+            databaseUrl: databaseUrl!,
+            gatewayDatabaseUrl: databaseUrl!,
+            profileName,
+        });
+        try {
+            await db.gatewayProfile.update({
+                where: { profileName },
+                data: { status: 'RUNNING', lastError: null },
+            });
+            await gate.markPaused(new Error('running failure'));
+            expect(await db.gatewayProfile.findUniqueOrThrow({ where: { profileName } })).toMatchObject({
+                status: 'PAUSED',
+                lastError: 'running failure',
+            });
+
+            await db.gatewayProfile.update({
+                where: { profileName },
+                data: { status: 'STOPPED', lastError: null },
+            });
+            await gate.markPaused(new Error('late shutdown failure'));
+            expect(await db.gatewayProfile.findUniqueOrThrow({ where: { profileName } })).toMatchObject({
+                status: 'STOPPED',
+                lastError: null,
+            });
+        } finally {
+            await gate.close();
+        }
     });
 });

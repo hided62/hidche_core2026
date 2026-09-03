@@ -17,6 +17,7 @@ export interface GatewayProfileGate {
 }
 
 const DEFAULT_CACHE_MS = 2000;
+const PROFILE_STATUSES_MARKABLE_AS_PAUSED = ['PREOPEN', 'RUNNING', 'PAUSED'] as const;
 
 export const createGatewayProfileGate = async (options: GatewayProfileGateOptions): Promise<GatewayProfileGate> => {
     const connector = createGatewayPostgresConnector({
@@ -55,8 +56,11 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
         async markPaused(error?: unknown): Promise<void> {
             const message = error instanceof Error ? error.message : error ? String(error) : null;
             try {
-                await prisma.gatewayProfile.update({
-                    where: { profileName: options.profileName },
+                await prisma.gatewayProfile.updateMany({
+                    where: {
+                        profileName: options.profileName,
+                        status: { in: [...PROFILE_STATUSES_MARKABLE_AS_PAUSED] },
+                    },
                     data: {
                         status: 'PAUSED',
                         lastError: message,

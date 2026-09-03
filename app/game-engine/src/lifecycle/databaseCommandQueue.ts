@@ -119,6 +119,18 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
             const gameplayAllowed = !world || world.clockPhase === 'RUNNING' || world.clockPhase === 'MANUAL';
             const suspendedTournamentBetCommand = world?.clockPhase === 'SUSPENDED';
             const currentRevision = world?.clockRevision ?? null;
+            const maintenanceSuspended =
+                world?.clockPhase === 'SUSPENDED' &&
+                Boolean(
+                    await transaction.clockSuspension.findFirst({
+                        where: {
+                            status: 'SUSPENDED',
+                            source: 'MAINTENANCE',
+                            sourceRevision: world.clockRevision,
+                        },
+                        select: { id: true },
+                    })
+                );
             const rows = await transaction.$queryRaw<
                 Array<{
                     sequence: bigint;
@@ -150,6 +162,30 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                           ${suspendedTournamentBetCommand}
                           AND "event_type" IN ('adjustGeneralResources', 'adjustGeneralMeta')
                           AND "payload" ->> 'reason' IN ('tournamentBet', 'tournamentBetRollback')
+                      )
+                      OR (
+                          ${maintenanceSuspended}
+                          AND "event_type" IN (
+                              'inheritanceAction',
+                              'dropItem',
+                              'changePermission',
+                              'appoint',
+                              'setNationSetting',
+                              'setNpcPolicy'
+                          )
+                      )
+                      OR (
+                          ${maintenanceSuspended}
+                          AND "event_type" = 'messageRespond'
+                          AND "payload" ->> 'messageId' ~ '^[1-9][0-9]*$'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM "message_action" AS pending_action
+                              WHERE pending_action."message_id" = ("input_event"."payload" ->> 'messageId')::integer
+                                AND pending_action."status" = 'PENDING'
+                                AND pending_action."clock_revision" = ${currentRevision}
+                                AND pending_action."deadline_generation" = ${world?.deadlineGeneration ?? null}
+                          )
                       )
                       OR (
                           ${world?.clockPhase === 'SUSPENDED'}

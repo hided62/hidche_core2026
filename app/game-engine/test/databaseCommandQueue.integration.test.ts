@@ -18,10 +18,26 @@ integration('database command queue', () => {
     const cleanupFixtures = async (): Promise<void> => {
         await db.inputEvent.deleteMany({ where: { requestId: { startsWith: 'integration:engine:' } } });
         await db.clockProjectionOutbox.deleteMany({
-            where: { suspensionId: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
+            where: {
+                suspensionId: {
+                    in: [
+                        'integration-queue-revision-8-9',
+                        'integration-maintenance-suspension',
+                        'integration-unification-wait',
+                    ],
+                },
+            },
         });
         await db.clockSuspension.deleteMany({
-            where: { id: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
+            where: {
+                id: {
+                    in: [
+                        'integration-queue-revision-8-9',
+                        'integration-maintenance-suspension',
+                        'integration-unification-wait',
+                    ],
+                },
+            },
         });
         await db.message.deleteMany({ where: { mailbox: 991_199 } });
         await db.worldState.deleteMany({
@@ -522,6 +538,116 @@ integration('database command queue', () => {
 
         await db.worldState.update({ where: { id: world.id }, data: { clockPhase: 'RECONCILING' } });
         await expect(new DatabaseTurnDaemonCommandQueue(db).drain()).resolves.toEqual([]);
+    });
+
+    it('dequeues fenced immediate user mutations during a maintenance suspension', async () => {
+        const world = await db.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+        await db.worldState.update({
+            where: { id: world.id },
+            data: { clockPhase: 'SUSPENDED', clockRevision: 23n, deadlineGeneration: 9n, clockTick: 777n },
+        });
+        await db.clockSuspension.create({
+            data: {
+                id: 'integration-maintenance-suspension',
+                worldStateId: world.id,
+                source: 'MAINTENANCE',
+                policy: 'EXACT',
+                status: 'SUSPENDED',
+                sourceRevision: 23n,
+                targetRevision: 24n,
+                cutTick: 777n,
+                cutWallAt: new Date(),
+                rateTicksPerSecond: 60_000,
+            },
+        });
+        const commands: TurnDaemonCommand[] = [
+            {
+                type: 'inheritanceAction',
+                requestId: 'integration:engine:suspended-inheritance',
+                userId: 'user-7',
+                input: { action: 'buyHiddenBuff', buffType: 'warAvoidRatio', level: 1 },
+            },
+            {
+                type: 'dropItem',
+                requestId: 'integration:engine:suspended-drop-item',
+                userId: 'user-7',
+                generalId: 7,
+                itemType: 'weapon',
+            },
+            {
+                type: 'changePermission',
+                requestId: 'integration:engine:suspended-permission',
+                userId: 'user-7',
+                generalId: 7,
+                isAmbassador: true,
+                targetGeneralIds: [8],
+            },
+            {
+                type: 'appoint',
+                requestId: 'integration:engine:suspended-appoint',
+                userId: 'user-7',
+                generalId: 7,
+                destGeneralId: 8,
+                destCityId: 1,
+                officerLevel: 2,
+            },
+            {
+                type: 'setNationSetting',
+                requestId: 'integration:engine:suspended-nation-setting',
+                userId: 'user-7',
+                generalId: 7,
+                nationId: 1,
+                mutation: { kind: 'rate', amount: 20 },
+            },
+            {
+                type: 'setNpcPolicy',
+                requestId: 'integration:engine:suspended-npc-policy',
+                userId: 'user-7',
+                generalId: 7,
+                nationId: 1,
+                expectedUpdatedAt: null,
+                mutation: { kind: 'nationPriority', priority: ['develop'] },
+            },
+        ];
+        await db.inputEvent.createMany({
+            data: commands.map((command) => ({
+                requestId: command.requestId!,
+                target: 'ENGINE' as const,
+                eventType: command.type,
+                actorUserId: 'userId' in command ? command.userId : null,
+                payload: command as GamePrisma.InputJsonValue,
+            })),
+        });
+        const blockedRequestId = 'integration:engine:suspended-vacation-still-gated';
+        await db.inputEvent.create({
+            data: {
+                requestId: blockedRequestId,
+                target: 'ENGINE',
+                eventType: 'vacation',
+                actorUserId: 'user-7',
+                payload: {
+                    type: 'vacation',
+                    requestId: blockedRequestId,
+                    userId: 'user-7',
+                    generalId: 7,
+                },
+            },
+        });
+
+        const claimed = await new DatabaseTurnDaemonCommandQueue(db).drain();
+        expect(claimed.map(({ type }) => type)).toEqual(commands.map(({ type }) => type));
+        for (const command of commands) {
+            await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: command.requestId! } })).resolves.toMatchObject({
+                status: 'PROCESSING',
+                processingGameTick: 777n,
+                processingClockRevision: 23n,
+                processingDeadlineGeneration: 9n,
+            });
+        }
+        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: blockedRequestId } })).resolves.toMatchObject({
+            status: 'PENDING',
+            processingClockRevision: null,
+        });
     });
 
     it('dequeues only the invader decision while an UNIFICATION_WAIT suspension is active', async () => {
