@@ -11,8 +11,13 @@ describe('ManualClock', () => {
 
     it('advances with sleep and manual advance', async () => {
         const clock = new ManualClock(0);
+        let eventLoopTurnObserved = false;
+        setTimeout(() => {
+            eventLoopTurnObserved = true;
+        }, 0);
         await clock.sleepMs(250);
         expect(clock.nowMs()).toBe(250);
+        expect(eventLoopTurnObserved).toBe(true);
         clock.advanceMs(750);
         expect(clock.nowMs()).toBe(1000);
     });
@@ -34,8 +39,13 @@ describe('StepClock', () => {
 
     it('advances with sleep', async () => {
         const clock = new StepClock(50, 1000);
+        let eventLoopTurnObserved = false;
+        setTimeout(() => {
+            eventLoopTurnObserved = true;
+        }, 0);
         await clock.sleepMs(200);
         expect(clock.nowMs()).toBe(1250);
+        expect(eventLoopTurnObserved).toBe(true);
     });
 
     it('advances manually', () => {

@@ -202,18 +202,28 @@ describe('HWE-shaped unification invader resume', () => {
                     actorUserId: recipient.userId,
                     target: 'ENGINE',
                     eventType: 'messageRespond',
-                    createdAt: acceptedAt,
+                    processingGameTick: 19_980_000_000n,
                 })),
             },
-            $queryRaw: vi.fn(async () => [
-                {
-                    id: 1014,
-                    mailbox: recipient.id,
-                    type: 'private',
-                    validUntil: new Date('9999-12-31T00:00:00.000Z'),
-                    message,
-                },
-            ]),
+            messageAction: { updateMany: vi.fn(async () => ({ count: 1 })) },
+            message: { updateMany: vi.fn(async () => ({ count: 1 })) },
+            $queryRaw: vi
+                .fn()
+                .mockResolvedValueOnce([
+                    {
+                        id: 1014,
+                        mailbox: recipient.id,
+                        type: 'private',
+                        time: world.gameTickToDate(19_980_000_000),
+                        validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                        actionType: 'raiseInvader',
+                        actionStatus: 'PENDING',
+                        createdGameTick: 19_980_000_000n,
+                        expiresGameTick: null,
+                        message,
+                    },
+                ])
+                .mockResolvedValueOnce([{ id: 1014 }]),
         } as unknown as GamePrisma.TransactionClient;
         const queue = new InMemoryControlQueue();
         queue.enqueue({
@@ -294,7 +304,11 @@ describe('HWE-shaped unification invader resume', () => {
         await lifecycle.start();
 
         expect(commandDb.inputEvent.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { requestId } }));
-        expect(commandDb.$queryRaw).toHaveBeenCalledOnce();
+        expect(commandDb.$queryRaw).toHaveBeenCalledTimes(2);
+        expect(commandDb.messageAction.updateMany).toHaveBeenCalledWith({
+            where: { messageId: { in: [1014] }, status: 'PENDING' },
+            data: { status: 'RESOLVED', resolvedGameTick: 20_088_000_000n },
+        });
         expect(world.getState()).toMatchObject({
             currentYear: 226,
             currentMonth: 4,

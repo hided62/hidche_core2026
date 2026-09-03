@@ -34,6 +34,7 @@ export class ManualClock implements Clock {
             return;
         }
         this.currentMs += ms;
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
 
     advanceMs(ms: number): void {
@@ -71,6 +72,7 @@ export class StepClock implements Clock {
             return;
         }
         this.currentMs += ms;
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
 
     advanceMs(ms: number): void {
