@@ -1,5 +1,5 @@
 import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit, type AccessLimitLevel } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, GENERAL_ACCESS_PERSISTENCE_LOCK, GamePrisma } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../context.js';
 
@@ -228,6 +228,7 @@ export const upsertGeneralAccess = async (
         throw new Error('Traffic access persistence requires transaction support.');
     }
     await db.$transaction(async (transaction) => {
+        await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
         const periodKey = input.year * 12 + input.month - 1;
         const periodRows = await transaction.$queryRaw<Array<{ id: number }>>(
             GamePrisma.sql`

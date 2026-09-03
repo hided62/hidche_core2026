@@ -1,6 +1,7 @@
 import {
     acquireGameSchemaAdvisoryXactLock,
     createGamePostgresConnector,
+    GENERAL_ACCESS_PERSISTENCE_LOCK,
     GamePrisma,
     writeReadModelChangeJournal,
     enqueuePrivateMessageWebPush,
@@ -1321,6 +1322,20 @@ export const createDatabaseTurnHooks = async (
             );
             const beforeLifecycleLogs = pendingInheritanceLogs.filter((entry) => entry.phase !== 'after_lifecycle');
             const afterLifecycleLogs = pendingInheritanceLogs.filter((entry) => entry.phase === 'after_lifecycle');
+
+            const writesGeneralAccess =
+                accessScoreResetGeneralIds.length > 0 ||
+                lifecycleEvents.length > 0 ||
+                deletedGenerals.length > 0 ||
+                generals.some(
+                    (general) =>
+                        typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
+                );
+            if (writesGeneralAccess) {
+                // API access writers acquire this before traffic/access rows.
+                // Match that order before lifecycle and monthly score writes.
+                await acquireGameSchemaAdvisoryXactLock(prisma, GENERAL_ACCESS_PERSISTENCE_LOCK);
+            }
 
             await persistInheritancePointAdjustments(beforeLifecycleAdjustments);
             await persistInheritanceLogs(beforeLifecycleLogs);

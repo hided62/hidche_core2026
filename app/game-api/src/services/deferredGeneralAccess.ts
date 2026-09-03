@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import { acquireGameSchemaAdvisoryXactLock, GENERAL_ACCESS_PERSISTENCE_LOCK, GamePrisma } from '@sammo-ts/infra';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 
 import type { DatabaseClient } from '../context.js';
@@ -163,13 +163,16 @@ const markBatchProcessed = async (db: Pick<DatabaseClient, '$executeRaw'>, batch
 };
 
 export const flushDeferredGeneralAccessBatch = async (
-    db: Pick<DatabaseClient, '$queryRaw' | '$executeRaw' | 'worldState'>,
+    db: Pick<DatabaseClient, '$transaction' | '$queryRaw' | '$executeRaw' | 'worldState'>,
     batchId: string,
     entries: readonly DeferredGeneralAccessEntry[]
 ): Promise<{ states: DeferredGeneralAccessFlushRow[]; refreshLimit: number }> => {
     if (entries.length === 0) {
         await markBatchProcessed(db, batchId);
         return { states: [], refreshLimit: 0 };
+    }
+    if (!db.$transaction) {
+        throw new Error('Deferred general access persistence requires transaction support.');
     }
     const worldState = await db.worldState.findFirst({
         orderBy: { id: 'asc' },
@@ -210,7 +213,11 @@ export const flushDeferredGeneralAccessBatch = async (
         }))
     );
     const periodKey = worldState.currentYear * 12 + worldState.currentMonth - 1;
-    const states = await db.$queryRaw<DeferredGeneralAccessFlushRow[]>(GamePrisma.sql`
+    const states = await db.$transaction(async (transaction) => {
+        // The turn flush and synchronous access path must enter through the same
+        // schema-scoped lock before either traffic or access rows are mutated.
+        await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
+        return transaction.$queryRaw<DeferredGeneralAccessFlushRow[]>(GamePrisma.sql`
         WITH inserted_batch AS (
             INSERT INTO "general_access_batch" ("id")
             VALUES (${batchId})
@@ -353,6 +360,7 @@ export const flushDeferredGeneralAccessBatch = async (
                 END,
                 resolved."weight"
             FROM resolved
+            ORDER BY resolved."general_id"
             ON CONFLICT ("general_id") DO UPDATE SET
                 "user_id" = EXCLUDED."user_id",
                 "last_refresh" = GREATEST("general_access_log"."last_refresh", EXCLUDED."last_refresh"),
@@ -394,7 +402,8 @@ export const flushDeferredGeneralAccessBatch = async (
         LEFT JOIN access_updates ON access_updates."general_id" = actor."id"
         LEFT JOIN "general_access_log" AS access_log ON access_log."general_id" = actor."id"
         ORDER BY actor."id"
-    `);
+        `);
+    });
     return {
         states,
         refreshLimit: resolveAccessRefreshLimit(worldState.tickSeconds, meta.refreshLimit),

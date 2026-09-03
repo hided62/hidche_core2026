@@ -114,6 +114,7 @@ liveIntegration('deferred general access with PostgreSQL and Redis', () => {
                         },
                     }),
             },
+            $transaction: db.$transaction.bind(db),
             $queryRaw: db.$queryRaw.bind(db),
             $executeRaw: db.$executeRaw.bind(db),
         };

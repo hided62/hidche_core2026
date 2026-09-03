@@ -88,6 +88,9 @@ describe('deferred general access', () => {
             $queryRaw: queryRaw,
             $executeRaw: vi.fn(async () => 1),
         };
+        Object.assign(db, {
+            $transaction: vi.fn(async (run: (transaction: typeof db) => Promise<unknown>) => run(db)),
+        });
 
         await expect(
             flushDeferredGeneralAccessBatch(db as never, 'batch-1', [
@@ -101,12 +104,14 @@ describe('deferred general access', () => {
         ).resolves.toMatchObject({ refreshLimit: 50, states: [{ refreshScore: 2 }] });
 
         expect(queryRaw).toHaveBeenCalledTimes(1);
+        expect(db.$executeRaw).toHaveBeenCalledTimes(1);
         const statement = queryRaw.mock.calls[0]?.[0] as { sql: string };
         expect(statement.sql).toContain('INSERT INTO "general_access_batch"');
         expect(statement.sql).toContain('jsonb_to_recordset');
         expect(statement.sql).toContain('INSERT INTO "traffic_period"');
         expect(statement.sql).toContain('INSERT INTO "traffic_period_general"');
         expect(statement.sql).toContain('INSERT INTO "general_access_log"');
+        expect(statement.sql).toContain('ORDER BY resolved."general_id"');
         expect(statement.sql).not.toContain('read_model_revision');
         expect(statement.sql).not.toContain('read_model_outbox');
     });

@@ -6,6 +6,9 @@ interface TryLockRow {
     acquired: boolean;
 }
 
+/** Serializes score/traffic writers whose table lock order otherwise differs by entry point. */
+export const GENERAL_ACCESS_PERSISTENCE_LOCK = 'general-access:persistence';
+
 const lockKeySql = (logicalKey: string): GamePrisma.Sql =>
     GamePrisma.sql`hashtextextended(current_schema() || chr(31) || ${logicalKey}, 0)`;
 

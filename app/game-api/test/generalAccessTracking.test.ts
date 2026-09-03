@@ -194,7 +194,11 @@ describe('general access tracking', () => {
         });
         expect(transaction).toHaveBeenCalledTimes(1);
         expect(queryRaw).toHaveBeenCalledTimes(1);
-        expect(executeRaw).toHaveBeenCalledTimes(2);
+        expect(executeRaw).toHaveBeenCalledTimes(3);
+
+        const lockStatement = executeRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
+        expect(lockStatement.sql).toContain('pg_advisory_xact_lock');
+        expect(lockStatement.values).toContain('general-access:persistence');
 
         const periodStatement = queryRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
         expect(periodStatement.sql).toContain('INSERT INTO traffic_period');
@@ -208,12 +212,12 @@ describe('general access tracking', () => {
         expect(periodStatement.values).toContain(now);
         expect(periodStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
 
-        const memberStatement = executeRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
+        const memberStatement = executeRaw.mock.calls[1]![0] as { sql: string; values: unknown[] };
         expect(memberStatement.sql).toContain('INSERT INTO traffic_period_general');
         expect(memberStatement.sql).toContain('ON CONFLICT (period_id, general_id) DO NOTHING');
         expect(memberStatement.sql).toContain('SET online = traffic_period.online');
 
-        const accessStatement = executeRaw.mock.calls[1]![0] as { sql: string; values: unknown[] };
+        const accessStatement = executeRaw.mock.calls[2]![0] as { sql: string; values: unknown[] };
         expect(accessStatement.sql).toContain('ON CONFLICT (general_id) DO UPDATE');
         expect(accessStatement.sql).toContain('general_access_log.refresh + EXCLUDED.refresh');
         expect(accessStatement.values).toContain(7);
@@ -230,9 +234,9 @@ describe('general access tracking', () => {
         await expect(recordGeneralAccessWeight(accessContext(db), 0, now)).resolves.toBe(true);
         expect(transaction).toHaveBeenCalledTimes(1);
         expect((queryRaw.mock.calls[0]![0] as { values: unknown[] }).values).toContain(0);
-        expect((executeRaw.mock.calls[0]![0] as { values: unknown[] }).values).toContain(0);
         expect((executeRaw.mock.calls[1]![0] as { values: unknown[] }).values).toContain(0);
-        expect((executeRaw.mock.calls[1]![0] as { values: unknown[] }).values).toContain(now);
+        expect((executeRaw.mock.calls[2]![0] as { values: unknown[] }).values).toContain(0);
+        expect((executeRaw.mock.calls[2]![0] as { values: unknown[] }).values).toContain(now);
     });
 
     it('blocks above the strict limit and lazily clears a score from before the own turn', async () => {
