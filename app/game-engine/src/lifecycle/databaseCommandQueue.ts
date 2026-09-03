@@ -112,8 +112,7 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                 orderBy: { id: 'asc' },
                 select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true },
             });
-            const gameplayAllowed =
-                !world || world.clockPhase === 'RUNNING' || world.clockPhase === 'MANUAL';
+            const gameplayAllowed = !world || world.clockPhase === 'RUNNING' || world.clockPhase === 'MANUAL';
             const currentRevision = world?.clockRevision ?? null;
             const rows = await transaction.$queryRaw<
                 Array<{
@@ -139,7 +138,28 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                 FROM "input_event"
                 WHERE "target" = 'ENGINE'::"InputEventTarget"
                   AND "status" = 'PENDING'::"InputEventStatus"
-                  AND (${gameplayAllowed} OR "event_type" = 'getStatus')
+                  AND (
+                      ${gameplayAllowed}
+                      OR "event_type" = 'getStatus'
+                      OR (
+                          ${world?.clockPhase === 'SUSPENDED'}
+                          AND "event_type" = 'messageRespond'
+                          AND "payload" ->> 'messageId' ~ '^[1-9][0-9]*$'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM "message" AS pending_message
+                              WHERE pending_message."id" = ("input_event"."payload" ->> 'messageId')::integer
+                                AND pending_message."message" #>> '{option,action}' = 'raiseInvader'
+                          )
+                          AND EXISTS (
+                              SELECT 1
+                              FROM "clock_suspension" AS active_suspension
+                              WHERE active_suspension."status" = 'SUSPENDED'
+                                AND active_suspension."source" = 'UNIFICATION_WAIT'
+                                AND active_suspension."source_revision" = ${currentRevision}
+                          )
+                      )
+                  )
                 ORDER BY "sequence" ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT ${limit}

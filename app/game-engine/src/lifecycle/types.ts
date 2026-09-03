@@ -29,6 +29,12 @@ export interface TurnDaemonCommandHandler {
 
 export interface TurnDaemonCommandExecutionContext {
     db?: GamePrisma.TransactionClient;
+    clockOperationAuthority?: {
+        kind: 'DAEMON';
+        profileName: string;
+        ownerId: string;
+        fencingEpoch: bigint;
+    };
 }
 
 export interface TurnDaemonCommandResponder {

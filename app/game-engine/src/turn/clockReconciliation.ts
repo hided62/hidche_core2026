@@ -111,10 +111,9 @@ const readDbWall = async (db: GamePrisma.TransactionClient): Promise<Date> => {
     return wallNow;
 };
 
-const verifyAuthority = async (
-    db: GamePrisma.TransactionClient,
-    authority: ClockOperationAuthority
-): Promise<void> => {
+export const readClockDatabaseWall = readDbWall;
+
+const verifyAuthority = async (db: GamePrisma.TransactionClient, authority: ClockOperationAuthority): Promise<void> => {
     const rows = await db.$queryRaw<LeaseFenceRow[]>(GamePrisma.sql`
         SELECT owner_id AS "ownerId",
                fencing_epoch AS "fencingEpoch",
@@ -133,11 +132,7 @@ const verifyAuthority = async (
         }
         return;
     }
-    if (
-        !lease?.valid ||
-        lease.ownerId !== authority.ownerId ||
-        lease.fencingEpoch !== authority.fencingEpoch
-    ) {
+    if (!lease?.valid || lease.ownerId !== authority.ownerId || lease.fencingEpoch !== authority.fencingEpoch) {
         throw new Error(`Stale turn-daemon fencing authority for profile ${authority.profileName}.`);
     }
 };
@@ -317,6 +312,89 @@ const persistInitialParticipants = async (
             },
         });
     }
+};
+
+/**
+ * Locks every registered participant before an enclosing transaction mutates
+ * the world into a suspended state. The caller must already hold the daemon,
+ * clock-operation, general-access, and world-row lock prefix.
+ */
+export const prepareClockSuspensionUnderHeldLocks = async (options: {
+    db: GamePrisma.TransactionClient;
+    cutTick: number;
+    cutWallAt?: Date;
+}): Promise<{ cutWallAt: Date }> => {
+    if (!Number.isSafeInteger(options.cutTick)) {
+        throw new Error(`Clock suspension cut tick is outside the safe integer range: ${options.cutTick}.`);
+    }
+    const cutWallAt = options.cutWallAt ? new Date(options.cutWallAt.getTime()) : await readDbWall(options.db);
+    await lockParticipants(options.db, BigInt(options.cutTick));
+    return { cutWallAt };
+};
+
+/**
+ * Persists the ledger after all suspension-boundary gameplay writes have been
+ * staged in the same transaction. Lock acquisition belongs to
+ * prepareClockSuspensionUnderHeldLocks and must happen first.
+ */
+export const persistClockSuspensionLedgerUnderHeldLocks = async (options: {
+    db: GamePrisma.TransactionClient;
+    suspensionId: string;
+    worldStateId: number;
+    profileName: string;
+    source: ClockSuspensionSource;
+    cutTick: number;
+    cutWallAt: Date;
+    rateTicksPerSecond: number;
+    sourceRevision: number;
+    policy?: ClockAlignmentPolicy;
+    catchUpTicks?: number;
+}): Promise<void> => {
+    if (!options.suspensionId.trim() || options.suspensionId.length > 64) {
+        throw new Error('Clock suspension ID must contain 1-64 characters.');
+    }
+    const policy = options.policy ?? 'EXACT';
+    const catchUpTicks = options.catchUpTicks ?? 0;
+    if (!Number.isSafeInteger(catchUpTicks) || catchUpTicks < 0) {
+        throw new Error('Clock suspension catch-up ticks must be a non-negative safe integer.');
+    }
+    const existing = await options.db.clockSuspension.findUnique({ where: { id: options.suspensionId } });
+    if (existing) {
+        if (
+            existing.worldStateId !== options.worldStateId ||
+            existing.source !== options.source ||
+            existing.sourceRevision !== BigInt(options.sourceRevision)
+        ) {
+            throw new Error(`Clock suspension ID ${options.suspensionId} is already bound to another operation.`);
+        }
+        return;
+    }
+    const world = await options.db.worldState.findUniqueOrThrow({ where: { id: options.worldStateId } });
+    if (
+        parseGameClockPhase(world.clockPhase) !== 'SUSPENDED' ||
+        world.clockRevision !== BigInt(options.sourceRevision)
+    ) {
+        throw new Error('Clock suspension ledger requires a matching durable SUSPENDED world revision.');
+    }
+    const participants = await readParticipantSnapshots(options.db, options.worldStateId, BigInt(options.cutTick));
+    await options.db.clockSuspension.create({
+        data: {
+            id: options.suspensionId,
+            worldStateId: options.worldStateId,
+            source: options.source,
+            policy,
+            status: 'SUSPENDED',
+            sourceRevision: BigInt(options.sourceRevision),
+            targetRevision: BigInt(options.sourceRevision + 1),
+            cutTick: BigInt(options.cutTick),
+            cutWallAt: options.cutWallAt,
+            rateTicksPerSecond: options.rateTicksPerSecond,
+            catchUpTicks: BigInt(catchUpTicks),
+            participantChecksumBefore: aggregateChecksum(participants),
+            detail: asJson({ authority: 'DAEMON', profileName: options.profileName }),
+        },
+    });
+    await persistInitialParticipants(options.db, options.suspensionId, participants);
 };
 
 const shiftMetaDate = (value: unknown, deltaMilliseconds: number): unknown => {
@@ -512,8 +590,14 @@ export const startClockSuspension = async (options: {
             const worldStateId = await lockWorld(db);
             const existing = await db.clockSuspension.findUnique({ where: { id: options.suspensionId } });
             if (existing) {
-                if (existing.worldStateId !== worldStateId || existing.source !== options.source || existing.policy !== policy) {
-                    throw new Error(`Clock suspension ID ${options.suspensionId} is already bound to another operation.`);
+                if (
+                    existing.worldStateId !== worldStateId ||
+                    existing.source !== options.source ||
+                    existing.policy !== policy
+                ) {
+                    throw new Error(
+                        `Clock suspension ID ${options.suspensionId} is already bound to another operation.`
+                    );
                 }
                 if (existing.status !== 'SUSPENDED') {
                     throw new Error(`Clock suspension ${options.suspensionId} already advanced to ${existing.status}.`);
@@ -585,6 +669,209 @@ export const startClockSuspension = async (options: {
     );
 };
 
+/**
+ * Continues a suspension inside a transaction whose caller already verified
+ * daemon authority and acquired the clock/general-access lock prefix.
+ */
+export const reconcileClockSuspensionInTransaction = async (options: {
+    db: GamePrisma.TransactionClient;
+    suspensionId: string;
+    profileName: string;
+    allowUnificationWait?: boolean;
+    authority?: ClockOperationAuthority;
+    /** Deterministic fixture seam; production must always use PostgreSQL CURRENT_TIMESTAMP. */
+    testResumeWallAt?: Date;
+}): Promise<ClockReconciliationResult> => {
+    const db = options.db;
+    const worldStateId = await lockWorld(db);
+    const suspension = await db.clockSuspension.findUniqueOrThrow({ where: { id: options.suspensionId } });
+    if (suspension.worldStateId !== worldStateId) {
+        throw new Error('Clock suspension belongs to another world state.');
+    }
+    if (suspension.status === 'RECONCILING' || suspension.status === 'APPLIED') {
+        if (
+            suspension.gapTicks === null ||
+            suspension.shiftTicks === null ||
+            suspension.alignedTick === null ||
+            !suspension.resumeWallAt
+        ) {
+            throw new Error('Persisted clock reconciliation result is incomplete.');
+        }
+        const world = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
+        return {
+            suspensionId: suspension.id,
+            phase: 'RECONCILING' as const,
+            sourceRevision: safeNumber(suspension.sourceRevision, 'source revision'),
+            targetRevision: safeNumber(suspension.targetRevision, 'target revision'),
+            deadlineGeneration: safeNumber(world.deadlineGeneration, 'deadline generation'),
+            gapTicks: safeNumber(suspension.gapTicks, 'gap ticks'),
+            catchUpTicks: safeNumber(suspension.catchUpTicks, 'catch-up ticks'),
+            shiftTicks: safeNumber(suspension.shiftTicks, 'shift ticks'),
+            alignedTick: safeNumber(suspension.alignedTick, 'aligned tick'),
+            resumeWallAt: suspension.resumeWallAt,
+        };
+    }
+    if (suspension.status !== 'SUSPENDED') {
+        throw new Error(`Clock suspension cannot reconcile from status ${suspension.status}.`);
+    }
+    const world = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
+    const phase = parseGameClockPhase(world.clockPhase);
+    if (phase !== 'SUSPENDED' || world.clockRevision !== suspension.sourceRevision) {
+        throw new Error('Clock reconciliation phase or source revision fence failed.');
+    }
+    const worldMeta =
+        world.meta && typeof world.meta === 'object' && !Array.isArray(world.meta)
+            ? (world.meta as Record<string, unknown>)
+            : {};
+    const united = Number(worldMeta.isunited ?? worldMeta.isUnited ?? 0);
+    if (suspension.source === 'UNIFICATION_WAIT' || united >= 2) {
+        if (!options.allowUnificationWait || options.authority?.kind !== 'DAEMON') {
+            throw new Error('Unification wait requires the daemon-authorized atomic alignment-and-invader workflow.');
+        }
+        await verifyAuthority(db, options.authority);
+    }
+    const cutTick = safeNumber(suspension.cutTick, 'cut tick');
+    await lockParticipants(db, suspension.cutTick);
+    if (options.testResumeWallAt && process.env.NODE_ENV !== 'test') {
+        throw new Error('A clock reconciliation wall override is allowed only in tests.');
+    }
+    const resumeWallAt = options.testResumeWallAt ? new Date(options.testResumeWallAt.getTime()) : await readDbWall(db);
+    const plan = buildClockAlignmentPlan({
+        policy: parseClockAlignmentPolicy(suspension.policy),
+        sourceRevision: safeNumber(suspension.sourceRevision, 'source revision'),
+        cutTick,
+        cutWall: suspension.cutWallAt,
+        resumeWall: resumeWallAt,
+        ticksPerSecond: suspension.rateTicksPerSecond,
+        catchUpTicks: safeNumber(suspension.catchUpTicks, 'catch-up ticks'),
+    });
+    const before = await readParticipantSnapshots(db, worldStateId, suspension.cutTick);
+    assertShiftFits(before, plan.shiftTicks);
+    await assertScheduleRanges(db, plan.shiftTicks);
+    const projectionDeltaMilliseconds = Math.trunc((plan.shiftTicks * 1_000) / suspension.rateTicksPerSecond);
+    if (!Number.isSafeInteger(projectionDeltaMilliseconds)) {
+        throw new Error('Clock reconciliation projection delta is outside the safe integer range.');
+    }
+    const targetGeneration = world.deadlineGeneration + 1n;
+    const affected = await applyParticipantShift(
+        db,
+        worldStateId,
+        suspension.cutTick,
+        BigInt(plan.alignedTick),
+        BigInt(plan.targetRevision),
+        targetGeneration,
+        BigInt(plan.shiftTicks),
+        projectionDeltaMilliseconds,
+        resumeWallAt
+    );
+    const after = await readParticipantSnapshots(db, worldStateId, suspension.cutTick);
+    const afterByKey = new Map(after.map((participant) => [participant.key, participant]));
+    for (const participant of before) {
+        const next = afterByKey.get(participant.key);
+        if (!next) throw new Error(`Missing post-reconciliation participant: ${participant.key}`);
+        if (participant.policy === 'KEEP' && participant.checksum !== next.checksum) {
+            throw new Error(`KEEP participant changed during reconciliation: ${participant.key}`);
+        }
+        await db.clockReconciliationParticipant.upsert({
+            where: {
+                suspensionId_participantKey: {
+                    suspensionId: suspension.id,
+                    participantKey: participant.key,
+                },
+            },
+            create: {
+                suspensionId: suspension.id,
+                participantKey: participant.key,
+                policy: participant.policy,
+                beforeChecksum: participant.checksum,
+                afterChecksum: next.checksum,
+                affectedCount: affected.get(participant.key) ?? 0,
+            },
+            update: {
+                policy: participant.policy,
+                beforeChecksum: participant.checksum,
+                afterChecksum: next.checksum,
+                affectedCount: affected.get(participant.key) ?? 0,
+            },
+        });
+    }
+    const outboxPayload = {
+        version: 1,
+        profileName: options.profileName,
+        suspensionId: suspension.id,
+        sourceRevision: plan.sourceRevision,
+        targetRevision: plan.targetRevision,
+        deadlineGeneration: safeNumber(targetGeneration, 'deadline generation'),
+        shiftTicks: plan.shiftTicks,
+        projectionDeltaMilliseconds,
+        clockBaseTime: world.clockBaseTime!.toISOString(),
+        ticksPerSecond: suspension.rateTicksPerSecond,
+    };
+    await db.clockProjectionOutbox.create({
+        data: {
+            worldStateId,
+            suspensionId: suspension.id,
+            targetRevision: BigInt(plan.targetRevision),
+            status: 'PENDING',
+            payload: asJson(outboxPayload),
+            checksum: checksum(outboxPayload),
+        },
+    });
+    await db.clockSuspension.update({
+        where: { id: suspension.id },
+        data: {
+            status: 'RECONCILING',
+            resumeWallAt,
+            gapTicks: BigInt(plan.gapTicks),
+            shiftTicks: BigInt(plan.shiftTicks),
+            alignedTick: BigInt(plan.alignedTick),
+            participantChecksumBefore: aggregateChecksum(before),
+            participantChecksumAfter: aggregateChecksum(after),
+        },
+    });
+    return {
+        suspensionId: suspension.id,
+        phase: 'RECONCILING',
+        sourceRevision: plan.sourceRevision,
+        targetRevision: plan.targetRevision,
+        deadlineGeneration: safeNumber(targetGeneration, 'deadline generation'),
+        gapTicks: plan.gapTicks,
+        catchUpTicks: plan.catchUpTicks,
+        shiftTicks: plan.shiftTicks,
+        alignedTick: plan.alignedTick,
+        resumeWallAt,
+    };
+};
+
+/** Finalizes an atomic unification workflow after an optional rate change. */
+export const refreshClockProjectionForFinalClockUnderHeldLocks = async (options: {
+    db: GamePrisma.TransactionClient;
+    suspensionId: string;
+    clockBaseTime: Date;
+    tickSeconds: number;
+}): Promise<void> => {
+    if (GAME_TICKS_PER_TURN % options.tickSeconds !== 0) {
+        throw new Error(`Final clock rate cannot represent an integer tick: ${options.tickSeconds}.`);
+    }
+    const outbox = await options.db.clockProjectionOutbox.findFirstOrThrow({
+        where: { suspensionId: options.suspensionId, status: 'PENDING' },
+        orderBy: { id: 'asc' },
+    });
+    const payload =
+        outbox.payload && typeof outbox.payload === 'object' && !Array.isArray(outbox.payload)
+            ? { ...(outbox.payload as Record<string, unknown>) }
+            : null;
+    if (!payload || payload.suspensionId !== options.suspensionId) {
+        throw new Error('Unification clock projection outbox payload is invalid.');
+    }
+    payload.clockBaseTime = options.clockBaseTime.toISOString();
+    payload.ticksPerSecond = GAME_TICKS_PER_TURN / options.tickSeconds;
+    await options.db.clockProjectionOutbox.update({
+        where: { id: outbox.id },
+        data: { payload: asJson(payload), checksum: checksum(payload) },
+    });
+};
+
 export const reconcileClockSuspension = async (options: {
     db: GamePrismaClient;
     suspensionId: string;
@@ -597,167 +884,13 @@ export const reconcileClockSuspension = async (options: {
             await verifyAuthority(db, options.authority);
             await acquireGameSchemaAdvisoryXactLock(db, CLOCK_OPERATION_PERSISTENCE_LOCK);
             await acquireGameSchemaAdvisoryXactLock(db, GENERAL_ACCESS_PERSISTENCE_LOCK);
-            const worldStateId = await lockWorld(db);
-            const suspension = await db.clockSuspension.findUniqueOrThrow({ where: { id: options.suspensionId } });
-            if (suspension.worldStateId !== worldStateId) {
-                throw new Error('Clock suspension belongs to another world state.');
-            }
-            if (suspension.status === 'RECONCILING' || suspension.status === 'APPLIED') {
-                if (
-                    suspension.gapTicks === null ||
-                    suspension.shiftTicks === null ||
-                    suspension.alignedTick === null ||
-                    !suspension.resumeWallAt
-                ) {
-                    throw new Error('Persisted clock reconciliation result is incomplete.');
-                }
-                const world = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
-                return {
-                    suspensionId: suspension.id,
-                    phase: 'RECONCILING' as const,
-                    sourceRevision: safeNumber(suspension.sourceRevision, 'source revision'),
-                    targetRevision: safeNumber(suspension.targetRevision, 'target revision'),
-                    deadlineGeneration: safeNumber(world.deadlineGeneration, 'deadline generation'),
-                    gapTicks: safeNumber(suspension.gapTicks, 'gap ticks'),
-                    catchUpTicks: safeNumber(suspension.catchUpTicks, 'catch-up ticks'),
-                    shiftTicks: safeNumber(suspension.shiftTicks, 'shift ticks'),
-                    alignedTick: safeNumber(suspension.alignedTick, 'aligned tick'),
-                    resumeWallAt: suspension.resumeWallAt,
-                };
-            }
-            if (suspension.status !== 'SUSPENDED') {
-                throw new Error(`Clock suspension cannot reconcile from status ${suspension.status}.`);
-            }
-            const world = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
-            const phase = parseGameClockPhase(world.clockPhase);
-            if (phase !== 'SUSPENDED' || world.clockRevision !== suspension.sourceRevision) {
-                throw new Error('Clock reconciliation phase or source revision fence failed.');
-            }
-            const worldMeta =
-                world.meta && typeof world.meta === 'object' && !Array.isArray(world.meta)
-                    ? (world.meta as Record<string, unknown>)
-                    : {};
-            const united = Number(worldMeta.isunited ?? worldMeta.isUnited ?? 0);
-            if (suspension.source === 'UNIFICATION_WAIT' || united >= 2) {
-                throw new Error(
-                    'Unification wait requires the atomic alignment-and-invader workflow; generic resume is forbidden.'
-                );
-            }
-            const cutTick = safeNumber(suspension.cutTick, 'cut tick');
-            await lockParticipants(db, suspension.cutTick);
-            if (options.testResumeWallAt && process.env.NODE_ENV !== 'test') {
-                throw new Error('A clock reconciliation wall override is allowed only in tests.');
-            }
-            const resumeWallAt = options.testResumeWallAt
-                ? new Date(options.testResumeWallAt.getTime())
-                : await readDbWall(db);
-            const plan = buildClockAlignmentPlan({
-                policy: parseClockAlignmentPolicy(suspension.policy),
-                sourceRevision: safeNumber(suspension.sourceRevision, 'source revision'),
-                cutTick,
-                cutWall: suspension.cutWallAt,
-                resumeWall: resumeWallAt,
-                ticksPerSecond: suspension.rateTicksPerSecond,
-                catchUpTicks: safeNumber(suspension.catchUpTicks, 'catch-up ticks'),
-            });
-            const before = await readParticipantSnapshots(db, worldStateId, suspension.cutTick);
-            assertShiftFits(before, plan.shiftTicks);
-            await assertScheduleRanges(db, plan.shiftTicks);
-            const projectionDeltaMilliseconds = Math.trunc(
-                (plan.shiftTicks * 1_000) / suspension.rateTicksPerSecond
-            );
-            if (!Number.isSafeInteger(projectionDeltaMilliseconds)) {
-                throw new Error('Clock reconciliation projection delta is outside the safe integer range.');
-            }
-            const targetGeneration = world.deadlineGeneration + 1n;
-            const affected = await applyParticipantShift(
+            return reconcileClockSuspensionInTransaction({
                 db,
-                worldStateId,
-                suspension.cutTick,
-                BigInt(plan.alignedTick),
-                BigInt(plan.targetRevision),
-                targetGeneration,
-                BigInt(plan.shiftTicks),
-                projectionDeltaMilliseconds,
-                resumeWallAt
-            );
-            const after = await readParticipantSnapshots(db, worldStateId, suspension.cutTick);
-            const afterByKey = new Map(after.map((participant) => [participant.key, participant]));
-            for (const participant of before) {
-                const next = afterByKey.get(participant.key);
-                if (!next) throw new Error(`Missing post-reconciliation participant: ${participant.key}`);
-                if (participant.policy === 'KEEP' && participant.checksum !== next.checksum) {
-                    throw new Error(`KEEP participant changed during reconciliation: ${participant.key}`);
-                }
-                await db.clockReconciliationParticipant.upsert({
-                    where: {
-                        suspensionId_participantKey: {
-                            suspensionId: suspension.id,
-                            participantKey: participant.key,
-                        },
-                    },
-                    create: {
-                        suspensionId: suspension.id,
-                        participantKey: participant.key,
-                        policy: participant.policy,
-                        beforeChecksum: participant.checksum,
-                        afterChecksum: next.checksum,
-                        affectedCount: affected.get(participant.key) ?? 0,
-                    },
-                    update: {
-                        policy: participant.policy,
-                        beforeChecksum: participant.checksum,
-                        afterChecksum: next.checksum,
-                        affectedCount: affected.get(participant.key) ?? 0,
-                    },
-                });
-            }
-            const outboxPayload = {
-                version: 1,
+                suspensionId: options.suspensionId,
                 profileName: options.authority.profileName,
-                suspensionId: suspension.id,
-                sourceRevision: plan.sourceRevision,
-                targetRevision: plan.targetRevision,
-                deadlineGeneration: safeNumber(targetGeneration, 'deadline generation'),
-                shiftTicks: plan.shiftTicks,
-                projectionDeltaMilliseconds,
-                clockBaseTime: world.clockBaseTime!.toISOString(),
-                ticksPerSecond: suspension.rateTicksPerSecond,
-            };
-            await db.clockProjectionOutbox.create({
-                data: {
-                    worldStateId,
-                    suspensionId: suspension.id,
-                    targetRevision: BigInt(plan.targetRevision),
-                    status: 'PENDING',
-                    payload: asJson(outboxPayload),
-                    checksum: checksum(outboxPayload),
-                },
+                authority: options.authority,
+                ...(options.testResumeWallAt ? { testResumeWallAt: options.testResumeWallAt } : {}),
             });
-            await db.clockSuspension.update({
-                where: { id: suspension.id },
-                data: {
-                    status: 'RECONCILING',
-                    resumeWallAt,
-                    gapTicks: BigInt(plan.gapTicks),
-                    shiftTicks: BigInt(plan.shiftTicks),
-                    alignedTick: BigInt(plan.alignedTick),
-                    participantChecksumBefore: aggregateChecksum(before),
-                    participantChecksumAfter: aggregateChecksum(after),
-                },
-            });
-            return {
-                suspensionId: suspension.id,
-                phase: 'RECONCILING',
-                sourceRevision: plan.sourceRevision,
-                targetRevision: plan.targetRevision,
-                deadlineGeneration: safeNumber(targetGeneration, 'deadline generation'),
-                gapTicks: plan.gapTicks,
-                catchUpTicks: plan.catchUpTicks,
-                shiftTicks: plan.shiftTicks,
-                alignedTick: plan.alignedTick,
-                resumeWallAt,
-            };
         },
         { isolationLevel: 'Serializable', maxWait: 10_000, timeout: 30_000 }
     );

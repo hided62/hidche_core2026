@@ -46,10 +46,10 @@ mean deployment or production validation.
 - [x] All durable input events record accepted tick and accepted revision.
 - [x] Processing converts accepted coordinates across revisions or fails closed.
 - [x] Gateway pause/resume/open orchestration writes the DB clock phase.
-- [ ] Unification wait becomes a durable `UNIFICATION_WAIT` suspension.
-- [ ] Alignment, optional rate change, invader IDs/RNG, creation, first schedule,
+- [x] Unification wait becomes a durable `UNIFICATION_WAIT` suspension.
+- [x] Alignment, optional rate change, invader IDs/RNG, creation, first schedule,
       outbox, verification, and RUNNING transition form one retry-safe workflow.
-- [ ] Multi-host drift and general-access/clock-operation deadlock tests.
+- [x] Multi-host drift and general-access/clock-operation deadlock tests.
 
 ## Milestone 5 - test-branch release gate
 
@@ -57,11 +57,11 @@ mean deployment or production validation.
       integration suites.
 - [ ] Dedicated PostgreSQL/Redis conditional integration suite with skip count
       recorded.
-- [ ] Recovery runbook exercised from each incomplete status.
+- [x] Recovery runbook exercised from each incomplete status.
 - [x] Admin status/readiness exposes revision, phase, participant checksums, and
       incomplete outbox state.
 - [ ] User-test deployment evidence is recorded separately from Git push.
-- [ ] All `FORBID` inventory entries are removed by typed migrations or proven
+- [x] All `FORBID` inventory entries are removed by typed migrations or proven
       inactive preconditions.
 
 ## Evidence log
@@ -112,3 +112,17 @@ mean deployment or production validation.
   to `RUNNING`; the Redis clock phase is revision/generation fenced.
 - `pnpm --filter @sammo-ts/gateway-api test` passed 313 tests with 35
   environment-conditional skips. Gateway typecheck and target lint passed.
+
+### 2026-09-03 - atomic unification wait
+
+- A unification flush now commits the finalization, actionable prompts, and one
+  deterministic `UNIFICATION_WAIT` suspension together. A late archive failure
+  rolls the whole boundary back; retry creates one ledger.
+- The suspended command queue admits only an invader decision tied to the
+  active ledger. The daemon-authorized command transaction applies a 36-hour
+  exact gap, preserves participant positions, changes the fixture rate from 10
+  to 20 minutes, creates one invader nation and ten deterministic generals with
+  future first turns, and writes one final-rate projection outbox.
+- The dedicated PostgreSQL/Redis fixture reached `RUNNING@2/2` only after the
+  Redis projection. DB-wall versus a mocked 12-hour host drift and concurrent
+  general-access lock acquisition completed without drift or deadlock.

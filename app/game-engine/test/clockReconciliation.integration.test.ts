@@ -1,9 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GameClock } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
     createRedisConnector,
+    GENERAL_ACCESS_PERSISTENCE_LOCK,
+    GamePrisma,
+    acquireGameSchemaAdvisoryXactLock,
     type GamePrismaClient,
     type RedisConnector,
 } from '@sammo-ts/infra';
@@ -22,20 +25,7 @@ describeIntegration('durable clock reconciliation', () => {
     let disconnect: (() => Promise<void>) | undefined;
     let redis: RedisConnector;
 
-    beforeAll(async () => {
-        const connector = createGamePostgresConnector({ url: process.env.DATABASE_URL! });
-        db = connector.prisma;
-        disconnect = connector.disconnect;
-        redis = createRedisConnector({ url: process.env.REDIS_URL! });
-        await redis.connect();
-    });
-
-    afterAll(async () => {
-        await redis.disconnect();
-        await disconnect?.();
-    });
-
-    beforeEach(async () => {
+    const clean = async (): Promise<void> => {
         await redis.client.flushDb();
         await db.$transaction([
             db.clockProjectionOutbox.deleteMany(),
@@ -54,6 +44,24 @@ describeIntegration('durable clock reconciliation', () => {
             db.turnDaemonLease.deleteMany(),
             db.worldState.deleteMany(),
         ]);
+    };
+
+    beforeAll(async () => {
+        const connector = createGamePostgresConnector({ url: process.env.DATABASE_URL! });
+        db = connector.prisma;
+        disconnect = connector.disconnect;
+        redis = createRedisConnector({ url: process.env.REDIS_URL! });
+        await redis.connect();
+    });
+
+    afterAll(async () => {
+        await clean();
+        await redis.disconnect();
+        await disconnect?.();
+    });
+
+    beforeEach(async () => {
+        await clean();
     });
 
     it('preserves every remaining deadline and occurrence across a 65m17.250s exact gap', async () => {
@@ -246,9 +254,9 @@ describeIntegration('durable clock reconciliation', () => {
         );
 
         await redis.client.set('sammo:clock-test:clock:active-revision', '1');
-        expect(
-            await applyNextClockProjection({ db, redis: redis.client, workerId: 'clock-projection-success' })
-        ).toBe('APPLIED');
+        expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'clock-projection-success' })).toBe(
+            'APPLIED'
+        );
         expect(await redis.client.get('sammo:clock-test:clock:active-revision')).toBe('2');
         expect(await redis.client.get('sammo:clock-test:clock:deadline-generation')).toBe('8');
         expect(await redis.client.get('sammo:clock-test:clock:phase')).toBe('RUNNING');
@@ -355,10 +363,85 @@ describeIntegration('durable clock reconciliation', () => {
         expect(await db.clockProjectionOutbox.findFirstOrThrow()).toMatchObject({ status: 'FAILED', attempts: 1 });
 
         await db.clockProjectionOutbox.updateMany({ data: { availableAt: new Date(0) } });
-        expect(
-            await applyNextClockProjection({ db, redis: redis.client, workerId: 'clock-projection-restart' })
-        ).toBe('RECOVERED');
+        expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'clock-projection-restart' })).toBe(
+            'RECOVERED'
+        );
         expect(await db.worldState.findFirstOrThrow()).toMatchObject({ clockPhase: 'RUNNING', clockRevision: 4n });
         expect(await db.clockProjectionOutbox.findFirstOrThrow()).toMatchObject({ status: 'APPLIED', attempts: 2 });
+    });
+
+    it('uses DB wall time despite host drift and does not deadlock with a general-access writer', async () => {
+        const [dbWall] = await db.$queryRaw<Array<{ now: Date }>>(GamePrisma.sql`
+            SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS now
+        `);
+        const baseTime = new Date('2026-03-01T00:00:00.000Z');
+        const clock = new GameClock({
+            baseTime,
+            tick: 42,
+            mode: 'realtime',
+            wallAnchor: dbWall!.now,
+            turnSeconds: 600,
+            phase: 'RUNNING',
+            revision: 1,
+        });
+        const world = await db.worldState.create({
+            data: {
+                scenarioCode: 'clock-drift-deadlock-test',
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 600,
+                clockBaseTime: baseTime,
+                clockTick: 42n,
+                clockMode: 'realtime',
+                clockWallAnchor: dbWall!.now,
+                lastTurnTick: 42n,
+                clockPhase: 'RUNNING',
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+            },
+        });
+        await db.general.create({
+            data: { id: 1, name: 'lock-general', turnTick: 100n, turnTime: clock.tickToDate(100) },
+        });
+
+        let releaseWriter!: () => void;
+        let signalWriterLocked!: () => void;
+        const writerLocked = new Promise<void>((resolve) => {
+            signalWriterLocked = resolve;
+        });
+        const writerRelease = new Promise<void>((resolve) => {
+            releaseWriter = resolve;
+        });
+        const writer = db.$transaction(async (transaction) => {
+            await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
+            signalWriterLocked();
+            await writerRelease;
+            await transaction.$queryRaw(GamePrisma.sql`
+                SELECT id FROM world_state WHERE id = ${world.id} FOR UPDATE
+            `);
+        });
+        await writerLocked;
+        const dateNow = vi.spyOn(Date, 'now').mockReturnValue(dbWall!.now.getTime() + 12 * 60 * 60_000);
+        try {
+            const suspensionPromise = startClockSuspension({
+                db,
+                suspensionId: 'clock-host-drift-deadlock',
+                source: 'MAINTENANCE',
+                authority: { kind: 'OFFLINE', profileName: 'clock-drift-deadlock-test', reason: 'fixture' },
+            });
+            releaseWriter();
+            const suspension = await Promise.race([
+                Promise.all([writer, suspensionPromise]).then(([, result]) => result),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('general-access/clock-operation deadlock')), 5_000)
+                ),
+            ]);
+            expect(Math.abs(suspension.cutWallAt.getTime() - dbWall!.now.getTime())).toBeLessThan(5_000);
+            expect(suspension.cutTick).toBeGreaterThanOrEqual(42);
+            expect(suspension.cutTick).toBeLessThan(42 + 60 * 60_000);
+        } finally {
+            dateNow.mockRestore();
+            releaseWriter();
+        }
     });
 });

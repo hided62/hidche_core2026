@@ -27,7 +27,13 @@ integration('database command queue', () => {
 
     beforeEach(async () => {
         await db.inputEvent.deleteMany({ where: { requestId: { startsWith: 'integration:engine:' } } });
-        await db.clockSuspension.deleteMany({ where: { id: 'integration-queue-revision-8-9' } });
+        await db.clockProjectionOutbox.deleteMany({
+            where: { suspensionId: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
+        });
+        await db.clockSuspension.deleteMany({
+            where: { id: { in: ['integration-queue-revision-8-9', 'integration-unification-wait'] } },
+        });
+        await db.message.deleteMany({ where: { mailbox: 991_199 } });
         await db.worldState.updateMany({ data: { clockPhase: 'RUNNING' } });
     });
 
@@ -349,5 +355,104 @@ integration('database command queue', () => {
             processingClockRevision: 9n,
             processingDeadlineGeneration: 4n,
         });
+    });
+
+    it('dequeues only the invader decision while an UNIFICATION_WAIT suspension is active', async () => {
+        const existingWorld = await db.worldState.findFirst({ orderBy: { id: 'asc' } });
+        const world = existingWorld
+            ? await db.worldState.update({
+                  where: { id: existingWorld.id },
+                  data: { clockPhase: 'SUSPENDED', clockRevision: 31n, deadlineGeneration: 7n, clockTick: 900n },
+              })
+            : await db.worldState.create({
+                  data: {
+                      scenarioCode: 'queue-unification-clock-test',
+                      currentYear: 200,
+                      currentMonth: 1,
+                      tickSeconds: 600,
+                      clockPhase: 'SUSPENDED',
+                      clockRevision: 31n,
+                      deadlineGeneration: 7n,
+                      clockTick: 900n,
+                  },
+              });
+        const message = await db.message.create({
+            data: {
+                mailbox: 991_199,
+                type: 'private',
+                src: 0,
+                dest: 991_199,
+                time: new Date(),
+                validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                message: { option: { action: 'raiseInvader', used: false } },
+            },
+        });
+        await db.clockSuspension.create({
+            data: {
+                id: 'integration-unification-wait',
+                worldStateId: world.id,
+                source: 'UNIFICATION_WAIT',
+                policy: 'EXACT',
+                status: 'SUSPENDED',
+                sourceRevision: 31n,
+                targetRevision: 32n,
+                cutTick: 900n,
+                cutWallAt: new Date(),
+                rateTicksPerSecond: 60_000,
+            },
+        });
+        const messageRequestId = 'integration:engine:unification-message';
+        const gameplayRequestId = 'integration:engine:unification-gameplay';
+        await db.inputEvent.createMany({
+            data: [
+                {
+                    requestId: messageRequestId,
+                    target: 'ENGINE',
+                    eventType: 'messageRespond',
+                    actorUserId: 'user-991199',
+                    acceptedGameTick: 900n,
+                    acceptedClockRevision: 31n,
+                    acceptedDeadlineGeneration: 7n,
+                    payload: {
+                        type: 'messageRespond',
+                        requestId: messageRequestId,
+                        userId: 'user-991199',
+                        generalId: 991_199,
+                        messageId: message.id,
+                        response: true,
+                    },
+                },
+                {
+                    requestId: gameplayRequestId,
+                    target: 'ENGINE',
+                    eventType: 'vacation',
+                    actorUserId: 'user-991199',
+                    acceptedGameTick: 900n,
+                    acceptedClockRevision: 31n,
+                    acceptedDeadlineGeneration: 7n,
+                    payload: {
+                        type: 'vacation',
+                        requestId: gameplayRequestId,
+                        userId: 'user-991199',
+                        generalId: 991_199,
+                    },
+                },
+            ],
+        });
+
+        const queue = new DatabaseTurnDaemonCommandQueue(db);
+        await expect(queue.drain()).resolves.toEqual([
+            {
+                type: 'messageRespond',
+                requestId: messageRequestId,
+                userId: 'user-991199',
+                generalId: 991_199,
+                messageId: message.id,
+                response: true,
+            },
+        ]);
+        await expect(
+            db.inputEvent.findUniqueOrThrow({ where: { requestId: gameplayRequestId } })
+        ).resolves.toMatchObject({ status: 'PENDING' });
     });
 });

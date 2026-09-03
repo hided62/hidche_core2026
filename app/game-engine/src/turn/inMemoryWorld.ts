@@ -696,6 +696,116 @@ export class InMemoryTurnWorld {
         return true;
     }
 
+    beginUnificationWait(suspensionId: string): void {
+        const phase = this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual');
+        if (phase === 'SUSPENDED' && this.state.meta.unificationClockSuspensionId === suspensionId) {
+            return;
+        }
+        if (phase !== 'RUNNING') {
+            throw new Error(`UNIFICATION_WAIT can start only from RUNNING; current phase is ${phase}.`);
+        }
+        this.state = {
+            ...this.state,
+            clockPhase: 'SUSPENDED',
+            meta: {
+                ...this.state.meta,
+                unificationClockSuspensionId: suspensionId,
+            },
+        };
+    }
+
+    completeGameClock(): void {
+        const phase = this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual');
+        if (phase === 'COMPLETED') return;
+        if (phase !== 'RUNNING') {
+            throw new Error(`Game clock can complete only from RUNNING; current phase is ${phase}.`);
+        }
+        this.state = { ...this.state, clockPhase: 'COMPLETED' };
+    }
+
+    applyClockReconciliation(input: {
+        suspensionId: string;
+        alignedTick: number;
+        shiftTicks: number;
+        targetRevision: number;
+        deadlineGeneration: number;
+        resumeWallAt: Date;
+    }): void {
+        const phase = this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual');
+        if (phase !== 'SUSPENDED' || this.state.meta.unificationClockSuspensionId !== input.suspensionId) {
+            throw new Error('In-memory clock reconciliation requires the matching UNIFICATION_WAIT suspension.');
+        }
+        if (
+            !Number.isSafeInteger(input.alignedTick) ||
+            !Number.isSafeInteger(input.shiftTicks) ||
+            input.shiftTicks < 0 ||
+            !Number.isSafeInteger(input.targetRevision) ||
+            !Number.isSafeInteger(input.deadlineGeneration)
+        ) {
+            throw new Error('In-memory clock reconciliation received an unsafe coordinate.');
+        }
+        const clock = this.getGameClock();
+        const shiftedMilliseconds = Math.trunc((input.shiftTicks * 1_000) / clock.ticksPerSecond);
+        if (!Number.isSafeInteger(shiftedMilliseconds)) {
+            throw new Error('In-memory clock reconciliation projection delta is unsafe.');
+        }
+        const lastTurnTick = clock.addTicks(this.state.lastTurnTick ?? 0, input.shiftTicks);
+        const lastTurnTime = clock.tickToDate(lastTurnTick);
+        this.state = {
+            ...this.state,
+            clockTick: input.alignedTick,
+            clockWallAnchor: new Date(input.resumeWallAt.getTime()),
+            lastTurnTick,
+            lastTurnTime,
+            clockPhase: 'RECONCILING',
+            clockRevision: input.targetRevision,
+            deadlineGeneration: input.deadlineGeneration,
+            meta: {
+                ...this.state.meta,
+                lastTurnTime: lastTurnTime.toISOString(),
+                turntime: shiftGameClockMetaDate(this.state.meta.turntime, shiftedMilliseconds),
+                starttime: shiftGameClockMetaDate(this.state.meta.starttime, shiftedMilliseconds),
+                tnmt_time: shiftGameClockMetaDate(this.state.meta.tnmt_time, shiftedMilliseconds),
+            },
+        };
+        for (const [generalId, general] of this.generals) {
+            const turnTick = clock.addTicks(general.turnTick ?? clock.dateToTick(general.turnTime), input.shiftTicks);
+            this.generals.set(generalId, {
+                ...general,
+                turnTick,
+                turnTime: clock.tickToDate(turnTick),
+            });
+        }
+        for (const entry of this.generalPoolEntries ?? []) {
+            if (entry.reservedUntilTick !== null) {
+                entry.reservedUntilTick = clock.addTicks(entry.reservedUntilTick, input.shiftTicks);
+                entry.reservedUntil = clock.tickToDate(entry.reservedUntilTick);
+            } else if (entry.reservedUntil) {
+                entry.reservedUntil = new Date(entry.reservedUntil.getTime() + shiftedMilliseconds);
+            }
+        }
+        for (const auction of this.pendingNeutralAuctions) {
+            auction.closeAt = new Date(auction.closeAt.getTime() + shiftedMilliseconds);
+        }
+        if (this.checkpoint) {
+            const checkpointTick = clock.addTicks(
+                this.checkpoint.turnTick ?? clock.dateToTick(new Date(this.checkpoint.turnTime)),
+                input.shiftTicks
+            );
+            this.checkpoint = {
+                ...this.checkpoint,
+                turnTick: checkpointTick,
+                turnTime: clock.tickToDate(checkpointTick).toISOString(),
+            };
+        }
+    }
+
+    completeClockReconciliation(): void {
+        if (this.state.clockPhase === 'RECONCILING') {
+            this.state = { ...this.state, clockPhase: 'RUNNING' };
+        }
+    }
+
     getRunnableGameNow(wallNow: Date): Date {
         const clock = this.getGameClock();
         // PREOPEN still needs negative game ticks for cooldowns, but executable

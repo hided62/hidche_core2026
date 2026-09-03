@@ -149,6 +149,8 @@ describe('unification handler', () => {
             currentMonth: 6,
             tickSeconds: 600,
             lastTurnTime: new Date('0190-06-01T00:00:00.000Z'),
+            clockMode: 'realtime',
+            clockPhase: 'RUNNING',
             meta: { serverId: 'server-1', refreshLimit: 2 },
         };
         const snapshot: TurnWorldSnapshot = {
@@ -203,6 +205,8 @@ describe('unification handler', () => {
                 currentGeneralCount: 1,
             },
         });
+        expect(world.getGameClockState().phase).toBe('SUSPENDED');
+        expect(world.getState().meta.unificationClockSuspensionId).toMatch(/^unification-wait-[a-f0-9]{32}$/);
         expect(world.getGeneralById(1)).toMatchObject({
             inheritancePoints: { previous: 150, unifier: 2007, tournament: 11 },
             meta: { inherit_earned_dyn: 2162.1, inherit_earned: 2167.1, inherit_spent: 20 },

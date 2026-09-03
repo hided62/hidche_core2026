@@ -8,6 +8,7 @@ import type { ImmediateGeneralActionExecutor } from './reservedTurnHandler.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import type { TurnEvent } from './types.js';
+import { reconcileClockSuspensionInTransaction, type ClockReconciliationResult } from './clockReconciliation.js';
 
 type ActionableMessageType = 'scout' | 'raiseInvader';
 
@@ -251,6 +252,18 @@ const respondToRaiseInvader = async (options: {
     payload: MessagePayload;
     now: Date;
     loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
+    clockOperationAuthority?: {
+        kind: 'DAEMON';
+        profileName: string;
+        ownerId: string;
+        fencingEpoch: bigint;
+    };
+    reconcileUnificationWait?: (input: {
+        db: GamePrisma.TransactionClient;
+        suspensionId: string;
+        profileName: string;
+        authority: NonNullable<Parameters<typeof reconcileClockSuspensionInTransaction>[0]['authority']>;
+    }) => Promise<ClockReconciliationResult>;
 }): Promise<ActionableMessageResponseResult> => {
     const { db, world, reservedTurns, actorId, response, row, payload, now } = options;
     if (row.type !== 'private' || row.mailbox !== actorId || payload.dest.generalId !== actorId) {
@@ -272,6 +285,21 @@ const respondToRaiseInvader = async (options: {
     if (!reservedTurns) {
         throw new Error('RaiseInvader message response requires the reserved-turn store.');
     }
+    const suspensionId =
+        typeof state.meta.unificationClockSuspensionId === 'string' ? state.meta.unificationClockSuspensionId : null;
+    if (!suspensionId || !options.clockOperationAuthority) {
+        throw new Error('RaiseInvader requires a daemon-authorized UNIFICATION_WAIT suspension.');
+    }
+    const reconcile =
+        options.reconcileUnificationWait ??
+        ((input) => reconcileClockSuspensionInTransaction({ ...input, allowUnificationWait: true }));
+    const alignment = await reconcile({
+        db,
+        suspensionId,
+        profileName: options.clockOperationAuthority.profileName,
+        authority: options.clockOperationAuthority,
+    });
+    world.applyClockReconciliation(alignment);
     const args = asRecord(payload.option).args;
     if (!Array.isArray(args) || args.length !== 4 || args.some((value) => typeof value !== 'number')) {
         return { ok: false, action: 'raiseInvader', reason: '이민족 소환 인자가 올바르지 않습니다.' };
@@ -281,6 +309,7 @@ const respondToRaiseInvader = async (options: {
         reservedTurns,
         env: buildCommandEnv(world.getScenarioConfig(), world.getUnitSet()),
         loadArchivedNationMaxId: options.loadArchivedNationMaxId,
+        clockWallNow: alignment.resumeWallAt,
     });
     const event: TurnEvent = { id: 0, targetCode: 'month', priority: 0, condition: true, action: [], meta: {} };
     await handler(
@@ -311,6 +340,18 @@ export const respondToActionableMessage = async (options: {
     messageId: number;
     response: boolean;
     loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
+    clockOperationAuthority?: {
+        kind: 'DAEMON';
+        profileName: string;
+        ownerId: string;
+        fencingEpoch: bigint;
+    };
+    reconcileUnificationWait?: (input: {
+        db: GamePrisma.TransactionClient;
+        suspensionId: string;
+        profileName: string;
+        authority: NonNullable<Parameters<typeof reconcileClockSuspensionInTransaction>[0]['authority']>;
+    }) => Promise<ClockReconciliationResult>;
 }): Promise<ActionableMessageResponseResult> => {
     const acceptedAt = await validateActor(options);
     const now = options.world.getGameNow(acceptedAt);

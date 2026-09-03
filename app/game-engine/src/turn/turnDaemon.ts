@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { loadActionModuleBundle, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
 import {
     buildGameEventChannel,
@@ -20,7 +22,11 @@ import type { Clock, TurnDaemonControlQueue, TurnDaemonHooks, TurnRunBudget } fr
 import { TurnDaemonLifecycle } from '../lifecycle/turnDaemonLifecycle.js';
 import { DatabaseTurnDaemonCommandQueue } from '../lifecycle/databaseCommandQueue.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
-import { createDatabaseTurnHooks, type CommittedReadModelChangeReceipt } from './databaseHooks.js';
+import {
+    createDatabaseTurnHooks,
+    type CommittedReadModelChangeReceipt,
+    type DatabaseTurnHooks,
+} from './databaseHooks.js';
 import type { GeneralTurnHandler, InMemoryTurnWorldOptions, TurnCalendarHandler } from './inMemoryWorld.js';
 import { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
@@ -497,15 +503,40 @@ const createRealtimeRuntime = async (options: {
     profileName: string;
     hooks?: TurnDaemonHooks;
     takeCommittedReadModelChangeReceipt: (() => CommittedReadModelChangeReceipt | null) | null;
-}): Promise<{ redisConnector: RedisConnector | null; hooks?: TurnDaemonHooks }> => {
+    applyClockProjection?: (redis: RedisConnector['client'], workerId: string) => Promise<boolean>;
+    onClockProjectionApplied?: () => void;
+}): Promise<{
+    redisConnector: RedisConnector | null;
+    hooks?: TurnDaemonHooks;
+    stopClockProjectionWorker: () => void;
+}> => {
     const redisConfig = resolveRedisConfig(options.redisUrl);
     if (!redisConfig) {
-        return { redisConnector: null, hooks: options.hooks };
+        return { redisConnector: null, hooks: options.hooks, stopClockProjectionWorker: () => {} };
     }
 
     const redisConnector = createRedisConnector(redisConfig);
     await redisConnector.connect();
     const redisClient = redisConnector.client;
+    const clockProjectionWorkerId = `turn-daemon:${options.profileName}:${randomUUID()}`;
+    let clockProjectionInFlight = false;
+    let clockProjectionStopped = false;
+    const recoverClockProjection = async (): Promise<void> => {
+        if (!options.applyClockProjection || clockProjectionInFlight || clockProjectionStopped) return;
+        clockProjectionInFlight = true;
+        try {
+            if (await options.applyClockProjection(redisClient, clockProjectionWorkerId)) {
+                options.onClockProjectionApplied?.();
+            }
+        } finally {
+            clockProjectionInFlight = false;
+        }
+    };
+    await recoverClockProjection().catch(() => undefined);
+    const clockProjectionTimer = options.applyClockProjection
+        ? setInterval(() => void recoverClockProjection().catch(() => undefined), 1_000)
+        : null;
+    clockProjectionTimer?.unref();
     const realtimeChannel = buildGameEventChannel(options.profileName);
     const revisionKey = buildGameReadModelRevisionKey(options.profileName);
     const domainRevisionKey = buildGameReadModelDomainRevisionKey(options.profileName);
@@ -550,6 +581,9 @@ const createRealtimeRuntime = async (options: {
             await basePublishEvents?.(result);
         },
         publishCommandEvents: async (result) => {
+            if (result.type === 'messageRespond' && result.ok && result.action === 'raiseInvader') {
+                await recoverClockProjection();
+            }
             try {
                 const changes = options.takeCommittedReadModelChangeReceipt?.()?.changes;
                 if (changes && hasRealtimeReadModelChanges(changes)) {
@@ -569,7 +603,14 @@ const createRealtimeRuntime = async (options: {
             await basePublishCommandEvents?.(result);
         },
     };
-    return { redisConnector, hooks };
+    return {
+        redisConnector,
+        hooks,
+        stopClockProjectionWorker: () => {
+            clockProjectionStopped = true;
+            if (clockProjectionTimer) clearInterval(clockProjectionTimer);
+        },
+    };
 };
 
 const createStartedAdminActionConsumer = async (options: {
@@ -672,6 +713,8 @@ const createTurnDaemonRuntimeWithLease = async (
         }));
     let worldRef: InMemoryTurnWorld | null = null;
     let redisConnector: RedisConnector | null = null;
+    let stopClockProjectionWorker = () => {};
+    let applyClockProjection: DatabaseTurnHooks['applyClockProjection'] | undefined;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const monthlyActionModules = await loadActionModuleBundle(
@@ -876,6 +919,7 @@ const createTurnDaemonRuntimeWithLease = async (
             },
         };
         takeCommittedReadModelChangeReceipt = dbHooks.takeCommittedReadModelChangeReceipt;
+        applyClockProjection = dbHooks.applyClockProjection;
         close = async () => {
             if (auctionBidder) {
                 await auctionBidder.close();
@@ -926,9 +970,17 @@ const createTurnDaemonRuntimeWithLease = async (
         profileName: options.profileName ?? options.profile,
         hooks,
         takeCommittedReadModelChangeReceipt,
+        ...(applyClockProjection
+            ? {
+                  applyClockProjection: (redis: RedisConnector['client'], workerId: string) =>
+                      applyClockProjection!(redis, workerId),
+                  onClockProjectionApplied: () => world.completeClockReconciliation(),
+              }
+            : {}),
     });
     redisConnector = realtimeRuntime.redisConnector;
     hooks = realtimeRuntime.hooks;
+    stopClockProjectionWorker = realtimeRuntime.stopClockProjectionWorker;
 
     const commandConnector = hooks ? createGamePostgresConnector({ url: options.databaseUrl }) : null;
     const databaseCommandQueue = commandConnector ? new DatabaseTurnDaemonCommandQueue(commandConnector.prisma) : null;
@@ -950,6 +1002,7 @@ const createTurnDaemonRuntimeWithLease = async (
 
     const baseClose = close;
     close = async () => {
+        stopClockProjectionWorker();
         await baseClose();
         await neutralAuctionRegistrar.close();
         if (redisConnector) {

@@ -50,6 +50,23 @@ The authoritative registry is
 architecture gate rejects a new tick/revision field that is absent from that
 inventory.
 
+## Unification wait
+
+A unification month with an invader choice changes `RUNNING -> SUSPENDED` and
+persists a deterministic `UNIFICATION_WAIT` suspension in the same transaction
+as the archive, prompts, and final unification state. Only a `raiseInvader`
+message response tied to that active suspension may pass the suspended command
+queue; all other gameplay remains pending.
+
+The response transaction verifies daemon authority, performs the exact
+alignment, applies all participant shifts, optionally changes the turn rate,
+then creates the invader nation, deterministic general IDs/RNG results, first
+turns, and the final target-revision outbox. The optional rate change refreshes
+the outbox with the final base/rate before commit. DB remains `RECONCILING`
+until the daemon projection worker applies Redis and verifies the target
+revision/generation. Games without an invader choice move directly to
+`COMPLETED`.
+
 ## DB to Redis boundary
 
 The database transaction leaves the phase `RECONCILING` and creates exactly one
@@ -114,9 +131,7 @@ future anchored realtime profiles as `PREOPEN`, and other profiles as
 `RUNNING`. Existing DateTime columns remain projections while tick columns are
 authoritative.
 
-Exact reconciliation stays disabled while an active registry participant is
-`FORBID`. Tournament writes now carry tick/revision/generation coordinates and
-are revision-fenced in Redis. The remaining unification wait participant must
-be moved from its `lastTurnTime` workaround to a durable suspension before that
-workflow can reach `RUNNING`. Removing this guard to make a partial operation
-pass is prohibited.
+No active participant remains `FORBID`. Tournament writes carry
+tick/revision/generation coordinates and are revision-fenced in Redis.
+Unification wait uses the same durable ledger and outbox boundary; the former
+temporary `lastTurnTime` save/restore workaround is not part of the workflow.

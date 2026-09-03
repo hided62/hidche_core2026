@@ -42,6 +42,14 @@
             "types": "./dist/turn/databaseHooks.d.ts",
             "default": "./dist/turn/databaseHooks.js"
         },
+        "./turn/clockReconciliation.js": {
+            "types": "./dist/turn/clockReconciliation.d.ts",
+            "default": "./dist/turn/clockReconciliation.js"
+        },
+        "./turn/clockProjectionOutbox.js": {
+            "types": "./dist/turn/clockProjectionOutbox.d.ts",
+            "default": "./dist/turn/clockProjectionOutbox.js"
+        },
         "./turn/inMemoryWorld.js": {
             "types": "./dist/turn/inMemoryWorld.d.ts",
             "default": "./dist/turn/inMemoryWorld.js"

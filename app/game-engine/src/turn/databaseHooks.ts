@@ -56,12 +56,20 @@ import { persistUnificationFinalization } from './unificationPersistence.js';
 import { buildOldNationArchiveData } from './oldNationArchive.js';
 import { persistYearbookSnapshot } from './yearbookPersistence.js';
 import { buildTurnWebPushEvents, captureWebPushTurnBaseline } from './webPushEvents.js';
+import {
+    persistClockSuspensionLedgerUnderHeldLocks,
+    prepareClockSuspensionUnderHeldLocks,
+    readClockDatabaseWall,
+    refreshClockProjectionForFinalClockUnderHeldLocks,
+} from './clockReconciliation.js';
+import { applyNextClockProjection, type ClockProjectionRedis } from './clockProjectionOutbox.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
     takeCommittedReadModelChanges(): RealtimeReadModelChanges | null;
     takeCommittedReadModelChangeReceipt(): CommittedReadModelChangeReceipt | null;
     close(): Promise<void>;
+    applyClockProjection(redis: ClockProjectionRedis, workerId: string): Promise<boolean>;
 }
 
 export interface CommittedReadModelChangeReceipt {
@@ -1140,8 +1148,7 @@ export const createDatabaseTurnHooks = async (
             lifecycleEvents.length > 0 ||
             deletedGenerals.length > 0 ||
             generals.some(
-                (general) =>
-                    typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
+                (general) => typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
             );
         const persist = async (
             prisma: GamePrisma.TransactionClient
@@ -1204,12 +1211,27 @@ export const createDatabaseTurnHooks = async (
             const expectedPhase = state.clockPhase ?? (state.clockMode === 'realtime' ? 'RUNNING' : 'MANUAL');
             const expectedRevision = BigInt(state.clockRevision ?? 1);
             const expectedGeneration = BigInt(state.deadlineGeneration ?? 1);
+            const stateMeta = asRecord(state.meta);
+            const unificationSuspensionId =
+                typeof stateMeta.unificationClockSuspensionId === 'string'
+                    ? stateMeta.unificationClockSuspensionId
+                    : null;
             const openingPhaseTransition =
-                durableClock.clock_phase === 'PREOPEN' &&
-                expectedPhase === 'RUNNING' &&
-                durableClock.opening_reached;
+                durableClock.clock_phase === 'PREOPEN' && expectedPhase === 'RUNNING' && durableClock.opening_reached;
+            const unificationSuspensionTransition =
+                durableClock.clock_phase === 'RUNNING' &&
+                expectedPhase === 'SUSPENDED' &&
+                Number(stateMeta.isunited ?? stateMeta.isUnited ?? 0) === 2 &&
+                Boolean(unificationSuspensionId);
+            const completionPhaseTransition =
+                durableClock.clock_phase === 'RUNNING' &&
+                expectedPhase === 'COMPLETED' &&
+                Number(stateMeta.isunited ?? stateMeta.isUnited ?? 0) >= 2;
             if (
-                (!openingPhaseTransition && durableClock.clock_phase !== expectedPhase) ||
+                (!openingPhaseTransition &&
+                    !unificationSuspensionTransition &&
+                    !completionPhaseTransition &&
+                    durableClock.clock_phase !== expectedPhase) ||
                 durableClock.clock_revision !== expectedRevision ||
                 durableClock.deadline_generation !== expectedGeneration
             ) {
@@ -1218,6 +1240,18 @@ export const createDatabaseTurnHooks = async (
                         `found ${durableClock.clock_phase}@${durableClock.clock_revision}/${durableClock.deadline_generation}.`
                 );
             }
+            const unificationCutWallAt = unificationSuspensionTransition ? await readClockDatabaseWall(prisma) : null;
+            const unificationCutTick = unificationCutWallAt
+                ? world.dateToGameTick(world.getGameNow(unificationCutWallAt))
+                : null;
+            const suspensionPreparation =
+                unificationCutTick !== null
+                    ? await prepareClockSuspensionUnderHeldLocks({
+                          db: prisma,
+                          cutTick: unificationCutTick,
+                          cutWallAt: unificationCutWallAt!,
+                      })
+                    : null;
             if (commandCompletion) {
                 const commandFence = await prisma.$queryRaw<
                     Array<{
@@ -1235,11 +1269,21 @@ export const createDatabaseTurnHooks = async (
                     FOR UPDATE
                 `);
                 const event = commandFence[0];
+                const unificationRevisionTransition =
+                    commandCompletion.result.type === 'messageRespond' &&
+                    commandCompletion.result.ok &&
+                    commandCompletion.result.action === 'raiseInvader' &&
+                    expectedPhase === 'RECONCILING' &&
+                    event?.processing_clock_revision !== null &&
+                    event?.processing_deadline_generation !== null &&
+                    event?.processing_clock_revision + 1n === expectedRevision &&
+                    event?.processing_deadline_generation + 1n === expectedGeneration;
                 if (
                     !event ||
                     event.status !== 'PROCESSING' ||
-                    event.processing_clock_revision !== expectedRevision ||
-                    event.processing_deadline_generation !== expectedGeneration
+                    (!unificationRevisionTransition &&
+                        (event.processing_clock_revision !== expectedRevision ||
+                            event.processing_deadline_generation !== expectedGeneration))
                 ) {
                     throw new Error(
                         `Input event processing clock fence changed before commit: ${commandCompletion.requestId}.`
@@ -1349,6 +1393,35 @@ export const createDatabaseTurnHooks = async (
                                 + (((end_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond}) * INTERVAL '1 millisecond'
                         END
                     WHERE start_tick IS NOT NULL OR end_tick IS NOT NULL
+                `);
+                await prisma.$executeRaw(GamePrisma.sql`
+                    UPDATE select_pool
+                    SET reserved_until = CASE
+                            WHEN reserved_until_tick IS NULL THEN reserved_until
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (reserved_until_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((reserved_until_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond})
+                                    * INTERVAL '1 millisecond'
+                        END
+                    WHERE reserved_until_tick IS NOT NULL
+                `);
+                await prisma.$executeRaw(GamePrisma.sql`
+                    UPDATE select_npc_token
+                    SET valid_until = CASE
+                            WHEN valid_until_tick IS NULL THEN valid_until
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (valid_until_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((valid_until_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond})
+                                    * INTERVAL '1 millisecond'
+                        END,
+                        pick_more_from = CASE
+                            WHEN pick_more_from_tick IS NULL THEN pick_more_from
+                            ELSE CAST(${baseTime} AS timestamp)
+                                + (pick_more_from_tick / ${ticksPerSecond}) * INTERVAL '1 second'
+                                + (((pick_more_from_tick % ${ticksPerSecond}) * 1000) / ${ticksPerSecond})
+                                    * INTERVAL '1 millisecond'
+                        END
+                    WHERE valid_until_tick IS NOT NULL OR pick_more_from_tick IS NOT NULL
                 `);
             }
 
@@ -1817,6 +1890,41 @@ export const createDatabaseTurnHooks = async (
             if (options?.reservedTurns && persistedReservedTurnChanges) {
                 await options.reservedTurns.persistChanges(prisma, persistedReservedTurnChanges);
             }
+            if (suspensionPreparation && unificationSuspensionId) {
+                const cutTick = unificationCutTick!;
+                await prisma.worldState.update({
+                    where: { id: state.id },
+                    data: {
+                        clockTick: BigInt(cutTick),
+                        clockWallAnchor: suspensionPreparation.cutWallAt,
+                    },
+                });
+                await persistClockSuspensionLedgerUnderHeldLocks({
+                    db: prisma,
+                    suspensionId: unificationSuspensionId,
+                    worldStateId: state.id,
+                    profileName: options?.profileName ?? 'default',
+                    source: 'UNIFICATION_WAIT',
+                    cutTick,
+                    cutWallAt: suspensionPreparation.cutWallAt,
+                    rateTicksPerSecond: GAME_TICKS_PER_TURN / state.tickSeconds,
+                    sourceRevision: state.clockRevision ?? 1,
+                });
+            }
+            if (
+                commandCompletion?.result.type === 'messageRespond' &&
+                commandCompletion.result.ok &&
+                commandCompletion.result.action === 'raiseInvader' &&
+                unificationSuspensionId &&
+                state.clockPhase === 'RECONCILING'
+            ) {
+                await refreshClockProjectionForFinalClockUnderHeldLocks({
+                    db: prisma,
+                    suspensionId: unificationSuspensionId,
+                    clockBaseTime: state.clockBaseTime ?? state.lastTurnTime,
+                    tickSeconds: state.tickSeconds,
+                });
+            }
             if (commandCompletion) {
                 await prisma.inputEvent.update({
                     where: { requestId: commandCompletion.requestId },
@@ -1902,6 +2010,10 @@ export const createDatabaseTurnHooks = async (
         },
         executeCommand: async (requestId, execute) => {
             const committed = await prisma.$transaction(async (transaction) => {
+                await options?.turnDaemonLease?.assertActive(transaction);
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
+                const leaseToken = options?.turnDaemonLease?.getToken();
                 const directLogFloor =
                     (
                         await transaction.logEntry.findFirst({
@@ -1909,7 +2021,19 @@ export const createDatabaseTurnHooks = async (
                             select: { id: true },
                         })
                     )?.id ?? 0;
-                const result = await execute({ db: transaction });
+                const result = await execute({
+                    db: transaction,
+                    ...(leaseToken
+                        ? {
+                              clockOperationAuthority: {
+                                  kind: 'DAEMON' as const,
+                                  profileName: leaseToken.profile,
+                                  ownerId: leaseToken.ownerId,
+                                  fencingEpoch: leaseToken.fencingEpoch,
+                              },
+                          }
+                        : {}),
+                });
                 const persisted = await persistChanges(transaction, { requestId, result }, directLogFloor);
                 return { result, persisted };
             }, transactionOptions);
@@ -1925,6 +2049,14 @@ export const createDatabaseTurnHooks = async (
             return takeCommittedReceipt()?.changes ?? null;
         },
         takeCommittedReadModelChangeReceipt: takeCommittedReceipt,
+        applyClockProjection: async (redis, workerId) => {
+            await applyNextClockProjection({ db: prisma, redis, workerId });
+            const clock = await prisma.worldState.findFirst({
+                orderBy: { id: 'asc' },
+                select: { clockPhase: true },
+            });
+            return clock?.clockPhase === 'RUNNING' || clock?.clockPhase === 'MANUAL';
+        },
         close: () => connector.disconnect(),
     };
 };

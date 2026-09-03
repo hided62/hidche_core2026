@@ -163,11 +163,16 @@
         },
         {
             "key": "unification-wait",
-            "policy": "FORBID",
-            "authorityFields": ["world_state.meta.isunited", "world_state.meta.lastTurnTime"],
-            "projectionFields": [],
+            "policy": "REBUILD",
+            "authorityFields": [
+                "world_state.meta.isunited",
+                "world_state.meta.unificationClockSuspensionId",
+                "clock_suspension.cut_tick",
+                "clock_suspension.cut_wall_at"
+            ],
+            "projectionFields": ["world_state.meta.lastTurnTime"],
             "owner": "game-engine/unification",
-            "migration": "Replace the lastTurnTime workaround with a durable UNIFICATION_WAIT suspension."
+            "migration": "Implemented as one exact alignment, optional rate change, invader creation, and revisioned outbox transaction."
         },
         {
             "key": "clock-operation-ledger",
@@ -190,7 +195,7 @@
         {
             "keyPattern": "sammo:{profile}:clock:active-revision",
             "policy": "REBUILD",
-            "status": "planned"
+            "status": "implemented-with-db-phase-and-deadline-generation-fence"
         },
         {
             "keyPattern": "sammo:{profile}:auction:timer",

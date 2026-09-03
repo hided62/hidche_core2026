@@ -28,6 +28,13 @@ service. The service must re-read participant checksums and either return the
 already-applied result or resume the pending outbox. Never create a replacement
 revision to hide a failed target revision.
 
+For `UNIFICATION_WAIT`, never rerun invader creation as a separate repair.
+The input event, aligned schedules, optional rate, deterministic invader IDs,
+reserved turns, and outbox committed together. A committed command with a
+`RECONCILING` world therefore needs only the same outbox retry. If the command
+transaction rolled back, the original prompt and source revision remain and
+the same response can be retried without changing IDs or RNG results.
+
 When an outbox row is `FAILED`, the profile must remain `RECONCILING`. A retry
 is safe in both crash locations:
 
@@ -48,5 +55,7 @@ If participant verification shows an unexpected mutation, stop the profile,
 retain the ledger/outbox evidence, and restore the whole game schema from that
 backup. Redis projections are then rebuilt from the restored DB revision.
 
-The implementation-plan release gate remains open until these steps have an
-automated fixture and an operator-facing status endpoint.
+The conditional clock suite exercises `SUSPENDED`, `RECONCILING/PENDING`,
+`RECONCILING/FAILED` before and after Redis commit, recovered `APPLIED`, and
+final `RUNNING`. The admin status endpoint exposes the phase, revision,
+participant checksums, and outbox error needed to choose the matching step.

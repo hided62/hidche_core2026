@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { asNumber, asRecord, JosaUtil } from '@sammo-ts/common';
 import { LogCategory, LogFormat, LogScope, type LogEntryDraft } from '@sammo-ts/logic';
 
@@ -163,6 +165,14 @@ export const createUnificationHandler = (options: {
                         });
                     }
                 }
+                const sourceRevision = world.getGameClockState().revision;
+                const suspensionId = `unification-wait-${createHash('sha256')
+                    .update(`${serverId}:${sourceRevision}`)
+                    .digest('hex')
+                    .slice(0, 32)}`;
+                world.beginUnificationWait(suspensionId);
+            } else {
+                world.completeGameClock();
             }
 
             queueYearbookSnapshot(world, options.profileName, context.currentYear, context.currentMonth);

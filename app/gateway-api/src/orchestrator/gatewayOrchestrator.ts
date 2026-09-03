@@ -5,12 +5,12 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { ScenarioInstallOptions } from '@sammo-ts/game-engine/scenario/scenarioSeeder.js';
+import { applyNextClockProjection } from '@sammo-ts/game-engine/turn/clockProjectionOutbox.js';
 import {
-    applyNextClockProjection,
     reconcileClockSuspension,
     startClockSuspension,
     type ClockOperationAuthority,
-} from '@sammo-ts/game-engine';
+} from '@sammo-ts/game-engine/turn/clockReconciliation.js';
 import {
     cancelGame as defaultCancelGame,
     GAME_CANCELLATION_GENERAL_MODES,

@@ -133,6 +133,7 @@ export const createRaiseInvaderHandler = (options: {
     env: TurnCommandEnv;
     loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
     maxGeneralsPerMinute?: number;
+    clockWallNow?: Date;
 }): MonthlyEventActionHandler => {
     return async (args, environment) => {
         const world = options.getWorld();
@@ -166,7 +167,7 @@ export const createRaiseInvaderHandler = (options: {
                 (candidate) => totalGeneralCount <= maxGeneralsPerMinute * candidate
             );
             if (nextTerm !== undefined) {
-                world.changeTurnTerm(nextTerm);
+                world.changeTurnTerm(nextTerm, options.clockWallNow);
                 // Reprojection preserves the frozen monthly boundary by tick but
                 // changes its displayed Date. New generals must join that frozen
                 // boundary, not the realtime game clock that kept advancing while

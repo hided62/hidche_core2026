@@ -8,7 +8,7 @@ import {
     type GamePrismaClient,
 } from '@sammo-ts/infra';
 
-interface ClockProjectionRedis {
+export interface ClockProjectionRedis {
     get(key: string): Promise<string | null>;
     eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
 }
@@ -128,10 +128,7 @@ const parsePayload = (value: GamePrisma.JsonValue): ProjectionPayload => {
         targetRevision: safeInteger(payload.targetRevision, 'targetRevision'),
         deadlineGeneration: safeInteger(payload.deadlineGeneration, 'deadlineGeneration'),
         shiftTicks: safeInteger(payload.shiftTicks, 'shiftTicks'),
-        projectionDeltaMilliseconds: safeInteger(
-            payload.projectionDeltaMilliseconds,
-            'projectionDeltaMilliseconds'
-        ),
+        projectionDeltaMilliseconds: safeInteger(payload.projectionDeltaMilliseconds, 'projectionDeltaMilliseconds'),
         clockBaseTime: payload.clockBaseTime,
         ticksPerSecond: safeInteger(payload.ticksPerSecond, 'ticksPerSecond'),
     };
@@ -284,7 +281,8 @@ export const applyNextClockProjection = async (options: {
         if (applied === -1) throw new Error('Redis active clock revision does not match the outbox source revision.');
         if (applied === -2) throw new Error('Redis tournament state changed while rebuilding its projection.');
         if (applied === -3) throw new Error('Redis target revision exists without the expected projection checksum.');
-        if (applied !== 1 && applied !== 2) throw new Error(`Unexpected Redis clock projection result: ${String(result)}`);
+        if (applied !== 1 && applied !== 2)
+            throw new Error(`Unexpected Redis clock projection result: ${String(result)}`);
 
         await options.db.$transaction(async (transaction) => {
             await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);

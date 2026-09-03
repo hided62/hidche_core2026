@@ -147,6 +147,9 @@ describe('HWE-shaped unification invader resume', () => {
             clockMode: 'realtime',
             clockWallAnchor: liveWallAnchor,
             lastTurnTick: 19_944_000_000,
+            clockPhase: 'SUSPENDED',
+            clockRevision: 1,
+            deadlineGeneration: 1,
             meta: {
                 hiddenSeed: 'hwe-invader-resume-fixture',
                 serverId: 'hwe:default_snapshot',
@@ -154,6 +157,7 @@ describe('HWE-shaped unification invader resume', () => {
                 isunited: 2,
                 refreshLimit: 3_000,
                 maxGeneralsPerMinute: 1_000,
+                unificationClockSuspensionId: 'unification-wait-fixture',
             },
         };
         const snapshot: TurnWorldSnapshot = {
@@ -232,6 +236,18 @@ describe('HWE-shaped unification invader resume', () => {
             },
             map,
             loadArchivedNationMaxId: async () => 57,
+            reconcileUnificationWait: async () => ({
+                suspensionId: 'unification-wait-fixture',
+                phase: 'RECONCILING',
+                sourceRevision: 1,
+                targetRevision: 2,
+                deadlineGeneration: 2,
+                gapTicks: 108_000_000,
+                catchUpTicks: 0,
+                shiftTicks: 108_000_000,
+                alignedTick: 20_088_000_000,
+                resumeWallAt: acceptedAt,
+            }),
         });
         const processor = new InMemoryTurnProcessor(world);
         const clock = new ManualClock(acceptedAt.getTime());
@@ -253,7 +269,19 @@ describe('HWE-shaped unification invader resume', () => {
                 processor: { run },
                 commandHandler,
                 hooks: {
-                    executeCommand: async (_commandRequestId, execute) => execute({ db: commandDb }),
+                    executeCommand: async (_commandRequestId, execute) => {
+                        const result = await execute({
+                            db: commandDb,
+                            clockOperationAuthority: {
+                                kind: 'DAEMON',
+                                profileName: 'hwe:default-snapshot',
+                                ownerId: 'fixture-daemon',
+                                fencingEpoch: 1n,
+                            },
+                        });
+                        world.completeClockReconciliation();
+                        return result;
+                    },
                 },
             },
             {
@@ -264,9 +292,7 @@ describe('HWE-shaped unification invader resume', () => {
 
         await lifecycle.start();
 
-        expect(commandDb.inputEvent.findUnique).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { requestId } })
-        );
+        expect(commandDb.inputEvent.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { requestId } }));
         expect(commandDb.$queryRaw).toHaveBeenCalledOnce();
         expect(world.getState()).toMatchObject({
             currentYear: 226,

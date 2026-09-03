@@ -146,6 +146,10 @@ const refreshActorKillturn = (world: InMemoryTurnWorld, actor: TurnGeneral): voi
 interface CommandHandlerContext {
     world: InMemoryTurnWorld;
     commandDb?: GamePrisma.TransactionClient;
+    clockOperationAuthority?: Extract<
+        NonNullable<TurnDaemonCommandExecutionContext['clockOperationAuthority']>,
+        { kind: 'DAEMON' }
+    >;
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
@@ -153,6 +157,7 @@ interface CommandHandlerContext {
     reservedTurns?: InMemoryReservedTurnStore;
     generalActionModules?: ReadonlyArray<GeneralActionModule>;
     loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
+    reconcileUnificationWait?: Parameters<typeof respondToActionableMessage>[0]['reconcileUnificationWait'];
 }
 
 const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
@@ -464,10 +469,10 @@ async function handleSelectPoolCreate(
         typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)
             ? ctx.world.gameTickToDate(processingGameTick)
             : command.acceptedGameTick !== undefined
-            ? ctx.world.gameTickToDate(command.acceptedGameTick)
-            : command.acceptedGameAt !== undefined
-              ? new Date(command.acceptedGameAt)
-              : ctx.world.getGameNow(operationalAcceptedAt);
+              ? ctx.world.gameTickToDate(command.acceptedGameTick)
+              : command.acceptedGameAt !== undefined
+                ? new Date(command.acceptedGameAt)
+                : ctx.world.getGameNow(operationalAcceptedAt);
     const turnScheduleAt = ctx.world.getRunnableGameNow(operationalAcceptedAt);
     try {
         return {
@@ -1834,6 +1839,8 @@ async function handleMessageRespond(
         messageId: command.messageId,
         response: command.response,
         loadArchivedNationMaxId: ctx.loadArchivedNationMaxId,
+        clockOperationAuthority: ctx.clockOperationAuthority,
+        reconcileUnificationWait: ctx.reconcileUnificationWait,
     });
     return {
         type: 'messageRespond',
@@ -3101,6 +3108,7 @@ export const createTurnDaemonCommandHandler = (options: {
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
     loadArchivedNationMaxId?: (serverId: string) => Promise<number>;
+    reconcileUnificationWait?: Parameters<typeof respondToActionableMessage>[0]['reconcileUnificationWait'];
 }): TurnDaemonCommandHandler => {
     let immediateGeneralActionExecutor: Promise<ImmediateGeneralActionExecutor> | null = null;
     const ctx: CommandHandlerContext = {
@@ -3111,6 +3119,7 @@ export const createTurnDaemonCommandHandler = (options: {
         reservedTurns: options.reservedTurns,
         generalActionModules: options.generalActionModules,
         loadArchivedNationMaxId: options.loadArchivedNationMaxId,
+        reconcileUnificationWait: options.reconcileUnificationWait,
         getImmediateGeneralActionExecutor: () => {
             immediateGeneralActionExecutor ??= createImmediateGeneralActionExecutor({
                 world: options.world,
@@ -3232,6 +3241,7 @@ export const createTurnDaemonCommandHandler = (options: {
                 return null;
             }
             ctx.commandDb = executionContext?.db;
+            ctx.clockOperationAuthority = executionContext?.clockOperationAuthority;
             try {
                 if (isActorBoundGeneralCommand(command)) {
                     const rejected = await validateActorBoundGeneralCommand(ctx, command);
@@ -3242,6 +3252,7 @@ export const createTurnDaemonCommandHandler = (options: {
                 return await handler(command);
             } finally {
                 ctx.commandDb = undefined;
+                ctx.clockOperationAuthority = undefined;
             }
         },
     };
