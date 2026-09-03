@@ -113,6 +113,41 @@ const readDbWall = async (db: GamePrisma.TransactionClient): Promise<Date> => {
 
 export const readClockDatabaseWall = readDbWall;
 
+const isRetryableSerializableClockError = (error: unknown): boolean => {
+    if (!error || typeof error !== 'object') return false;
+    const value = error as { code?: unknown; message?: unknown; meta?: unknown };
+    const meta =
+        value.meta && typeof value.meta === 'object'
+            ? (value.meta as { code?: unknown; message?: unknown })
+            : undefined;
+    const code = typeof value.code === 'string' ? value.code : '';
+    const databaseCode = typeof meta?.code === 'string' ? meta.code : '';
+    const message = [value.message, meta?.message]
+        .filter((entry): entry is string => typeof entry === 'string')
+        .join(' ');
+    return (
+        code === 'P2034' ||
+        code === '40001' ||
+        databaseCode === '40001' ||
+        message.includes('40001') ||
+        message.includes('could not serialize access')
+    );
+};
+
+const runSerializableClockOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const maxAttempts = 3;
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            return await operation();
+        } catch (error) {
+            if (attempt >= maxAttempts || !isRetryableSerializableClockError(error)) {
+                throw error;
+            }
+            await new Promise<void>((resolve) => setTimeout(resolve, attempt * 10));
+        }
+    }
+};
+
 const verifyAuthority = async (db: GamePrisma.TransactionClient, authority: ClockOperationAuthority): Promise<void> => {
     const rows = await db.$queryRaw<LeaseFenceRow[]>(GamePrisma.sql`
         SELECT owner_id AS "ownerId",
@@ -185,64 +220,64 @@ const readParticipantSnapshots = async (
 ): Promise<ParticipantSnapshot[]> => {
     const [world, generals, auctions, auctionBids, messages, inheritanceEffects, votes, pool, npcTokens, commands] =
         await Promise.all([
-        db.worldState.findUniqueOrThrow({
-            where: { id: worldStateId },
-            select: {
-                clockTick: true,
-                clockRevision: true,
-                deadlineGeneration: true,
-                lastTurnTick: true,
-                meta: true,
-            },
-        }),
-        db.general.findMany({
-            orderBy: { id: 'asc' },
-            select: { id: true, turnTick: true, recentWarTick: true, meta: true },
-        }),
-        db.auction.findMany({
-            where: { status: { in: ['OPEN', 'FINALIZING'] } },
-            orderBy: { id: 'asc' },
-            select: { id: true, status: true, openTick: true, closeTick: true },
-        }),
-        db.auctionBid.findMany({
-            where: { auction: { status: { in: ['OPEN', 'FINALIZING'] } } },
-            orderBy: { id: 'asc' },
-            select: { id: true, occurredGameTick: true },
-        }),
-        db.messageAction.findMany({
-            where: { status: 'PENDING' },
-            orderBy: { messageId: 'asc' },
-            select: {
-                messageId: true,
-                createdGameTick: true,
-                expiresGameTick: true,
-                clockRevision: true,
-                deadlineGeneration: true,
-            },
-        }),
-        db.inheritanceLedger.findMany({
-            orderBy: { id: 'asc' },
-            select: { id: true, appliedClockRevision: true, appliedDeadlineGeneration: true },
-        }),
-        db.votePoll.findMany({
-            where: { closedAt: null },
-            orderBy: { id: 'asc' },
-            select: { id: true, startTick: true, endTick: true },
-        }),
-        db.selectPoolEntry.findMany({
-            where: { generalId: null },
-            orderBy: { id: 'asc' },
-            select: { id: true, reservedUntilTick: true },
-        }),
-        db.npcSelectionToken.findMany({
-            orderBy: { ownerUserId: 'asc' },
-            select: { ownerUserId: true, validUntilTick: true, pickMoreFromTick: true },
-        }),
-        db.inputEvent.findMany({
-            where: { status: { in: ['PENDING', 'PROCESSING'] } },
-            orderBy: { sequence: 'asc' },
-            select: { sequence: true, acceptedGameTick: true, acceptedClockRevision: true },
-        }),
+            db.worldState.findUniqueOrThrow({
+                where: { id: worldStateId },
+                select: {
+                    clockTick: true,
+                    clockRevision: true,
+                    deadlineGeneration: true,
+                    lastTurnTick: true,
+                    meta: true,
+                },
+            }),
+            db.general.findMany({
+                orderBy: { id: 'asc' },
+                select: { id: true, turnTick: true, recentWarTick: true, meta: true },
+            }),
+            db.auction.findMany({
+                where: { status: { in: ['OPEN', 'FINALIZING'] } },
+                orderBy: { id: 'asc' },
+                select: { id: true, status: true, openTick: true, closeTick: true },
+            }),
+            db.auctionBid.findMany({
+                where: { auction: { status: { in: ['OPEN', 'FINALIZING'] } } },
+                orderBy: { id: 'asc' },
+                select: { id: true, occurredGameTick: true },
+            }),
+            db.messageAction.findMany({
+                where: { status: 'PENDING' },
+                orderBy: { messageId: 'asc' },
+                select: {
+                    messageId: true,
+                    createdGameTick: true,
+                    expiresGameTick: true,
+                    clockRevision: true,
+                    deadlineGeneration: true,
+                },
+            }),
+            db.inheritanceLedger.findMany({
+                orderBy: { id: 'asc' },
+                select: { id: true, appliedClockRevision: true, appliedDeadlineGeneration: true },
+            }),
+            db.votePoll.findMany({
+                where: { closedAt: null },
+                orderBy: { id: 'asc' },
+                select: { id: true, startTick: true, endTick: true },
+            }),
+            db.selectPoolEntry.findMany({
+                where: { generalId: null },
+                orderBy: { id: 'asc' },
+                select: { id: true, reservedUntilTick: true },
+            }),
+            db.npcSelectionToken.findMany({
+                orderBy: { ownerUserId: 'asc' },
+                select: { ownerUserId: true, validUntilTick: true, pickMoreFromTick: true },
+            }),
+            db.inputEvent.findMany({
+                where: { status: { in: ['PENDING', 'PROCESSING'] } },
+                orderBy: { sequence: 'asc' },
+                select: { sequence: true, acceptedGameTick: true, acceptedClockRevision: true },
+            }),
         ]);
     const snapshot = (key: string, policy: ParticipantSnapshot['policy'], rows: unknown[]): ParticipantSnapshot => ({
         key,
@@ -686,90 +721,97 @@ export const startClockSuspension = async (options: {
     if (!Number.isSafeInteger(catchUpTicks) || catchUpTicks < 0) {
         throw new Error('Clock suspension catch-up ticks must be a non-negative safe integer.');
     }
-    return options.db.$transaction(
-        async (db) => {
-            await verifyAuthority(db, options.authority);
-            await acquireGameSchemaAdvisoryXactLock(db, CLOCK_OPERATION_PERSISTENCE_LOCK);
-            await acquireGameSchemaAdvisoryXactLock(db, GENERAL_ACCESS_PERSISTENCE_LOCK);
-            const worldStateId = await lockWorld(db);
-            const existing = await db.clockSuspension.findUnique({ where: { id: options.suspensionId } });
-            if (existing) {
-                if (
-                    existing.worldStateId !== worldStateId ||
-                    existing.source !== options.source ||
-                    existing.policy !== policy
-                ) {
-                    throw new Error(
-                        `Clock suspension ID ${options.suspensionId} is already bound to another operation.`
-                    );
+    return runSerializableClockOperation(() =>
+        options.db.$transaction(
+            async (db) => {
+                await verifyAuthority(db, options.authority);
+                await acquireGameSchemaAdvisoryXactLock(db, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                await acquireGameSchemaAdvisoryXactLock(db, GENERAL_ACCESS_PERSISTENCE_LOCK);
+                const worldStateId = await lockWorld(db);
+                const existing = await db.clockSuspension.findUnique({ where: { id: options.suspensionId } });
+                if (existing) {
+                    if (
+                        existing.worldStateId !== worldStateId ||
+                        existing.source !== options.source ||
+                        existing.policy !== policy
+                    ) {
+                        throw new Error(
+                            `Clock suspension ID ${options.suspensionId} is already bound to another operation.`
+                        );
+                    }
+                    if (existing.status !== 'SUSPENDED') {
+                        throw new Error(
+                            `Clock suspension ${options.suspensionId} already advanced to ${existing.status}.`
+                        );
+                    }
+                    return {
+                        suspensionId: existing.id,
+                        phase: 'SUSPENDED' as const,
+                        sourceRevision: safeNumber(existing.sourceRevision, 'source revision'),
+                        targetRevision: safeNumber(existing.targetRevision, 'target revision'),
+                        cutTick: safeNumber(existing.cutTick, 'cut tick'),
+                        cutWallAt: existing.cutWallAt,
+                    };
                 }
-                if (existing.status !== 'SUSPENDED') {
-                    throw new Error(`Clock suspension ${options.suspensionId} already advanced to ${existing.status}.`);
+                const world = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
+                const phase = parseGameClockPhase(world.clockPhase);
+                if (phase !== 'RUNNING') {
+                    throw new Error(`Clock suspension can start only from RUNNING; current phase is ${phase}.`);
                 }
+                if (!world.clockBaseTime || world.clockTick === null || !world.clockWallAnchor) {
+                    throw new Error('Clock suspension requires a fully initialized logical game clock.');
+                }
+                const cutWallAt = await readDbWall(db);
+                const storedTick = safeNumber(world.clockTick, 'world clock tick');
+                const sourceRevision = safeNumber(world.clockRevision, 'world clock revision');
+                const clock = new GameClock({
+                    baseTime: world.clockBaseTime,
+                    tick: storedTick,
+                    mode: world.clockMode === 'manual' ? 'manual' : 'realtime',
+                    wallAnchor: world.clockWallAnchor,
+                    turnSeconds: world.tickSeconds,
+                    phase,
+                    revision: sourceRevision,
+                });
+                const cutTick = clock.nowTick(cutWallAt);
+                await lockParticipants(db, BigInt(cutTick));
+                await db.worldState.update({
+                    where: { id: worldStateId },
+                    data: { clockPhase: 'SUSPENDED', clockTick: BigInt(cutTick), clockWallAnchor: cutWallAt },
+                });
+                const participants = await readParticipantSnapshots(db, worldStateId, BigInt(cutTick));
+                await db.clockSuspension.create({
+                    data: {
+                        id: options.suspensionId,
+                        worldStateId,
+                        source: options.source,
+                        policy,
+                        status: 'SUSPENDED',
+                        sourceRevision: BigInt(sourceRevision),
+                        targetRevision: BigInt(sourceRevision + 1),
+                        cutTick: BigInt(cutTick),
+                        cutWallAt,
+                        rateTicksPerSecond: GAME_TICKS_PER_TURN / world.tickSeconds,
+                        catchUpTicks: BigInt(catchUpTicks),
+                        participantChecksumBefore: aggregateChecksum(participants),
+                        detail: asJson({
+                            authority: options.authority.kind,
+                            profileName: options.authority.profileName,
+                        }),
+                    },
+                });
+                await persistInitialParticipants(db, options.suspensionId, participants);
                 return {
-                    suspensionId: existing.id,
-                    phase: 'SUSPENDED' as const,
-                    sourceRevision: safeNumber(existing.sourceRevision, 'source revision'),
-                    targetRevision: safeNumber(existing.targetRevision, 'target revision'),
-                    cutTick: safeNumber(existing.cutTick, 'cut tick'),
-                    cutWallAt: existing.cutWallAt,
-                };
-            }
-            const world = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
-            const phase = parseGameClockPhase(world.clockPhase);
-            if (phase !== 'RUNNING') {
-                throw new Error(`Clock suspension can start only from RUNNING; current phase is ${phase}.`);
-            }
-            if (!world.clockBaseTime || world.clockTick === null || !world.clockWallAnchor) {
-                throw new Error('Clock suspension requires a fully initialized logical game clock.');
-            }
-            const cutWallAt = await readDbWall(db);
-            const storedTick = safeNumber(world.clockTick, 'world clock tick');
-            const sourceRevision = safeNumber(world.clockRevision, 'world clock revision');
-            const clock = new GameClock({
-                baseTime: world.clockBaseTime,
-                tick: storedTick,
-                mode: world.clockMode === 'manual' ? 'manual' : 'realtime',
-                wallAnchor: world.clockWallAnchor,
-                turnSeconds: world.tickSeconds,
-                phase,
-                revision: sourceRevision,
-            });
-            const cutTick = clock.nowTick(cutWallAt);
-            await lockParticipants(db, BigInt(cutTick));
-            await db.worldState.update({
-                where: { id: worldStateId },
-                data: { clockPhase: 'SUSPENDED', clockTick: BigInt(cutTick), clockWallAnchor: cutWallAt },
-            });
-            const participants = await readParticipantSnapshots(db, worldStateId, BigInt(cutTick));
-            await db.clockSuspension.create({
-                data: {
-                    id: options.suspensionId,
-                    worldStateId,
-                    source: options.source,
-                    policy,
-                    status: 'SUSPENDED',
-                    sourceRevision: BigInt(sourceRevision),
-                    targetRevision: BigInt(sourceRevision + 1),
-                    cutTick: BigInt(cutTick),
+                    suspensionId: options.suspensionId,
+                    phase: 'SUSPENDED',
+                    sourceRevision,
+                    targetRevision: sourceRevision + 1,
+                    cutTick,
                     cutWallAt,
-                    rateTicksPerSecond: GAME_TICKS_PER_TURN / world.tickSeconds,
-                    catchUpTicks: BigInt(catchUpTicks),
-                    participantChecksumBefore: aggregateChecksum(participants),
-                    detail: asJson({ authority: options.authority.kind, profileName: options.authority.profileName }),
-                },
-            });
-            await persistInitialParticipants(db, options.suspensionId, participants);
-            return {
-                suspensionId: options.suspensionId,
-                phase: 'SUSPENDED',
-                sourceRevision,
-                targetRevision: sourceRevision + 1,
-                cutTick,
-                cutWallAt,
-            };
-        },
-        { isolationLevel: 'Serializable', maxWait: 10_000, timeout: 30_000 }
+                };
+            },
+            { isolationLevel: 'Serializable', maxWait: 10_000, timeout: 30_000 }
+        )
     );
 };
 
@@ -983,18 +1025,20 @@ export const reconcileClockSuspension = async (options: {
     /** Deterministic fixture seam; production must always use PostgreSQL CURRENT_TIMESTAMP. */
     testResumeWallAt?: Date;
 }): Promise<ClockReconciliationResult> =>
-    options.db.$transaction(
-        async (db) => {
-            await verifyAuthority(db, options.authority);
-            await acquireGameSchemaAdvisoryXactLock(db, CLOCK_OPERATION_PERSISTENCE_LOCK);
-            await acquireGameSchemaAdvisoryXactLock(db, GENERAL_ACCESS_PERSISTENCE_LOCK);
-            return reconcileClockSuspensionInTransaction({
-                db,
-                suspensionId: options.suspensionId,
-                profileName: options.authority.profileName,
-                authority: options.authority,
-                ...(options.testResumeWallAt ? { testResumeWallAt: options.testResumeWallAt } : {}),
-            });
-        },
-        { isolationLevel: 'Serializable', maxWait: 10_000, timeout: 30_000 }
+    runSerializableClockOperation(() =>
+        options.db.$transaction(
+            async (db) => {
+                await verifyAuthority(db, options.authority);
+                await acquireGameSchemaAdvisoryXactLock(db, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                await acquireGameSchemaAdvisoryXactLock(db, GENERAL_ACCESS_PERSISTENCE_LOCK);
+                return reconcileClockSuspensionInTransaction({
+                    db,
+                    suspensionId: options.suspensionId,
+                    profileName: options.authority.profileName,
+                    authority: options.authority,
+                    ...(options.testResumeWallAt ? { testResumeWallAt: options.testResumeWallAt } : {}),
+                });
+            },
+            { isolationLevel: 'Serializable', maxWait: 10_000, timeout: 30_000 }
+        )
     );

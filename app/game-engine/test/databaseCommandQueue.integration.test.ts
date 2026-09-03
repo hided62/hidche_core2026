@@ -608,6 +608,12 @@ integration('database command queue', () => {
                 expectedUpdatedAt: null,
                 mutation: { kind: 'nationPriority', priority: ['develop'] },
             },
+            {
+                type: 'shiftSchedule',
+                requestId: 'integration:engine:suspended-shift-schedule',
+                actionId: '00000000-0000-4000-8000-000000000023',
+                deltaMinutes: -15,
+            },
         ];
         await db.inputEvent.createMany({
             data: commands.map((command) => ({
@@ -637,14 +643,18 @@ integration('database command queue', () => {
         const claimed = await new DatabaseTurnDaemonCommandQueue(db).drain();
         expect(claimed.map(({ type }) => type)).toEqual(commands.map(({ type }) => type));
         for (const command of commands) {
-            await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: command.requestId! } })).resolves.toMatchObject({
+            await expect(
+                db.inputEvent.findUniqueOrThrow({ where: { requestId: command.requestId! } })
+            ).resolves.toMatchObject({
                 status: 'PROCESSING',
                 processingGameTick: 777n,
                 processingClockRevision: 23n,
                 processingDeadlineGeneration: 9n,
             });
         }
-        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: blockedRequestId } })).resolves.toMatchObject({
+        await expect(
+            db.inputEvent.findUniqueOrThrow({ where: { requestId: blockedRequestId } })
+        ).resolves.toMatchObject({
             status: 'PENDING',
             processingClockRevision: null,
         });

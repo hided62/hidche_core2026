@@ -715,6 +715,7 @@ const createTurnDaemonRuntimeWithLease = async (
     let redisConnector: RedisConnector | null = null;
     let stopClockProjectionWorker = () => {};
     let applyClockProjection: DatabaseTurnHooks['applyClockProjection'] | undefined;
+    let synchronizeClockAuthority: DatabaseTurnHooks['synchronizeClockAuthority'] | undefined;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const monthlyActionModules = await loadActionModuleBundle(
@@ -920,6 +921,7 @@ const createTurnDaemonRuntimeWithLease = async (
         };
         takeCommittedReadModelChangeReceipt = dbHooks.takeCommittedReadModelChangeReceipt;
         applyClockProjection = dbHooks.applyClockProjection;
+        synchronizeClockAuthority = dbHooks.synchronizeClockAuthority;
         close = async () => {
             if (auctionBidder) {
                 await auctionBidder.close();
@@ -1031,6 +1033,7 @@ const createTurnDaemonRuntimeWithLease = async (
         maxGenerals: 200,
         catchUpCap: 1,
     };
+    let lastObservedGatewayPause: boolean | null = null;
 
     const lifecycle = new TurnDaemonLifecycle(
         {
@@ -1041,7 +1044,21 @@ const createTurnDaemonRuntimeWithLease = async (
             stateStore,
             processor,
             hooks,
-            pauseGate: async () => turnDaemonLease?.isLost() || ((await pauseGate?.()) ?? false),
+            pauseGate: async () => {
+                if (turnDaemonLease?.isLost()) {
+                    return true;
+                }
+                const gatewayPaused = (await pauseGate?.()) ?? false;
+                const phase = world.getGameClockState().phase;
+                const phaseNeedsSync = gatewayPaused
+                    ? phase !== 'SUSPENDED'
+                    : phase === 'SUSPENDED' || phase === 'RECONCILING';
+                if (synchronizeClockAuthority && (lastObservedGatewayPause !== gatewayPaused || phaseNeedsSync)) {
+                    await synchronizeClockAuthority();
+                }
+                lastObservedGatewayPause = gatewayPaused;
+                return gatewayPaused;
+            },
             commandHandler,
             commandResponder: options.controlQueue ? undefined : (databaseCommandQueue ?? undefined),
             // The exclusive fixture runner aborts the entire in-memory runtime

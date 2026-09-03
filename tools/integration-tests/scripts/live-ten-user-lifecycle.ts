@@ -8,7 +8,7 @@ import { chromium, type BrowserContext, type Page } from '@playwright/test';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
-import { createGamePostgresConnector, createRedisConnector } from '@sammo-ts/infra';
+import { createGamePostgresConnector, createRedisConnector, type GamePrisma } from '@sammo-ts/infra';
 import { createTurnDaemonRuntime } from '../../../app/game-engine/src/turn/turnDaemon.js';
 
 const gatewayUrl = process.env.SAMMO_LIVE_GATEWAY_URL ?? 'http://caddy/gateway/api/trpc';
@@ -923,6 +923,64 @@ const prepareActionFixture = async (): Promise<void> => {
 
 const rotateFirst = <T>(values: readonly T[]): T[] => (values.length < 2 ? [...values] : [...values.slice(1), values[0]!]);
 
+const readHiddenBuffLevel = (rawMeta: unknown, key: string): number => {
+    if (!rawMeta || typeof rawMeta !== 'object' || Array.isArray(rawMeta)) return 0;
+    const rawBuff = Reflect.get(rawMeta, 'inheritBuff');
+    let buff: unknown = rawBuff;
+    if (typeof rawBuff === 'string') {
+        try {
+            buff = JSON.parse(rawBuff) as unknown;
+        } catch {
+            return 0;
+        }
+    }
+    if (!buff || typeof buff !== 'object' || Array.isArray(buff)) return 0;
+    const value = Reflect.get(buff, key);
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
+
+const repairActionItemFixture = async (): Promise<void> => {
+    const state = await readState();
+    if (!state.actionFixture) throw new Error('The action fixture is required.');
+    const gateway = await loginAdmin();
+    const profiles = (await gateway.admin.profiles.list.query()) as unknown as Array<{
+        profileName: string;
+        status: string;
+    }>;
+    const profile = profiles.find((entry) => entry.profileName === profileName);
+    if (profile?.status !== 'STOPPED') {
+        throw new Error(`Item fixture repair requires STOPPED, found ${profile?.status ?? 'missing'}.`);
+    }
+    const db = createGamePostgresConnector({ url: gameDatabaseUrl() });
+    await db.connect();
+    try {
+        const targetGeneralId = state.actionFixture.generals[2]!.id;
+        const repaired = await db.prisma.$transaction(async (tx) => {
+            const world = await tx.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
+            if (world.clockPhase !== 'SUSPENDED') {
+                throw new Error(`Item fixture repair requires SUSPENDED, found ${world.clockPhase}.`);
+            }
+            const general = await tx.general.findUniqueOrThrow({ where: { id: targetGeneralId } });
+            const meta =
+                general.meta && typeof general.meta === 'object' && !Array.isArray(general.meta)
+                    ? { ...general.meta }
+                    : {};
+            delete meta.itemInventory;
+            return tx.general.update({
+                where: { id: targetGeneralId },
+                data: {
+                    weaponCode: 'che_무기_01_단도',
+                    meta: meta as GamePrisma.InputJsonValue,
+                },
+                select: { id: true, weaponCode: true },
+            });
+        });
+        log('action-item-fixture-repaired', repaired);
+    } finally {
+        await db.disconnect();
+    }
+};
+
 const exercisePausedActions = async (): Promise<void> => {
     const state = await readState();
     if (state.users?.length !== 10 || !state.actionFixture) {
@@ -986,8 +1044,20 @@ const exercisePausedActions = async (): Promise<void> => {
             expectedRevision: turnSnapshot.revision,
         });
 
-        const inheritance = await clients[3]!.inherit.buyHiddenBuff.mutate({ type: 'warAvoidRatio', level: 1 });
-        const dropped = await clients[2]!.general.dropItem.mutate({ itemType: 'weapon' });
+        const inheritanceRows = await db.prisma.general.findMany({
+            where: { id: { in: generals.map(({ id }) => id) } },
+            select: { id: true, meta: true },
+        });
+        const inheritanceById = new Map(inheritanceRows.map((general) => [general.id, general.meta]));
+        const inheritanceGeneralIndex = generals.findIndex(
+            (general, index) =>
+                index >= 3 && readHiddenBuffLevel(inheritanceById.get(general.id), 'warAvoidRatio') < 1
+        );
+        if (inheritanceGeneralIndex < 0) throw new Error('No lifecycle user remains for the inheritance purchase.');
+        const inheritance = await clients[inheritanceGeneralIndex]!.inherit.buyHiddenBuff.mutate({
+            type: 'warAvoidRatio',
+            level: 1,
+        });
         const permission = await clients[0]!.nation.changePermission.mutate({
             isAmbassador: true,
             targetGeneralIds: [generals[2]!.id],
@@ -1018,6 +1088,7 @@ const exercisePausedActions = async (): Promise<void> => {
             detail: `SUSPENDED 상태의 WALL_TIME 외교문서 ${runSlug}`,
         });
         const letterResponse = await clients[5]!.diplomacy.respondLetter.mutate({ letterId: letter.id, agree: true });
+        const dropped = await clients[2]!.general.dropItem.mutate({ itemType: 'weapon' });
 
         const [worldAfter, persistedGenerals, persistedMessages, persistedLetter, inheritanceLogs, pendingEvents] =
             await Promise.all([
@@ -2186,6 +2257,7 @@ else if (command === 'prepare-paused-betting') await preparePausedBetting();
 else if (command === 'submit-paused-betting') await submitPausedBetting();
 else if (command === 'reserve-user-enlistments') await reserveUserEnlistments();
 else if (command === 'prepare-action-fixture') await prepareActionFixture();
+else if (command === 'repair-action-item-fixture') await repairActionItemFixture();
 else if (command === 'exercise-paused-actions') await exercisePausedActions();
 else if (command === 'verify-paused-wall-expiry') await verifyPausedWallExpiry();
 else if (command === 'exercise-paused-tournament-bet') await exercisePausedTournamentBet();
@@ -2208,5 +2280,5 @@ else if (command === 'wait-runtime-action') await waitRuntimeAction();
 else if (command === 'monitor-users') await monitorUsers();
 else
     throw new Error(
-        'usage: live-ten-user-lifecycle.ts <reset|wait-reset|deploy|wait-deploy|status|prepare-users|preopen-messages|verified-preopen-messages|repair-preopen-fixture|database-status|prepare-paused-betting|submit-paused-betting|reserve-user-enlistments|prepare-action-fixture|exercise-paused-actions|verify-paused-wall-expiry|exercise-paused-tournament-bet|reserve-actionable-commands|wait-actionable-messages|respond-actionable-messages|reserve-no-aggression-cancellation|wait-no-aggression-cancellation|respond-no-aggression-cancellation|npc-action-audit|repair-opening-clock-runtime|verify-monitor-message|resume-daemon|fast-forward|place-invader-recipients|respond-invader-browser|action|wait-profile-status|wait-runtime-action|monitor-users>'
+        'usage: live-ten-user-lifecycle.ts <reset|wait-reset|deploy|wait-deploy|status|prepare-users|preopen-messages|verified-preopen-messages|repair-preopen-fixture|database-status|prepare-paused-betting|submit-paused-betting|reserve-user-enlistments|prepare-action-fixture|repair-action-item-fixture|exercise-paused-actions|verify-paused-wall-expiry|exercise-paused-tournament-bet|reserve-actionable-commands|wait-actionable-messages|respond-actionable-messages|reserve-no-aggression-cancellation|wait-no-aggression-cancellation|respond-no-aggression-cancellation|npc-action-audit|repair-opening-clock-runtime|verify-monitor-message|resume-daemon|fast-forward|place-invader-recipients|respond-invader-browser|action|wait-profile-status|wait-runtime-action|monitor-users>'
     );

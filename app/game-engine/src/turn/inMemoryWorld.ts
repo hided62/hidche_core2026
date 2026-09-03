@@ -135,6 +135,20 @@ export interface InMemoryGameClockState {
     deadlineGeneration: number;
 }
 
+export interface DurableGameClockSnapshot extends InMemoryGameClockState {
+    lastTurnTick: number;
+}
+
+export interface DurableClockReconciliationAlignment {
+    suspensionId: string;
+    sourceRevision: number;
+    targetRevision: number;
+    deadlineGeneration: number;
+    alignedTick: number;
+    shiftTicks: number;
+    resumeWallAt: Date;
+}
+
 export type InheritancePersistencePhase = 'before_lifecycle' | 'after_lifecycle';
 
 export interface PendingInheritancePointAdjustment {
@@ -723,23 +737,14 @@ export class InMemoryTurnWorld {
         this.state = { ...this.state, clockPhase: 'COMPLETED' };
     }
 
-    applyClockReconciliation(input: {
-        suspensionId: string;
-        alignedTick: number;
-        shiftTicks: number;
-        targetRevision: number;
-        deadlineGeneration: number;
-        resumeWallAt: Date;
-    }): void {
-        const phase = this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual');
-        if (phase !== 'SUSPENDED' || this.state.meta.unificationClockSuspensionId !== input.suspensionId) {
-            throw new Error('In-memory clock reconciliation requires the matching UNIFICATION_WAIT suspension.');
-        }
+    private applyClockReconciliationAlignment(input: DurableClockReconciliationAlignment): void {
         if (
             !Number.isSafeInteger(input.alignedTick) ||
             !Number.isSafeInteger(input.shiftTicks) ||
             input.shiftTicks < 0 ||
+            !Number.isSafeInteger(input.sourceRevision) ||
             !Number.isSafeInteger(input.targetRevision) ||
+            input.targetRevision !== input.sourceRevision + 1 ||
             !Number.isSafeInteger(input.deadlineGeneration)
         ) {
             throw new Error('In-memory clock reconciliation received an unsafe coordinate.');
@@ -798,6 +803,72 @@ export class InMemoryTurnWorld {
                 turnTime: clock.tickToDate(checkpointTick).toISOString(),
             };
         }
+    }
+
+    applyClockReconciliation(input: Omit<DurableClockReconciliationAlignment, 'sourceRevision'>): void {
+        const phase = this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual');
+        if (phase !== 'SUSPENDED' || this.state.meta.unificationClockSuspensionId !== input.suspensionId) {
+            throw new Error('In-memory clock reconciliation requires the matching UNIFICATION_WAIT suspension.');
+        }
+        this.applyClockReconciliationAlignment({
+            ...input,
+            sourceRevision: this.state.clockRevision ?? 1,
+        });
+    }
+
+    applyDurableClockReconciliation(input: DurableClockReconciliationAlignment): void {
+        const clock = this.getGameClockState();
+        if (clock.revision === input.targetRevision && clock.phase === 'RECONCILING') {
+            return;
+        }
+        if (clock.revision !== input.sourceRevision) {
+            throw new Error(
+                `Durable clock reconciliation source mismatch: memory ${clock.revision}, ledger ${input.sourceRevision}.`
+            );
+        }
+        if (clock.phase !== 'RUNNING' && clock.phase !== 'SUSPENDED') {
+            throw new Error(`Durable clock reconciliation cannot apply from in-memory phase ${clock.phase}.`);
+        }
+        this.applyClockReconciliationAlignment(input);
+    }
+
+    synchronizeDurableClockSnapshot(input: DurableGameClockSnapshot): void {
+        const current = this.getGameClockState();
+        if (current.revision !== input.revision || current.deadlineGeneration !== input.deadlineGeneration) {
+            throw new Error(
+                `Durable clock snapshot generation mismatch: memory ${current.revision}/${current.deadlineGeneration}, ` +
+                    `database ${input.revision}/${input.deadlineGeneration}.`
+            );
+        }
+        if ((this.state.lastTurnTick ?? 0) !== input.lastTurnTick) {
+            throw new Error(
+                `Durable clock snapshot turn cursor mismatch: memory ${this.state.lastTurnTick ?? 0}, database ${input.lastTurnTick}.`
+            );
+        }
+        const currentBaseTime = this.state.clockBaseTime ?? this.state.lastTurnTime;
+        if (currentBaseTime.getTime() !== input.baseTime.getTime()) {
+            throw new Error(
+                `Durable clock snapshot base mismatch: memory ${currentBaseTime.toISOString()}, ` +
+                    `database ${input.baseTime.toISOString()}.`
+            );
+        }
+        const validTransition =
+            current.phase === input.phase ||
+            (current.phase === 'RUNNING' && input.phase === 'SUSPENDED') ||
+            (current.phase === 'RECONCILING' && input.phase === 'RUNNING');
+        if (!validTransition) {
+            throw new Error(`Durable clock snapshot phase mismatch: memory ${current.phase}, database ${input.phase}.`);
+        }
+        this.state = {
+            ...this.state,
+            clockBaseTime: new Date(input.baseTime.getTime()),
+            clockTick: input.tick,
+            clockMode: input.mode,
+            clockWallAnchor: new Date(input.wallAnchor.getTime()),
+            clockPhase: input.phase,
+            clockRevision: input.revision,
+            deadlineGeneration: input.deadlineGeneration,
+        };
     }
 
     completeClockReconciliation(): void {

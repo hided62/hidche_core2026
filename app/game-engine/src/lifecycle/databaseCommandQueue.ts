@@ -171,7 +171,8 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                               'changePermission',
                               'appoint',
                               'setNationSetting',
-                              'setNpcPolicy'
+                              'setNpcPolicy',
+                              'shiftSchedule'
                           )
                       )
                       OR (

@@ -64,6 +64,7 @@ import {
     refreshClockProjectionForFinalClockUnderHeldLocks,
 } from './clockReconciliation.js';
 import { applyNextClockProjection, type ClockProjectionRedis } from './clockProjectionOutbox.js';
+import { synchronizeRuntimeClockAuthorityUnderHeldLock } from './runtimeClockAuthoritySync.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -71,6 +72,7 @@ export interface DatabaseTurnHooks {
     takeCommittedReadModelChangeReceipt(): CommittedReadModelChangeReceipt | null;
     close(): Promise<void>;
     applyClockProjection(redis: ClockProjectionRedis, workerId: string): Promise<boolean>;
+    synchronizeClockAuthority(): Promise<boolean>;
 }
 
 export interface CommittedReadModelChangeReceipt {
@@ -2010,6 +2012,7 @@ export const createDatabaseTurnHooks = async (
                 await options?.turnDaemonLease?.assertActive(transaction);
                 await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
                 await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
+                await synchronizeRuntimeClockAuthorityUnderHeldLock(transaction, world);
                 const leaseToken = options?.turnDaemonLease?.getToken();
                 const directLogFloor =
                     (
@@ -2054,6 +2057,12 @@ export const createDatabaseTurnHooks = async (
             });
             return clock?.clockPhase === 'RUNNING' || clock?.clockPhase === 'MANUAL';
         },
+        synchronizeClockAuthority: () =>
+            prisma.$transaction(async (transaction) => {
+                await options?.turnDaemonLease?.assertActive(transaction);
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                return synchronizeRuntimeClockAuthorityUnderHeldLock(transaction, world);
+            }, transactionOptions),
         close: () => connector.disconnect(),
     };
 };
