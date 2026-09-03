@@ -293,13 +293,13 @@ export const listScenarioPreviews = async (options?: { gitRef?: string | null })
     }
     if (!gitRef) {
         const cached = previewCache.get(DEFAULT_CACHE_KEY);
-        if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
+        if (cached && performance.now() - cached.loadedAt < CACHE_TTL_MS) {
             return cached.data;
         }
         const ids = await listScenarioIds();
         const previews = await Promise.all(ids.map((id) => buildScenarioPreview(id)));
         previewCache.set(DEFAULT_CACHE_KEY, {
-            loadedAt: Date.now(),
+            loadedAt: performance.now(),
             data: previews,
         });
         return previews;
@@ -308,7 +308,7 @@ export const listScenarioPreviews = async (options?: { gitRef?: string | null })
     const commitSha = await resolveGitCommitSha(gitRef);
     const cacheKey = commitSha;
     const cached = previewCache.get(cacheKey);
-    if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
+    if (cached && performance.now() - cached.loadedAt < CACHE_TTL_MS) {
         return cached.data;
     }
     const ids = await listScenarioIdsFromGit(commitSha);
@@ -317,7 +317,7 @@ export const listScenarioPreviews = async (options?: { gitRef?: string | null })
         previews.push(await buildScenarioPreviewFromGit(commitSha, id));
     }
     previewCache.set(cacheKey, {
-        loadedAt: Date.now(),
+        loadedAt: performance.now(),
         data: previews,
     });
     return previews;

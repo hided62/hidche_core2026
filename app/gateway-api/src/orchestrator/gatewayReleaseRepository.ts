@@ -242,13 +242,19 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
         });
         return mapOperation(row);
     },
-    async claimNextOperation(now, lease) {
+    async claimNextOperation(_now, lease) {
         const row = await prisma.$transaction(async (tx) => {
             await tx.$queryRaw<Array<{ lock_result: string }>>`
                 SELECT pg_advisory_xact_lock(
                     hashtextextended(${CONTROL_PLANE_OPERATION_CLAIM_LOCK}, 0)
                 )::text AS lock_result
             `;
+            const [{ now }] = await tx.$queryRaw<Array<{ now: Date }>>`
+                SELECT CURRENT_TIMESTAMP AS "now"
+            `;
+            if (!now) {
+                throw new Error('Database wall clock is unavailable while claiming a Gateway release operation.');
+            }
             const runningProfileOperation = await tx.gatewayOperation.findFirst({
                 where: { status: 'RUNNING' },
                 select: { id: true },
@@ -326,13 +332,21 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
         });
         return row ? mapOperation(row) : null;
     },
-    async renewOperationLease(id, ownerId, now, durationMs) {
-        const updated = await prisma.gatewayReleaseOperation.updateMany({
-            where: { id, status: 'RUNNING', leaseOwner: ownerId },
-            data: {
-                leaseUntil: new Date(now.getTime() + durationMs),
-                heartbeatAt: now,
-            },
+    async renewOperationLease(id, ownerId, _now, durationMs) {
+        const updated = await prisma.$transaction(async (tx) => {
+            const [{ now }] = await tx.$queryRaw<Array<{ now: Date }>>`
+                SELECT CURRENT_TIMESTAMP AS "now"
+            `;
+            if (!now) {
+                throw new Error('Database wall clock is unavailable while renewing a Gateway release lease.');
+            }
+            return tx.gatewayReleaseOperation.updateMany({
+                where: { id, status: 'RUNNING', leaseOwner: ownerId },
+                data: {
+                    leaseUntil: new Date(now.getTime() + durationMs),
+                    heartbeatAt: now,
+                },
+            });
         });
         return updated.count === 1;
     },

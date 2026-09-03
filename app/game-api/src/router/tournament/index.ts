@@ -8,10 +8,10 @@ import type { TournamentState } from '../../tournament/types.js';
 import { TournamentStore, type TournamentClockContext } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
 import { assignManualApplicantGroup } from '../../tournament/workerHelpers.js';
-import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
+import { accessAuthedProcedure, authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
-import { ensureActiveRedisClockFence } from '../../services/redisClockFence.js';
+import { ensureActiveRedisClockFence, ensureBettingRedisClockFence } from '../../services/redisClockFence.js';
 import { loadClockAdminStatus } from '../../services/clockReadiness.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
@@ -64,13 +64,44 @@ const withTournamentClockMutation = async <T>(
         });
     }
     const clockContext: TournamentClockContext = {
-        phase: 'RUNNING',
+        phase: fence.phase,
         revision: fence.revision,
         deadlineGeneration: fence.generation,
         dateToTick: gameTime.dateToTick,
     };
     return store.withClockContext(clockContext, () => store.withMutationLock(operation));
 };
+
+const withTournamentBetClockMutation = async <T>(
+    ctx: {
+        db: Parameters<typeof loadCurrentGameTime>[0];
+        redis: Parameters<typeof ensureBettingRedisClockFence>[0];
+        profile: { name: string };
+    },
+    store: TournamentStore,
+    operation: () => Promise<T>
+): Promise<T> => {
+    const gameTime = await loadCurrentGameTime(ctx.db);
+    const fence = await ensureBettingRedisClockFence(ctx.redis, ctx.profile.name, gameTime);
+    if (!fence) {
+        throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Clock reconciliation is incomplete; tournament betting is disabled.',
+        });
+    }
+    return store.withClockContext(
+        {
+            phase: fence.phase,
+            revision: fence.revision,
+            deadlineGeneration: fence.generation,
+            dateToTick: gameTime.dateToTick,
+        },
+        () => store.withMutationLock(operation)
+    );
+};
+
+const tournamentBetCommandRequestId = (requestId: string | undefined, step: string): string | undefined =>
+    requestId ? `${requestId}:tournamentBet:${step}` : undefined;
 
 const zTournamentState = z.object({
     stage: z.number().int().min(0),
@@ -544,7 +575,10 @@ export const tournamentRouter = router({
             return { ok: true };
         });
     }),
-    placeBet: authedProcedure
+    // This route delegates its game mutations to durable ENGINE input events.
+    // Wrapping it in the API input-event transaction would hold the clock
+    // advisory lock while waiting for the daemon to claim the child event.
+    placeBet: engineAuthedProcedure
         .input(
             z.object({
                 targetId: z.number().int().positive(),
@@ -554,7 +588,7 @@ export const tournamentRouter = router({
         .mutation(async ({ ctx, input }) => {
             const general = await getMyGeneral(ctx);
             const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-            return withTournamentClockMutation(ctx, store, async () => {
+            return withTournamentBetClockMutation(ctx, store, async () => {
                 const state = await store.getState();
                 if (!state || state.stage !== 6) {
                     throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅 기간이 아닙니다.' });
@@ -589,6 +623,7 @@ export const tournamentRouter = router({
 
                 const adjustResult = await ctx.turnDaemon.requestCommand({
                     type: 'adjustGeneralResources',
+                    requestId: tournamentBetCommandRequestId(ctx.requestId, 'resources'),
                     reason: 'tournamentBet',
                     adjustments: [{ generalId: general.id, goldDelta: -input.amount, minGoldAfter: 500 }],
                 });
@@ -604,6 +639,7 @@ export const tournamentRouter = router({
 
                 const rankResult = await ctx.turnDaemon.requestCommand({
                     type: 'adjustGeneralMeta',
+                    requestId: tournamentBetCommandRequestId(ctx.requestId, 'rank'),
                     reason: 'tournamentBet',
                     adjustments: [
                         {
@@ -615,6 +651,7 @@ export const tournamentRouter = router({
                 if (!rankResult || rankResult.type !== 'adjustGeneralMeta' || !rankResult.ok) {
                     await ctx.turnDaemon.requestCommand({
                         type: 'adjustGeneralResources',
+                        requestId: tournamentBetCommandRequestId(ctx.requestId, 'rank-rollback-resources'),
                         reason: 'tournamentBetRollback',
                         adjustments: [{ generalId: general.id, goldDelta: input.amount }],
                     });
@@ -631,11 +668,13 @@ export const tournamentRouter = router({
                     await Promise.all([
                         ctx.turnDaemon.requestCommand({
                             type: 'adjustGeneralResources',
+                            requestId: tournamentBetCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
                             reason: 'tournamentBetRollback',
                             adjustments: [{ generalId: general.id, goldDelta: input.amount }],
                         }),
                         ctx.turnDaemon.requestCommand({
                             type: 'adjustGeneralMeta',
+                            requestId: tournamentBetCommandRequestId(ctx.requestId, 'projection-rollback-rank'),
                             reason: 'tournamentBetRollback',
                             adjustments: [
                                 {

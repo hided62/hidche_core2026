@@ -114,6 +114,11 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         await expect(
             repository.claimNextOperation(beforeReset, { ownerId: 'worker-b', durationMs: 1_000 })
         ).resolves.toBeNull();
+        await connector.prisma.$executeRaw`
+            UPDATE "gateway_operation"
+            SET "scheduled_at" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            WHERE "id" = ${scheduledReset.id}
+        `;
         await expect(
             repository.claimNextOperation(scheduledAt, { ownerId: 'worker-b', durationMs: 1_000 })
         ).resolves.toMatchObject({ id: scheduledReset.id, type: 'RESET', status: 'RUNNING' });
@@ -168,13 +173,18 @@ describeDatabase('gateway operation lease and profile serialization', () => {
             sourceRef: 'b'.repeat(40),
             requestedBy: 'deploy-admin',
         });
+        await connector.prisma.$executeRaw`
+            UPDATE "gateway_operation"
+            SET "scheduled_at" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            WHERE "id" = ${scheduledReset.id}
+        `;
 
         await expect(
             repository.claimNextOperation(scheduledAt, { ownerId: 'worker-a', durationMs: 1_000 })
         ).resolves.toMatchObject({ id: scheduledReset.id, type: 'RESET', status: 'RUNNING' });
         await expect(repository.getOperation(interimDeploy.id)).resolves.toMatchObject({
             status: 'CANCELLED',
-            completedAt: scheduledAt.toISOString(),
+            completedAt: expect.any(String),
         });
         await expect(repository.listOperationLogs(interimDeploy.id)).resolves.toEqual([
             expect.objectContaining({
@@ -405,6 +415,11 @@ describeDatabase('gateway operation lease and profile serialization', () => {
                 durationMs: 1_000,
             })
         ).resolves.toBeNull();
+        await connector.prisma.$executeRaw`
+            UPDATE "gateway_operation"
+            SET "lease_until" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            WHERE "id" = ${operation.id}
+        `;
         const reclaimed = await repository.claimNextOperation(new Date(startedAt.getTime() + 1_001), {
             ownerId: 'worker-b',
             durationMs: 1_000,

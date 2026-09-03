@@ -22,6 +22,7 @@
         "verify:migration:kakao-talk": "sh scripts/verify-kakao-talk-migration.sh",
         "verify:migration:npc-selection": "sh scripts/verify-npc-selection-token-migration.sh",
         "verify:migration:outbox-utc": "sh scripts/verify-game-outbox-utc-wall-migration.sh",
+        "verify:migration:time-domains": "sh scripts/verify-time-domain-migration.sh",
         "coverage:activate:game": "node scripts/activate-read-model-coverage.mjs",
         "prisma:db:push:game": "prisma db push --schema prisma/game.prisma",
         "prisma:db:push:gateway": "prisma db push --schema prisma/gateway.prisma"

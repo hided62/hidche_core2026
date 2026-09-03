@@ -7,6 +7,7 @@ import {
     writeReadModelChangeJournal,
     enqueuePrivateMessageWebPush,
     enqueueWebPushOutboxEvents,
+    persistMessageEnvelope,
     type InputJsonValue,
     type ReadModelJournalWriteResult,
     type TurnEngineCityUpdateInput,
@@ -1862,37 +1863,18 @@ export const createDatabaseTurnHooks = async (
                 await sendMessage(
                     {
                         insertMessage: async (draft: MessageRecordDraft) => {
-                            const toTickOrNull = (date: Date): bigint | null => {
-                                try {
-                                    return BigInt(world.dateToGameTick(date));
-                                } catch {
-                                    // Legacy messages may use year 9999 as an
-                                    // effectively-unbounded expiry, beyond the
-                                    // safe JavaScript tick range.
-                                    return null;
-                                }
-                            };
-                            const rows = await prisma.$queryRaw<Array<{ id: number }>>`
-                                INSERT INTO message (
-                                    mailbox, type, src, dest, time, time_tick, valid_until, valid_until_tick, message
-                                )
-                                VALUES (
-                                    ${draft.mailbox},
-                                    ${draft.msgType},
-                                    ${draft.srcId},
-                                    ${draft.destId},
-                                    ${draft.time},
-                                    ${toTickOrNull(draft.time)},
-                                    ${draft.validUntil},
-                                    ${toTickOrNull(draft.validUntil)},
-                                    CAST(${JSON.stringify(draft.payload)} AS jsonb)
-                                )
-                                RETURNING id
-                            `;
-                            const id = rows[0]?.id;
-                            if (!id) {
-                                throw new Error('Failed to persist turn message.');
-                            }
+                            const clock = world.getGameClockState();
+                            const action = draft.payload.option && Reflect.get(draft.payload.option, 'action');
+                            const expiresGameTick =
+                                typeof action !== 'string' || draft.validUntil.getUTCFullYear() >= 9000
+                                    ? null
+                                    : BigInt(world.dateToGameTick(draft.validUntil));
+                            const id = await persistMessageEnvelope(prisma, draft, {
+                                occurredGameTick: BigInt(world.dateToGameTick(draft.time)),
+                                clockRevision: BigInt(clock.revision),
+                                deadlineGeneration: BigInt(clock.deadlineGeneration),
+                                expiresGameTick,
+                            });
                             await enqueuePrivateMessageWebPush(prisma, draft, id);
                             persistedMessageMailboxes.push(draft.mailbox);
                             return id;

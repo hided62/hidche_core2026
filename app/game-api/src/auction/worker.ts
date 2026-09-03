@@ -48,7 +48,7 @@ const AUCTION_FINALIZE_RECOVERY_LIMIT = 1;
 
 interface AuctionFinalizeDeadline {
     closeAt: Date;
-    closeTick: bigint | null;
+    closeTick: bigint;
 }
 
 interface AuctionFinalizeCommand {
@@ -56,19 +56,10 @@ interface AuctionFinalizeCommand {
     requestId: string;
     auctionId: number;
     expectedCloseAt: string;
-    expectedCloseTick?: number;
+    expectedCloseTick: number;
 }
 
-interface AuctionFinalizeEventRecord {
-    target: string;
-    eventType: string;
-    payload: unknown;
-    status: string;
-    result: unknown;
-}
-
-const readSafeCloseTick = (closeTick: bigint | null): number | undefined => {
-    if (closeTick === null) return undefined;
+const readSafeCloseTick = (closeTick: bigint): number => {
     const value = Number(closeTick);
     if (!Number.isSafeInteger(value)) {
         throw new Error(`Auction close tick is unsafe: ${closeTick}`);
@@ -81,14 +72,7 @@ export const buildAuctionFinalizeRequestId = (
     deadline: AuctionFinalizeDeadline,
     retry = 0
 ): string => {
-    const generation =
-        deadline.closeTick === null ? deadline.closeAt.getTime().toString() : `tick:${deadline.closeTick.toString()}`;
-    const base = `auction:finalize:${auctionId}:${generation}`;
-    return retry > 0 ? `${base}:retry:${retry}` : base;
-};
-
-const buildLegacyAuctionFinalizeRequestId = (auctionId: number, closeAt: Date, retry = 0): string => {
-    const base = `auction:finalize:${auctionId}:${closeAt.getTime()}`;
+    const base = `auction:finalize:${auctionId}:tick:${deadline.closeTick.toString()}`;
     return retry > 0 ? `${base}:retry:${retry}` : base;
 };
 
@@ -101,7 +85,7 @@ const buildAuctionFinalizeCommand = (
     requestId,
     auctionId,
     expectedCloseAt: deadline.closeAt.toISOString(),
-    ...(deadline.closeTick === null ? {} : { expectedCloseTick: readSafeCloseTick(deadline.closeTick) }),
+    expectedCloseTick: readSafeCloseTick(deadline.closeTick),
 });
 
 const isMatchingAuctionFinalizeEvent = (
@@ -113,10 +97,7 @@ const isMatchingAuctionFinalizeEvent = (
         payload !== null && typeof payload === 'object' && !Array.isArray(payload)
             ? (payload as Record<string, unknown>)
             : null;
-    const expectedGenerationMatches =
-        payloadRecord?.expectedCloseTick !== undefined
-            ? payloadRecord.expectedCloseTick === command.expectedCloseTick
-            : payloadRecord?.expectedCloseAt === undefined || payloadRecord.expectedCloseAt === command.expectedCloseAt;
+    const expectedGenerationMatches = payloadRecord?.expectedCloseTick === command.expectedCloseTick;
     return (
         event.target === 'ENGINE' &&
         event.eventType === command.type &&
@@ -192,13 +173,12 @@ export const reconcilePendingAuctionTimers = async (options: {
         if (row.status !== 'OPEN' && row.status !== 'FINALIZING') {
             continue;
         }
+        if (row.closeTick === null) throw new Error(`Auction ${row.id} has no GAME_TIME close authority.`);
         const deadline = { closeAt: row.closeAt, closeTick: row.closeTick };
         const canonicalBase = buildAuctionFinalizeRequestId(row.id, deadline);
-        const legacyBase = buildLegacyAuctionFinalizeRequestId(row.id, row.closeAt);
-        const bases = [...new Set([canonicalBase, legacyBase])];
         const events = await options.db.inputEvent.findMany({
             where: {
-                OR: bases.flatMap((base) => [{ requestId: base }, { requestId: { startsWith: `${base}:retry:` } }]),
+                OR: [{ requestId: canonicalBase }, { requestId: { startsWith: `${canonicalBase}:retry:` } }],
             },
             select: { requestId: true, target: true, eventType: true, payload: true, status: true },
             orderBy: { sequence: 'desc' },
@@ -217,7 +197,10 @@ export const reconcilePendingAuctionTimers = async (options: {
         timers.push({
             score:
                 row.status === 'FINALIZING'
-                    ? (options.gameTime.tick ?? options.gameTime.now.getTime())
+                    ? (() => {
+                          if (options.gameTime.tick === null) throw new Error('Current game tick is required.');
+                          return options.gameTime.tick;
+                      })()
                     : resolveAuctionTimerScore(options.gameTime, row.closeAt, row.closeTick),
             value: String(row.id),
         });
@@ -281,10 +264,10 @@ export const processDueAuctionId = async (options: {
             return { status: 'IGNORED' as const };
         }
         if (current.status === 'OPEN') {
-            const isDue =
-                current.closeTick !== null && nowTick !== null
-                    ? current.closeTick <= BigInt(nowTick)
-                    : current.closeTick === null && current.closeAt.getTime() <= now.getTime();
+            if (current.closeTick === null || nowTick === null) {
+                throw new Error(`Auction ${auctionId} cannot be evaluated without GAME_TIME authority.`);
+            }
+            const isDue = current.closeTick <= BigInt(nowTick);
             if (!isDue) {
                 return { status: 'RESCHEDULED' as const, closeAt: current.closeAt, closeTick: current.closeTick };
             }
@@ -293,24 +276,15 @@ export const processDueAuctionId = async (options: {
             return { status: 'IGNORED' as const };
         }
 
+        if (current.closeTick === null) throw new Error(`Auction ${auctionId} has no GAME_TIME close authority.`);
         const deadline = { closeAt: current.closeAt, closeTick: current.closeTick };
         for (let retry = 0; retry <= AUCTION_FINALIZE_RECOVERY_LIMIT; retry += 1) {
             const requestId = buildAuctionFinalizeRequestId(auctionId, deadline, retry);
-            const legacyRequestId = buildLegacyAuctionFinalizeRequestId(auctionId, current.closeAt, retry);
-            const candidateRequestIds = [...new Set([requestId, legacyRequestId])];
-            let existing: AuctionFinalizeEventRecord | null = null;
-            let existingRequestId = requestId;
-            for (const candidateRequestId of candidateRequestIds) {
-                existing = await transaction.inputEvent.findUnique({
-                    where: { requestId: candidateRequestId },
-                    select: { target: true, eventType: true, payload: true, status: true, result: true },
-                });
-                if (existing) {
-                    existingRequestId = candidateRequestId;
-                    break;
-                }
-            }
-            const command = buildAuctionFinalizeCommand(auctionId, deadline, existingRequestId);
+            const existing = await transaction.inputEvent.findUnique({
+                where: { requestId },
+                select: { target: true, eventType: true, payload: true, status: true, result: true },
+            });
+            const command = buildAuctionFinalizeCommand(auctionId, deadline, requestId);
             if (!existing) {
                 const nextCommand = buildAuctionFinalizeCommand(auctionId, deadline, requestId);
                 await transaction.inputEvent.create({
@@ -319,26 +293,19 @@ export const processDueAuctionId = async (options: {
                         target: 'ENGINE',
                         eventType: nextCommand.type,
                         payload: { ...nextCommand },
-                        ...(nowTick === null ? {} : { acceptedGameTick: BigInt(nowTick) }),
-                        ...(options.expectedClockRevision === undefined
-                            ? {}
-                            : { acceptedClockRevision: BigInt(options.expectedClockRevision) }),
-                        ...(options.expectedDeadlineGeneration === undefined
-                            ? {}
-                            : { acceptedDeadlineGeneration: BigInt(options.expectedDeadlineGeneration) }),
                     },
                 });
                 return { status: 'PENDING' as const };
             }
             if (!isMatchingAuctionFinalizeEvent(existing, command)) {
-                throw new Error(`Conflicting durable auction finalization event: ${existingRequestId}`);
+                throw new Error(`Conflicting durable auction finalization event: ${requestId}`);
             }
             if (existing.status === 'PENDING' || existing.status === 'PROCESSING') {
                 return { status: 'PENDING' as const };
             }
             if (existing.status === 'SUCCEEDED' && isSuccessfulAuctionFinalizeResult(existing.result, auctionId)) {
                 throw new Error(
-                    `Auction remained ${current.status} after successful durable event: ${existingRequestId}`
+                    `Auction remained ${current.status} after successful durable event: ${requestId}`
                 );
             }
         }
@@ -386,12 +353,13 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
         { name: 'auction-worker-postgres', run: () => postgres.disconnect() },
     ]);
 
-    let nextResyncAt = Date.now();
+    let nextResyncAt = performance.now();
     const pendingFinalizationIds = new Set<number>();
 
     try {
         while (!control.signal.aborted) {
             const operationalNowMs = Date.now();
+            const operationalElapsedMs = performance.now();
             const gameTime = await loadCurrentGameTime(postgres.prisma, new Date(operationalNowMs));
             const gameNowMs = gameTime.now.getTime();
             const dueScore = gameTime.tick ?? gameNowMs;
@@ -406,9 +374,9 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
                 await waitForWorkerPoll(control.signal, config.auctionTimerPollMs);
                 continue;
             }
-            if (operationalNowMs >= nextResyncAt) {
+            if (operationalElapsedMs >= nextResyncAt) {
                 await seedAuctionTimers(postgres.prisma, redis.client, keys);
-                nextResyncAt = operationalNowMs + config.auctionTimerResyncMs;
+                nextResyncAt = operationalElapsedMs + config.auctionTimerResyncMs;
             }
             if (pendingFinalizationIds.size > 0) {
                 const reconciliation = await reconcilePendingAuctionTimers({
@@ -483,3 +451,4 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
         await closeResources();
     }
 };
+import { performance } from 'node:perf_hooks';

@@ -1,5 +1,9 @@
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
-import { acquireGameSchemaAdvisoryXactLock, enqueuePrivateMessageWebPush } from '@sammo-ts/infra';
+import {
+    acquireGameSchemaAdvisoryXactLock,
+    enqueuePrivateMessageWebPush,
+    persistMessageEnvelope,
+} from '@sammo-ts/infra';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope, sendMessage, type MessageDraft, type MessageRecordDraft } from '@sammo-ts/logic';
 import {
@@ -119,22 +123,18 @@ interface HighestUnificationBidRow {
     meta: unknown;
 }
 
-const insertMessage = async (transaction: GamePrisma.TransactionClient, draft: MessageRecordDraft): Promise<number> => {
-    const rows = await transaction.$queryRaw<Array<{ id: number }>>`
-        INSERT INTO message (mailbox, type, src, dest, time, valid_until, message)
-        VALUES (
-            ${draft.mailbox},
-            ${draft.msgType},
-            ${draft.srcId},
-            ${draft.destId},
-            ${draft.time},
-            ${draft.validUntil},
-            CAST(${JSON.stringify(draft.payload)} AS jsonb)
-        )
-        RETURNING id
-    `;
-    const id = rows[0]?.id;
-    if (!id) throw new Error('Failed to persist unification auction cancellation message.');
+const insertMessage = async (
+    transaction: GamePrisma.TransactionClient,
+    world: InMemoryTurnWorld,
+    draft: MessageRecordDraft
+): Promise<number> => {
+    const clock = world.getGameClockState();
+    const id = await persistMessageEnvelope(transaction, draft, {
+        occurredGameTick: BigInt(world.dateToGameTick(draft.time)),
+        clockRevision: BigInt(clock.revision),
+        deadlineGeneration: BigInt(clock.deadlineGeneration),
+        expiresGameTick: null,
+    });
     await enqueuePrivateMessageWebPush(transaction, draft, id);
     return id;
 };
@@ -252,7 +252,7 @@ const cancelPendingUniqueAuctions = async (
             await sendMessage(
                 {
                     insertMessage: async (draft) => {
-                        const messageId = await insertMessage(transaction, draft);
+                        const messageId = await insertMessage(transaction, world, draft);
                         messageMailboxes.push(draft.mailbox);
                         return messageId;
                     },

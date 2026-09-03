@@ -5,7 +5,13 @@ import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { isMessageAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
 import type { GameApiContext } from '../../context.js';
-import { accessAuthedInputProcedure, accessLimitAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
+import {
+    accessLimitAuthedInputProcedure,
+    accessWallAuthedInputProcedure,
+    authedProcedure,
+    router,
+    wallAuthedProcedure,
+} from '../../trpc.js';
 import {
     MESSAGE_MAILBOX_NATIONAL_BASE,
     MESSAGE_MAILBOX_PUBLIC,
@@ -20,13 +26,12 @@ import {
     fetchOldMessagesFromMailbox,
     fetchMessageById,
     insertMessage,
-    tombstoneMessages,
+    tombstoneMessagesWithinDeleteWindow,
     type MessageView,
 } from '../../messages/store.js';
 import { getOwnedGeneral } from '../shared/general.js';
 import { resolveNationPermission } from '../nation/shared.js';
 import { respondToDiplomaticMessage } from '../../messages/diplomaticResponse.js';
-import { loadCurrentGameTime } from '../../services/gameClock.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
@@ -231,7 +236,7 @@ export const messagesRouter = router({
                 })),
             };
         }),
-    readLatest: authedProcedure
+    readLatest: wallAuthedProcedure
         .input(
             z.object({
                 generalId: z.number().int().positive(),
@@ -264,7 +269,7 @@ export const messagesRouter = router({
             `;
             return { ok: true };
         }),
-    delete: authedProcedure
+    delete: wallAuthedProcedure
         .input(
             z.object({
                 generalId: z.number().int().positive(),
@@ -289,17 +294,16 @@ export const messagesRouter = router({
             if (message.payload.option?.deletable === false) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '삭제할 수 없는 메시지입니다.' });
             }
-            const { now } = await loadCurrentGameTime(ctx.db);
-            if (now.getTime() - message.time.getTime() > 5 * 60 * 1000) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '5분 이내의 메시지만 삭제할 수 있습니다.' });
-            }
             const receiverMessageId = message.payload.option?.receiverMessageID;
             const shouldDeleteReceiverCopy = message.msgType === 'private' || message.msgType === 'national';
             const ids = [
                 message.id,
                 ...(shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' ? [receiverMessageId] : []),
             ];
-            await tombstoneMessages(ctx.db, ids);
+            const deletedIds = await tombstoneMessagesWithinDeleteWindow(ctx.db, message.id, ids);
+            if (!deletedIds.includes(message.id)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '5분 이내의 메시지만 삭제할 수 있습니다.' });
+            }
             const receiverMailbox =
                 shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' && message.msgType === 'private'
                     ? message.payload.dest.generalId
@@ -309,7 +313,7 @@ export const messagesRouter = router({
                       ? MESSAGE_MAILBOX_NATIONAL_BASE + message.payload.dest.nationId
                       : null;
             markMessageMailboxes(ctx, [message.mailbox, ...(receiverMailbox === null ? [] : [receiverMailbox])]);
-            return { ok: true, deletedIds: ids };
+            return { ok: true, deletedIds };
         }),
     respond: authedProcedure
         .input(
@@ -420,7 +424,7 @@ export const messagesRouter = router({
                 ...messageBuckets,
             };
         }),
-    send: accessAuthedInputProcedure(
+    send: accessWallAuthedInputProcedure(
         z.object({
             generalId: z.number().int().positive(),
             mailbox: z.number().int(),
@@ -436,7 +440,9 @@ export const messagesRouter = router({
         }
 
         const src = await buildTargetFromGeneral(ctx.db, general);
-        const { now } = await loadCurrentGameTime(ctx.db);
+        // Compatibility-only projection. persistMessageEnvelope records and
+        // displays the authoritative PostgreSQL wall instant.
+        const now = new Date();
         const validUntil = new Date('9999-12-31T00:00:00Z');
 
         let msgType: MessageType;

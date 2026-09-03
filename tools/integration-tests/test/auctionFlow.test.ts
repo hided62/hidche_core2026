@@ -516,7 +516,10 @@ describe('auction integration flow', () => {
                 WHERE id = ${auction.id}
             `
         );
-        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
+        const result = await transport.requestCommand(
+            { type: 'auctionFinalize', auctionId: auction.id, expectedCloseTick: finalizeTick },
+            30_000
+        );
         expect(result).toMatchObject({ type: 'auctionFinalize', ok: true });
 
         const finished = await prisma.auction.findUnique({
@@ -705,13 +708,16 @@ describe('auction integration flow', () => {
                 closeTick: BigInt(turnDaemon.world.dateToGameTick(siblingCloseAt)),
             },
         });
+        const siblingBidGameAt = turnDaemon.world.getGameNow(new Date());
         await prisma.auctionBid.create({
             data: {
                 auctionId: siblingAuction.id,
                 generalId: spareBidder.generalId,
                 amount: 350,
                 eventId: `same-slot-race-${siblingAuction.id}`,
-                eventAt: turnDaemon.world.getGameNow(new Date()),
+                eventAt: siblingBidGameAt,
+                occurredGameTick: BigInt(turnDaemon.world.dateToGameTick(siblingBidGameAt)),
+                requestedAtWall: new Date(),
             },
         });
         await expect(
@@ -752,7 +758,10 @@ describe('auction integration flow', () => {
                 WHERE id = ${auction.id}
             `
         );
-        const result = await directTransport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
+        const result = await directTransport.requestCommand(
+            { type: 'auctionFinalize', auctionId: auction.id, expectedCloseTick: finalizeTick },
+            30_000
+        );
         expect(result).toMatchObject({ type: 'auctionFinalize', ok: false });
 
         const reopened = await prisma.auction.findUnique({
@@ -914,7 +923,10 @@ describe('auction integration flow', () => {
                 WHERE id = ${auction.id}
             `
         );
-        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
+        const result = await transport.requestCommand(
+            { type: 'auctionFinalize', auctionId: auction.id, expectedCloseTick: finalizeTick },
+            30_000
+        );
         expect(result).toMatchObject({ type: 'auctionFinalize', ok: true });
 
         const winner = await prisma.general.findUnique({
@@ -1205,7 +1217,10 @@ describe('auction integration flow', () => {
             },
         });
         const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
-        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
+        const result = await transport.requestCommand(
+            { type: 'auctionFinalize', auctionId: auction.id, expectedCloseTick: finalizeTick },
+            30_000
+        );
         expect(result).toMatchObject({ type: 'auctionFinalize', ok: true });
 
         await expect(prisma.auction.findUniqueOrThrow({ where: { id: auction.id } })).resolves.toMatchObject({

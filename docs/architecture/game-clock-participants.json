@@ -16,13 +16,23 @@
         "world_state.deadline_generation",
         "general.turn_tick",
         "general.recent_war_tick",
+        "general.meta.next_change_tick",
         "select_pool.reserved_until_tick",
         "select_npc_token.valid_until_tick",
         "select_npc_token.pick_more_from_tick",
         "message.time_tick",
         "message.valid_until_tick",
+        "message.occurred_game_tick",
+        "message_action.created_game_tick",
+        "message_action.expires_game_tick",
+        "message_action.resolved_game_tick",
+        "message_action.clock_revision",
+        "message_action.deadline_generation",
+        "inheritance_ledger.applied_clock_revision",
+        "inheritance_ledger.applied_deadline_generation",
         "auction.open_tick",
         "auction.close_tick",
+        "auction_bid.occurred_game_tick",
         "vote_poll.start_tick",
         "vote_poll.end_tick",
         "clock_suspension.source_revision",
@@ -33,6 +43,43 @@
         "clock_suspension.shift_ticks",
         "clock_suspension.aligned_tick",
         "clock_projection_outbox.target_revision"
+    ],
+    "wallTimeFields": [
+        "input_event.created_at",
+        "input_event.processing_at",
+        "input_event.completed_at",
+        "input_event.lease_until",
+        "read_model_outbox.available_at",
+        "read_model_outbox.locked_at",
+        "read_model_outbox.delivered_at",
+        "web_push_outbox.available_at",
+        "web_push_outbox.locked_at",
+        "web_push_outbox.delivered_at",
+        "turn_daemon_lease.lease_until",
+        "turn_daemon_lease.heartbeat_at",
+        "message.created_at_wall",
+        "message.delete_until_wall",
+        "message.tombstoned_at_wall",
+        "message_read_state.updated_at",
+        "diplomacy_letter.date",
+        "auction_bid.requested_at_wall",
+        "auction_bid.created_at",
+        "auction.finalizing_at",
+        "auction.finished_at",
+        "inheritance_ledger.requested_at_wall",
+        "inheritance_ledger.consumed_at_wall",
+        "inheritance_ledger.created_at_wall",
+        "clock_suspension.cut_wall_at",
+        "clock_suspension.resume_wall_at"
+    ],
+    "excludedFromReconciliation": [
+        "all WALL_TIME created_at and updated_at audit fields",
+        "normal message envelope and five-minute deletion lifecycle",
+        "account and inheritance receipt timestamps",
+        "traffic and general-access periods",
+        "notification and outbox delivery/retry timestamps",
+        "daemon, worker, editor, gateway, and release leases",
+        "board, authentication, account, audit, and operator timestamps"
     ],
     "participants": [
         {
@@ -57,6 +104,13 @@
             "owner": "game-engine/turn-daemon"
         },
         {
+            "key": "selection-reselection-deadline",
+            "policy": "SHIFT",
+            "authorityFields": ["general.meta.next_change_tick"],
+            "projectionFields": ["general.meta.next_change", "general.meta.nextChangeAt"],
+            "owner": "game-engine/select-pool"
+        },
+        {
             "key": "general-recent-war-occurrence",
             "policy": "KEEP",
             "authorityFields": ["general.recent_war_tick"],
@@ -67,8 +121,15 @@
             "key": "auction-open-occurrence",
             "policy": "KEEP",
             "authorityFields": ["auction.open_tick"],
-            "projectionFields": ["auction.created_at"],
-            "owner": "game-api/auction"
+            "projectionFields": [],
+            "owner": "game-engine/auction"
+        },
+        {
+            "key": "auction-bid-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["auction_bid.occurred_game_tick"],
+            "projectionFields": ["auction_bid.event_at"],
+            "owner": "game-engine/auction"
         },
         {
             "key": "auction-deadline",
@@ -85,18 +146,37 @@
             "owner": "game-api/auction-worker"
         },
         {
-            "key": "message-occurrence",
+            "key": "message-action-occurrence",
             "policy": "KEEP",
-            "authorityFields": ["message.time_tick"],
-            "projectionFields": ["message.time"],
-            "owner": "game-engine/message"
+            "authorityFields": ["message_action.created_game_tick"],
+            "projectionFields": ["message.time", "message.time_tick"],
+            "rowScope": "messages with a message_action row only",
+            "owner": "game-engine/message-action"
         },
         {
-            "key": "message-expiry",
+            "key": "message-action-expiry",
             "policy": "SHIFT",
-            "authorityFields": ["message.valid_until_tick"],
-            "projectionFields": ["message.valid_until"],
-            "owner": "game-engine/message"
+            "authorityFields": ["message_action.expires_game_tick"],
+            "projectionFields": ["message.valid_until", "message.valid_until_tick"],
+            "rowScope": "messages with a message_action row only",
+            "owner": "game-engine/message-action"
+        },
+        {
+            "key": "message-action-clock-coordinate",
+            "policy": "REBUILD",
+            "authorityFields": ["message_action.clock_revision", "message_action.deadline_generation"],
+            "projectionFields": [],
+            "owner": "game-engine/message-action"
+        },
+        {
+            "key": "inheritance-effect-coordinate",
+            "policy": "KEEP",
+            "authorityFields": [
+                "inheritance_ledger.applied_clock_revision",
+                "inheritance_ledger.applied_deadline_generation"
+            ],
+            "projectionFields": [],
+            "owner": "game-engine/inheritance"
         },
         {
             "key": "vote-start-occurrence",
@@ -127,7 +207,7 @@
             "owner": "game-engine/npc-selection"
         },
         {
-            "key": "accepted-command-coordinate",
+            "key": "daemon-command-coordinate",
             "policy": "KEEP",
             "authorityFields": [
                 "input_event.accepted_game_tick",
@@ -139,7 +219,7 @@
                 "input_event.processing_clock_revision",
                 "input_event.processing_deadline_generation"
             ],
-            "owner": "game-api/input-event"
+            "owner": "game-engine/input-event-claim"
         },
         {
             "key": "tournament-deadlines",
@@ -220,6 +300,17 @@
         "clock_projection_outbox.available_at",
         "clock_projection_outbox.locked_at",
         "clock_projection_outbox.applied_at",
+        "message.created_at_wall",
+        "message.delete_until_wall",
+        "message.tombstoned_at_wall",
+        "message_action.created_at_wall",
+        "message_action.updated_at_wall",
+        "auction.created_at",
+        "auction.updated_at",
+        "auction_bid.requested_at_wall",
+        "auction_bid.created_at",
+        "inheritance_ledger.requested_at_wall",
+        "inheritance_ledger.consumed_at_wall",
         "*.created_at",
         "*.updated_at"
     ]

@@ -10,18 +10,19 @@ interface RedisSortedSetClient {
 }
 
 export const resolveAuctionTimerScore = (time: CurrentGameTime, closeAt: Date, closeTick?: bigint | null): number => {
-    if (closeTick !== null && closeTick !== undefined) {
-        const value = Number(closeTick);
-        if (!Number.isSafeInteger(value)) throw new Error(`Auction close tick is unsafe: ${closeTick}`);
-        return value;
-    }
-    return time.dateToTick(closeAt) ?? closeAt.getTime();
+    void time;
+    void closeAt;
+    if (closeTick === null || closeTick === undefined) throw new Error('Auction close tick is required.');
+    const value = Number(closeTick);
+    if (!Number.isSafeInteger(value)) throw new Error(`Auction close tick is unsafe: ${closeTick}`);
+    return value;
 };
 
 export const resolveAuctionSeedScore = (time: CurrentGameTime, row: AuctionTimerRow): number => {
     if (row.status === 'FINALIZING') {
         // 마감 판정은 이미 끝났으므로 원래 deadline을 기다리지 않고 durable event 복구를 즉시 재시도한다.
-        return time.tick ?? time.now.getTime();
+        if (time.tick === null) throw new Error('Current game tick is required for auction recovery.');
+        return time.tick;
     }
     return resolveAuctionTimerScore(time, row.closeAt, row.closeTick);
 };

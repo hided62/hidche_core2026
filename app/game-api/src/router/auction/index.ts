@@ -60,10 +60,7 @@ export interface AuctionDetail {
 export const hasAuctionClosePassed = (
     auction: { closeAt: Date; closeTick: bigint | null },
     time: { now: Date; tick: number | null }
-): boolean =>
-    auction.closeTick !== null && time.tick !== null
-        ? auction.closeTick < BigInt(time.tick)
-        : auction.closeAt.getTime() < time.now.getTime();
+): boolean => auction.closeTick === null || time.tick === null || auction.closeTick < BigInt(time.tick);
 
 interface AuctionBidRow {
     id: number;
@@ -433,7 +430,6 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
-            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: true,
         });
         throwIfCommandRejected(result);
@@ -448,7 +444,7 @@ export const auctionRouter = router({
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [
-            { score: resolveAuctionTimerScore(gameTime, nextCloseAt), value: String(auction.id) },
+            { score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)), value: String(auction.id) },
         ]);
 
         return { ok: true };
@@ -511,7 +507,6 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
-            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: true,
         });
         throwIfCommandRejected(result);
@@ -526,7 +521,7 @@ export const auctionRouter = router({
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [
-            { score: resolveAuctionTimerScore(gameTime, nextCloseAt), value: String(auction.id) },
+            { score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)), value: String(auction.id) },
         ]);
 
         return { ok: true };
@@ -650,7 +645,6 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
-            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             tryExtendCloseDate: input.tryExtendCloseDate ?? false,
         });
         throwIfCommandRejected(result);
@@ -665,7 +659,7 @@ export const auctionRouter = router({
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [
-            { score: resolveAuctionTimerScore(gameTime, nextCloseAt), value: String(auction.id) },
+            { score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)), value: String(auction.id) },
         ]);
 
         return { ok: true };

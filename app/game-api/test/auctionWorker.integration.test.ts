@@ -74,6 +74,7 @@ liveDescribe('auction worker durable recovery', () => {
                 detail: { amount: 100 },
                 status,
                 closeAt,
+                closeTick: 0n,
                 ...(status === 'FINALIZING' ? { finalizingAt: new Date(Date.now() - 30_000) } : {}),
             },
         });
@@ -82,11 +83,15 @@ liveDescribe('auction worker durable recovery', () => {
         return auction;
     };
 
-    const requestIdFor = (auction: { id: number; closeAt: Date; closeTick?: bigint | null }): string =>
-        buildAuctionFinalizeRequestId(auction.id, {
+    const requestIdFor = (auction: { id: number; closeAt: Date; closeTick?: bigint | null }): string => {
+        if (auction.closeTick === null || auction.closeTick === undefined) {
+            throw new Error(`auction ${auction.id} fixture requires closeTick`);
+        }
+        return buildAuctionFinalizeRequestId(auction.id, {
             closeAt: auction.closeAt,
-            closeTick: auction.closeTick ?? null,
+            closeTick: auction.closeTick,
         });
+    };
 
     const memoryRedis = () => ({
         zRangeByScore: vi.fn(async () => []),
@@ -108,6 +113,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).resolves.toBe('PENDING');
         await expect(
@@ -118,6 +124,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).resolves.toBe('PENDING');
 
@@ -160,6 +167,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).rejects.toThrow(`Conflicting durable auction finalization event: ${requestId}`);
 
@@ -180,7 +188,13 @@ liveDescribe('auction worker durable recovery', () => {
                 requestId,
                 target: 'ENGINE',
                 eventType: 'auctionFinalize',
-                payload: { type: 'auctionFinalize', requestId, auctionId: auction.id },
+                payload: {
+                    type: 'auctionFinalize',
+                    requestId,
+                    auctionId: auction.id,
+                    expectedCloseAt: auction.closeAt.toISOString(),
+                    expectedCloseTick: Number(auction.closeTick),
+                },
                 status: 'FAILED',
                 attempts: 3,
                 error: 'simulated terminal failure',
@@ -196,6 +210,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).resolves.toBe('PENDING');
         await expect(
@@ -206,6 +221,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).resolves.toBe('PENDING');
         await expect(
@@ -230,13 +246,14 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).rejects.toThrow(`Auction finalization recovery exhausted: ${auction.id}`);
     });
 
     it('creates a new generation after an earlier close was extended', async () => {
         const auction = await createAuction('OPEN');
-        const priorRequestId = `auction:finalize:${auction.id}:${auction.closeAt.getTime() - 300_000}`;
+        const priorRequestId = `auction:finalize:${auction.id}:tick:-1`;
         await connector.prisma.inputEvent.create({
             data: {
                 requestId: priorRequestId,
@@ -263,6 +280,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             })
         ).resolves.toBe('PENDING');
 
@@ -431,6 +449,8 @@ liveDescribe('auction worker durable recovery', () => {
                     amount: 200,
                     eventId: `auction-durable-bid:${auction.id}`,
                     eventAt: new Date(),
+                    occurredGameTick: 0n,
+                    requestedAtWall: new Date(),
                 },
             });
             const requestId = requestIdFor(auction);
@@ -441,6 +461,7 @@ liveDescribe('auction worker durable recovery', () => {
                 historyKey: 'history',
                 id: String(auction.id),
                 nowMs: Date.now(),
+                nowTick: 0,
             });
 
             const world = new InMemoryTurnWorld(state, snapshot, { schedule });
@@ -509,6 +530,7 @@ liveDescribe('auction worker durable recovery', () => {
                         detail: { remainCloseDateExtensionCnt: 1 },
                         status: 'OPEN',
                         closeAt: logicalPastCloseAt,
+                        closeTick: 0n,
                     },
                 });
                 extensionAuctionId = extensionAuction.id;
@@ -521,6 +543,8 @@ liveDescribe('auction worker durable recovery', () => {
                         amount: 50,
                         eventId: `auction-extension-bid:${extensionAuction.id}`,
                         eventAt: new Date(),
+                        occurredGameTick: 0n,
+                        requestedAtWall: new Date(),
                         meta: { tryExtendCloseDate: true },
                     },
                 });
@@ -532,6 +556,7 @@ liveDescribe('auction worker durable recovery', () => {
                     historyKey: 'history',
                     id: String(extensionAuction.id),
                     nowMs: Date.now(),
+                    nowTick: 0,
                 });
 
                 let reopened: { status: string; closeAt: Date } | null = null;

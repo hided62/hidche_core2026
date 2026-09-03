@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import type { WebPushEventEnvelopeV1, WebPushEventType } from '@sammo-ts/common';
 import { GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
@@ -55,10 +56,13 @@ export class WebPushOutboxWorker {
             `);
             if (rows.length === 0) return [];
             const ids = rows.map((row) => row.id);
-            await tx.webPushOutbox.updateMany({
-                where: { id: { in: ids } },
-                data: { lockedAt: new Date(), lockOwner: this.owner, attempts: { increment: 1 } },
-            });
+            await tx.$executeRaw(GamePrisma.sql`
+                UPDATE "web_push_outbox"
+                SET "locked_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    "lock_owner" = ${this.owner},
+                    "attempts" = "attempts" + 1
+                WHERE "id" IN (${GamePrisma.join(ids)})
+            `);
             return tx.webPushOutbox.findMany({
                 where: { id: { in: ids }, lockOwner: this.owner },
                 orderBy: { id: 'asc' },
@@ -66,11 +70,18 @@ export class WebPushOutboxWorker {
         });
 
         for (const event of claimed) {
-            if (event.createdAt.getTime() <= Date.now() - MAX_EVENT_AGE_MS) {
-                await this.db.webPushOutbox.updateMany({
-                    where: { id: event.id, lockOwner: this.owner },
-                    data: { deliveredAt: new Date(), lockedAt: null, lockOwner: null, lastError: null },
-                });
+            const expired = await this.db.$executeRaw(GamePrisma.sql`
+                UPDATE "web_push_outbox"
+                SET "delivered_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    "locked_at" = NULL,
+                    "lock_owner" = NULL,
+                    "last_error" = NULL
+                WHERE "id" = ${event.id}
+                  AND "lock_owner" = ${this.owner}
+                  AND "created_at" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                      - ${MAX_EVENT_AGE_MS} * INTERVAL '1 millisecond'
+            `);
+            if (expired > 0) {
                 continue;
             }
             try {
@@ -94,27 +105,32 @@ export class WebPushOutboxWorker {
                     signal: AbortSignal.timeout(5_000),
                 });
                 if (!response.ok) throw new Error(`Gateway web push ingest failed with HTTP ${response.status}.`);
-                await this.db.webPushOutbox.updateMany({
-                    where: { id: event.id, lockOwner: this.owner },
-                    data: { deliveredAt: new Date(), lockedAt: null, lockOwner: null, lastError: null },
-                });
+                await this.db.$executeRaw(GamePrisma.sql`
+                    UPDATE "web_push_outbox"
+                    SET "delivered_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                        "locked_at" = NULL,
+                        "lock_owner" = NULL,
+                        "last_error" = NULL
+                    WHERE "id" = ${event.id} AND "lock_owner" = ${this.owner}
+                `);
             } catch (error) {
                 const attempts = event.attempts;
                 const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
-                await this.db.webPushOutbox.updateMany({
-                    where: { id: event.id, lockOwner: this.owner },
-                    data: {
-                        availableAt: new Date(Date.now() + delaySeconds * 1_000),
-                        lockedAt: null,
-                        lockOwner: null,
-                        lastError: (error instanceof Error ? error.message : String(error)).slice(0, 500),
-                    },
-                });
+                const errorText = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+                await this.db.$executeRaw(GamePrisma.sql`
+                    UPDATE "web_push_outbox"
+                    SET "available_at" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                            + ${delaySeconds * 1_000} * INTERVAL '1 millisecond',
+                        "locked_at" = NULL,
+                        "lock_owner" = NULL,
+                        "last_error" = ${errorText}
+                    WHERE "id" = ${event.id} AND "lock_owner" = ${this.owner}
+                `);
                 this.onError(error);
             }
         }
-        if (Date.now() >= this.nextPruneAt) {
-            this.nextPruneAt = Date.now() + 60_000;
+        if (performance.now() >= this.nextPruneAt) {
+            this.nextPruneAt = performance.now() + 60_000;
             await this.db.$executeRaw(GamePrisma.sql`
                 WITH expired AS (
                     SELECT "id"

@@ -92,8 +92,8 @@ export const upgradeReleaseController = async (options: {
     }
     try {
         await options.processManager.start(buildReleaseControllerDefinition(workspace.root, options.config));
-        const deadline = Date.now() + (options.readinessTimeoutMs ?? options.config.readinessTimeoutMs);
-        while (Date.now() < deadline) {
+        const deadline = performance.now() + (options.readinessTimeoutMs ?? options.config.readinessTimeoutMs);
+        while (performance.now() < deadline) {
             const matching = (await options.processManager.list()).filter(
                 (process) => process.name === CONTROLLER_PROCESS_NAME
             );

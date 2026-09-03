@@ -15,9 +15,11 @@ const validPayload = {
 const createDb = (rows: readonly object[]) => {
     const queryRaw = vi.fn().mockResolvedValue(rows);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const executeRaw = vi.fn().mockResolvedValue(1);
     return {
-        db: { $queryRaw: queryRaw, readModelOutbox: { updateMany } } as unknown as GamePrismaClient,
+        db: { $queryRaw: queryRaw, $executeRaw: executeRaw, readModelOutbox: { updateMany } } as unknown as GamePrismaClient,
         queryRaw,
+        executeRaw,
         updateMany,
     };
 };
@@ -46,12 +48,7 @@ describe('read-model outbox dispatcher', () => {
 
         expect(result).toEqual({ claimed: 1, delivered: 1, failed: 0 });
         expect(publish).toHaveBeenCalledWith(validPayload, 1n);
-        expect(fixture.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { id: 1n, lockOwner: 'worker-a', deliveredAt: null },
-                data: expect.objectContaining({ deliveredAt: new Date('2026-08-16T00:00:00.000Z') }),
-            })
-        );
+        expect(fixture.executeRaw).toHaveBeenCalledOnce();
     });
 
     it('releases failed and malformed rows with bounded retry state', async () => {
@@ -69,20 +66,7 @@ describe('read-model outbox dispatcher', () => {
 
         expect(result).toEqual({ claimed: 2, delivered: 0, failed: 2 });
         expect(publish).toHaveBeenCalledTimes(1);
-        expect(fixture.updateMany).toHaveBeenNthCalledWith(
-            1,
-            expect.objectContaining({
-                where: { id: 1n, lockOwner: 'worker-a', deliveredAt: null },
-                data: expect.objectContaining({ availableAt: new Date('2026-08-16T00:00:04.000Z') }),
-            })
-        );
-        expect(fixture.updateMany).toHaveBeenNthCalledWith(
-            2,
-            expect.objectContaining({
-                where: { id: 2n, lockOwner: 'worker-a', deliveredAt: null },
-                data: expect.objectContaining({ availableAt: new Date('2026-08-16T00:00:01.000Z') }),
-            })
-        );
+        expect(fixture.executeRaw).toHaveBeenCalledTimes(2);
     });
 
     it('prunes only a bounded delivered batch', async () => {

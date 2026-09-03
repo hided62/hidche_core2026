@@ -91,21 +91,17 @@ export const isAuctionFinalizeGenerationCurrent = (
     auction: Pick<AuctionRow, 'closeAt' | 'closeTick'>,
     command: Pick<Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>, 'expectedCloseAt' | 'expectedCloseTick'>
 ): boolean => {
-    if (command.expectedCloseTick !== undefined) {
-        return auction.closeTick !== null && auction.closeTick === BigInt(command.expectedCloseTick);
-    }
-    if (command.expectedCloseAt !== undefined) {
-        return auction.closeAt.getTime() === new Date(command.expectedCloseAt).getTime();
-    }
-    return true;
+    return auction.closeTick !== null && auction.closeTick === BigInt(command.expectedCloseTick);
 };
 
 export const hasAuctionFinalizeDeadlineArrived = (
     auction: Pick<AuctionRow, 'closeAt' | 'closeTick'>,
     now: Date,
     nowTick: number
-): boolean =>
-    auction.closeTick === null ? auction.closeAt.getTime() <= now.getTime() : auction.closeTick <= BigInt(nowTick);
+): boolean => {
+    void now;
+    return auction.closeTick !== null && auction.closeTick <= BigInt(nowTick);
+};
 
 export const buildAuctionBidderSystemMessage = (options: {
     bidder: TurnGeneral;
@@ -293,7 +289,11 @@ export const createAuctionFinalizer = async (options: {
                 return { type: 'auctionFinalize', ok: true, auctionId };
             }
 
-            const now = world.getGameNow(new Date());
+            const processingGameTick = Reflect.get(command, 'processingGameTick');
+            if (typeof processingGameTick !== 'number' || !Number.isSafeInteger(processingGameTick)) {
+                throw new Error('auctionFinalize requires an authoritative daemon processing game tick.');
+            }
+            const now = world.gameTickToDate(processingGameTick);
             if (auction.status === 'OPEN') {
                 if (!isAuctionFinalizeGenerationCurrent(auction, command)) {
                     return {
@@ -303,8 +303,7 @@ export const createAuctionFinalizer = async (options: {
                         reason: '경매 마감 세대가 변경되었습니다.',
                     };
                 }
-                const nowTick = world.dateToGameTick(now);
-                if (!hasAuctionFinalizeDeadlineArrived(auction, now, nowTick)) {
+                if (!hasAuctionFinalizeDeadlineArrived(auction, now, processingGameTick)) {
                     return {
                         type: 'auctionFinalize',
                         ok: false,
@@ -316,8 +315,8 @@ export const createAuctionFinalizer = async (options: {
                     GamePrisma.sql`
                         UPDATE auction
                         SET status = 'FINALIZING',
-                            finalizing_at = ${now},
-                            updated_at = ${now}
+                            finalizing_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                            updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                         WHERE id = ${auctionId}
                           AND status = 'OPEN'
                     `
@@ -364,8 +363,8 @@ export const createAuctionFinalizer = async (options: {
                     GamePrisma.sql`
                         UPDATE auction
                         SET status = ${status},
-                            finished_at = ${now},
-                            updated_at = ${now}
+                            finished_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                            updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                         WHERE id = ${auctionId}
                     `
                 );

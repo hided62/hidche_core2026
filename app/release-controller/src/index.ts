@@ -85,7 +85,7 @@ const main = async (): Promise<void> => {
     process.once('SIGINT', () => void stop());
     process.once('SIGTERM', () => void stop());
     while (!stopping) {
-        const now = Date.now();
+        const now = performance.now();
         if (now >= nextWorkspaceCleanupAt) {
             nextWorkspaceCleanupAt = now + RELEASE_WORKSPACE_CLEANUP_INTERVAL_MS;
             try {

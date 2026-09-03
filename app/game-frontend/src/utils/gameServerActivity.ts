@@ -12,7 +12,7 @@ export const createGameServerActivityTracker = (): GameServerActivityTracker => 
 
     return {
         lastContactAt: readonly(lastContactAt),
-        markContact(contactAt = Date.now()) {
+        markContact(contactAt = performance.now()) {
             if (!Number.isFinite(contactAt)) return;
             lastContactAt.value = contactAt;
         },
@@ -21,7 +21,7 @@ export const createGameServerActivityTracker = (): GameServerActivityTracker => 
 
 export const isRecentGameServerActivity = (
     lastContactAt: number | null,
-    now = Date.now(),
+    now = performance.now(),
     freshnessMs = GAME_SERVER_ACTIVITY_FRESHNESS_MS
 ): boolean =>
     lastContactAt !== null &&
@@ -31,4 +31,4 @@ export const isRecentGameServerActivity = (
 
 export const gameServerActivity = createGameServerActivityTracker();
 
-export const markGameServerContact = (contactAt = Date.now()) => gameServerActivity.markContact(contactAt);
+export const markGameServerContact = (contactAt = performance.now()) => gameServerActivity.markContact(contactAt);

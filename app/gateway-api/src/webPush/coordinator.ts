@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import {
     WEB_PUSH_EVENT_TYPES,
@@ -409,10 +410,13 @@ export class WebPushCoordinator {
             `);
             if (rows.length === 0) return [];
             const ids = rows.map((row) => row.id);
-            await tx.webPushDelivery.updateMany({
-                where: { id: { in: ids } },
-                data: { lockedAt: new Date(), lockOwner: this.owner, attempts: { increment: 1 } },
-            });
+            await tx.$executeRaw(GatewayPrisma.sql`
+                UPDATE web_push_delivery
+                SET locked_at = CURRENT_TIMESTAMP,
+                    lock_owner = ${this.owner},
+                    attempts = attempts + 1
+                WHERE id IN (${GatewayPrisma.join(ids)})
+            `);
             return tx.webPushDelivery.findMany({
                 where: { id: { in: ids }, lockOwner: this.owner },
                 include: { notification: true, subscription: true },
@@ -421,22 +425,31 @@ export class WebPushCoordinator {
         });
 
         for (const delivery of claimed) {
-            if (delivery.subscription.expirationTime && delivery.subscription.expirationTime.getTime() <= Date.now()) {
-                await this.prisma.$transaction(async (tx) => {
-                    await tx.webPushDelivery.updateMany({
-                        where: { id: delivery.id, lockOwner: this.owner },
-                        data: {
-                            status: 'FAILED',
-                            lockedAt: null,
-                            lockOwner: null,
-                            lastError: 'Push subscription expired.',
-                        },
-                    });
-                    await tx.webPushSubscription.update({
-                        where: { id: delivery.subscriptionId },
-                        data: { disabledAt: new Date() },
-                    });
-                });
+            const expired = await this.prisma.$transaction(async (tx) => {
+                const count = await tx.$executeRaw(GatewayPrisma.sql`
+                    UPDATE web_push_delivery AS delivery
+                    SET status = 'FAILED'::"WebPushDeliveryStatus",
+                        locked_at = NULL,
+                        lock_owner = NULL,
+                        last_error = 'Push subscription expired.'
+                    FROM web_push_subscription AS subscription
+                    WHERE delivery.id = ${delivery.id}
+                      AND delivery.lock_owner = ${this.owner}
+                      AND subscription.id = delivery.subscription_id
+                      AND subscription.expiration_time IS NOT NULL
+                      AND subscription.expiration_time <= CURRENT_TIMESTAMP
+                `);
+                if (count > 0) {
+                    await tx.$executeRaw(GatewayPrisma.sql`
+                        UPDATE web_push_subscription
+                        SET disabled_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ${delivery.subscriptionId}
+                    `);
+                }
+                return count > 0;
+            });
+            if (expired) {
                 continue;
             }
             try {
@@ -453,16 +466,15 @@ export class WebPushCoordinator {
                     }),
                     { TTL: 60 * 60 }
                 );
-                await this.prisma.webPushDelivery.updateMany({
-                    where: { id: delivery.id, lockOwner: this.owner },
-                    data: {
-                        status: 'DELIVERED',
-                        deliveredAt: new Date(),
-                        lockedAt: null,
-                        lockOwner: null,
-                        lastError: null,
-                    },
-                });
+                await this.prisma.$executeRaw(GatewayPrisma.sql`
+                    UPDATE web_push_delivery
+                    SET status = 'DELIVERED'::"WebPushDeliveryStatus",
+                        delivered_at = CURRENT_TIMESTAMP,
+                        locked_at = NULL,
+                        lock_owner = NULL,
+                        last_error = NULL
+                    WHERE id = ${delivery.id} AND lock_owner = ${this.owner}
+                `);
             } catch (error) {
                 const statusCode =
                     typeof error === 'object' && error !== null && 'statusCode' in error
@@ -478,28 +490,31 @@ export class WebPushCoordinator {
                 const safeError =
                     statusCode > 0 ? `Push service returned HTTP ${statusCode}.` : 'Push service request failed.';
                 await this.prisma.$transaction(async (tx) => {
-                    await tx.webPushDelivery.updateMany({
-                        where: { id: delivery.id, lockOwner: this.owner },
-                        data: {
-                            status: terminal || exhausted ? 'FAILED' : 'PENDING',
-                            availableAt: new Date(Date.now() + delaySeconds * 1_000),
-                            lockedAt: null,
-                            lockOwner: null,
-                            lastError: safeError,
-                        },
-                    });
+                    const nextStatus = terminal || exhausted ? 'FAILED' : 'PENDING';
+                    await tx.$executeRaw(GatewayPrisma.sql`
+                        UPDATE web_push_delivery
+                        SET status = ${nextStatus}::"WebPushDeliveryStatus",
+                            available_at = CURRENT_TIMESTAMP
+                                + ${delaySeconds * 1_000} * INTERVAL '1 millisecond',
+                            locked_at = NULL,
+                            lock_owner = NULL,
+                            last_error = ${safeError}
+                        WHERE id = ${delivery.id} AND lock_owner = ${this.owner}
+                    `);
                     if (statusCode === 404 || statusCode === 410) {
-                        await tx.webPushSubscription.update({
-                            where: { id: delivery.subscriptionId },
-                            data: { disabledAt: new Date() },
-                        });
+                        await tx.$executeRaw(GatewayPrisma.sql`
+                            UPDATE web_push_subscription
+                            SET disabled_at = CURRENT_TIMESTAMP,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ${delivery.subscriptionId}
+                        `);
                     }
                 });
                 if (!terminal) this.onError(new Error(safeError));
             }
         }
-        if (Date.now() >= this.nextPruneAt) {
-            this.nextPruneAt = Date.now() + 60_000;
+        if (performance.now() >= this.nextPruneAt) {
+            this.nextPruneAt = performance.now() + 60_000;
             await this.prisma.$transaction(async (tx) => {
                 await tx.$executeRaw(GatewayPrisma.sql`
                     WITH expired AS (
@@ -534,7 +549,7 @@ export class WebPushCoordinator {
 
     private run(): void {
         if (!this.configured || this.inFlight) return;
-        const now = Date.now();
+        const now = performance.now();
         const shouldReconcileProfiles = now >= this.nextProfileReconcileAt;
         if (shouldReconcileProfiles) this.nextProfileReconcileAt = now + 5_000;
         this.inFlight = (shouldReconcileProfiles ? this.reconcileProfiles() : Promise.resolve())

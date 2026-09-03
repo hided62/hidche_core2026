@@ -62,61 +62,68 @@ const generalActivityMiddleware = t.middleware(async ({ ctx, type, next }) => {
 export const scopeApiInputEventRequestId = (baseRequestId: string, path: string, batchIndex: number): string =>
     `${baseRequestId}:${path}${batchIndex === 0 ? '' : `:batch:${batchIndex}`}`;
 
-const inputEventMiddleware = t.middleware(async ({ ctx, type, path, batchIndex, getRawInput, next }) => {
-    if (type !== 'mutation' || !ctx.db.$transaction) {
-        return next();
-    }
+const createInputEventMiddleware = (acquireClockFence: boolean) =>
+    t.middleware(async ({ ctx, type, path, batchIndex, getRawInput, next }) => {
+        if (type !== 'mutation' || !ctx.db.$transaction) {
+            return next();
+        }
 
-    const requestId = scopeApiInputEventRequestId(ctx.requestId ?? randomUUID(), path, batchIndex);
-    const payload = await getRawInput();
-    const changeJournal = new ChangeJournal();
-    let journalPersisted = false;
-    let executedResult: Awaited<ReturnType<typeof next>> | undefined;
-    try {
-        const response = await executeInputEvent({
-            db: ctx.db,
-            requestId,
-            eventType: path,
-            payload,
-            actorUserId: ctx.auth?.user.id,
-            execute: async (transaction) => {
-                const result = await next({
-                    ctx: {
-                        ...ctx,
-                        db: transaction,
-                        changeJournal,
-                        turnDaemon: new IdempotentTurnDaemonTransport(ctx.turnDaemon, requestId),
-                    },
-                });
-                if (!result.ok) {
-                    throw result.error;
-                }
-                journalPersisted = Boolean(await writeReadModelChangeJournal(transaction, changeJournal.snapshot()));
-                executedResult = result;
-                return result.data;
-            },
-        });
-        if (journalPersisted) {
-            ctx.readModelOutbox?.wake();
-        }
-        if (executedResult) {
-            return executedResult;
-        }
-        return {
-            marker: middlewareMarker,
-            ok: true,
-            data: response,
-        };
-    } catch (error) {
-        if (error instanceof DuplicateInputEventError) {
-            throw new TRPCError({
-                code: 'CONFLICT',
-                message: error.message,
+        const requestId = scopeApiInputEventRequestId(ctx.requestId ?? randomUUID(), path, batchIndex);
+        const payload = await getRawInput();
+        const changeJournal = new ChangeJournal();
+        let journalPersisted = false;
+        let executedResult: Awaited<ReturnType<typeof next>> | undefined;
+        try {
+            const response = await executeInputEvent({
+                db: ctx.db,
+                requestId,
+                eventType: path,
+                payload,
+                actorUserId: ctx.auth?.user.id,
+                acquireClockFence,
+                execute: async (transaction) => {
+                    const result = await next({
+                        ctx: {
+                            ...ctx,
+                            db: transaction,
+                            changeJournal,
+                            turnDaemon: new IdempotentTurnDaemonTransport(ctx.turnDaemon, requestId),
+                        },
+                    });
+                    if (!result.ok) {
+                        throw result.error;
+                    }
+                    journalPersisted = Boolean(
+                        await writeReadModelChangeJournal(transaction, changeJournal.snapshot())
+                    );
+                    executedResult = result;
+                    return result.data;
+                },
             });
+            if (journalPersisted) {
+                ctx.readModelOutbox?.wake();
+            }
+            if (executedResult) {
+                return executedResult;
+            }
+            return {
+                marker: middlewareMarker,
+                ok: true,
+                data: response,
+            };
+        } catch (error) {
+            if (error instanceof DuplicateInputEventError) {
+                throw new TRPCError({
+                    code: 'CONFLICT',
+                    message: error.message,
+                });
+            }
+            throw error;
         }
-        throw error;
-    }
-});
+    });
+
+const inputEventMiddleware = createInputEventMiddleware(true);
+const wallInputEventMiddleware = createInputEventMiddleware(false);
 
 const generalAccessEndpointMiddleware = t.middleware(async ({ ctx, path, input, next }) => {
     // 실제 HTTP context는 createGameApiContext()가 이 flag를 설정한다.
@@ -180,10 +187,15 @@ const deferredGeneralAccessLimitMiddleware = t.middleware(async ({ ctx, next }) 
 
 export const router = t.router;
 export const procedure = t.procedure.use(inputEventMiddleware);
+export const wallProcedure = t.procedure.use(wallInputEventMiddleware);
 export const authedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
     .use(generalActivityMiddleware)
     .use(inputEventMiddleware);
+export const wallAuthedProcedure: typeof procedure = t.procedure
+    .use(requireAuthMiddleware)
+    .use(generalActivityMiddleware)
+    .use(wallInputEventMiddleware);
 
 // Ref의 increaseRefresh()는 로그인/제재 확인 뒤, 업무 validation과 mutation
 // transaction보다 먼저 별도 저장된다. access middleware를 input-event보다
@@ -234,6 +246,13 @@ export const accessAuthedInputProcedure: typeof procedure.input = (input) =>
         .use(generalAccessEndpointMiddleware)
         .use(generalActivityMiddleware)
         .use(inputEventMiddleware);
+export const accessWallAuthedInputProcedure: typeof procedure.input = (input) =>
+    t.procedure
+        .use(requireAuthMiddleware)
+        .input(input)
+        .use(generalAccessEndpointMiddleware)
+        .use(generalActivityMiddleware)
+        .use(wallInputEventMiddleware);
 export const accessEngineAuthedInputProcedure: typeof procedure.input = (input) =>
     t.procedure
         .use(requireAuthMiddleware)

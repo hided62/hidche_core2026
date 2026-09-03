@@ -9,13 +9,18 @@ declare const gameTickBrand: unique symbol;
 declare const observedGameInstantBrand: unique symbol;
 declare const scheduleInstantBrand: unique symbol;
 declare const clockRevisionBrand: unique symbol;
+declare const deadlineGenerationBrand: unique symbol;
 declare const wallInstantBrand: unique symbol;
+declare const monotonicDurationBrand: unique symbol;
 
 export type GameTick = number & { readonly [gameTickBrand]: 'GameTick' };
 export type ObservedGameInstant = GameTick & { readonly [observedGameInstantBrand]: 'ObservedGameInstant' };
 export type ScheduleInstant = GameTick & { readonly [scheduleInstantBrand]: 'ScheduleInstant' };
 export type ClockRevision = number & { readonly [clockRevisionBrand]: 'ClockRevision' };
+export type DeadlineGeneration = number & { readonly [deadlineGenerationBrand]: 'DeadlineGeneration' };
 export type WallInstant = Date & { readonly [wallInstantBrand]: 'WallInstant' };
+/** Process-local elapsed milliseconds; never persist this value as a business timestamp. */
+export type MonotonicDuration = number & { readonly [monotonicDurationBrand]: 'MonotonicDuration' };
 
 export interface ClockAlignmentPlan {
     policy: ClockAlignmentPolicy;
@@ -59,11 +64,25 @@ export const asClockRevision = (revision: number): ClockRevision => {
     return revision as ClockRevision;
 };
 
+export const asDeadlineGeneration = (generation: number): DeadlineGeneration => {
+    if (!Number.isSafeInteger(generation) || generation < 1) {
+        throw new Error(`Deadline generation must be a positive safe integer: ${generation}`);
+    }
+    return generation as DeadlineGeneration;
+};
+
 export const asWallInstant = (instant: Date): WallInstant => {
     if (Number.isNaN(instant.getTime())) {
         throw new Error('Wall instant must be a valid date.');
     }
     return new Date(instant.getTime()) as WallInstant;
+};
+
+export const asMonotonicDuration = (milliseconds: number): MonotonicDuration => {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+        throw new Error(`Monotonic duration must be a non-negative finite number: ${milliseconds}`);
+    }
+    return milliseconds as MonotonicDuration;
 };
 
 export const inferClockPhase = (mode: GameClockMode): GameClockPhase => (mode === 'manual' ? 'MANUAL' : 'RUNNING');
@@ -136,8 +155,7 @@ const buildAlignmentPlan = (input: {
     const remainingMilliseconds = elapsedMilliseconds - wholeSeconds * 1_000;
     const gapTicks = asGameTick(
         requireSafeTick(
-            wholeSeconds * input.ticksPerSecond +
-                Math.trunc((remainingMilliseconds * input.ticksPerSecond) / 1_000)
+            wholeSeconds * input.ticksPerSecond + Math.trunc((remainingMilliseconds * input.ticksPerSecond) / 1_000)
         )
     );
     const catchUpTicks = asGameTick(input.catchUpTicks ?? 0);
@@ -250,7 +268,13 @@ export class GameClock {
     }
 
     nowTick(wallNow: Date): number {
-        if (this.mode === 'manual' || this.phase === 'MANUAL' || this.phase === 'COMPLETED') {
+        if (
+            this.mode === 'manual' ||
+            this.phase === 'MANUAL' ||
+            this.phase === 'SUSPENDED' ||
+            this.phase === 'RECONCILING' ||
+            this.phase === 'COMPLETED'
+        ) {
             return this.tick;
         }
         const elapsedTicks = this.ticksBetween(this.wallAnchor, wallNow);

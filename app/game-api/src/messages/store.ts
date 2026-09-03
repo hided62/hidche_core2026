@@ -1,9 +1,13 @@
-import { MAX_SAFE_GAME_TICK } from '@sammo-ts/common';
-import { enqueuePrivateMessageWebPush, GamePrisma } from '@sammo-ts/infra';
+import {
+    enqueuePrivateMessageWebPush,
+    GamePrisma,
+    persistMessageEnvelope,
+    type MessageGameContext,
+} from '@sammo-ts/infra';
 import type { MessagePayload, MessageRecordDraft, MessageType } from '@sammo-ts/logic';
 
 import type { DatabaseClient } from '../context.js';
-import { loadCurrentGameTime, type CurrentGameTime } from '../services/gameClock.js';
+import { loadCurrentGameTime } from '../services/gameClock.js';
 
 export interface MessageView {
     id: number;
@@ -22,7 +26,9 @@ interface MessageRow {
     src: number;
     dest: number;
     time: Date;
-    valid_until: Date;
+    created_at_wall: Date;
+    action_status: string | null;
+    expires_game_tick: bigint | null;
     message: unknown;
 }
 
@@ -48,68 +54,64 @@ const formatMessageTime = (value: Date): string => {
     )} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
 };
 
-const messageValidityPredicate = (gameTime: CurrentGameTime) => {
-    if (gameTime.tick === null) {
-        // A legacy or partially migrated profile has no authoritative logical
-        // tick. Rows that already carry a tick still need the wall-time
-        // fallback used by the clock migration.
-        return GamePrisma.sql`valid_until > ${gameTime.now}`;
-    }
-    return GamePrisma.sql`(
-        (valid_until_tick IS NOT NULL AND valid_until_tick > ${BigInt(gameTime.tick)})
-        OR (valid_until_tick IS NULL AND valid_until > ${gameTime.now})
-    )`;
-};
-
-const toMessageView = (row: MessageRow): MessageView => {
+const toMessageView = (row: MessageRow, currentGameTick: bigint | null): MessageView => {
     const payload = parsePayload(row.message);
+    const actionStatus = typeof row.action_status === 'string' ? row.action_status : null;
+    const actionUnavailable =
+        actionStatus !== null &&
+        (actionStatus !== 'PENDING' ||
+            (row.expires_game_tick !== null && currentGameTick !== null && row.expires_game_tick <= currentGameTick));
     return {
         id: row.id,
         msgType: row.type,
         src: payload.src,
         dest: row.type === 'public' ? null : payload.dest,
         text: payload.text,
-        option: payload.option ?? null,
-        time: formatMessageTime(new Date(row.time)),
+        option:
+            actionUnavailable && payload.option && typeof payload.option === 'object'
+                ? { ...payload.option, used: true, invalid: true }
+                : (payload.option ?? null),
+        time: formatMessageTime(new Date(row.created_at_wall ?? row.time)),
     };
 };
 
 export const insertMessage = async (db: DatabaseClient, draft: MessageRecordDraft): Promise<number> => {
-    const gameTime = await loadCurrentGameTime(db);
-    const toTickOrNull = (date: Date): bigint | null => {
-        // Ref represents its unlimited 9999-12-31 message lifetime with the
-        // largest safe game tick instead of falling back to a wall-clock-only row.
-        if (date.getUTCFullYear() >= 9000) {
-            return BigInt(MAX_SAFE_GAME_TICK);
+    const action = draft.payload.option && Reflect.get(draft.payload.option, 'action');
+    let gameContext: MessageGameContext | null = null;
+    if (typeof action === 'string' && action !== '') {
+        const gameTime = await loadCurrentGameTime(db);
+        if (
+            gameTime.tick === null ||
+            gameTime.revision === null ||
+            gameTime.revision === undefined ||
+            gameTime.deadlineGeneration === null ||
+            gameTime.deadlineGeneration === undefined
+        ) {
+            throw new Error(`Actionable message ${action} requires an initialized game clock.`);
         }
-        try {
-            const tick = gameTime.dateToTick(date);
-            return tick === null ? null : BigInt(tick);
-        } catch {
-            return null;
+        let expiresGameTick: bigint | null = null;
+        if (draft.validUntil.getUTCFullYear() < 9000) {
+            const expires = gameTime.dateToTick(draft.validUntil);
+            if (expires === null) throw new Error(`Actionable message ${action} requires a GAME_TIME deadline.`);
+            expiresGameTick = BigInt(expires);
         }
-    };
-    const rows = await db.$queryRaw<Array<{ id: number }>>`
-        INSERT INTO message (mailbox, type, src, dest, time, time_tick, valid_until, valid_until_tick, message)
-        VALUES (
-            ${draft.mailbox},
-            ${draft.msgType},
-            ${draft.srcId},
-            ${draft.destId},
-            ${draft.time},
-            ${toTickOrNull(draft.time)},
-            ${draft.validUntil},
-            ${toTickOrNull(draft.validUntil)},
-            CAST(${JSON.stringify(draft.payload)} AS jsonb)
-        )
-        RETURNING id
-    `;
-    const id = rows[0]?.id;
-    if (!id) {
-        throw new Error('Failed to insert message row.');
+        gameContext = {
+            occurredGameTick: BigInt(gameTime.tick),
+            clockRevision: BigInt(gameTime.revision),
+            deadlineGeneration: BigInt(gameTime.deadlineGeneration),
+            expiresGameTick,
+        };
     }
+    const id = await persistMessageEnvelope(db, draft, gameContext);
     await enqueuePrivateMessageWebPush(db, draft, id);
     return id;
+};
+
+const loadMessageViews = async (db: DatabaseClient, rows: MessageRow[]): Promise<MessageView[]> => {
+    if (!rows.some((row) => typeof row.action_status === 'string')) return rows.map((row) => toMessageView(row, null));
+    const gameTime = await loadCurrentGameTime(db);
+    const currentGameTick = gameTime.tick === null ? null : BigInt(gameTime.tick);
+    return rows.map((row) => toMessageView(row, currentGameTick));
 };
 
 export const fetchMessagesFromMailbox = async (params: {
@@ -120,19 +122,20 @@ export const fetchMessagesFromMailbox = async (params: {
     fromSeq: number;
 }): Promise<MessageView[]> => {
     const fromSeq = Math.max(params.fromSeq, 0);
-    const gameTime = await loadCurrentGameTime(params.db);
     const rows = await params.db.$queryRaw<MessageRow[]>`
-        SELECT id, mailbox, type, src, dest, time, valid_until, message
-        FROM message
-        WHERE mailbox = ${params.mailbox}
-            AND type = ${params.msgType}
-            AND ${messageValidityPredicate(gameTime)}
-            AND id >= ${fromSeq}
-        ORDER BY id DESC
+        SELECT m.id, m.mailbox, m.type, m.src, m.dest, m.time,
+               m.created_at_wall, m.message,
+               ma.status AS action_status, ma.expires_game_tick
+        FROM message m
+        LEFT JOIN message_action ma ON ma.message_id = m.id
+        WHERE m.mailbox = ${params.mailbox}
+            AND m.type = ${params.msgType}
+            AND m.id >= ${fromSeq}
+        ORDER BY m.id DESC
         LIMIT ${params.limit}
     `;
 
-    return rows.map(toMessageView);
+    return loadMessageViews(params.db, rows);
 };
 
 export const fetchOldMessagesFromMailbox = async (params: {
@@ -142,28 +145,30 @@ export const fetchOldMessagesFromMailbox = async (params: {
     toSeq: number;
     limit: number;
 }): Promise<MessageView[]> => {
-    const gameTime = await loadCurrentGameTime(params.db);
     const rows = await params.db.$queryRaw<MessageRow[]>`
-        SELECT id, mailbox, type, src, dest, time, valid_until, message
-        FROM message
-        WHERE mailbox = ${params.mailbox}
-            AND type = ${params.msgType}
-            AND ${messageValidityPredicate(gameTime)}
-            AND id < ${params.toSeq}
-        ORDER BY id DESC
+        SELECT m.id, m.mailbox, m.type, m.src, m.dest, m.time,
+               m.created_at_wall, m.message,
+               ma.status AS action_status, ma.expires_game_tick
+        FROM message m
+        LEFT JOIN message_action ma ON ma.message_id = m.id
+        WHERE m.mailbox = ${params.mailbox}
+            AND m.type = ${params.msgType}
+            AND m.id < ${params.toSeq}
+        ORDER BY m.id DESC
         LIMIT ${params.limit}
     `;
 
-    return rows.map(toMessageView);
+    return loadMessageViews(params.db, rows);
 };
 
 export const fetchMessageById = async (db: DatabaseClient, id: number): Promise<StoredMessage | null> => {
-    const gameTime = await loadCurrentGameTime(db);
     const rows = await db.$queryRaw<MessageRow[]>`
-        SELECT id, mailbox, type, src, dest, time, valid_until, message
-        FROM message
-        WHERE id = ${id}
-          AND ${messageValidityPredicate(gameTime)}
+        SELECT m.id, m.mailbox, m.type, m.src, m.dest, m.time,
+               m.created_at_wall, m.message,
+               ma.status AS action_status, ma.expires_game_tick
+        FROM message m
+        LEFT JOIN message_action ma ON ma.message_id = m.id
+        WHERE m.id = ${id}
         LIMIT 1
     `;
     const row = rows[0];
@@ -172,20 +177,29 @@ export const fetchMessageById = async (db: DatabaseClient, id: number): Promise<
         id: row.id,
         mailbox: row.mailbox,
         msgType: row.type,
-        time: new Date(row.time),
+        time: new Date(row.created_at_wall ?? row.time),
         payload: parsePayload(row.message),
     };
 };
 
 export const fetchMessageByIdForUpdate = async (db: DatabaseClient, id: number): Promise<StoredMessage | null> => {
     const gameTime = await loadCurrentGameTime(db);
+    if (gameTime.tick === null) throw new Error('Actionable message response requires an initialized game clock.');
     const rows = await db.$queryRaw<MessageRow[]>`
-        SELECT id, mailbox, type, src, dest, time, valid_until, message
-        FROM message
-        WHERE id = ${id}
-          AND ${messageValidityPredicate(gameTime)}
+        SELECT m.id, m.mailbox, m.type, m.src, m.dest, m.time,
+               m.created_at_wall, m.message,
+               ma.status AS action_status, ma.expires_game_tick
+        FROM message m
+        JOIN message_action ma ON ma.message_id = m.id
+        JOIN world_state world ON TRUE
+        WHERE m.id = ${id}
+          AND ma.status = 'PENDING'
+          AND (ma.expires_game_tick IS NULL OR ma.expires_game_tick > ${BigInt(gameTime.tick)})
+          AND world.clock_phase IN ('RUNNING', 'MANUAL')
+          AND ma.clock_revision = world.clock_revision
+          AND ma.deadline_generation = world.deadline_generation
         LIMIT 1
-        FOR UPDATE
+        FOR UPDATE OF m, ma, world
     `;
     const row = rows[0];
     if (!row) return null;
@@ -193,7 +207,7 @@ export const fetchMessageByIdForUpdate = async (db: DatabaseClient, id: number):
         id: row.id,
         mailbox: row.mailbox,
         msgType: row.type,
-        time: new Date(row.time),
+        time: new Date(row.created_at_wall ?? row.time),
         payload: parsePayload(row.message),
     };
 };
@@ -202,16 +216,16 @@ export const invalidateMessages = async (db: DatabaseClient, ids: number[]): Pro
     const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
     if (uniqueIds.length === 0) return;
     const gameTime = await loadCurrentGameTime(db);
+    if (gameTime.tick === null) throw new Error('Actionable message invalidation requires an initialized game clock.');
+    await db.messageAction.updateMany({
+        where: { messageId: { in: uniqueIds }, status: 'PENDING' },
+        data: { status: 'RESOLVED', resolvedGameTick: BigInt(gameTime.tick) },
+    });
     await db.message.updateMany({
         where: { id: { in: uniqueIds } },
         data: {
             validUntil: gameTime.now,
-            // A partially migrated profile can still carry a legacy logical
-            // sentinel even while no authoritative clock exists. Replace it
-            // with an already-expired logical tick when expiring by wall time;
-            // NULL would fall back to the wall timestamp after clock recovery
-            // and could make the handled message visible again.
-            validUntilTick: gameTime.tick === null ? 0n : BigInt(gameTime.tick),
+            validUntilTick: BigInt(gameTime.tick),
         },
     });
 };
@@ -233,8 +247,48 @@ export const tombstoneMessages = async (db: DatabaseClient, ids: number[]): Prom
                     END
                 ) || jsonb_build_object('invalid', true),
                 true
-            )
+            ),
+                tombstoned_at_wall = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             WHERE id IN (${GamePrisma.join(uniqueIds)})
         `
     );
+};
+
+export const tombstoneMessagesWithinDeleteWindow = async (
+    db: DatabaseClient,
+    authorityMessageId: number,
+    ids: number[]
+): Promise<number[]> => {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
+    if (uniqueIds.length === 0) return [];
+    const rows = await db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
+        WITH wall AS (
+            SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS now_wall
+        ), authority AS (
+            SELECT m.id
+            FROM message m, wall
+            WHERE m.id = ${authorityMessageId}
+              AND m.tombstoned_at_wall IS NULL
+              AND m.delete_until_wall >= wall.now_wall
+            FOR UPDATE
+        )
+        UPDATE message m
+        SET message = jsonb_set(
+                jsonb_set(m.message, '{text}', to_jsonb(${'삭제된 메시지입니다.'}::text), true),
+                '{option}',
+                (
+                    CASE
+                        WHEN jsonb_typeof(m.message->'option') = 'object' THEN m.message->'option'
+                        ELSE '{}'::jsonb
+                    END
+                ) || jsonb_build_object('invalid', true),
+                true
+            ),
+            tombstoned_at_wall = wall.now_wall
+        FROM wall
+        WHERE m.id IN (${GamePrisma.join(uniqueIds)})
+          AND EXISTS (SELECT 1 FROM authority)
+        RETURNING m.id
+    `);
+    return rows.map(({ id }) => id).sort((left, right) => left - right);
 };

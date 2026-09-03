@@ -433,18 +433,48 @@ model MessageReadState {
 }
 
 model Message {
-  id             Int      @id @default(autoincrement())
-  mailbox        Int
-  type           String
-  src            Int
-  dest           Int
-  time           DateTime
-  timeTick       BigInt?  @map("time_tick")
-  validUntil     DateTime @map("valid_until")
-  validUntilTick BigInt?  @map("valid_until_tick")
-  message        Json
+  id               Int       @id @default(autoincrement())
+  mailbox          Int
+  type             String
+  src              Int
+  dest             Int
+  /// Legacy game-date projection. Never use this as the wall occurrence authority.
+  time             DateTime
+  /// Legacy game-date projection coordinate. New rules use occurredGameTick or MessageAction.
+  timeTick         BigInt?   @map("time_tick")
+  /// Legacy envelope/action visibility projection retained for rolling compatibility.
+  validUntil       DateTime  @map("valid_until")
+  /// Legacy action deadline projection retained for rolling compatibility.
+  validUntilTick   BigInt?   @map("valid_until_tick")
+  createdAtWall    DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("created_at_wall") @db.Timestamp(3)
+  deleteUntilWall  DateTime  @default(dbgenerated("((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + INTERVAL '5 minutes')")) @map("delete_until_wall") @db.Timestamp(3)
+  tombstonedAtWall DateTime? @map("tombstoned_at_wall") @db.Timestamp(3)
+  occurredGameTick BigInt?   @map("occurred_game_tick")
+  message          Json
 
+  action MessageAction?
+
+  @@index([mailbox, type, id])
+  @@index([deleteUntilWall])
   @@map("message")
+}
+
+model MessageAction {
+  messageId          Int      @id @map("message_id")
+  actionType         String   @map("action_type") @db.VarChar(64)
+  status             String   @default("PENDING") @db.VarChar(16)
+  createdGameTick    BigInt   @map("created_game_tick")
+  expiresGameTick    BigInt?  @map("expires_game_tick")
+  resolvedGameTick   BigInt?  @map("resolved_game_tick")
+  clockRevision      BigInt   @map("clock_revision")
+  deadlineGeneration BigInt   @map("deadline_generation")
+  createdAtWall      DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("created_at_wall") @db.Timestamp(3)
+  updatedAtWall      DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @updatedAt @map("updated_at_wall") @db.Timestamp(3)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresGameTick])
+  @@map("message_action")
 }
 
 model RankData {
@@ -857,6 +887,26 @@ model InheritanceLog {
   @@map("inheritance_log")
 }
 
+/// WALL_TIME purchase/consume receipt for an inheritance command. The linked
+/// input_event owns the authoritative GAME clock coordinate and retry state.
+model InheritanceLedger {
+  id                        BigInt   @id @default(autoincrement())
+  requestId                 String   @unique @map("request_id")
+  userId                    String   @map("user_id")
+  action                    String
+  cost                      Float
+  status                    String   @default("APPLIED")
+  requestedAtWall           DateTime @map("requested_at_wall") @db.Timestamp(3)
+  consumedAtWall            DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("consumed_at_wall") @db.Timestamp(3)
+  appliedClockRevision      BigInt   @map("applied_clock_revision")
+  appliedDeadlineGeneration BigInt   @map("applied_deadline_generation")
+  createdAtWall             DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("created_at_wall") @db.Timestamp(3)
+
+  @@index([userId, id])
+  @@index([status, id])
+  @@map("inheritance_ledger")
+}
+
 model InheritanceResult {
   id        Int      @id @default(autoincrement())
   legacyId  Int?     @unique @map("legacy_id")
@@ -897,19 +947,23 @@ model Auction {
 }
 
 model AuctionBid {
-  id        Int      @id @default(autoincrement())
-  auctionId Int      @map("auction_id")
-  generalId Int      @map("general_id")
-  amount    Int
-  eventId   String   @map("event_id")
-  eventAt   DateTime @map("event_at")
-  meta      Json     @default(dbgenerated("'{}'::jsonb"))
-  createdAt DateTime @default(now()) @map("created_at")
+  id               Int      @id @default(autoincrement())
+  auctionId        Int      @map("auction_id")
+  generalId        Int      @map("general_id")
+  amount           Int
+  eventId          String   @map("event_id")
+  /// Legacy/UI projection of occurredGameTick. Never use as expiry authority.
+  eventAt          DateTime @map("event_at")
+  occurredGameTick BigInt   @map("occurred_game_tick")
+  requestedAtWall  DateTime @map("requested_at_wall") @db.Timestamp(3)
+  meta             Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt        DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @map("created_at") @db.Timestamp(3)
 
   auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
 
   @@index([auctionId, amount])
   @@index([auctionId, eventAt])
+  @@index([auctionId, occurredGameTick])
   @@map("auction_bid")
 }
 

@@ -310,7 +310,7 @@ export const resolveOwnerDisplayName = (rawMeta: unknown): string => {
     return '알수없음';
 };
 
-export const executeInheritanceAction = async (options: {
+const executeInheritanceActionMutation = async (options: {
     db: GamePrisma.TransactionClient;
     world: InMemoryTurnWorld;
     command: InheritanceActionCommand;
@@ -667,4 +667,60 @@ export const executeInheritanceAction = async (options: {
         patch: { meta: { ...general.meta, inheritRandomUnique: 1 } },
     });
     return { type: 'inheritanceAction', ok: true, action, generalId: general.id, remainPoint: previousPoint - cost };
+};
+
+/**
+ * Persists the WALL_TIME inheritance receipt in the same transaction as the
+ * point debit, game mutation, and input-event completion. The input_event row
+ * is the durable retry/failure record and owns the authoritative GAME clock
+ * coordinate; an immediate effect does not invent a separate applied tick.
+ */
+export const executeInheritanceAction = async (options: {
+    db: GamePrisma.TransactionClient;
+    world: InMemoryTurnWorld;
+    command: InheritanceActionCommand;
+    gameNow: Date;
+}): Promise<InheritanceActionResult> => {
+    const result = await executeInheritanceActionMutation(options);
+    if (!result.ok || !options.command.requestId) return result;
+
+    const event = await options.db.inputEvent.findUnique({
+        where: { requestId: options.command.requestId },
+        select: {
+            actorUserId: true,
+            target: true,
+            eventType: true,
+            createdAt: true,
+            processingClockRevision: true,
+            processingDeadlineGeneration: true,
+        },
+    });
+    if (
+        !event ||
+        event.actorUserId !== options.command.userId ||
+        event.target !== 'ENGINE' ||
+        event.eventType !== 'inheritanceAction' ||
+        event.processingClockRevision === null ||
+        event.processingDeadlineGeneration === null
+    ) {
+        throw new Error('Inheritance ledger requires the authoritative ENGINE input-event clock fence.');
+    }
+    const previousPoint = await lockPreviousPoint(options.db, options.command.userId);
+    const cost = previousPoint - result.remainPoint;
+    if (!Number.isFinite(cost) || cost < 0) {
+        throw new Error(`Inheritance ledger calculated an invalid cost: ${cost}.`);
+    }
+    await options.db.inheritanceLedger.create({
+        data: {
+            requestId: options.command.requestId,
+            userId: options.command.userId,
+            action: result.action,
+            cost,
+            status: 'APPLIED',
+            requestedAtWall: event.createdAt,
+            appliedClockRevision: event.processingClockRevision,
+            appliedDeadlineGeneration: event.processingDeadlineGeneration,
+        },
+    });
+    return result;
 };

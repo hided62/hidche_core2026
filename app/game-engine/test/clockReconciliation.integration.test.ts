@@ -79,6 +79,7 @@ describeIntegration('durable clock reconciliation', () => {
             revision: 1,
         });
         const generalTicks = [initialTick + 1_234, initialTick + 36_000_123];
+        const reselectionTick = initialTick + 54_000_456;
         const auctionCloseTick = initialTick + 72_000_777;
         const messageOccurrenceTick = initialTick - 500;
         const messageExpiryTick = initialTick + 90_000_999;
@@ -116,6 +117,14 @@ describeIntegration('durable clock reconciliation', () => {
                 turnTime: clock.tickToDate(turnTick),
                 recentWarTick: BigInt(initialTick - 100 - index),
                 recentWarTime: clock.tickToDate(initialTick - 100 - index),
+                meta:
+                    index === 0
+                        ? {
+                              next_change_tick: reselectionTick,
+                              next_change: clock.tickToDate(reselectionTick).toISOString(),
+                              nextChangeAt: clock.tickToDate(reselectionTick).toISOString(),
+                          }
+                        : {},
             })),
         });
         await db.auction.create({
@@ -138,7 +147,20 @@ describeIntegration('durable clock reconciliation', () => {
                 timeTick: BigInt(messageOccurrenceTick),
                 validUntil: clock.tickToDate(messageExpiryTick),
                 validUntilTick: BigInt(messageExpiryTick),
+                createdAtWall: new Date('2026-01-01T12:34:56.789Z'),
+                deleteUntilWall: new Date('2026-01-01T12:39:56.789Z'),
+                occurredGameTick: BigInt(messageOccurrenceTick),
                 message: {},
+                action: {
+                    create: {
+                        actionType: 'scout',
+                        status: 'PENDING',
+                        createdGameTick: BigInt(messageOccurrenceTick),
+                        expiresGameTick: BigInt(messageExpiryTick),
+                        clockRevision: 1n,
+                        deadlineGeneration: 7n,
+                    },
+                },
             },
         });
         await db.votePoll.create({
@@ -201,17 +223,19 @@ describeIntegration('durable clock reconciliation', () => {
             alignedTick: 236_035_000,
         });
 
-        const [afterWorld, generals, auction, message, vote, pool, token, ledger, outboxes] = await Promise.all([
+        const [afterWorld, generals, auction, message, messageAction, vote, pool, token, ledger, outboxes] =
+            await Promise.all([
             db.worldState.findUniqueOrThrow({ where: { id: world.id } }),
             db.general.findMany({ orderBy: { id: 'asc' } }),
             db.auction.findFirstOrThrow(),
             db.message.findFirstOrThrow(),
+            db.messageAction.findFirstOrThrow(),
             db.votePoll.findFirstOrThrow(),
             db.selectPoolEntry.findFirstOrThrow(),
             db.npcSelectionToken.findFirstOrThrow(),
             db.clockSuspension.findUniqueOrThrow({ where: { id: suspended.suspensionId } }),
             db.clockProjectionOutbox.findMany(),
-        ]);
+            ]);
         const alignedTick = BigInt(reconciled.alignedTick);
         expect(afterWorld).toMatchObject({
             clockPhase: 'RECONCILING',
@@ -223,8 +247,19 @@ describeIntegration('durable clock reconciliation', () => {
         expect(generals.map((general) => general.turnTick! - alignedTick)).toEqual(
             generalTicks.map((tick) => BigInt(tick - initialTick))
         );
+        const shiftedReselectionMeta = generals[0]!.meta as Record<string, unknown>;
+        expect(shiftedReselectionMeta.next_change_tick).toBe(reselectionTick + reconciled.shiftTicks);
+        expect(new Date(String(shiftedReselectionMeta.next_change)).getTime()).toBe(
+            clock.tickToDate(reselectionTick).getTime() + 65 * 60_000 + 17_250
+        );
         expect(auction.closeTick! - alignedTick).toBe(BigInt(auctionCloseTick - initialTick));
         expect(message.validUntilTick! - alignedTick).toBe(BigInt(messageExpiryTick - initialTick));
+        expect(messageAction.expiresGameTick! - alignedTick).toBe(BigInt(messageExpiryTick - initialTick));
+        expect(messageAction.createdGameTick).toBe(BigInt(messageOccurrenceTick));
+        expect(messageAction.clockRevision).toBe(2n);
+        expect(messageAction.deadlineGeneration).toBe(8n);
+        expect(message.createdAtWall).toEqual(new Date('2026-01-01T12:34:56.789Z'));
+        expect(message.deleteUntilWall).toEqual(new Date('2026-01-01T12:39:56.789Z'));
         expect(vote.endTick! - alignedTick).toBe(BigInt(voteEndTick - initialTick));
         expect(pool.reservedUntilTick! - alignedTick).toBe(BigInt(poolTick - initialTick));
         expect(token.validUntilTick! - alignedTick).toBe(BigInt(npcValidTick - initialTick));
@@ -302,6 +337,21 @@ describeIntegration('durable clock reconciliation', () => {
         await db.general.create({
             data: { id: 1, name: 'day-general', turnTick: BigInt(turnTick), turnTime: clock.tickToDate(turnTick) },
         });
+        const wallMessageCreatedAt = new Date('2026-01-15T12:00:00.000Z');
+        const wallMessageDeleteUntil = new Date('2026-01-15T12:05:00.000Z');
+        const wallMessage = await db.message.create({
+            data: {
+                mailbox: 0,
+                type: 'public',
+                src: 1,
+                dest: 0,
+                time: wallMessageCreatedAt,
+                validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                createdAtWall: wallMessageCreatedAt,
+                deleteUntilWall: wallMessageDeleteUntil,
+                message: { src: {}, dest: {}, text: 'wall clock survives 24h suspension', option: {} },
+            },
+        });
         await db.turnDaemonLease.create({
             data: {
                 profile: 'clock-day-test',
@@ -346,6 +396,10 @@ describeIntegration('durable clock reconciliation', () => {
         });
         const shifted = await db.general.findUniqueOrThrow({ where: { id: 1 } });
         expect(shifted.turnTick! - BigInt(reconciled.alignedTick)).toBe(BigInt(turnTick - initialTick));
+        await expect(db.message.findUniqueOrThrow({ where: { id: wallMessage.id } })).resolves.toMatchObject({
+            createdAtWall: wallMessageCreatedAt,
+            deleteUntilWall: wallMessageDeleteUntil,
+        });
 
         await redis.client.set('sammo:clock-day-test:clock:active-revision', '3');
         const redisThenCrash = {

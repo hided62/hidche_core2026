@@ -13,6 +13,7 @@ export interface DatabaseClient {
     trafficPeriodGeneral: GamePrisma.TrafficPeriodGeneralDelegate;
     messageReadState: GamePrisma.MessageReadStateDelegate;
     message: GamePrisma.MessageDelegate;
+    messageAction: GamePrisma.MessageActionDelegate;
     city: GamePrisma.CityDelegate;
     nation: GamePrisma.NationDelegate;
     diplomacy: GamePrisma.DiplomacyDelegate;
@@ -38,6 +39,7 @@ export interface DatabaseClient {
     nationBetting: GamePrisma.NationBettingDelegate;
     nationBet: GamePrisma.NationBetDelegate;
     inheritanceLog: GamePrisma.InheritanceLogDelegate;
+    inheritanceLedger: GamePrisma.InheritanceLedgerDelegate;
     inheritanceResult: GamePrisma.InheritanceResultDelegate;
     inheritanceUserState: GamePrisma.InheritanceUserStateDelegate;
     boardPost: GamePrisma.BoardPostDelegate;

@@ -33,7 +33,7 @@ const buildDb = (options: {
         $executeRaw: vi.fn(async () => options.updated),
         auction: {
             findUnique: vi.fn(async () =>
-                options.auction ? { ...options.auction, closeTick: options.auction.closeTick ?? null } : null
+                options.auction ? { ...options.auction, closeTick: options.auction.closeTick ?? 72_000_000n } : null
             ),
         },
         inputEvent: {
@@ -233,11 +233,12 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 36_000_000,
             })
         ).resolves.toBe('RESCHEDULED');
 
         expect(redis.zAdd).toHaveBeenCalledTimes(1);
-        expect(redis.zAdd).toHaveBeenCalledWith('timer', [{ score: closeAt.getTime(), value: '7' }]);
+        expect(redis.zAdd).toHaveBeenCalledWith('timer', [{ score: 72_000_000, value: '7' }]);
         expect(transaction.inputEvent.create).not.toHaveBeenCalled();
     });
 
@@ -267,7 +268,7 @@ describe('auction worker clock-shift race', () => {
     it('leaves OPEN untouched and creates one durable command before recording history', async () => {
         const redis = buildRedis();
         const closeAt = new Date('2026-07-30T11:00:00.000Z');
-        const requestId = `auction:finalize:7:${closeAt.getTime()}`;
+        const requestId = 'auction:finalize:7:tick:72000000';
         const { db, transaction } = buildDb({ updated: 0, auction: { status: 'OPEN', closeAt } });
         const nowMs = new Date('2026-07-30T12:00:00.000Z').getTime();
 
@@ -279,6 +280,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs,
+                nowTick: 72_000_000,
             })
         ).resolves.toBe('PENDING');
 
@@ -293,6 +295,7 @@ describe('auction worker clock-shift race', () => {
                     requestId,
                     auctionId: 7,
                     expectedCloseAt: closeAt.toISOString(),
+                    expectedCloseTick: 72_000_000,
                 },
             },
         });
@@ -324,7 +327,6 @@ describe('auction worker clock-shift race', () => {
                 requestId,
                 target: 'ENGINE',
                 eventType: 'auctionFinalize',
-                acceptedGameTick: 72_000_000n,
                 payload: {
                     type: 'auctionFinalize',
                     requestId,
@@ -351,6 +353,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 72_000_000,
             })
         ).resolves.toBe('PENDING');
 
@@ -363,7 +366,7 @@ describe('auction worker clock-shift race', () => {
     it('reuses the same pending OPEN-generation event after a worker retry or restart', async () => {
         const redis = buildRedis();
         const closeAt = new Date('2026-07-30T11:00:00.000Z');
-        const requestId = `auction:finalize:7:${closeAt.getTime()}`;
+        const requestId = 'auction:finalize:7:tick:72000000';
         const { db, transaction } = buildDb({
             updated: 0,
             auction: { status: 'OPEN', closeAt },
@@ -377,6 +380,7 @@ describe('auction worker clock-shift race', () => {
                         requestId,
                         auctionId: 7,
                         expectedCloseAt: closeAt.toISOString(),
+                        expectedCloseTick: 72_000_000,
                     },
                     status: 'PENDING',
                     result: null,
@@ -392,6 +396,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 72_000_000,
             })
         ).resolves.toBe('PENDING');
         expect(transaction.inputEvent.create).not.toHaveBeenCalled();
@@ -412,6 +417,7 @@ describe('auction worker clock-shift race', () => {
             historyKey: 'history',
             id: '7',
             nowMs: logicalNowMs,
+            nowTick: 72_000_000,
             historyNowMs: operationalNowMs,
         });
 
@@ -421,12 +427,12 @@ describe('auction worker clock-shift race', () => {
     it('repairs a pre-existing FINALIZING auction without creating a duplicate command', async () => {
         const redis = buildRedis();
         const closeAt = new Date('2026-07-30T11:00:00.000Z');
-        const requestId = `auction:finalize:7:${closeAt.getTime()}`;
+        const requestId = 'auction:finalize:7:tick:72000000';
         const existingEvent = {
             requestId,
             target: 'ENGINE' as const,
             eventType: 'auctionFinalize',
-            payload: { type: 'auctionFinalize', requestId, auctionId: 7 },
+            payload: { type: 'auctionFinalize', requestId, auctionId: 7, expectedCloseTick: 72_000_000 },
             status: 'PENDING' as const,
             result: null,
         };
@@ -444,6 +450,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 72_000_000,
             })
         ).resolves.toBe('PENDING');
 
@@ -456,7 +463,7 @@ describe('auction worker clock-shift race', () => {
     it('creates one bounded successor after a terminal event failure', async () => {
         const redis = buildRedis();
         const closeAt = new Date('2026-07-30T11:00:00.000Z');
-        const requestId = `auction:finalize:7:${closeAt.getTime()}`;
+        const requestId = 'auction:finalize:7:tick:72000000';
         const retryRequestId = `${requestId}:retry:1`;
         const { db, transaction } = buildDb({
             updated: 0,
@@ -466,7 +473,7 @@ describe('auction worker clock-shift race', () => {
                     requestId,
                     target: 'ENGINE',
                     eventType: 'auctionFinalize',
-                    payload: { type: 'auctionFinalize', requestId, auctionId: 7 },
+                    payload: { type: 'auctionFinalize', requestId, auctionId: 7, expectedCloseTick: 72_000_000 },
                     status: 'FAILED',
                     result: null,
                 },
@@ -481,6 +488,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 72_000_000,
             })
         ).resolves.toBe('PENDING');
 
@@ -494,6 +502,7 @@ describe('auction worker clock-shift race', () => {
                     requestId: retryRequestId,
                     auctionId: 7,
                     expectedCloseAt: closeAt.toISOString(),
+                    expectedCloseTick: 72_000_000,
                 },
             },
         });
@@ -501,19 +510,23 @@ describe('auction worker clock-shift race', () => {
 
     it('uses the close deadline as the generation so a reopened auction gets a new command', async () => {
         const redis = buildRedis();
-        const previousCloseAt = new Date('2026-07-30T11:00:00.000Z');
         const closeAt = new Date('2026-07-30T11:30:00.000Z');
-        const previousRequestId = `auction:finalize:7:${previousCloseAt.getTime()}`;
-        const requestId = `auction:finalize:7:${closeAt.getTime()}`;
+        const previousRequestId = 'auction:finalize:7:tick:36000000';
+        const requestId = 'auction:finalize:7:tick:72000000';
         const { db, transaction } = buildDb({
             updated: 0,
-            auction: { status: 'OPEN', closeAt },
+            auction: { status: 'OPEN', closeAt, closeTick: 72_000_000n },
             existingEvents: [
                 {
                     requestId: previousRequestId,
                     target: 'ENGINE',
                     eventType: 'auctionFinalize',
-                    payload: { type: 'auctionFinalize', requestId: previousRequestId, auctionId: 7 },
+                    payload: {
+                        type: 'auctionFinalize',
+                        requestId: previousRequestId,
+                        auctionId: 7,
+                        expectedCloseTick: 36_000_000,
+                    },
                     status: 'SUCCEEDED',
                     result: { type: 'auctionFinalize', ok: false, auctionId: 7 },
                 },
@@ -528,6 +541,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 72_000_000,
             })
         ).resolves.toBe('PENDING');
 
@@ -541,6 +555,7 @@ describe('auction worker clock-shift race', () => {
                     requestId,
                     auctionId: 7,
                     expectedCloseAt: closeAt.toISOString(),
+                    expectedCloseTick: 72_000_000,
                 },
             },
         });
@@ -560,6 +575,7 @@ describe('auction worker clock-shift race', () => {
                 historyKey: 'history',
                 id: '7',
                 nowMs: new Date('2026-07-30T12:00:00.000Z').getTime(),
+                nowTick: 72_000_000,
             })
         ).rejects.toThrow('event insert failed');
 

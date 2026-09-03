@@ -1,16 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import {
     acquireGameSchemaAdvisoryXactLock,
     readInputEventClockCoordinate,
     type DatabaseClient,
     type GamePrisma,
-    type InputEventClockCoordinate,
 } from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './transport.js';
 import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonStatus } from './types.js';
-import { loadCurrentGameTime } from '../services/gameClock.js';
 
 const asJson = (value: unknown): GamePrisma.InputJsonValue => value as GamePrisma.InputJsonValue;
 
@@ -88,9 +87,12 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     async sendCommand(command: TurnDaemonCommand): Promise<string> {
         const requestId = ('requestId' in command ? command.requestId : undefined) ?? randomUUID();
         const durableCommand = JSON.parse(JSON.stringify({ ...command, requestId })) as TurnDaemonCommand;
-        if (durableCommand.type === 'npcPossessGeneral') {
-            delete durableCommand.acceptedGameAt;
-        }
+        // Rolling-upgrade compatibility: older API versions supplied game
+        // coordinates. They are deliberately not persisted as command facts;
+        // the daemon assigns the authoritative processing coordinate while
+        // claiming the input event under the clock fence.
+        delete (durableCommand as unknown as Record<string, unknown>).acceptedGameAt;
+        delete (durableCommand as unknown as Record<string, unknown>).acceptedGameTick;
         if (command.type === 'npcPossessGeneral') {
             const existing = await this.db.inputEvent.findUnique({
                 where: { requestId },
@@ -112,12 +114,11 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                     const coordinate = await readInputEventClockCoordinate(transaction);
                     await acquireGameSchemaAdvisoryXactLock(transaction, 'npc-possession:global');
                     await acquireGameSchemaAdvisoryXactLock(transaction, `npc-possession:user:${command.userId}`);
-                    const acceptedGameAt = coordinate.gameAt;
                     const token = await transaction.npcSelectionToken.findFirst({
                         where: {
                             ownerUserId: command.userId,
                             nonce: command.tokenNonce,
-                            validUntil: { gte: acceptedGameAt },
+                            validUntilTick: { gte: coordinate.gameTick },
                         },
                         select: { pickResult: true },
                     });
@@ -132,11 +133,7 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                     ) {
                         return '선택한 장수가 목록에 없습니다.';
                     }
-                    const acceptedCommand: Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }> = {
-                        ...(durableCommand as Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }>),
-                        acceptedGameAt: acceptedGameAt.toISOString(),
-                    };
-                    await this.createInputEvent(transaction, acceptedCommand, requestId, coordinate);
+                    await this.createInputEvent(transaction, durableCommand, requestId);
                     return null;
                 });
                 if (rejectionReason) {
@@ -145,8 +142,7 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
             } else {
                 if (this.db.$transaction) {
                     await this.db.$transaction(async (transaction) => {
-                        const coordinate = await readInputEventClockCoordinate(transaction);
-                        await this.createInputEvent(transaction, durableCommand, requestId, coordinate);
+                        await this.createInputEvent(transaction, durableCommand, requestId);
                     });
                 } else {
                     await this.createInputEvent(this.db, durableCommand, requestId);
@@ -178,21 +174,8 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     private async createInputEvent(
         db: DatabaseClient,
         command: TurnDaemonCommand,
-        requestId: string,
-        coordinate?: InputEventClockCoordinate
+        requestId: string
     ): Promise<void> {
-        const gameTime = coordinate ? null : await loadCurrentGameTime(db, new Date());
-        const commandAcceptedTick = Reflect.get(command, 'acceptedGameTick');
-        const acceptedGameTick =
-            typeof commandAcceptedTick === 'number' && Number.isSafeInteger(commandAcceptedTick)
-                ? commandAcceptedTick
-                : coordinate
-                  ? Number(coordinate.gameTick)
-                  : gameTime!.tick;
-        const acceptedClockRevision = coordinate ? Number(coordinate.clockRevision) : gameTime!.revision;
-        const acceptedDeadlineGeneration = coordinate
-            ? Number(coordinate.deadlineGeneration)
-            : gameTime!.deadlineGeneration;
         await db.inputEvent.create({
             data: {
                 requestId,
@@ -200,14 +183,8 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                 eventType: command.type,
                 payload: asJson(command),
                 actorUserId: 'userId' in command && typeof command.userId === 'string' ? command.userId : null,
-                ...(acceptedGameTick === null ? {} : { acceptedGameTick: BigInt(acceptedGameTick) }),
-                ...(acceptedClockRevision === null || acceptedClockRevision === undefined
-                    ? {}
-                    : { acceptedClockRevision: BigInt(acceptedClockRevision) }),
-                ...(acceptedDeadlineGeneration === null || acceptedDeadlineGeneration === undefined
-                    ? {}
-                    : { acceptedDeadlineGeneration: BigInt(acceptedDeadlineGeneration) }),
-                ...(coordinate ? { createdAt: coordinate.wallAt } : {}),
+                // PostgreSQL owns created_at WALL_TIME. ENGINE assigns the
+                // authoritative game coordinate when the daemon claims it.
             },
         });
     }
@@ -224,8 +201,8 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     }
 
     private async waitForResult<T>(requestId: string, timeoutMs?: number): Promise<T | null> {
-        const deadline = Date.now() + (timeoutMs ?? this.requestTimeoutMs);
-        while (Date.now() < deadline) {
+        const deadline = performance.now() + (timeoutMs ?? this.requestTimeoutMs);
+        while (performance.now() < deadline) {
             const event = await this.db.inputEvent.findUnique({
                 where: { requestId },
                 select: { status: true, result: true, error: true },
@@ -236,7 +213,7 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
             if (event?.status === 'FAILED') {
                 throw new FailedTurnDaemonCommandError(requestId, event.error);
             }
-            await delay(Math.min(50, Math.max(1, deadline - Date.now())));
+            await delay(Math.min(50, Math.max(1, deadline - performance.now())));
         }
         return null;
     }

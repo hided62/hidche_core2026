@@ -25,7 +25,26 @@ integration('database command queue', () => {
         });
         await db.message.deleteMany({ where: { mailbox: 991_199 } });
         await db.worldState.deleteMany({
-            where: { scenarioCode: { in: ['queue-clock-test', 'queue-unification-clock-test'] } },
+            where: { scenarioCode: { in: ['queue-clock-base', 'queue-clock-test', 'queue-unification-clock-test'] } },
+        });
+    };
+
+    const createClockFixture = async (): Promise<void> => {
+        await db.worldState.create({
+            data: {
+                scenarioCode: 'queue-clock-base',
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 600,
+                clockBaseTime: new Date('0180-01-01T00:00:00.000Z'),
+                clockTick: 123n,
+                clockMode: 'manual',
+                clockWallAnchor: new Date('2026-09-03T15:00:00.000Z'),
+                lastTurnTick: 123n,
+                clockPhase: 'MANUAL',
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+            },
         });
     };
 
@@ -39,7 +58,10 @@ integration('database command queue', () => {
         });
     });
 
-    beforeEach(cleanupFixtures);
+    beforeEach(async () => {
+        await cleanupFixtures();
+        await createClockFixture();
+    });
 
     afterAll(async () => {
         await cleanupFixtures();
@@ -63,7 +85,16 @@ integration('database command queue', () => {
         const [firstCommands, secondCommands] = await Promise.all([first.drain(), second.drain()]);
         const commands = firstCommands.concat(secondCommands);
 
-        expect(commands).toEqual([{ type: 'vacation', requestId, userId: 'user-7', generalId: 7 }]);
+        expect(commands).toEqual([
+            {
+                type: 'vacation',
+                requestId,
+                userId: 'user-7',
+                generalId: 7,
+                processingGameTick: 123,
+                requestedAtWall: expect.any(Date),
+            },
+        ]);
         await first.publishCommandResult(requestId, { type: 'vacation', ok: true, generalId: 7 });
 
         const stored = await db.inputEvent.findUniqueOrThrow({ where: { requestId } });
@@ -118,7 +149,16 @@ integration('database command queue', () => {
         await queue.initialize();
         const commands = await queue.drain();
 
-        expect(commands).toEqual([{ type: 'vacation', requestId: expiredId, userId: 'user-8', generalId: 8 }]);
+        expect(commands).toEqual([
+            {
+                type: 'vacation',
+                requestId: expiredId,
+                userId: 'user-8',
+                generalId: 8,
+                processingGameTick: 123,
+                requestedAtWall: expect.any(Date),
+            },
+        ]);
         expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: activeId } })).toMatchObject({
             status: 'PROCESSING',
             lockedBy: 'active-worker',
@@ -146,7 +186,14 @@ integration('database command queue', () => {
         const stale = new DatabaseTurnDaemonCommandQueue(db);
         for (const attempt of [1, 2, 3]) {
             await expect(owner.drain()).resolves.toEqual([
-                { type: 'vacation', requestId, userId: 'user-10', generalId: 10 },
+                {
+                    type: 'vacation',
+                    requestId,
+                    userId: 'user-10',
+                    generalId: 10,
+                    processingGameTick: 123,
+                    requestedAtWall: expect.any(Date),
+                },
             ]);
             await stale.publishCommandError(requestId, new Error('stale worker failure'));
             await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId } })).resolves.toMatchObject({
@@ -220,7 +267,13 @@ integration('database command queue', () => {
         const owner = new DatabaseTurnDaemonCommandQueue(db);
 
         const claimed = await owner.drain();
-        expect(claimed).toEqual([command]);
+        expect(claimed).toEqual([
+            {
+                ...command,
+                processingGameTick: 123,
+                requestedAtWall: expect.any(Date),
+            },
+        ]);
         const result = await db.$transaction((transaction) => handler.handle(claimed[0]!, { db: transaction }));
         expect(result).toMatchObject({
             type: 'commandRejected',
@@ -301,7 +354,14 @@ integration('database command queue', () => {
         });
         const queue = new DatabaseTurnDaemonCommandQueue(db);
 
-        expect(await queue.drain()).toEqual([{ type: 'getStatus', requestId: statusId }]);
+        expect(await queue.drain()).toEqual([
+            {
+                type: 'getStatus',
+                requestId: statusId,
+                processingGameTick: 100,
+                requestedAtWall: expect.any(Date),
+            },
+        ]);
         expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: gameplayId } })).toMatchObject({
             status: 'PENDING',
             processingClockRevision: null,
@@ -309,7 +369,14 @@ integration('database command queue', () => {
         await db.worldState.update({ where: { id: world.id }, data: { clockPhase: 'RUNNING' } });
 
         expect(await queue.drain()).toEqual([
-            { type: 'vacation', requestId: gameplayId, userId: 'user-7', generalId: 7 },
+            {
+                type: 'vacation',
+                requestId: gameplayId,
+                userId: 'user-7',
+                generalId: 7,
+                processingGameTick: 100,
+                requestedAtWall: expect.any(Date),
+            },
         ]);
         expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: gameplayId } })).toMatchObject({
             status: 'PROCESSING',
@@ -347,6 +414,7 @@ integration('database command queue', () => {
                 userId: 'user-8',
                 generalId: 8,
                 processingGameTick: 123,
+                requestedAtWall: expect.any(Date),
             },
         ]);
         expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: staleId } })).toMatchObject({
@@ -357,6 +425,103 @@ integration('database command queue', () => {
             processingClockRevision: 9n,
             processingDeadlineGeneration: 4n,
         });
+    });
+
+    it('dequeues only tournament bet accounting commands while the game clock is suspended', async () => {
+        const existingWorld = await db.worldState.findFirst({ orderBy: { id: 'asc' } });
+        const world = existingWorld
+            ? await db.worldState.update({
+                  where: { id: existingWorld.id },
+                  data: { clockPhase: 'SUSPENDED', clockRevision: 19n, deadlineGeneration: 6n, clockTick: 321n },
+              })
+            : await db.worldState.create({
+                  data: {
+                      scenarioCode: 'queue-clock-test',
+                      currentYear: 180,
+                      currentMonth: 1,
+                      tickSeconds: 600,
+                      clockPhase: 'SUSPENDED',
+                      clockRevision: 19n,
+                      deadlineGeneration: 6n,
+                      clockTick: 321n,
+                  },
+              });
+        const resourceId = 'integration:engine:suspended-tournament-bet-resource';
+        const metaId = 'integration:engine:suspended-tournament-bet-meta';
+        const rollbackId = 'integration:engine:suspended-tournament-bet-rollback';
+        const unrelatedId = 'integration:engine:suspended-resource-adjustment';
+        await db.inputEvent.createMany({
+            data: [
+                {
+                    requestId: resourceId,
+                    target: 'ENGINE',
+                    eventType: 'adjustGeneralResources',
+                    payload: {
+                        type: 'adjustGeneralResources',
+                        requestId: resourceId,
+                        reason: 'tournamentBet',
+                        adjustments: [{ generalId: 7, goldDelta: -100 }],
+                    },
+                },
+                {
+                    requestId: metaId,
+                    target: 'ENGINE',
+                    eventType: 'adjustGeneralMeta',
+                    payload: {
+                        type: 'adjustGeneralMeta',
+                        requestId: metaId,
+                        reason: 'tournamentBet',
+                        adjustments: [{ generalId: 7, metaDelta: { betgold: 100 } }],
+                    },
+                },
+                {
+                    requestId: rollbackId,
+                    target: 'ENGINE',
+                    eventType: 'adjustGeneralResources',
+                    payload: {
+                        type: 'adjustGeneralResources',
+                        requestId: rollbackId,
+                        reason: 'tournamentBetRollback',
+                        adjustments: [{ generalId: 7, goldDelta: 100 }],
+                    },
+                },
+                {
+                    requestId: unrelatedId,
+                    target: 'ENGINE',
+                    eventType: 'adjustGeneralResources',
+                    payload: {
+                        type: 'adjustGeneralResources',
+                        requestId: unrelatedId,
+                        reason: 'otherMutation',
+                        adjustments: [{ generalId: 7, goldDelta: -100 }],
+                    },
+                },
+            ],
+        });
+
+        const queue = new DatabaseTurnDaemonCommandQueue(db);
+        await expect(queue.drain()).resolves.toEqual([
+            expect.objectContaining({ type: 'adjustGeneralResources', requestId: resourceId, reason: 'tournamentBet' }),
+            expect.objectContaining({ type: 'adjustGeneralMeta', requestId: metaId, reason: 'tournamentBet' }),
+            expect.objectContaining({
+                type: 'adjustGeneralResources',
+                requestId: rollbackId,
+                reason: 'tournamentBetRollback',
+            }),
+        ]);
+        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: resourceId } })).resolves.toMatchObject({
+            status: 'PROCESSING',
+            processingGameTick: 321n,
+            processingClockRevision: 19n,
+            processingDeadlineGeneration: 6n,
+        });
+        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: unrelatedId } })).resolves.toMatchObject({
+            status: 'PENDING',
+            processingClockRevision: null,
+        });
+
+        await db.worldState.update({ where: { id: world.id }, data: { clockPhase: 'RECONCILING' } });
+        await expect(new DatabaseTurnDaemonCommandQueue(db).drain()).resolves.toEqual([]);
     });
 
     it('dequeues only the invader decision while an UNIFICATION_WAIT suspension is active', async () => {
@@ -389,6 +554,37 @@ integration('database command queue', () => {
                 message: { option: { action: 'raiseInvader', used: false } },
             },
         });
+        await db.messageAction.create({
+            data: {
+                messageId: message.id,
+                actionType: 'raiseInvader',
+                status: 'PENDING',
+                createdGameTick: 900n,
+                clockRevision: 31n,
+                deadlineGeneration: 7n,
+            },
+        });
+        const scoutMessage = await db.message.create({
+            data: {
+                mailbox: 991_199,
+                type: 'private',
+                src: 7,
+                dest: 991_199,
+                time: new Date(),
+                validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                message: { option: { action: 'scout', used: false } },
+            },
+        });
+        await db.messageAction.create({
+            data: {
+                messageId: scoutMessage.id,
+                actionType: 'scout',
+                status: 'PENDING',
+                createdGameTick: 900n,
+                clockRevision: 31n,
+                deadlineGeneration: 7n,
+            },
+        });
         await db.clockSuspension.create({
             data: {
                 id: 'integration-unification-wait',
@@ -404,6 +600,7 @@ integration('database command queue', () => {
             },
         });
         const messageRequestId = 'integration:engine:unification-message';
+        const scoutRequestId = 'integration:engine:suspended-scout-response';
         const gameplayRequestId = 'integration:engine:unification-gameplay';
         await db.inputEvent.createMany({
             data: [
@@ -421,6 +618,23 @@ integration('database command queue', () => {
                         userId: 'user-991199',
                         generalId: 991_199,
                         messageId: message.id,
+                        response: true,
+                    },
+                },
+                {
+                    requestId: scoutRequestId,
+                    target: 'ENGINE',
+                    eventType: 'messageRespond',
+                    actorUserId: 'user-991199',
+                    acceptedGameTick: 900n,
+                    acceptedClockRevision: 31n,
+                    acceptedDeadlineGeneration: 7n,
+                    payload: {
+                        type: 'messageRespond',
+                        requestId: scoutRequestId,
+                        userId: 'user-991199',
+                        generalId: 991_199,
+                        messageId: scoutMessage.id,
                         response: true,
                     },
                 },
@@ -451,10 +665,15 @@ integration('database command queue', () => {
                 generalId: 991_199,
                 messageId: message.id,
                 response: true,
+                processingGameTick: 900,
+                requestedAtWall: expect.any(Date),
             },
         ]);
         await expect(
             db.inputEvent.findUniqueOrThrow({ where: { requestId: gameplayRequestId } })
         ).resolves.toMatchObject({ status: 'PENDING' });
+        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: scoutRequestId } })).resolves.toMatchObject({
+            status: 'PENDING',
+        });
     });
 });

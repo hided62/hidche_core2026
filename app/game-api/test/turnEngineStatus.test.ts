@@ -5,10 +5,8 @@ import { CachedTurnEngineStatus, loadTurnEngineRunning } from '../src/services/t
 describe('turn engine status projection', () => {
     it('maps Gateway profile capabilities and keeps unavailable status unknown', async () => {
         const activeLease = {
-            turnDaemonLease: {
-                findUnique: vi.fn(async () => ({ leaseUntil: new Date('2026-08-24T00:01:00.000Z') })),
-            },
-        };
+            $queryRaw: vi.fn(async () => [{ running: true }]),
+        } as any;
         const now = new Date('2026-08-24T00:00:00.000Z');
         await expect(loadTurnEngineRunning({ get: async () => 'RUNNING' }, activeLease, 'che:default', now)).resolves.toBe(
             true
@@ -36,7 +34,7 @@ describe('turn engine status projection', () => {
         await expect(
             loadTurnEngineRunning(
                 source,
-                { turnDaemonLease: { findUnique: async () => null } },
+                { $queryRaw: async () => [{ running: false }] } as any,
                 'che:default',
                 now
             )
@@ -44,11 +42,7 @@ describe('turn engine status projection', () => {
         await expect(
             loadTurnEngineRunning(
                 source,
-                {
-                    turnDaemonLease: {
-                        findUnique: async () => ({ leaseUntil: new Date('2026-08-23T23:59:59.999Z') }),
-                    },
-                },
+                { $queryRaw: async () => [{ running: false }] } as any,
                 'che:default',
                 now
             )
@@ -58,10 +52,10 @@ describe('turn engine status projection', () => {
     it('coalesces concurrent heartbeat reads and refreshes after the bounded cache window', async () => {
         let now = 1_000;
         const get = vi.fn(async () => 'RUNNING' as const);
-        const findUnique = vi.fn(async () => ({ leaseUntil: new Date('2099-01-01T00:00:00.000Z') }));
+        const queryRaw = vi.fn(async () => [{ running: true }]);
         const cache = new CachedTurnEngineStatus(
             { get },
-            { turnDaemonLease: { findUnique } },
+            { $queryRaw: queryRaw } as any,
             'che:default',
             2_000,
             () => now
@@ -75,6 +69,6 @@ describe('turn engine status projection', () => {
         now += 1;
         await expect(cache.get()).resolves.toBe(true);
         expect(get).toHaveBeenCalledTimes(2);
-        expect(findUnique).toHaveBeenCalledTimes(2);
+        expect(queryRaw).toHaveBeenCalledTimes(2);
     });
 });

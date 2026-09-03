@@ -13,6 +13,24 @@ import {
 } from '../src/time/GameClock.js';
 
 describe('GameClock', () => {
+    it.each(['SUSPENDED', 'RECONCILING'] as const)(
+        'keeps the authoritative tick frozen across 24 wall hours while %s',
+        (phase) => {
+            const clock = new GameClock({
+                baseTime: new Date('0200-01-01T00:00:00.000Z'),
+                tick: 12_345,
+                mode: 'realtime',
+                wallAnchor: new Date('2026-09-03T15:00:00.000Z'),
+                turnSeconds: 600,
+                phase,
+                revision: 7,
+            });
+
+            expect(clock.nowTick(new Date('2026-09-04T15:00:00.000Z'))).toBe(12_345);
+            expect(clock.now(new Date('2026-09-04T15:00:00.000Z'))).toEqual(clock.tickToDate(12_345));
+        }
+    );
+
     const baseTime = new Date('2042-01-01T00:00:00.000Z');
 
     it('projects the fixed Ref turn tick and ignores wall time in manual mode', () => {

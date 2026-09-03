@@ -1,4 +1,9 @@
-import { createGamePostgresConnector, type InputJsonValue, type TurnEngineDatabaseClient } from '@sammo-ts/infra';
+import {
+    createGamePostgresConnector,
+    GamePrisma,
+    type InputJsonValue,
+    type TurnEngineDatabaseClient,
+} from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 import { randomUUID } from 'node:crypto';
 
@@ -75,6 +80,7 @@ const buildTurnListFromRows = (
 const buildNationKey = (nationId: number, officerLevel: number): string => `${nationId}:${officerLevel}`;
 
 type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' | 'nationTurn'> & {
+    $queryRaw?<T>(query: GamePrisma.Sql): Promise<T>;
     generalTurnRevision?: Pick<
         NonNullable<TurnEngineDatabaseClient['generalTurnRevision']>,
         'findUnique' | 'createMany' | 'updateMany'
@@ -313,8 +319,17 @@ export class InMemoryReservedTurnStore {
         }
     }
 
-    private getLeaseExpiresAt(): Date {
-        return new Date(Date.now() + this.leaseDurationMs);
+    private getLeaseExpiresAt(nowWall: Date): Date {
+        return new Date(nowWall.getTime() + this.leaseDurationMs);
+    }
+
+    private async readDatabaseWallTime(prisma: ReservedTurnDatabaseClient = this.prisma): Promise<Date> {
+        if (!prisma.$queryRaw) return new Date();
+        const rows = await prisma.$queryRaw<Array<{ nowWall: Date }>>(GamePrisma.sql`
+            SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS "nowWall"
+        `);
+        if (!rows[0]) throw new Error('PostgreSQL did not return its authoritative wall clock.');
+        return rows[0].nowWall;
     }
 
     private async acquireGeneralLease(generalId: number): Promise<boolean> {
@@ -322,7 +337,7 @@ export class InMemoryReservedTurnStore {
         if (!revisionStore) {
             return false;
         }
-        const now = new Date();
+        const now = await this.readDatabaseWallTime();
         const previous = (await revisionStore.findUnique({ where: { generalId } })) as {
             leaseOwner: string | null;
             leaseExpiresAt: Date | null;
@@ -331,7 +346,7 @@ export class InMemoryReservedTurnStore {
             previous?.leaseOwner === this.leaseOwner &&
             previous.leaseExpiresAt !== null &&
             previous.leaseExpiresAt.getTime() > now.getTime();
-        const leaseExpiresAt = this.getLeaseExpiresAt();
+        const leaseExpiresAt = this.getLeaseExpiresAt(now);
         let claimed = await revisionStore.updateMany({
             where: {
                 generalId,
@@ -372,7 +387,7 @@ export class InMemoryReservedTurnStore {
         if (!revisionStore) {
             return false;
         }
-        const now = new Date();
+        const now = await this.readDatabaseWallTime();
         const previous = (await revisionStore.findUnique({
             where: { nationId_officerLevel: { nationId, officerLevel } },
         })) as { leaseOwner: string | null; leaseExpiresAt: Date | null } | null;
@@ -380,7 +395,7 @@ export class InMemoryReservedTurnStore {
             previous?.leaseOwner === this.leaseOwner &&
             previous.leaseExpiresAt !== null &&
             previous.leaseExpiresAt.getTime() > now.getTime();
-        const leaseExpiresAt = this.getLeaseExpiresAt();
+        const leaseExpiresAt = this.getLeaseExpiresAt(now);
         let claimed = await revisionStore.updateMany({
             where: {
                 nationId,
@@ -651,12 +666,13 @@ export class InMemoryReservedTurnStore {
         if (!revisionStore) {
             return false;
         }
-        const leaseExpiresAt = this.getLeaseExpiresAt();
+        const now = await this.readDatabaseWallTime(prisma);
+        const leaseExpiresAt = this.getLeaseExpiresAt(now);
         const where = this.leasedGeneralIds.has(generalId)
             ? { generalId, leaseOwner: this.leaseOwner }
             : {
                   generalId,
-                  OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: new Date() } }],
+                  OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
               };
         let claimed = await revisionStore.updateMany({
             where,
@@ -721,13 +737,14 @@ export class InMemoryReservedTurnStore {
         if (!revisionStore) {
             return false;
         }
-        const leaseExpiresAt = this.getLeaseExpiresAt();
+        const now = await this.readDatabaseWallTime(prisma);
+        const leaseExpiresAt = this.getLeaseExpiresAt(now);
         const where = this.leasedNationKeys.has(key)
             ? { nationId, officerLevel, leaseOwner: this.leaseOwner }
             : {
                   nationId,
                   officerLevel,
-                  OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: new Date() } }],
+                  OR: [{ leaseOwner: this.leaseOwner }, { leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
               };
         let claimed = await revisionStore.updateMany({
             where,

@@ -13,13 +13,16 @@ const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const bettingId = 990_071;
 const concurrentBettingId = 990_072;
+const phaseBettingId = 990_073;
 const generalId = 9_971;
 const otherGeneralId = 9_972;
+const phaseGeneralId = 9_973;
 const nationId = 990_071;
 const otherNationId = 990_072;
 const userId = 'nation-betting-router-user';
 const otherUserId = 'nation-betting-router-other-user';
 const noGeneralUserId = 'nation-betting-router-no-general-user';
+const phaseUserId = 'nation-betting-router-phase-user';
 
 const auth: GameSessionTokenPayload = {
     version: 1,
@@ -58,6 +61,17 @@ const noGeneralAuth: GameSessionTokenPayload = {
     },
 };
 
+const phaseAuth: GameSessionTokenPayload = {
+    ...auth,
+    sessionId: 'nation-betting-router-phase-session',
+    user: {
+        ...auth.user,
+        id: phaseUserId,
+        username: 'phase-bettor',
+        displayName: 'Phase Bettor',
+    },
+};
+
 integration('nation betting router', () => {
     let db: GamePrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
@@ -90,12 +104,14 @@ integration('nation betting router', () => {
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
-        await db.inputEvent.deleteMany({ where: { actorUserId: { in: [userId, otherUserId, noGeneralUserId] } } });
-        await db.nationBetting.deleteMany({ where: { id: { in: [bettingId, concurrentBettingId] } } });
-        await db.rankData.deleteMany({ where: { generalId: { in: [generalId, otherGeneralId] } } });
-        await db.inheritanceLog.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
-        await db.inheritancePoint.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
-        await db.general.deleteMany({ where: { id: { in: [generalId, otherGeneralId] } } });
+        await db.inputEvent.deleteMany({
+            where: { actorUserId: { in: [userId, otherUserId, noGeneralUserId, phaseUserId] } },
+        });
+        await db.nationBetting.deleteMany({ where: { id: { in: [bettingId, concurrentBettingId, phaseBettingId] } } });
+        await db.rankData.deleteMany({ where: { generalId: { in: [generalId, otherGeneralId, phaseGeneralId] } } });
+        await db.inheritanceLog.deleteMany({ where: { userId: { in: [userId, otherUserId, phaseUserId] } } });
+        await db.inheritancePoint.deleteMany({ where: { userId: { in: [userId, otherUserId, phaseUserId] } } });
+        await db.general.deleteMany({ where: { id: { in: [generalId, otherGeneralId, phaseGeneralId] } } });
         await db.nation.deleteMany({ where: { id: { in: [nationId, otherNationId] } } });
 
         await db.nation.createMany({
@@ -138,6 +154,17 @@ integration('nation betting router', () => {
                     turnTime: new Date('0200-01-01T00:00:00.000Z'),
                     meta: {},
                 },
+                {
+                    id: phaseGeneralId,
+                    userId: phaseUserId,
+                    name: '정지중베팅장수',
+                    nationId,
+                    cityId: 1,
+                    npcState: 0,
+                    officerLevel: 0,
+                    turnTime: new Date('0200-01-01T00:00:00.000Z'),
+                    meta: {},
+                },
             ],
         });
         const world = await db.worldState.create({
@@ -171,6 +198,17 @@ integration('nation betting router', () => {
         });
         await db.nationBetting.create({
             data: {
+                id: phaseBettingId,
+                name: '정지 중 베팅',
+                selectCount: 1,
+                requiresInheritancePoint: true,
+                openYearMonth: 2_400,
+                closeYearMonth: 2_424,
+                candidates: [{ title: '베팅국', info: '', isHtml: true, aux: { nation: nationId } }],
+            },
+        });
+        await db.nationBetting.create({
+            data: {
                 id: concurrentBettingId,
                 name: '동시 베팅',
                 selectCount: 1,
@@ -184,17 +222,20 @@ integration('nation betting router', () => {
             data: [
                 { userId, key: 'previous', value: 1_000 },
                 { userId: otherUserId, key: 'previous', value: 500 },
+                { userId: phaseUserId, key: 'previous', value: 500 },
             ],
         });
     });
 
     afterAll(async () => {
-        await db.inputEvent.deleteMany({ where: { actorUserId: { in: [userId, otherUserId, noGeneralUserId] } } });
-        await db.nationBetting.deleteMany({ where: { id: { in: [bettingId, concurrentBettingId] } } });
-        await db.rankData.deleteMany({ where: { generalId: { in: [generalId, otherGeneralId] } } });
-        await db.inheritanceLog.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
-        await db.inheritancePoint.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
-        await db.general.deleteMany({ where: { id: { in: [generalId, otherGeneralId] } } });
+        await db.inputEvent.deleteMany({
+            where: { actorUserId: { in: [userId, otherUserId, noGeneralUserId, phaseUserId] } },
+        });
+        await db.nationBetting.deleteMany({ where: { id: { in: [bettingId, concurrentBettingId, phaseBettingId] } } });
+        await db.rankData.deleteMany({ where: { generalId: { in: [generalId, otherGeneralId, phaseGeneralId] } } });
+        await db.inheritanceLog.deleteMany({ where: { userId: { in: [userId, otherUserId, phaseUserId] } } });
+        await db.inheritancePoint.deleteMany({ where: { userId: { in: [userId, otherUserId, phaseUserId] } } });
+        await db.general.deleteMany({ where: { id: { in: [generalId, otherGeneralId, phaseGeneralId] } } });
         await db.nation.deleteMany({ where: { id: { in: [nationId, otherNationId] } } });
         await db.worldState.delete({ where: { id: worldStateId } });
         await closeDb?.();
@@ -288,6 +329,51 @@ integration('nation betting router', () => {
                 where: { userId_key: { userId, key: 'previous' } },
             })
         ).toMatchObject({ value: 250 });
+    });
+
+    it('accepts nation betting during suspension but rejects it during reconciliation', async () => {
+        const before = await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } });
+        const frozenTick = before.clockTick;
+        await db.worldState.update({ where: { id: worldStateId }, data: { clockPhase: 'SUSPENDED' } });
+
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-suspended', phaseAuth)).betting.bet({
+                bettingId: phaseBettingId,
+                bettingType: [0],
+                amount: 100,
+            })
+        ).resolves.toEqual({ result: true });
+        await expect(
+            db.inheritancePoint.findUniqueOrThrow({
+                where: { userId_key: { userId: phaseUserId, key: 'previous' } },
+            })
+        ).resolves.toMatchObject({ value: 400 });
+        await expect(
+            db.nationBet.findFirstOrThrow({ where: { bettingId: phaseBettingId, userId: phaseUserId } })
+        ).resolves.toMatchObject({ amount: 100 });
+        await expect(db.worldState.findUniqueOrThrow({ where: { id: worldStateId } })).resolves.toMatchObject({
+            clockPhase: 'SUSPENDED',
+            clockTick: frozenTick,
+        });
+
+        await db.worldState.update({ where: { id: worldStateId }, data: { clockPhase: 'RECONCILING' } });
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-reconciling', phaseAuth)).betting.bet({
+                bettingId: phaseBettingId,
+                bettingType: [0],
+                amount: 50,
+            })
+        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+        await expect(
+            db.inheritancePoint.findUniqueOrThrow({
+                where: { userId_key: { userId: phaseUserId, key: 'previous' } },
+            })
+        ).resolves.toMatchObject({ value: 400 });
+        await expect(
+            db.nationBet.findFirstOrThrow({ where: { bettingId: phaseBettingId, userId: phaseUserId } })
+        ).resolves.toMatchObject({ amount: 100 });
+
+        await db.worldState.update({ where: { id: worldStateId }, data: { clockPhase: 'RUNNING' } });
     });
 
     it('requires authentication and an owned player general for every betting operation', async () => {

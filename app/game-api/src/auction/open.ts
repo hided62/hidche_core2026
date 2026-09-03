@@ -26,7 +26,7 @@ export const openAuctionWithDaemon = async (
     generalId: number,
     input: OpenAuctionInput,
     requestId?: string
-): Promise<{ auctionId: number; closeAt: string }> => {
+): Promise<{ auctionId: number; closeAt: string; closeTick: number }> => {
     const result = await ctx.turnDaemon.requestCommand({
         type: 'auctionOpen',
         ...(requestId ? { requestId } : {}),
@@ -46,10 +46,11 @@ export const openAuctionWithDaemon = async (
     const closeAt = new Date(result.closeAt);
     const gameTime = await loadCurrentGameTime(ctx.db);
     await ctx.redis.zAdd(timerKeys.timerKey, [
-        { score: resolveAuctionTimerScore(gameTime, closeAt), value: String(result.auctionId) },
+        { score: resolveAuctionTimerScore(gameTime, closeAt, BigInt(result.closeTick)), value: String(result.auctionId) },
     ]);
     return {
         auctionId: result.auctionId,
         closeAt: result.closeAt,
+        closeTick: result.closeTick,
     };
 };

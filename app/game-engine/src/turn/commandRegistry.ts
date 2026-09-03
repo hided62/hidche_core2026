@@ -39,7 +39,7 @@ const zAuctionFinalize = z.object({
     type: z.literal('auctionFinalize'),
     auctionId: zFiniteNumber,
     expectedCloseAt: z.string().refine(isCanonicalIsoTimestamp).optional(),
-    expectedCloseTick: zSafeInteger.optional(),
+    expectedCloseTick: zSafeInteger,
 });
 
 const zAuctionOpen = z.object({
@@ -60,7 +60,6 @@ const zAuctionBid = z.object({
     auctionId: zFiniteNumber,
     generalId: zFiniteNumber,
     amount: zFiniteNumber,
-    acceptedGameTick: zSafeInteger.optional(),
     tryExtendCloseDate: z.boolean().optional(),
 });
 
@@ -427,7 +426,7 @@ const zSelectPoolReserve = z
         requestId: z.string().optional(),
         userId: z.string().min(1),
         seedOwnerIdentity: z.union([z.string().min(1), zFiniteNumber]),
-        acceptedGameAt: z.string().refine(isCanonicalIsoTimestamp),
+        acceptedGameAt: z.string().refine(isCanonicalIsoTimestamp).optional(),
         acceptedGameTick: zFiniteNumber.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER).optional(),
     })
     .strict();

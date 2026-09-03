@@ -1,4 +1,4 @@
-import { createGatewayPostgresConnector } from '@sammo-ts/infra';
+import { createGatewayPostgresConnector, GatewayPrisma } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
 export type GatewayAdminActionStatus = 'REQUESTED' | 'PARTIAL' | 'APPLIED' | 'FAILED' | 'IGNORED';
@@ -119,23 +119,28 @@ export const createGatewayAdminActionConsumer = async (
                 continue;
             }
             const terminal = result.status !== 'PARTIAL';
-            const updated = await prisma.gatewayRuntimeAction.updateMany({
-                where: {
-                    id: action.id,
-                    status: { in: ['REQUESTED', 'PARTIAL'] },
-                },
-                data: {
-                    status: result.status,
-                    detail: result.detail ?? null,
-                    handler: 'turn-daemon',
-                    handledAt: terminal ? new Date() : null,
-                    attempts: { increment: 1 },
-                    nextAttemptAt: terminal
-                        ? null
-                        : new Date(Date.now() + Math.min(60_000, 1_000 * 2 ** Math.min(action.attempts, 6))),
-                },
-            });
-            if (terminal && updated.count > 0) {
+            const retryDelayMs = Math.min(60_000, 1_000 * 2 ** Math.min(action.attempts, 6));
+            const updated = await prisma.$queryRaw<Array<{ id: string }>>(GatewayPrisma.sql`
+                UPDATE gateway_runtime_action
+                SET status = ${result.status}::"GatewayRuntimeActionStatus",
+                    detail = ${result.detail ?? null},
+                    handler = 'turn-daemon',
+                    handled_at = CASE
+                        WHEN ${terminal} THEN CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                        ELSE NULL
+                    END,
+                    attempts = attempts + 1,
+                    next_attempt_at = CASE
+                        WHEN ${terminal} THEN NULL
+                        ELSE (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                            + ${retryDelayMs} * INTERVAL '1 millisecond'
+                    END,
+                    updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                WHERE id = ${action.id}
+                  AND status IN ('REQUESTED'::"GatewayRuntimeActionStatus", 'PARTIAL'::"GatewayRuntimeActionStatus")
+                RETURNING id
+            `);
+            if (terminal && updated.length > 0) {
                 await options.onActionApplied?.(actionRecord, result);
             }
         }

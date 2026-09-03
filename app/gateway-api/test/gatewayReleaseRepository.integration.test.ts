@@ -41,13 +41,16 @@ describeDatabase('gateway release operation persistence', () => {
         ).rejects.toMatchObject({ code: 'P2002' });
 
         const now = new Date('2030-01-01T00:00:00.000Z');
-        await expect(
-            repository.claimNextOperation(now, { ownerId: 'controller-a', durationMs: 1_000 })
-        ).resolves.toMatchObject({
+        const claimed = await repository.claimNextOperation(now, {
+            ownerId: 'controller-a',
+            durationMs: 1_000,
+        });
+        expect(claimed).toMatchObject({
             id: operation.id,
             attempts: 1,
             leaseOwner: 'controller-a',
         });
+        expect(Date.parse(claimed?.leaseUntil ?? '')).toBeLessThan(Date.now() + 5_000);
         await expect(repository.pinOperationResolvedCommit(operation.id, 'controller-a', 'a'.repeat(40))).resolves.toBe(
             true
         );
@@ -103,6 +106,11 @@ describeDatabase('gateway release operation persistence', () => {
         await repository.claimNextOperation(now, { ownerId: 'controller-a', durationMs: 1_000 });
         await repository.pinOperationResolvedCommit(operation.id, 'controller-a', 'c'.repeat(40));
 
+        await connector.prisma.$executeRaw`
+            UPDATE "gateway_release_operation"
+            SET "lease_until" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            WHERE "id" = ${operation.id}
+        `;
         await expect(
             repository.claimNextOperation(new Date(now.getTime() + 1_001), {
                 ownerId: 'controller-b',

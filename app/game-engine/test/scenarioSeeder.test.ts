@@ -806,6 +806,8 @@ describeDb('scenario database seed', () => {
                     amount: 1,
                     eventId: marker,
                     eventAt: new Date('2033-01-01T00:00:00.000Z'),
+                    occurredGameTick: 0n,
+                    requestedAtWall: new Date('2033-01-01T00:00:00.000Z'),
                 },
             });
             const bettingId = 990_731;

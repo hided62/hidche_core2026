@@ -15,7 +15,7 @@ import {
 import type { GameApiContext, GeneralRow, NationRow } from '../../context.js';
 import { insertMessage } from '../../messages/store.js';
 import { purifyDiplomacyHtml } from '../../security/diplomacyHtml.js';
-import { loadCurrentGameTime } from '../../services/gameClock.js';
+import { readDatabaseWallTime } from '../../services/wallClock.js';
 import { accessAuthedInputProcedure, accessAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../nation/shared.js';
@@ -306,8 +306,6 @@ export const diplomacyRouter = router({
                     nationColor: destNation.color,
                 },
             };
-            const letterDate = (await loadCurrentGameTime(ctx.db)).now;
-
             const created = await ctx.db.diplomacyLetter.create({
                 data: {
                     srcNationId: srcNation.id,
@@ -316,7 +314,6 @@ export const diplomacyRouter = router({
                     state: 'PROPOSED',
                     textBrief: purifyDiplomacyHtml(input.brief),
                     textDetail: purifyDiplomacyHtml(input.detail),
-                    date: letterDate,
                     srcSignerId: me.id,
                     aux: aux as GamePrisma.InputJsonValue,
                 },
@@ -332,7 +329,7 @@ export const diplomacyRouter = router({
                 src: srcTarget,
                 dest: destTarget,
                 text,
-                time: letterDate,
+                time: created.date,
             });
 
             return { id: created.id };
@@ -371,7 +368,7 @@ export const diplomacyRouter = router({
             );
             const messageSrc = buildActorTarget(me, destNation);
             const messageDest = buildNationTarget(srcNation);
-            const messageTime = (await loadCurrentGameTime(ctx.db)).now;
+            const messageTime = await readDatabaseWallTime(ctx.db);
             const aux = asRecord(letter.aux);
             let messageText: string;
             if (input.agree) {
@@ -458,7 +455,7 @@ export const diplomacyRouter = router({
             );
             const messageSrc = buildActorTarget(me, srcNation);
             const messageDest = buildNationTarget(destNation);
-            const messageTime = (await loadCurrentGameTime(ctx.db)).now;
+            const messageTime = await readDatabaseWallTime(ctx.db);
             const aux = asRecord(letter.aux);
             aux.reason = {
                 who: me.id,
@@ -519,7 +516,7 @@ export const diplomacyRouter = router({
             const otherNation = letter.srcNationId === me.nationId ? destNation : srcNation;
             const messageSrc = buildActorTarget(me, actorNation);
             const messageDest = buildNationTarget(otherNation);
-            const messageTime = (await loadCurrentGameTime(ctx.db)).now;
+            const messageTime = await readDatabaseWallTime(ctx.db);
             let resultState: 'ACTIVATED' | 'CANCELLED';
             let messageText: string;
 

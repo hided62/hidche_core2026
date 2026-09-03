@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import {
     buildGameEventChannel,
@@ -158,8 +159,8 @@ const reprojectTournamentClock = async (
     };
     const lockKey = `${stateKey}:mutation-lock`;
     const token = randomUUID();
-    const deadline = Date.now() + 2_000;
-    while (Date.now() < deadline) {
+    const deadline = performance.now() + 2_000;
+    while (performance.now() < deadline) {
         const acquired = await redis.set(lockKey, token, { NX: true, PX: 30_000 });
         if (acquired) {
             try {

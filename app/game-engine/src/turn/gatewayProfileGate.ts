@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+
 import { gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common';
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 
@@ -42,7 +44,7 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
     return {
         // 게이트웨이 프로필 상태를 읽어 턴 실행을 멈춰야 하는지 판단한다.
         async shouldPause(): Promise<boolean> {
-            const now = Date.now();
+            const now = performance.now();
             if (now - lastCheckedAt < (options.cacheMs ?? DEFAULT_CACHE_MS)) {
                 return cachedPause;
             }

@@ -102,18 +102,16 @@ export const hasPollEnded = (
     time: CurrentGameTime
 ): boolean =>
     Boolean(poll.closed_at) ||
-    (poll.end_tick !== null && time.tick !== null
-        ? poll.end_tick < BigInt(time.tick)
-        : Boolean(poll.end_at && poll.end_at.getTime() < time.now.getTime()));
+    Boolean(
+        poll.end_at &&
+            (poll.end_tick === null || time.tick === null || poll.end_tick < BigInt(time.tick))
+    );
 
 const toGameTickOrNull = (time: CurrentGameTime, date: Date | null): bigint | null => {
     if (!date) return null;
-    try {
-        const tick = time.dateToTick(date);
-        return tick === null ? null : BigInt(tick);
-    } catch {
-        return null;
-    }
+    const tick = time.dateToTick(date);
+    if (tick === null) throw new Error('Vote GAME_TIME deadline requires an initialized game clock.');
+    return BigInt(tick);
 };
 
 type VoteListRow = {
@@ -358,7 +356,6 @@ export const voteRouter = router({
                 voteId: input.voteId,
                 generalId: general.id,
                 selection: sortedSelection,
-                ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             });
             throwIfCommandRejected(rewardResult);
 
@@ -399,8 +396,6 @@ export const voteRouter = router({
                 ? await ctx.db.nation.findFirst({ where: { id: general.nationId }, select: { name: true } })
                 : null;
             const nationName = nation?.name ?? '재야';
-            const createdAt = new Date();
-
             await ctx.db.$queryRaw(GamePrisma.sql`
                 INSERT INTO vote_comment (
                     vote_id,
@@ -418,7 +413,7 @@ export const voteRouter = router({
                     ${general.name},
                     ${nationName},
                     ${input.text},
-                    ${createdAt}
+                    CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                 )
             `);
 
@@ -451,7 +446,6 @@ export const voteRouter = router({
             if (endAt && endAt < gameTime.now) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 이미 지났습니다.' });
             }
-            const operationalAt = new Date();
 
             let multipleOptions = input.multipleOptions;
             if (multipleOptions < 0) {
@@ -464,7 +458,8 @@ export const voteRouter = router({
             if (input.closePrevious) {
                 await ctx.db.$queryRaw(GamePrisma.sql`
                     UPDATE vote_poll
-                    SET closed_at = ${gameTime.now}, updated_at = ${operationalAt}
+                    SET closed_at = ${gameTime.now},
+                        updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                     WHERE closed_at IS NULL
                 `);
             }
@@ -497,8 +492,8 @@ export const voteRouter = router({
                     ${gameTime.tick === null ? null : BigInt(gameTime.tick)},
                     ${endAt},
                     ${toGameTickOrNull(gameTime, endAt)},
-                    ${operationalAt},
-                    ${operationalAt}
+                    CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                 )
             `);
 
@@ -573,7 +568,6 @@ export const voteRouter = router({
             if (endAt && endAt < gameTime.now) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '종료일이 이미 지났습니다.' });
             }
-            const updatedAt = new Date();
 
             if (
                 input.title === undefined &&
@@ -596,7 +590,7 @@ export const voteRouter = router({
                     reveal_mode = COALESCE(${input.revealMode}, reveal_mode),
                     end_at = ${endAt ?? poll.end_at},
                     end_tick = ${endAt ? toGameTickOrNull(gameTime, endAt) : poll.end_tick},
-                    updated_at = ${updatedAt}
+                    updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                 WHERE id = ${input.voteId}
             `);
 
@@ -609,10 +603,10 @@ export const voteRouter = router({
         .input(z.object({ voteId: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
             const gameTime = await loadCurrentGameTime(ctx.db);
-            const updatedAt = new Date();
             const rows = await ctx.db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
                 UPDATE vote_poll
-                SET closed_at = ${gameTime.now}, updated_at = ${updatedAt}
+                SET closed_at = ${gameTime.now},
+                    updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                 WHERE id = ${input.voteId}
                 RETURNING id
             `);

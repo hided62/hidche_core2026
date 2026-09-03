@@ -133,6 +133,7 @@ describe('input event atomicity', () => {
             ok: true,
             auctionId: 3,
             closeAt: '2026-01-01T00:10:00.000Z',
+            closeTick: 3_600_000,
         };
         let resolveResponse: (() => void) | undefined;
         const responded = new Promise<void>((resolve) => {

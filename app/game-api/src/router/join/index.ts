@@ -5,6 +5,11 @@ import type { GameApiContext, WorldStateRow } from '../../context.js';
 import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { asNumber, asRecord, asStringArray } from '@sammo-ts/common';
 import {
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
+    GamePrisma,
+    acquireGameSchemaAdvisoryXactLock,
+} from '@sammo-ts/infra';
+import {
     isWarTraitKey,
     JOIN_PERSONALITY_TRAIT_KEYS,
     loadPersonalityTraitModules,
@@ -393,15 +398,12 @@ export const joinRouter = router({
         if (!userId) {
             throw new TRPCError({ code: 'UNAUTHORIZED' });
         }
-        const gameTime = await loadCurrentGameTime(ctx.db);
         const commandRequestId = resolveSelectionReservationRequestId(ctx.requestId, userId);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'selectPoolReserve',
             ...(commandRequestId ? { requestId: commandRequestId } : {}),
             userId,
             seedOwnerIdentity: ctx.auth?.user.legacyMemberNo ?? userId,
-            acceptedGameAt: gameTime.now.toISOString(),
-            ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
         });
         return resolveSelectionReservationCommandResult(result);
     }),
@@ -431,7 +433,6 @@ export const joinRouter = router({
                 });
             }
             const commandRequestId = resolveSelectionRequestId(ctx.requestId, userId, input.clientRequestId, 'create');
-            const gameTime = await loadCurrentGameTime(ctx.db);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'selectPoolCreate',
                 ...(commandRequestId ? { requestId: commandRequestId } : {}),
@@ -440,8 +441,6 @@ export const joinRouter = router({
                 uniqueName: input.uniqueName,
                 personality: input.personality,
                 seedOwnerIdentity: auth.user.legacyMemberNo ?? userId,
-                acceptedGameAt: gameTime.now.toISOString(),
-                ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
                 ...(selectedIcon
                     ? {
                           ownerPicture: selectedIcon.picture,
@@ -471,15 +470,12 @@ export const joinRouter = router({
                 input.clientRequestId,
                 'reselect'
             );
-            const gameTime = await loadCurrentGameTime(ctx.db);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'selectPoolReselect',
                 ...(commandRequestId ? { requestId: commandRequestId } : {}),
                 userId,
                 ownerDisplayName: auth.user.displayName,
                 uniqueName: input.uniqueName,
-                acceptedGameAt: gameTime.now.toISOString(),
-                ...(gameTime.tick === null ? {} : { acceptedGameTick: gameTime.tick }),
             });
             return resolveSelectionCommandResult(result, 'selectPoolReselect');
         }),
@@ -583,30 +579,46 @@ export const joinRouter = router({
                     message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
                 });
             }
-            const worldState = await ctx.db.worldState.findFirst();
-            if (!worldState) {
-                throw new TRPCError({
-                    code: 'PRECONDITION_FAILED',
-                    message: 'World state is not initialized.',
-                });
-            }
             try {
-                const gameTime = await loadCurrentGameTime(ctx.db);
-                if (gameTime.tick === null) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: 'Game clock is not initialized.',
+                return await ctx.db.$transaction!(async (transaction) => {
+                    await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                    const clockRows = await transaction.$queryRaw<Array<{ clockPhase: string }>>(GamePrisma.sql`
+                        SELECT clock_phase AS "clockPhase"
+                        FROM world_state
+                        ORDER BY id ASC
+                        LIMIT 1
+                        FOR UPDATE
+                    `);
+                    if (!clockRows[0]) {
+                        throw new TRPCError({
+                            code: 'PRECONDITION_FAILED',
+                            message: 'World state is not initialized.',
+                        });
+                    }
+                    if (!['PREOPEN', 'RUNNING', 'MANUAL'].includes(clockRows[0].clockPhase)) {
+                        throw new TRPCError({
+                            code: 'PRECONDITION_FAILED',
+                            message: '게임 시계가 중단된 동안은 NPC 빙의 후보를 갱신할 수 없습니다.',
+                        });
+                    }
+                    const worldState = await transaction.worldState.findFirst();
+                    const gameTime = await loadCurrentGameTime(transaction);
+                    if (!worldState || gameTime.tick === null) {
+                        throw new TRPCError({
+                            code: 'PRECONDITION_FAILED',
+                            message: 'Game clock is not initialized.',
+                        });
+                    }
+                    return reserveNpcPossessionCandidates({
+                        db: transaction,
+                        worldState,
+                        userId: auth.user.id,
+                        ownerIdentity: auth.user.legacyMemberNo ?? auth.user.id,
+                        refresh: input.refresh,
+                        keepIds: input.keepIds,
+                        now: gameTime.now,
+                        createdGameTick: gameTime.tick,
                     });
-                }
-                return await reserveNpcPossessionCandidates({
-                    db: ctx.db,
-                    worldState,
-                    userId: auth.user.id,
-                    ownerIdentity: auth.user.legacyMemberNo ?? auth.user.id,
-                    refresh: input.refresh,
-                    keepIds: input.keepIds,
-                    now: gameTime.now,
-                    acceptedGameTick: gameTime.tick,
                 });
             } catch (error) {
                 if (error instanceof NpcPossessionError) {

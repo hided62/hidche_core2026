@@ -407,7 +407,7 @@ integration('NPC possession selector Ref differential', () => {
                 refresh: hasPreviousToken,
                 keepIds: testCase.keepIds,
                 now: acceptedAt(fixture),
-                acceptedGameTick,
+                createdGameTick: acceptedGameTick,
                 selectionObserver: {
                     onRandomDraw: (value) => randomDraws.push(value),
                     onCandidateDraw: (selectedId) => draws.push(Number(selectedId)),

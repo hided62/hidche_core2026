@@ -268,13 +268,10 @@ const toReservationDto = (
     world: InMemoryTurnWorld
 ): Promise<SelectPoolReservationDto> => {
     const first = rows[0];
-    if (!first || (first.reservedUntilTick === null && first.reservedUntil === null)) {
+    if (!first || first.reservedUntilTick === null) {
         throw new SelectPoolError('INTERNAL_SERVER_ERROR', '장수 선택 후보의 유효기간이 없습니다.');
     }
-    const expiresAt =
-        first.reservedUntilTick === null
-            ? first.reservedUntil!
-            : world.gameTickToDate(toSafeReservationTick(first.reservedUntilTick, first.uniqueName));
+    const expiresAt = world.gameTickToDate(toSafeReservationTick(first.reservedUntilTick, first.uniqueName));
     const poolName = resolvePoolName(worldState);
     if (!poolName || !SUPPORTED_POOLS.has(poolName)) {
         throw new SelectPoolError('PRECONDITION_FAILED', '선택 가능한 서버가 아닙니다');
@@ -355,6 +352,23 @@ const readNextChangeAt = (generalMeta: unknown): Date | null => {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const readNextChangeTick = (generalMeta: unknown): number | null => {
+    const raw = asRecord(generalMeta).next_change_tick;
+    const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw) : Number.NaN;
+    return Number.isSafeInteger(parsed) ? parsed : null;
+};
+
+const assertReselectionCooldown = (generalMeta: unknown, processingGameTick: number): void => {
+    const projection = readNextChangeAt(generalMeta);
+    const deadline = readNextChangeTick(generalMeta);
+    if (projection && deadline === null) {
+        fail('INTERNAL_SERVER_ERROR', '장수 재선택 cooldown의 GAME_TIME authority가 없습니다.');
+    }
+    if (deadline !== null && deadline > processingGameTick) {
+        fail('PRECONDITION_FAILED', '아직 다시 고를 수 없습니다');
+    }
+};
+
 const getWorldHiddenSeed = (worldState: WorldStateRow): string | number => {
     const meta = asRecord(worldState.meta);
     const value = meta.hiddenSeed ?? meta.seed;
@@ -371,18 +385,8 @@ const toSafeReservationTick = (value: bigint | number, uniqueName: string): numb
     return tick;
 };
 
-const resolveAcceptedGameTick = (world: InMemoryTurnWorld, now: Date): number => {
-    const tick = world.dateToGameTick(now);
-    if (!Number.isSafeInteger(tick)) {
-        fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
-    }
-    return tick;
-};
-
-const isReservationActive = (row: SelectPoolRow, now: Date, nowTick: number): boolean =>
-    row.reservedUntilTick !== null
-        ? toSafeReservationTick(row.reservedUntilTick, row.uniqueName) >= nowTick
-        : row.reservedUntil !== null && row.reservedUntil.getTime() >= now.getTime();
+const isReservationActive = (row: SelectPoolRow, nowTick: number): boolean =>
+    row.reservedUntilTick !== null && toSafeReservationTick(row.reservedUntilTick, row.uniqueName) >= nowTick;
 
 const lockSelectionUser = async (db: DatabaseClient, userId: string): Promise<void> => {
     await acquireGameSchemaAdvisoryXactLock(db, `select-pool:user:${userId}`);
@@ -392,7 +396,6 @@ const requireSelectionToken = async (
     db: DatabaseClient,
     userId: string,
     uniqueName: string,
-    now: Date,
     nowTick: number
 ): Promise<SelectPoolRow> => {
     const token = await db.selectPoolEntry.findFirst({
@@ -400,10 +403,7 @@ const requireSelectionToken = async (
             ownerUserId: userId,
             uniqueName,
             generalId: null,
-            OR: [
-                { reservedUntilTick: { gte: BigInt(nowTick) } },
-                { reservedUntilTick: null, reservedUntil: { gte: now } },
-            ],
+            reservedUntilTick: { gte: BigInt(nowTick) },
         },
     });
     if (!token) {
@@ -438,18 +438,13 @@ export const reserveSelectionPool = async (options: {
     worldState: WorldStateRow;
     userId: string;
     now?: Date;
-    acceptedGameTick?: number;
-    processingGameTick?: number;
+    processingGameTick: number;
     seedOwnerIdentity?: string | number;
 }): Promise<SelectPoolReservationDto> => {
     const { db, world, worldState, userId } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
-    const acceptedGameTick = options.acceptedGameTick ?? resolveAcceptedGameTick(world, now);
-    const processingGameTick = options.processingGameTick ?? acceptedGameTick;
-    if (!Number.isSafeInteger(acceptedGameTick)) {
-        fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
-    }
+    const processingGameTick = options.processingGameTick;
     if (!Number.isSafeInteger(processingGameTick)) {
         fail('INTERNAL_SERVER_ERROR', '장수 선택 처리 tick이 안전한 정수 범위를 벗어났습니다.');
     }
@@ -459,14 +454,11 @@ export const reserveSelectionPool = async (options: {
         where: { userId },
         select: { id: true, meta: true },
     });
-    const nextChangeAt = general ? readNextChangeAt(general.meta) : null;
-    if (nextChangeAt && nextChangeAt.getTime() > now.getTime()) {
-        fail('PRECONDITION_FAILED', '아직 다시 고를 수 없습니다');
-    }
+    if (general) assertReselectionCooldown(general.meta, processingGameTick);
 
     let currentRows = await synchronizeSelectionPoolWorld(db, world);
     const existing = currentRows.filter(
-        (row) => row.ownerUserId === userId && row.generalId === null && isReservationActive(row, now, processingGameTick)
+        (row) => row.ownerUserId === userId && row.generalId === null && isReservationActive(row, processingGameTick)
     );
     if (existing.length > 0) {
         return toReservationDto(existing, Boolean(general), worldState, world);
@@ -477,7 +469,7 @@ export const reserveSelectionPool = async (options: {
             generalId: null,
             OR: [
                 { reservedUntilTick: { lt: BigInt(processingGameTick) } },
-                { reservedUntilTick: null, reservedUntil: { lt: now } },
+                { reservedUntilTick: null, reservedUntil: { not: null } },
             ],
         },
         data: {
@@ -504,7 +496,7 @@ export const reserveSelectionPool = async (options: {
 
     const rng = new RandUtil(
         new LiteHashDRBG(
-            buildSelectPoolSeed(getWorldHiddenSeed(worldState), options.seedOwnerIdentity ?? userId, acceptedGameTick)
+            buildSelectPoolSeed(getWorldHiddenSeed(worldState), options.seedOwnerIdentity ?? userId, processingGameTick)
         )
     );
     const poolName = resolvePoolName(worldState)!;
@@ -578,7 +570,6 @@ const assertGeneralIdSnapshotMatches = async (db: DatabaseClient, world: InMemor
 const clearUnusedReservations = async (
     db: DatabaseClient,
     userId: string,
-    now: Date,
     nowTick: number
 ): Promise<void> => {
     await db.selectPoolEntry.updateMany({
@@ -587,7 +578,7 @@ const clearUnusedReservations = async (
             OR: [
                 { ownerUserId: userId },
                 { reservedUntilTick: { lt: BigInt(nowTick) } },
-                { reservedUntilTick: null, reservedUntil: { lt: now } },
+                { reservedUntilTick: null, reservedUntil: { not: null } },
             ],
         },
         data: {
@@ -716,6 +707,7 @@ export const createGeneralFromSelectionPool = async (options: {
     now?: Date;
     turnScheduleAt?: Date;
     operationalAcceptedAt: Date;
+    processingGameTick: number;
     seedOwnerIdentity?: string | number;
     ownerPicture?: string;
     ownerImageServer?: number;
@@ -724,7 +716,10 @@ export const createGeneralFromSelectionPool = async (options: {
     const { db, world, worldState, userId, ownerDisplayName, uniqueName } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
-    const nowTick = resolveAcceptedGameTick(world, now);
+    const nowTick = options.processingGameTick;
+    if (!Number.isSafeInteger(nowTick)) {
+        fail('INTERNAL_SERVER_ERROR', '장수 생성 처리 tick이 안전한 정수 범위를 벗어났습니다.');
+    }
     await lockSelectionUser(db, userId);
     await lockSelectionMutationTables(db);
     await synchronizeSelectionPoolWorld(db, world);
@@ -735,7 +730,7 @@ export const createGeneralFromSelectionPool = async (options: {
     ) {
         fail('PRECONDITION_FAILED', '이미 장수를 생성했습니다.');
     }
-    const token = await requireSelectionToken(db, userId, uniqueName, now, nowTick);
+    const token = await requireSelectionToken(db, userId, uniqueName, nowTick);
     const info = parseCandidate(token);
     const poolName = resolvePoolName(worldState)!;
     const isCentennial = poolName === CENTENNIAL_ALL_STAR_POOL;
@@ -777,9 +772,8 @@ export const createGeneralFromSelectionPool = async (options: {
     const turnTime = buildInitialTurnTime(rng, worldState, now, options.turnScheduleAt ?? now);
     const age = 20;
     const specialityAges = resolveSpecialityAges(worldState, age);
-    const nextChangeAt = new Date(
-        now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
-    );
+    const nextChangeTick = nowTick + RESELECTION_TURN_MULTIPLIER * GAME_TICKS_PER_TURN;
+    const nextChangeAt = world.gameTickToDate(nextChangeTick);
     const prestartDeleteAfter = buildPrestartDeleteAfter(options.operationalAcceptedAt, worldState.tickSeconds, config);
     // 후보 picture는 NPC용 preset이다. 후보가 사람 장수(npcState=0)가 되는
     // 순간부터는 명시적으로 선택한 계정 전용 아이콘 또는 기본 아이콘만 허용한다.
@@ -813,6 +807,7 @@ export const createGeneralFromSelectionPool = async (options: {
         dex5: isCentennial ? 0 : info.dex[4],
         next_change: nextChangeAt.toISOString(),
         nextChangeAt: nextChangeAt.toISOString(),
+        next_change_tick: nextChangeTick,
         prestart_delete_after: prestartDeleteAfter.toISOString(),
         ...(useOwnerPicture && options.ownerIconRevision ? { accountIconUpdatedAt: options.ownerIconRevision } : {}),
         npc_org: 0,
@@ -905,10 +900,7 @@ export const createGeneralFromSelectionPool = async (options: {
             id: token.id,
             ownerUserId: userId,
             generalId: null,
-            OR: [
-                { reservedUntilTick: { gte: BigInt(nowTick) } },
-                { reservedUntilTick: null, reservedUntil: { gte: now } },
-            ],
+            reservedUntilTick: { gte: BigInt(nowTick) },
         },
         data: {
             generalId,
@@ -925,7 +917,7 @@ export const createGeneralFromSelectionPool = async (options: {
         update: { userId, lastRefresh: options.operationalAcceptedAt },
         create: { generalId, userId, lastRefresh: options.operationalAcceptedAt },
     });
-    await clearUnusedReservations(db, userId, now, nowTick);
+    await clearUnusedReservations(db, userId, nowTick);
     await synchronizeSelectionPoolWorld(db, world);
 
     const ownerJosaYi = JosaUtil.pick(ownerDisplayName, '이');
@@ -949,11 +941,15 @@ export const reselectGeneralFromSelectionPool = async (options: {
     ownerDisplayName: string;
     uniqueName: string;
     now?: Date;
+    processingGameTick: number;
 }): Promise<{ ok: true; generalId: number }> => {
     const { db, world, worldState, userId, ownerDisplayName, uniqueName } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
-    const nowTick = resolveAcceptedGameTick(world, now);
+    const nowTick = options.processingGameTick;
+    if (!Number.isSafeInteger(nowTick)) {
+        fail('INTERNAL_SERVER_ERROR', '장수 재선택 처리 tick이 안전한 정수 범위를 벗어났습니다.');
+    }
     await lockSelectionUser(db, userId);
     await lockSelectionMutationTables(db);
     await synchronizeSelectionPoolWorld(db, world);
@@ -968,11 +964,8 @@ export const reselectGeneralFromSelectionPool = async (options: {
     if (persistedGeneral.id !== general.id) {
         fail('INTERNAL_SERVER_ERROR', 'DB와 턴 데몬의 장수 소유 정보가 일치하지 않습니다.');
     }
-    const nextChangeAt = readNextChangeAt(general.meta);
-    if (nextChangeAt && nextChangeAt.getTime() > now.getTime()) {
-        fail('PRECONDITION_FAILED', '아직 다시 고를 수 없습니다');
-    }
-    const token = await requireSelectionToken(db, userId, uniqueName, now, nowTick);
+    assertReselectionCooldown(general.meta, nowTick);
+    const token = await requireSelectionToken(db, userId, uniqueName, nowTick);
     const info = parseCandidate(token);
     const isCentennial = resolvePoolName(worldState) === CENTENNIAL_ALL_STAR_POOL;
 
@@ -982,10 +975,7 @@ export const reselectGeneralFromSelectionPool = async (options: {
             id: token.id,
             ownerUserId: userId,
             generalId: null,
-            OR: [
-                { reservedUntilTick: { gte: BigInt(nowTick) } },
-                { reservedUntilTick: null, reservedUntil: { gte: now } },
-            ],
+            reservedUntilTick: { gte: BigInt(nowTick) },
         },
         data: {
             generalId: provisionalGeneralId,
@@ -1014,9 +1004,8 @@ export const reselectGeneralFromSelectionPool = async (options: {
         throw new Error('장수 재선택 중 선택 후보 확정에 실패했습니다.');
     }
 
-    const cooldown = new Date(
-        now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
-    );
+    const cooldownTick = nowTick + RESELECTION_TURN_MULTIPLIER * GAME_TICKS_PER_TURN;
+    const cooldown = world.gameTickToDate(cooldownTick);
     const centennialBaseGeneral = isCentennial
         ? {
               ...general,
@@ -1046,6 +1035,7 @@ export const reselectGeneralFromSelectionPool = async (options: {
             : {}),
         next_change: cooldown.toISOString(),
         nextChangeAt: cooldown.toISOString(),
+        next_change_tick: cooldownTick,
         ...buildScenarioGeneralPoolClaimMeta(
             parseScenarioGeneralPoolCandidate({ id: token.id, uniqueName: token.uniqueName, info: token.info }),
             now
@@ -1074,7 +1064,7 @@ export const reselectGeneralFromSelectionPool = async (options: {
     if (!updated) {
         throw new Error('턴 데몬에서 장수 정보를 갱신하지 못했습니다.');
     }
-    await clearUnusedReservations(db, userId, now, nowTick);
+    await clearUnusedReservations(db, userId, nowTick);
     await synchronizeSelectionPoolWorld(db, world);
 
     const ownerJosaYi = JosaUtil.pick(ownerDisplayName, '이');

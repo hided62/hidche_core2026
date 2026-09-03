@@ -1,7 +1,7 @@
 import type { TurnDaemonCommand, TurnDaemonControlQueue } from './types.js';
 
 type Waiter = {
-    deadlineMs: number | null;
+    timeoutMs: number | null;
     resolve: (command: TurnDaemonCommand | null) => void;
     timeoutId?: ReturnType<typeof setTimeout>;
 };
@@ -32,14 +32,14 @@ export class InMemoryControlQueue implements TurnDaemonControlQueue {
         return drained;
     }
 
-    async waitUntil(deadlineMs: number | null): Promise<TurnDaemonCommand | null> {
+    async waitFor(timeoutMs: number | null): Promise<TurnDaemonCommand | null> {
         if (this.queue.length > 0) {
             return this.queue.shift() ?? null;
         }
         return new Promise((resolve) => {
-            const waiter: Waiter = { deadlineMs, resolve };
-            if (deadlineMs !== null) {
-                const delay = Math.max(0, deadlineMs - Date.now());
+            const waiter: Waiter = { timeoutMs, resolve };
+            if (timeoutMs !== null) {
+                const delay = Math.max(0, timeoutMs);
                 waiter.timeoutId = setTimeout(() => {
                     this.removeWaiter(waiter);
                     resolve(null);

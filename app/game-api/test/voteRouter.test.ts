@@ -230,13 +230,7 @@ describe('vote router actor and permission boundaries', () => {
 
         expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: 100n }, time)).toBe(false);
         expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: 99n }, time)).toBe(true);
-        expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: null }, { ...time, tick: null })).toBe(false);
-        expect(
-            hasPollEnded(
-                { closed_at: null, end_at: now, end_tick: null },
-                { ...time, now: new Date(now.getTime() + 1), tick: null }
-            )
-        ).toBe(true);
+        expect(hasPollEnded({ closed_at: null, end_at: now, end_tick: null }, { ...time, tick: null })).toBe(true);
     });
 
     it('rejects unauthenticated survey access', async () => {
@@ -261,7 +255,6 @@ describe('vote router actor and permission boundaries', () => {
             voteId: 1,
             generalId: 7,
             selection: [0],
-            acceptedGameTick: 100,
         });
         expect(fixture.queryRaw.mock.calls.some(([query]) => sqlText(query).includes('INSERT INTO vote ('))).toBe(
             false
@@ -301,8 +294,6 @@ describe('vote router actor and permission boundaries', () => {
         const auth = buildAuth(['admin.survey.open']);
         const fixture = buildContext({ auth });
         const caller = appRouter.createCaller(fixture.context);
-        const windowStart = Date.now();
-
         await expect(caller.vote.addComment({ voteId: 1, text: '시각 댓글' })).resolves.toEqual({ ok: true });
         await expect(
             caller.vote.createPoll({
@@ -314,8 +305,6 @@ describe('vote router actor and permission boundaries', () => {
         ).resolves.toEqual({ ok: true });
         await expect(caller.vote.updatePoll({ voteId: 1, title: '시각 설문 수정' })).resolves.toEqual({ ok: true });
         await expect(caller.vote.closePoll({ voteId: 1 })).resolves.toEqual({ ok: true });
-        const windowEnd = Date.now();
-
         const mutationQueries = fixture.queryRaw.mock.calls
             .map(([query]) => query)
             .filter((query) => /INSERT INTO vote_comment|INSERT INTO vote_poll|UPDATE vote_poll/.test(sqlText(query)));
@@ -325,30 +314,24 @@ describe('vote router actor and permission boundaries', () => {
         const closePreviousUpdate = pollUpdates.find((query) => sqlText(query).includes('WHERE closed_at IS NULL'));
         const editPollUpdate = pollUpdates.find((query) => sqlText(query).includes('title = COALESCE'));
         const closePollUpdate = pollUpdates.find((query) => sqlText(query).includes('RETURNING id'));
-        const expectCurrentDateAt = (query: GamePrisma.Sql | undefined, index: number): Date => {
+        const expectDbWallClock = (query: GamePrisma.Sql | undefined): void => {
             expect(query).toBeDefined();
-            const value = query?.values.at(index);
-            expect(value).toBeInstanceOf(Date);
-            expect((value as Date).getTime()).toBeGreaterThanOrEqual(windowStart);
-            expect((value as Date).getTime()).toBeLessThanOrEqual(windowEnd);
-            return value as Date;
+            expect(sqlText(query!)).toContain("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'");
         };
 
         expect(sqlText(commentInsert!)).toContain('created_at');
-        expectCurrentDateAt(commentInsert, -1);
+        expectDbWallClock(commentInsert);
         expect(sqlText(pollInsert!)).toContain('created_at');
         expect(sqlText(pollInsert!)).toContain('updated_at');
-        const pollCreatedAt = expectCurrentDateAt(pollInsert, -2);
-        const pollUpdatedAt = expectCurrentDateAt(pollInsert, -1);
-        expect(pollUpdatedAt).toBe(pollCreatedAt);
+        expectDbWallClock(pollInsert);
 
         expect(pollUpdates).toHaveLength(3);
         expect(sqlText(closePreviousUpdate!)).toContain('updated_at');
-        expect(expectCurrentDateAt(closePreviousUpdate, -1)).toBe(pollCreatedAt);
+        expectDbWallClock(closePreviousUpdate);
         expect(sqlText(editPollUpdate!)).toContain('updated_at');
-        expectCurrentDateAt(editPollUpdate, -2);
+        expectDbWallClock(editPollUpdate);
         expect(sqlText(closePollUpdate!)).toContain('updated_at');
-        expectCurrentDateAt(closePollUpdate, -2);
+        expectDbWallClock(closePollUpdate);
     });
 
     it('reports the current world develcost as the legacy five-times survey reward', async () => {

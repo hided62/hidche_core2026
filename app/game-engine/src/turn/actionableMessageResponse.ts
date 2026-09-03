@@ -18,6 +18,10 @@ interface MessageRow {
     type: string;
     time: Date;
     validUntil: Date;
+    actionType: string;
+    actionStatus: string;
+    createdGameTick: bigint;
+    expiresGameTick: bigint | null;
     message: unknown;
 }
 
@@ -98,11 +102,16 @@ const invalidateMessageIds = async (
 ): Promise<void> => {
     const uniqueIds = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
     if (uniqueIds.length === 0) return;
+    const resolvedGameTick = BigInt(world.dateToGameTick(now));
+    await db.messageAction.updateMany({
+        where: { messageId: { in: uniqueIds }, status: 'PENDING' },
+        data: { status: 'RESOLVED', resolvedGameTick },
+    });
     await db.message.updateMany({
         where: { id: { in: uniqueIds } },
         data: {
             validUntil: now,
-            validUntilTick: BigInt(world.dateToGameTick(now)),
+            validUntilTick: resolvedGameTick,
         },
     });
 };
@@ -113,40 +122,53 @@ const validateActor = async (options: {
     requestId?: string;
     userId: string;
     generalId: number;
-}): Promise<Date> => {
+}): Promise<{ processingGameTick: number }> => {
     const actor = options.world.getGeneralById(options.generalId);
     if (!actor || actor.userId !== options.userId) {
         throw new Error('messageRespond general owner does not match command user.');
     }
-    if (!options.requestId) return new Date();
+    if (!options.requestId) {
+        throw new Error('messageRespond requires a durable ENGINE input event requestId.');
+    }
     const event = await options.db.inputEvent.findUnique({
         where: { requestId: options.requestId },
-        select: { actorUserId: true, target: true, eventType: true, createdAt: true },
+        select: { actorUserId: true, target: true, eventType: true, processingGameTick: true },
     });
     if (!event) throw new Error(`ENGINE input event ${options.requestId} is missing.`);
     if (event.actorUserId !== options.userId || event.target !== 'ENGINE' || event.eventType !== 'messageRespond') {
         throw new Error('ENGINE input event actor or type does not match messageRespond.');
     }
-    return event.createdAt;
+    const processingGameTick = event.processingGameTick;
+    if (processingGameTick === null || !Number.isSafeInteger(Number(processingGameTick))) {
+        throw new Error('messageRespond requires an authoritative processing game tick.');
+    }
+    return { processingGameTick: Number(processingGameTick) };
 };
 
 const fetchMessageForUpdate = async (
     db: GamePrisma.TransactionClient,
-    world: InMemoryTurnWorld,
     messageId: number,
-    now: Date
+    currentGameTick: number
 ): Promise<MessageRow | null> => {
-    const currentTick = BigInt(world.dateToGameTick(now));
     const rows = await db.$queryRaw<MessageRow[]>(GamePrisma.sql`
-        SELECT id, mailbox, type, time, valid_until AS "validUntil", message
-        FROM message
-        WHERE id = ${messageId}
-          AND (
-              (valid_until_tick IS NOT NULL AND valid_until_tick > ${currentTick})
-              OR (valid_until_tick IS NULL AND valid_until > ${now})
-          )
+        SELECT
+            envelope.id,
+            envelope.mailbox,
+            envelope.type,
+            envelope.time,
+            envelope.valid_until AS "validUntil",
+            action.action_type AS "actionType",
+            action.status AS "actionStatus",
+            action.created_game_tick AS "createdGameTick",
+            action.expires_game_tick AS "expiresGameTick",
+            envelope.message
+        FROM message AS envelope
+        JOIN message_action AS action ON action.message_id = envelope.id
+        WHERE envelope.id = ${messageId}
+          AND action.status = 'PENDING'
+          AND (action.expires_game_tick IS NULL OR action.expires_game_tick > ${BigInt(currentGameTick)})
         LIMIT 1
-        FOR UPDATE
+        FOR UPDATE OF envelope, action
     `);
     return rows[0] ?? null;
 };
@@ -165,7 +187,7 @@ const respondToScout = async (options: {
     if (row.type !== 'private' || row.mailbox !== actorId || payload.dest.generalId !== actorId) {
         return { ok: false, action: 'scout', reason: '올바른 수신자가 아닙니다.' };
     }
-    if (row.validUntil.getTime() <= row.time.getTime() || isLegacyTruthy(asRecord(payload.option).used)) {
+    if (row.actionStatus !== 'PENDING' || row.actionType !== 'scout' || isLegacyTruthy(asRecord(payload.option).used)) {
         return { ok: false, action: 'scout', reason: '유효하지 않은 등용장입니다.' };
     }
 
@@ -186,18 +208,17 @@ const respondToScout = async (options: {
         }
 
         const otherRows = await db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
-            SELECT id
-            FROM message
-            WHERE mailbox = ${payload.src.generalId}
-              AND type = 'private'
-              AND dest = mailbox
-              AND id <> ${row.id}
-              AND (
-                  (valid_until_tick IS NOT NULL AND valid_until_tick > ${BigInt(world.dateToGameTick(now))})
-                  OR (valid_until_tick IS NULL AND valid_until > ${now})
-              )
-              AND message->'option'->>'action' = 'scout'
-            FOR UPDATE
+            SELECT envelope.id
+            FROM message AS envelope
+            JOIN message_action AS action ON action.message_id = envelope.id
+            WHERE envelope.mailbox = ${payload.src.generalId}
+              AND envelope.type = 'private'
+              AND envelope.dest = envelope.mailbox
+              AND envelope.id <> ${row.id}
+              AND action.status = 'PENDING'
+              AND (action.expires_game_tick IS NULL OR action.expires_game_tick > ${BigInt(world.dateToGameTick(now))})
+              AND action.action_type = 'scout'
+            FOR UPDATE OF envelope, action
         `);
         await invalidateMessageIds(db, world, [row.id, ...otherRows.map(({ id }) => id)], now);
         world.queueMessage({
@@ -327,6 +348,7 @@ const respondToRaiseInvader = async (options: {
         },
         event
     );
+    await invalidateMessageIds(db, world, [row.id], world.gameTickToDate(alignment.alignedTick));
     return { ok: true, action: 'raiseInvader', reason: 'success' };
 };
 
@@ -354,13 +376,14 @@ export const respondToActionableMessage = async (options: {
         authority: NonNullable<Parameters<typeof reconcileClockSuspensionInTransaction>[0]['authority']>;
     }) => Promise<ClockReconciliationResult>;
 }): Promise<ActionableMessageResponseResult> => {
-    const acceptedAt = await validateActor(options);
-    const now = options.world.getGameNow(acceptedAt);
-    const row = await fetchMessageForUpdate(options.db, options.world, options.messageId, now);
+    const accepted = await validateActor(options);
+    const now = options.world.gameTickToDate(accepted.processingGameTick);
+    const row = await fetchMessageForUpdate(options.db, options.messageId, accepted.processingGameTick);
     if (!row) return { ok: false, reason: '존재하지 않는 메시지입니다.' };
     const payload = parsePayload(row.message);
     if (!payload) return { ok: false, reason: '응답할 수 없는 메시지입니다.' };
     const action = asRecord(payload.option).action;
+    if (action !== row.actionType) return { ok: false, reason: '메시지 행동 상태가 일치하지 않습니다.' };
     if (action === 'scout') {
         return await respondToScout({ ...options, actorId: options.generalId, row, payload, now });
     }

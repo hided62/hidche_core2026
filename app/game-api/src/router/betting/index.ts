@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { GamePrisma } from '@sammo-ts/infra';
+import { CLOCK_OPERATION_PERSISTENCE_LOCK, GamePrisma, acquireGameSchemaAdvisoryXactLock } from '@sammo-ts/infra';
 import { z } from 'zod';
 
 import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
@@ -29,9 +29,43 @@ const loadWorldDate = async (db: Parameters<typeof getMyGeneral>[0]['db']) => {
     return world;
 };
 
+interface BettingClockFenceRow {
+    currentYear: number;
+    currentMonth: number;
+    clockPhase: string;
+    clockRevision: bigint;
+    deadlineGeneration: bigint;
+}
+
+const lockBettingClockFence = async (db: Parameters<typeof getMyGeneral>[0]['db']): Promise<BettingClockFenceRow> => {
+    await acquireGameSchemaAdvisoryXactLock(db, CLOCK_OPERATION_PERSISTENCE_LOCK);
+    const rows = await db.$queryRaw<BettingClockFenceRow[]>(GamePrisma.sql`
+        SELECT current_year AS "currentYear",
+               current_month AS "currentMonth",
+               clock_phase AS "clockPhase",
+               clock_revision AS "clockRevision",
+               deadline_generation AS "deadlineGeneration"
+        FROM world_state
+        ORDER BY id ASC
+        LIMIT 1
+        FOR UPDATE
+    `);
+    const world = rows[0];
+    if (!world) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state not found.' });
+    }
+    if (!['RUNNING', 'MANUAL', 'SUSPENDED'].includes(world.clockPhase)) {
+        throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: `Nation betting is disabled while the game clock phase is ${world.clockPhase}.`,
+        });
+    }
+    return world;
+};
+
 export const bettingRouter = router({
-    getList: accessAuthedInputProcedure(z.object({ req: z.literal('bettingNation').optional() }).optional())
-        .query(async ({ ctx, input }) => {
+    getList: accessAuthedInputProcedure(z.object({ req: z.literal('bettingNation').optional() }).optional()).query(
+        async ({ ctx, input }) => {
             requireUserId(ctx.auth);
             await getMyGeneral(ctx);
             const [world, rows] = await Promise.all([
@@ -66,7 +100,8 @@ export const bettingRouter = router({
                 year: world.currentYear,
                 month: world.currentMonth,
             };
-        }),
+        }
+    ),
 
     getDetail: authedProcedure
         .input(z.object({ bettingId: z.number().int().positive() }))
@@ -141,7 +176,7 @@ export const bettingRouter = router({
             if (betting.finished) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 종료된 베팅입니다' });
             }
-            const world = await loadWorldDate(ctx.db);
+            const world = await lockBettingClockFence(ctx.db);
             const yearMonth = joinYearMonth(world.currentYear, world.currentMonth);
             if (betting.closeYearMonth <= yearMonth) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 마감된 베팅입니다' });

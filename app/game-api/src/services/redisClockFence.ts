@@ -1,4 +1,5 @@
 import type { CurrentGameTime } from './gameClock.js';
+import type { GameClockPhase } from '@sammo-ts/common';
 
 interface ClockFenceRedis {
     eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
@@ -26,30 +27,58 @@ export interface ActiveRedisClockFence {
     phaseKey: string;
     revision: number;
     generation: number;
+    phase: 'RUNNING' | 'MANUAL' | 'SUSPENDED';
 }
 
-export const ensureActiveRedisClockFence = async (
+type MutableProjectionPhase = ActiveRedisClockFence['phase'];
+
+const ensureRedisClockFence = async (
     redis: ClockFenceRedis,
     profileName: string,
-    gameTime: CurrentGameTime
+    gameTime: CurrentGameTime,
+    allowedPhases: readonly GameClockPhase[]
 ): Promise<ActiveRedisClockFence | null> => {
     if (
-        gameTime.phase !== 'RUNNING' ||
+        !gameTime.phase ||
+        !allowedPhases.includes(gameTime.phase) ||
+        (gameTime.phase !== 'RUNNING' && gameTime.phase !== 'MANUAL' && gameTime.phase !== 'SUSPENDED') ||
         !Number.isSafeInteger(gameTime.revision) ||
         !Number.isSafeInteger(gameTime.deadlineGeneration)
     ) {
         return null;
     }
+    const phase: MutableProjectionPhase = gameTime.phase;
     const fence: ActiveRedisClockFence = {
         activeRevisionKey: `sammo:${profileName}:clock:active-revision`,
         deadlineGenerationKey: `sammo:${profileName}:clock:deadline-generation`,
         phaseKey: `sammo:${profileName}:clock:phase`,
         revision: gameTime.revision!,
         generation: gameTime.deadlineGeneration!,
+        phase,
     };
     const result = await redis.eval(BOOTSTRAP_CLOCK_FENCE_SCRIPT, {
         keys: [fence.activeRevisionKey, fence.deadlineGenerationKey, fence.phaseKey],
-        arguments: [String(fence.revision), String(fence.generation), 'RUNNING'],
+        arguments: [String(fence.revision), String(fence.generation), phase],
     });
     return Number(result) === 1 || Number(result) === 2 ? fence : null;
 };
+
+export const ensureActiveRedisClockFence = async (
+    redis: ClockFenceRedis,
+    profileName: string,
+    gameTime: CurrentGameTime
+): Promise<ActiveRedisClockFence | null> => {
+    return ensureRedisClockFence(redis, profileName, gameTime, ['RUNNING']);
+};
+
+/**
+ * User betting is allowed against a frozen tournament deadline while the game
+ * clock is suspended. Stage progression and settlement continue to use the
+ * RUNNING-only helper above.
+ */
+export const ensureBettingRedisClockFence = async (
+    redis: ClockFenceRedis,
+    profileName: string,
+    gameTime: CurrentGameTime
+): Promise<ActiveRedisClockFence | null> =>
+    ensureRedisClockFence(redis, profileName, gameTime, ['RUNNING', 'MANUAL', 'SUSPENDED']);

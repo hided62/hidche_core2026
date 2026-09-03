@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 
-import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
+import { asNumber, asRecord, GAME_TICKS_PER_TURN, JosaUtil, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import {
     acquireGameSchemaAdvisoryXactLock,
     GamePrisma,
@@ -84,7 +84,9 @@ export interface NpcPossessionSelectionObserver {
 interface NpcSelectionTokenRow {
     ownerUserId: string;
     validUntil: Date;
+    validUntilTick: bigint | null;
     pickMoreFrom: Date;
+    pickMoreFromTick: bigint | null;
     pickResult: unknown;
     nonce: number;
 }
@@ -105,8 +107,8 @@ const truncateToSeconds = (value: Date): Date => new Date(Math.floor(value.getTi
 export const buildNpcSelectionTokenSeed = (
     hiddenSeed: string | number,
     ownerIdentity: string | number,
-    acceptedGameTick: number
-): string => simpleSerialize(hiddenSeed, 'SelectNPCToken', ownerIdentity, acceptedGameTick);
+    createdGameTick: number
+): string => simpleSerialize(hiddenSeed, 'SelectNPCToken', ownerIdentity, createdGameTick);
 
 const readHiddenSeed = (worldState: WorldStateRow): string | number => {
     const meta = asRecord(worldState.meta);
@@ -159,15 +161,22 @@ const parsePickResult = (value: unknown): Record<string, NpcPossessionCandidate>
 };
 
 const toReservation = (
-    token: Pick<NpcSelectionTokenRow, 'validUntil' | 'pickMoreFrom' | 'pickResult' | 'nonce'>,
-    now: Date
+    token: Pick<
+        NpcSelectionTokenRow,
+        'validUntil' | 'validUntilTick' | 'pickMoreFrom' | 'pickMoreFromTick' | 'pickResult' | 'nonce'
+    >,
+    currentGameTick: number,
+    ticksPerSecond: number
 ): NpcPossessionReservation => {
+    if (token.validUntilTick === null || token.pickMoreFromTick === null) {
+        return fail('INTERNAL_SERVER_ERROR', 'NPC 빙의 후보의 GAME_TIME 기한이 없습니다.');
+    }
     const pickResult = parsePickResult(token.pickResult);
     return {
         tokenNonce: token.nonce,
         validUntil: token.validUntil.toISOString(),
         pickMoreFrom: token.pickMoreFrom.toISOString(),
-        pickMoreSeconds: Math.max(0, Math.ceil((token.pickMoreFrom.getTime() - now.getTime()) / 1000)),
+        pickMoreSeconds: Math.max(0, Math.ceil((Number(token.pickMoreFromTick) - currentGameTick) / ticksPerSecond)),
         candidates: Object.values(pickResult).sort(
             (left, right) =>
                 left.stats.leadership +
@@ -289,16 +298,18 @@ export const reserveNpcPossessionCandidates = async (options: {
     refresh?: boolean;
     keepIds?: number[];
     now?: Date;
-    acceptedGameTick: number;
+    createdGameTick: number;
     selectionObserver?: NpcPossessionSelectionObserver;
 }): Promise<NpcPossessionReservation> => {
     const { db, worldState, userId } = options;
     requireNpcPossessionWorld(worldState);
     const now = truncateToSeconds(options.now ?? new Date());
-    if (!Number.isSafeInteger(options.acceptedGameTick)) {
-        fail('INTERNAL_SERVER_ERROR', 'NPC 빙의 수락 tick이 올바르지 않습니다.');
+    if (!Number.isSafeInteger(options.createdGameTick)) {
+        fail('INTERNAL_SERVER_ERROR', 'NPC 빙의 생성 tick이 올바르지 않습니다.');
     }
     await lockNpcPossession(db, userId);
+    const turnTermMinutes = resolveTurnTermMinutes(worldState);
+    const ticksPerSecond = GAME_TICKS_PER_TURN / (turnTermMinutes * 60);
 
     if (await db.general.findFirst({ where: { userId }, select: { id: true } })) {
         fail('PRECONDITION_FAILED', '이미 장수가 생성되었습니다');
@@ -324,14 +335,20 @@ export const reserveNpcPossessionCandidates = async (options: {
         if (options.refresh) {
             fail('CONFLICT', 'NPC 빙의 요청 처리 중에는 후보를 다시 뽑을 수 없습니다.');
         }
-        return toReservation(inFlightToken, now);
+        return toReservation(inFlightToken, options.createdGameTick, ticksPerSecond);
     }
-    if (existing && existing.validUntil.getTime() < now.getTime()) {
+    if (
+        existing &&
+        (existing.validUntilTick === null || Number(existing.validUntilTick) < options.createdGameTick)
+    ) {
         await db.npcSelectionToken.deleteMany({
             where: {
                 ownerUserId: userId,
                 nonce: existing.nonce,
-                validUntil: { lt: now },
+                OR: [
+                    { validUntilTick: null },
+                    { validUntilTick: { lt: BigInt(options.createdGameTick) } },
+                ],
             },
         });
         existing = null;
@@ -339,7 +356,7 @@ export const reserveNpcPossessionCandidates = async (options: {
 
     const kept: Record<string, NpcPossessionCandidate> = {};
     if (existing && options.refresh) {
-        if (now.getTime() < existing.pickMoreFrom.getTime()) {
+        if (existing.pickMoreFromTick === null || options.createdGameTick < Number(existing.pickMoreFromTick)) {
             fail('PRECONDITION_FAILED', '아직 다시 뽑을 수 없습니다');
         }
         const oldPick = parsePickResult(existing.pickResult);
@@ -352,16 +369,16 @@ export const reserveNpcPossessionCandidates = async (options: {
         }
         // Ref는 모든 후보를 보관하면 refresh를 취소하며 차감도 저장하지 않는다.
         if (Object.keys(kept).length === Object.keys(oldPick).length) {
-            return toReservation(existing, now);
+            return toReservation(existing, options.createdGameTick, ticksPerSecond);
         }
     } else if (existing) {
-        return toReservation(existing, now);
+        return toReservation(existing, options.createdGameTick, ticksPerSecond);
     }
 
     const reservedRows = await db.npcSelectionToken.findMany({
         where: {
             ownerUserId: { not: userId },
-            validUntil: { gte: now },
+            validUntilTick: { gte: BigInt(options.createdGameTick) },
         },
         select: { pickResult: true },
     });
@@ -397,16 +414,19 @@ export const reserveNpcPossessionCandidates = async (options: {
         generalRows.map((row) => buildCandidateSnapshot(row, nations.get(row.nationId)))
     );
     const selectionRng = new LiteHashDRBG(
-        buildNpcSelectionTokenSeed(readHiddenSeed(worldState), options.ownerIdentity, options.acceptedGameTick)
+        buildNpcSelectionTokenSeed(readHiddenSeed(worldState), options.ownerIdentity, options.createdGameTick)
     );
     const rng = options.selectionObserver?.onRandomDraw
         ? new ObservedRandUtil(selectionRng, options.selectionObserver.onRandomDraw)
         : new RandUtil(selectionRng);
     const pickResult = chooseNpcPossessionCandidates(candidates, kept, rng, options.selectionObserver?.onCandidateDraw);
-    const turnTermMinutes = resolveTurnTermMinutes(worldState);
-    const validUntil = new Date(now.getTime() + Math.max(VALID_SECONDS, turnTermMinutes * 40) * 1000);
+    const validSeconds = Math.max(VALID_SECONDS, turnTermMinutes * 40);
+    const pickMoreSeconds = Math.max(PICK_MORE_SECONDS, Math.round(Math.pow(turnTermMinutes, 0.672) * 8));
+    const validUntilTick = options.createdGameTick + Math.round(validSeconds * ticksPerSecond);
+    const pickMoreFromTick = options.createdGameTick + Math.round(pickMoreSeconds * ticksPerSecond);
+    const validUntil = new Date(now.getTime() + validSeconds * 1000);
     const refreshedPickMoreFrom = new Date(
-        now.getTime() + Math.max(PICK_MORE_SECONDS, Math.round(Math.pow(turnTermMinutes, 0.672) * 8)) * 1000
+        now.getTime() + pickMoreSeconds * 1000
     );
     const nonce = randomInt(0, 0x10000000);
 
@@ -415,7 +435,9 @@ export const reserveNpcPossessionCandidates = async (options: {
             where: { ownerUserId: userId, nonce: existing.nonce },
             data: {
                 validUntil,
+                validUntilTick: BigInt(validUntilTick),
                 pickMoreFrom: refreshedPickMoreFrom,
+                pickMoreFromTick: BigInt(pickMoreFromTick),
                 pickResult: pickResult as GamePrisma.InputJsonValue,
                 nonce,
             },
@@ -423,7 +445,18 @@ export const reserveNpcPossessionCandidates = async (options: {
         if (updated.count === 0) {
             fail('CONFLICT', '중복 요청, 다시 랜덤 토큰을 확인해주세요');
         }
-        return toReservation({ validUntil, pickMoreFrom: refreshedPickMoreFrom, pickResult, nonce }, now);
+        return toReservation(
+            {
+                validUntil,
+                validUntilTick: BigInt(validUntilTick),
+                pickMoreFrom: refreshedPickMoreFrom,
+                pickMoreFromTick: BigInt(pickMoreFromTick),
+                pickResult,
+                nonce,
+            },
+            options.createdGameTick,
+            ticksPerSecond
+        );
     }
 
     try {
@@ -431,7 +464,9 @@ export const reserveNpcPossessionCandidates = async (options: {
             data: {
                 ownerUserId: userId,
                 validUntil,
+                validUntilTick: BigInt(validUntilTick),
                 pickMoreFrom: FIRST_PICK_MORE_FROM,
+                pickMoreFromTick: BigInt(options.createdGameTick),
                 pickResult: pickResult as GamePrisma.InputJsonValue,
                 nonce,
             },
@@ -442,7 +477,18 @@ export const reserveNpcPossessionCandidates = async (options: {
         }
         throw error;
     }
-    return toReservation({ validUntil, pickMoreFrom: FIRST_PICK_MORE_FROM, pickResult, nonce }, now);
+    return toReservation(
+        {
+            validUntil,
+            validUntilTick: BigInt(validUntilTick),
+            pickMoreFrom: FIRST_PICK_MORE_FROM,
+            pickMoreFromTick: BigInt(options.createdGameTick),
+            pickResult,
+            nonce,
+        },
+        options.createdGameTick,
+        ticksPerSecond
+    );
 };
 
 export const possessNpcGeneral = async (options: {
@@ -455,11 +501,13 @@ export const possessNpcGeneral = async (options: {
     ownerLegacyPenalty?: Record<string, unknown>;
     generalId: number;
     tokenNonce: number;
-    acceptedAt: Date;
+    requestedAtWall: Date;
+    processingGameTick: number;
 }): Promise<{ ok: true; generalId: number }> => {
-    const { db, world, worldState, userId, generalId, acceptedAt } = options;
-    // queue 대기 중 만료된 token도 enqueue 시점에는 유효했으므로 저장된 논리 수락 시각으로 다시 검증한다.
-    const tokenAcceptedAt = truncateToSeconds(acceptedAt);
+    const { db, world, worldState, userId, generalId, requestedAtWall } = options;
+    if (!Number.isSafeInteger(options.processingGameTick)) {
+        fail('INTERNAL_SERVER_ERROR', 'NPC 빙의 처리 tick이 올바르지 않습니다.');
+    }
     requireNpcPossessionWorld(worldState);
     await lockNpcPossession(db, userId);
     await db.$executeRaw(GamePrisma.sql`LOCK TABLE "general" IN SHARE ROW EXCLUSIVE MODE`);
@@ -475,7 +523,7 @@ export const possessNpcGeneral = async (options: {
         where: {
             ownerUserId: userId,
             nonce: options.tokenNonce,
-            validUntil: { gte: tokenAcceptedAt },
+            validUntilTick: { gte: BigInt(options.processingGameTick) },
         },
     })) as NpcSelectionTokenRow | null;
     if (!token) {
@@ -501,7 +549,7 @@ export const possessNpcGeneral = async (options: {
         return fail('NOT_FOUND', '장수 등록에 실패했습니다.');
     }
 
-    const penalty = resolveLegacyPenalty(options.ownerLegacyPenalty, options.profileId, acceptedAt);
+    const penalty = resolveLegacyPenalty(options.ownerLegacyPenalty, options.profileId, requestedAtWall);
     world.updateGeneral(generalId, {
         userId,
         npcState: 1,
@@ -522,7 +570,7 @@ export const possessNpcGeneral = async (options: {
         where: { generalId },
         update: {
             userId,
-            lastRefresh: acceptedAt,
+            lastRefresh: requestedAtWall,
             refresh: 0,
             refreshTotal: 0,
             refreshScore: 0,
@@ -531,7 +579,7 @@ export const possessNpcGeneral = async (options: {
         create: {
             generalId,
             userId,
-            lastRefresh: acceptedAt,
+            lastRefresh: requestedAtWall,
         },
     });
     await db.npcSelectionToken.deleteMany({ where: { ownerUserId: userId } });

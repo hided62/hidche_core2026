@@ -92,14 +92,14 @@ export class RedisTurnDaemonCommandStream implements TurnDaemonControlQueue, Tur
         return drained.concat(remote);
     }
 
-    async waitUntil(deadlineMs: number | null): Promise<TurnDaemonCommand | null> {
+    async waitFor(timeoutMs: number | null): Promise<TurnDaemonCommand | null> {
         if (this.localQueue.length > 0) {
             return this.localQueue.shift() ?? null;
         }
 
-        const blockMs = deadlineMs === null ? 0 : Math.max(0, deadlineMs - Date.now());
-        const cappedBlockMs = deadlineMs === null ? 0 : Math.min(blockMs, 1000);
-        if (deadlineMs !== null && blockMs === 0) {
+        const blockMs = timeoutMs === null ? 0 : Math.max(0, timeoutMs);
+        const cappedBlockMs = timeoutMs === null ? 0 : Math.min(blockMs, 1000);
+        if (timeoutMs !== null && blockMs === 0) {
             return null;
         }
 

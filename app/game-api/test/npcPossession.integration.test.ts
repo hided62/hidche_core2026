@@ -420,7 +420,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         });
     }, 45_000);
 
-    it('keeps a token accepted in logical time until the queued ENGINE event finishes', async () => {
+    it('revalidates a queued token at the authoritative daemon processing tick', async () => {
         const reservation = await appRouter
             .createCaller(buildContext('npc-possession-delayed-token', delayedAuth))
             .join.listPossessCandidates({});
@@ -440,13 +440,13 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         ).rejects.toMatchObject({ code: 'TIMEOUT' });
 
         const event = await db.inputEvent.findUniqueOrThrow({ where: { requestId } });
-        const acceptedGameAt = new Date(
-            (event.payload as { acceptedGameAt?: string }).acceptedGameAt ?? 'invalid accepted game time'
-        );
-        expect(acceptedGameAt.toString()).not.toBe('Invalid Date');
+        expect(event.acceptedGameTick).toBeNull();
+        expect(event.processingGameTick).toBeNull();
+        expect(event.payload).not.toHaveProperty('acceptedGameAt');
+        const queuedAtTick = (await db.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } })).clockTick!;
         await db.npcSelectionToken.update({
             where: { ownerUserId: delayedUserId },
-            data: { validUntil: acceptedGameAt },
+            data: { validUntilTick: queuedAtTick },
         });
         await db.worldState.updateMany({
             data: { clockTick: { increment: 1 } },
@@ -470,12 +470,13 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         await startRuntime('npc-possession-delayed-retry-daemon');
         await expect(
             appRouter.createCaller(buildContext('npc-possession-delayed-retry', delayedAuth)).join.possessGeneral(input)
-        ).resolves.toEqual({ ok: true, generalId: candidate.id });
+        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: '유효한 장수 목록이 없습니다.' });
         await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId } })).resolves.toMatchObject({
             status: 'SUCCEEDED',
             attempts: 1,
+            processingGameTick: expect.anything(),
         });
-        expect(await db.general.count({ where: { userId: delayedUserId } })).toBe(1);
+        expect(await db.general.count({ where: { userId: delayedUserId } })).toBe(0);
     }, 45_000);
 
     it('serializes durable enqueue before a token refresh can replace its nonce', async () => {

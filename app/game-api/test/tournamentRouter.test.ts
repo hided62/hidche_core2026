@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { TurnDaemonCommand, TurnDaemonCommandResult } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
@@ -151,6 +151,8 @@ const buildContext = (options: {
     develCost?: number;
     currentDevelCost?: number;
     rankRows?: Array<{ generalId: number; type: string; value: number }>;
+    clockPhase?: 'PREOPEN' | 'RUNNING' | 'MANUAL' | 'SUSPENDED' | 'RECONCILING';
+    requestId?: string;
 }): GameApiContext => {
     const db = {
         general: {
@@ -168,7 +170,7 @@ const buildContext = (options: {
                 clockTick: 0n,
                 clockMode: 'realtime',
                 clockWallAnchor: new Date('2026-01-01T00:00:00.000Z'),
-                clockPhase: 'RUNNING',
+                clockPhase: options.clockPhase ?? 'RUNNING',
                 clockRevision: 1n,
                 deadlineGeneration: 1n,
                 tickSeconds: 60,
@@ -178,6 +180,7 @@ const buildContext = (options: {
         },
     } as unknown as DatabaseClient;
     return {
+        requestId: options.requestId,
         db,
         redis: options.redis as unknown as RedisConnector['client'],
         turnDaemon: options.transport,
@@ -367,6 +370,83 @@ describe('tournament router permissions and mutations', () => {
         expect(Object.values(summary.myTotals)).toEqual([600]);
         expect(summary.totalAmount).toBe(600);
         expect(transport.gold.get(general.id)).toBe(2_400);
+    });
+
+    it('accepts a tournament bet against the frozen game deadline while the clock is suspended', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-1', 3_000);
+        transport.gold.set(general.id, general.gold);
+        await setTournamentFixture(redis, {
+            stage: 6,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+            bettingCloseAt: '2099-01-01T00:00:00.000Z',
+        });
+        const context = buildContext({
+            redis,
+            transport,
+            generals: [general],
+            userId: 'user-1',
+            clockPhase: 'SUSPENDED',
+            requestId: 'http:suspended-tournament-bet',
+        });
+        const outerApiTransaction = vi.fn(async () => {
+            throw new Error('tournament bet must not hold an API transaction while waiting for the daemon');
+        });
+        Object.assign(context.db, { $transaction: outerApiTransaction });
+        const caller = appRouter.createCaller(context);
+
+        await expect(caller.tournament.placeBet({ targetId: 11, amount: 600 })).resolves.toEqual({ ok: true });
+        expect(transport.gold.get(general.id)).toBe(2_400);
+        expect((await caller.tournament.getBettingSummary()).myAmount).toBe(600);
+        expect(transport.commands).toContainEqual(
+            expect.objectContaining({
+                type: 'adjustGeneralResources',
+                requestId: 'http:suspended-tournament-bet:tournamentBet:resources',
+                reason: 'tournamentBet',
+            })
+        );
+        expect(outerApiTransaction).not.toHaveBeenCalled();
+        expect(transport.commands).toContainEqual(
+            expect.objectContaining({
+                type: 'adjustGeneralMeta',
+                requestId: 'http:suspended-tournament-bet:tournamentBet:rank',
+                reason: 'tournamentBet',
+            })
+        );
+    });
+
+    it('rejects a tournament bet during reconciliation without debiting gold', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-1', 3_000);
+        transport.gold.set(general.id, general.gold);
+        await setTournamentFixture(redis, {
+            stage: 6,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+            bettingCloseAt: '2099-01-01T00:00:00.000Z',
+        });
+        const caller = appRouter.createCaller(
+            buildContext({ redis, transport, generals: [general], userId: 'user-1', clockPhase: 'RECONCILING' })
+        );
+
+        await expect(caller.tournament.placeBet({ targetId: 11, amount: 600 })).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+        });
+        expect(transport.gold.get(general.id)).toBe(3_000);
+        expect(transport.commands).toHaveLength(0);
     });
 
     it('keeps another user from reading my bet identity and requires that user to own a general', async () => {

@@ -37,7 +37,10 @@ export const nextStage = (stage: number): number => {
 
 const resolveScheduledBaseMs = (state: TournamentState): number => {
     const scheduled = new Date(state.nextAt).getTime();
-    return Number.isFinite(scheduled) ? scheduled : Date.now();
+    if (!Number.isFinite(scheduled)) {
+        throw new Error('Tournament GAME_TIME schedule is invalid.');
+    }
+    return scheduled;
 };
 
 export const resolveNextAt = (state: TournamentState): string =>

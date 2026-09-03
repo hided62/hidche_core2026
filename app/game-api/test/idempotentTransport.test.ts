@@ -91,7 +91,7 @@ describe('IdempotentTurnDaemonTransport', () => {
         }
     });
 
-    it('reuses a successful vote event when only the retry acceptance tick has changed', async () => {
+    it('reuses a rolling-upgrade vote event after legacy acceptance coordinates are removed', async () => {
         const persistedPayload = {
             type: 'voteReward' as const,
             requestId: 'vote-reward',
@@ -100,6 +100,14 @@ describe('IdempotentTurnDaemonTransport', () => {
             generalId: 7,
             selection: [0],
             acceptedGameTick: 100,
+        };
+        const currentCommand = {
+            type: 'voteReward' as const,
+            requestId: 'vote-reward',
+            userId: 'user-7',
+            voteId: 1,
+            generalId: 7,
+            selection: [0],
         };
         const create = async () => {
             throw Object.assign(new Error('duplicate'), { code: 'P2002' });
@@ -115,18 +123,14 @@ describe('IdempotentTurnDaemonTransport', () => {
         );
 
         await expect(
-            transport.sendCommand({
-                ...persistedPayload,
-                acceptedGameTick: 101,
-            })
+            transport.sendCommand(currentCommand)
         ).resolves.toBe('vote-reward');
 
         for (const changedIdentity of [{ selection: [1] }, { voteId: 2 }, { generalId: 8 }]) {
             await expect(
                 transport.sendCommand({
-                    ...persistedPayload,
+                    ...currentCommand,
                     ...changedIdentity,
-                    acceptedGameTick: 101,
                 })
             ).rejects.toBeInstanceOf(ConflictingTurnDaemonCommandError);
         }

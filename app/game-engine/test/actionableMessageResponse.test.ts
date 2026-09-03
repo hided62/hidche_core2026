@@ -87,6 +87,7 @@ const destination = {
     color: '#ffffff',
     icon: '',
 };
+const requestId = 'actionable-message-request';
 
 const buildRow = (action: 'scout' | 'raiseInvader', overrides: Partial<MessagePayload> = {}) => ({
     id: 29,
@@ -94,6 +95,10 @@ const buildRow = (action: 'scout' | 'raiseInvader', overrides: Partial<MessagePa
     type: 'private',
     time: new Date('0200-01-01T00:00:00.000Z'),
     validUntil: new Date('9999-12-31T00:00:00.000Z'),
+    actionType: action,
+    actionStatus: 'PENDING',
+    createdGameTick: 0n,
+    expiresGameTick: null,
     message: {
         src: source,
         dest: destination,
@@ -106,10 +111,25 @@ const buildRow = (action: 'scout' | 'raiseInvader', overrides: Partial<MessagePa
 const buildDb = (rows: unknown[][]) => {
     const queryRaw = vi.fn(async () => rows.shift() ?? []);
     const updateMany = vi.fn(async () => ({ count: 1 }));
+    const actionUpdateMany = vi.fn(async () => ({ count: 1 }));
     return {
-        db: { $queryRaw: queryRaw, message: { updateMany } } as unknown as GamePrisma.TransactionClient,
+        db: {
+            $queryRaw: queryRaw,
+            inputEvent: {
+                findUnique: vi.fn(async () => ({
+                    actorUserId: actor.userId,
+                    target: 'ENGINE',
+                    eventType: 'messageRespond',
+                    createdAt: new Date('2026-09-03T00:00:00.000Z'),
+                    processingGameTick: 0n,
+                })),
+            },
+            message: { updateMany },
+            messageAction: { updateMany: actionUpdateMany },
+        } as unknown as GamePrisma.TransactionClient,
         queryRaw,
         updateMany,
+        actionUpdateMany,
     };
 };
 
@@ -118,6 +138,22 @@ const buildExecutor = (ok = true): ImmediateGeneralActionExecutor => ({
 });
 
 describe('actionable message response', () => {
+    it('rejects a response without the authoritative durable command boundary', async () => {
+        const world = buildWorld();
+        const { db } = buildDb([[buildRow('scout')]]);
+        await expect(
+            respondToActionableMessage({
+                db,
+                world,
+                executor: buildExecutor(),
+                userId: actor.userId!,
+                generalId: actor.id,
+                messageId: 29,
+                response: true,
+            })
+        ).rejects.toThrow('durable ENGINE input event requestId');
+    });
+
     it('accepts a recruitment letter, executes the legacy action, and invalidates linked prompts', async () => {
         const world = buildWorld();
         const row = buildRow('scout');
@@ -128,6 +164,7 @@ describe('actionable message response', () => {
             db,
             world,
             executor,
+            requestId,
             userId: actor.userId!,
             generalId: actor.id,
             messageId: row.id,
@@ -162,6 +199,7 @@ describe('actionable message response', () => {
             db,
             world,
             executor: buildExecutor(false),
+            requestId,
             userId: actor.userId!,
             generalId: actor.id,
             messageId: row.id,
@@ -173,14 +211,8 @@ describe('actionable message response', () => {
         expect(world.peekDirtyState().messages).toHaveLength(0);
     });
 
-    it('treats legacy truthy used values and an inverted validity interval as invalid scout letters', async () => {
-        for (const row of [
-            buildRow('scout', { option: { action: 'scout', used: 1 } }),
-            {
-                ...buildRow('scout'),
-                validUntil: new Date('0199-12-31T23:59:59.000Z'),
-            },
-        ]) {
+    it('treats a legacy truthy used value as an invalid scout letter', async () => {
+        for (const row of [buildRow('scout', { option: { action: 'scout', used: 1 } })]) {
             const world = buildWorld();
             const { db, updateMany } = buildDb([[row]]);
             const executor = buildExecutor();
@@ -190,6 +222,7 @@ describe('actionable message response', () => {
                     db,
                     world,
                     executor,
+                    requestId,
                     userId: actor.userId!,
                     generalId: actor.id,
                     messageId: row.id,
@@ -199,6 +232,24 @@ describe('actionable message response', () => {
             expect(executor.execute).not.toHaveBeenCalled();
             expect(updateMany).not.toHaveBeenCalled();
         }
+    });
+
+    it('treats an expired GAME_TIME action row as absent', async () => {
+        const world = buildWorld();
+        const { db } = buildDb([[]]);
+
+        await expect(
+            respondToActionableMessage({
+                db,
+                world,
+                executor: buildExecutor(),
+                requestId,
+                userId: actor.userId!,
+                generalId: actor.id,
+                messageId: 29,
+                response: true,
+            })
+        ).resolves.toEqual({ ok: false, reason: '존재하지 않는 메시지입니다.' });
     });
 
     it("keeps PHP's special string-zero used value false", async () => {
@@ -212,6 +263,7 @@ describe('actionable message response', () => {
                 db,
                 world,
                 executor,
+                requestId,
                 userId: actor.userId!,
                 generalId: actor.id,
                 messageId: row.id,
@@ -233,6 +285,7 @@ describe('actionable message response', () => {
                 db,
                 world,
                 executor,
+                requestId,
                 userId: actor.userId!,
                 generalId: actor.id,
                 messageId: row.id,
@@ -252,6 +305,7 @@ describe('actionable message response', () => {
             db,
             world,
             executor: buildExecutor(),
+            requestId,
             userId: actor.userId!,
             generalId: actor.id,
             messageId: row.id,
@@ -271,6 +325,7 @@ describe('actionable message response', () => {
             db,
             world,
             executor: buildExecutor(),
+            requestId,
             userId: actor.userId!,
             generalId: actor.id,
             messageId: row.id,

@@ -224,7 +224,7 @@ describe('selection-pool reservation command state', () => {
         const rows = buildRows();
         const world = buildWorld(rows);
         const db = buildDb(rows);
-        const reserve = (userId: string, acceptedGameTick: number) =>
+        const reserve = (userId: string, processingGameTick: number) =>
             reserveSelectionPool({
                 db: db as never,
                 world,
@@ -232,7 +232,7 @@ describe('selection-pool reservation command state', () => {
                 userId,
                 seedOwnerIdentity: userId,
                 now: acceptedAt,
-                acceptedGameTick,
+                processingGameTick,
             });
 
         const first = await reserve('first-user', 0);
@@ -267,7 +267,7 @@ describe('selection-pool reservation command state', () => {
         rows[1]!.reservedUntilTick = 0n;
         const world = buildWorld(rows);
         const db = buildDb(rows);
-        const reserve = (userId: string, acceptedGameTick: number) =>
+        const reserve = (userId: string, processingGameTick: number) =>
             reserveSelectionPool({
                 db: db as never,
                 world,
@@ -275,7 +275,7 @@ describe('selection-pool reservation command state', () => {
                 userId,
                 seedOwnerIdentity: userId,
                 now: acceptedAt,
-                acceptedGameTick,
+                processingGameTick,
             });
 
         const first = await reserve('first-user', 0);

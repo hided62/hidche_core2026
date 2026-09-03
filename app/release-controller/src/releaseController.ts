@@ -510,7 +510,7 @@ export class GatewayReleaseController {
 
     private async waitForReadiness(operationId: string): Promise<void> {
         await this.appendLog(operationId, 'readiness', 'Gateway API, 정적 frontend와 PM2 process readiness를 확인합니다.');
-        const deadline = Date.now() + this.config.readinessTimeoutMs;
+        const deadline = performance.now() + this.config.readinessTimeoutMs;
         const apiUrl = `http://127.0.0.1:${this.config.gatewayApiPort}/healthz`;
         const frontendUrl =
             this.config.frontendServeMode === 'static'
@@ -522,7 +522,7 @@ export class GatewayReleaseController {
         const expectedNames = buildGatewayProcessDefinitions(this.config.workspaceRoot, this.config).map(
             (definition) => definition.name
         );
-        while (Date.now() < deadline) {
+        while (performance.now() < deadline) {
             try {
                 const [api, frontend] = await Promise.all([
                     this.fetchImpl(apiUrl),

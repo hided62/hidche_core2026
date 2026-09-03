@@ -147,7 +147,7 @@ const lockWorld = async (db: GamePrisma.TransactionClient): Promise<number> => {
     return rows[0]!.id;
 };
 
-const lockParticipants = async (db: GamePrisma.TransactionClient, cutTick: bigint): Promise<void> => {
+const lockParticipants = async (db: GamePrisma.TransactionClient, _cutTick: bigint): Promise<void> => {
     await db.$queryRaw<IdRow[]>(GamePrisma.sql`SELECT id FROM general ORDER BY id FOR UPDATE`);
     await db.$queryRaw<IdRow[]>(GamePrisma.sql`
         SELECT id FROM auction
@@ -155,10 +155,18 @@ const lockParticipants = async (db: GamePrisma.TransactionClient, cutTick: bigin
         ORDER BY id FOR UPDATE
     `);
     await db.$queryRaw<IdRow[]>(GamePrisma.sql`
-        SELECT id FROM message
-        WHERE valid_until_tick IS NOT NULL AND valid_until_tick >= ${cutTick}
-        ORDER BY id FOR UPDATE
+        SELECT bid.id
+        FROM auction_bid AS bid
+        JOIN auction ON auction.id = bid.auction_id
+        WHERE auction.status IN ('OPEN'::auction_status, 'FINALIZING'::auction_status)
+        ORDER BY bid.id FOR UPDATE OF bid
     `);
+    await db.$queryRaw<IdRow[]>(GamePrisma.sql`
+        SELECT message_id AS id FROM message_action
+        WHERE status = 'PENDING'
+        ORDER BY message_id FOR UPDATE
+    `);
+    await db.$queryRaw<IdRow[]>(GamePrisma.sql`SELECT id FROM inheritance_ledger ORDER BY id FOR UPDATE`);
     await db.$queryRaw<IdRow[]>(GamePrisma.sql`
         SELECT id FROM vote_poll WHERE closed_at IS NULL ORDER BY id FOR UPDATE
     `);
@@ -175,7 +183,8 @@ const readParticipantSnapshots = async (
     worldStateId: number,
     cutTick: bigint
 ): Promise<ParticipantSnapshot[]> => {
-    const [world, generals, auctions, messages, votes, pool, npcTokens, commands] = await Promise.all([
+    const [world, generals, auctions, auctionBids, messages, inheritanceEffects, votes, pool, npcTokens, commands] =
+        await Promise.all([
         db.worldState.findUniqueOrThrow({
             where: { id: worldStateId },
             select: {
@@ -188,17 +197,32 @@ const readParticipantSnapshots = async (
         }),
         db.general.findMany({
             orderBy: { id: 'asc' },
-            select: { id: true, turnTick: true, recentWarTick: true },
+            select: { id: true, turnTick: true, recentWarTick: true, meta: true },
         }),
         db.auction.findMany({
             where: { status: { in: ['OPEN', 'FINALIZING'] } },
             orderBy: { id: 'asc' },
             select: { id: true, status: true, openTick: true, closeTick: true },
         }),
-        db.message.findMany({
-            where: { validUntilTick: { not: null, gte: cutTick } },
+        db.auctionBid.findMany({
+            where: { auction: { status: { in: ['OPEN', 'FINALIZING'] } } },
             orderBy: { id: 'asc' },
-            select: { id: true, timeTick: true, validUntilTick: true },
+            select: { id: true, occurredGameTick: true },
+        }),
+        db.messageAction.findMany({
+            where: { status: 'PENDING' },
+            orderBy: { messageId: 'asc' },
+            select: {
+                messageId: true,
+                createdGameTick: true,
+                expiresGameTick: true,
+                clockRevision: true,
+                deadlineGeneration: true,
+            },
+        }),
+        db.inheritanceLedger.findMany({
+            orderBy: { id: 'asc' },
+            select: { id: true, appliedClockRevision: true, appliedDeadlineGeneration: true },
         }),
         db.votePoll.findMany({
             where: { closedAt: null },
@@ -219,7 +243,7 @@ const readParticipantSnapshots = async (
             orderBy: { sequence: 'asc' },
             select: { sequence: true, acceptedGameTick: true, acceptedClockRevision: true },
         }),
-    ]);
+        ]);
     const snapshot = (key: string, policy: ParticipantSnapshot['policy'], rows: unknown[]): ParticipantSnapshot => ({
         key,
         policy,
@@ -247,6 +271,18 @@ const readParticipantSnapshots = async (
             generals.map(({ id, recentWarTick }) => ({ id, recentWarTick }))
         ),
         snapshot(
+            'selection-reselection-deadline',
+            'SHIFT',
+            generals.flatMap(({ id, meta: generalMeta }) => {
+                const raw =
+                    generalMeta && typeof generalMeta === 'object' && !Array.isArray(generalMeta)
+                        ? Reflect.get(generalMeta, 'next_change_tick')
+                        : null;
+                const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : Number.NaN;
+                return Number.isSafeInteger(value) && BigInt(value) >= cutTick ? [{ id, nextChangeTick: value }] : [];
+            })
+        ),
+        snapshot(
             'auction-open-occurrence',
             'KEEP',
             auctions.map(({ id, openTick }) => ({ id, openTick }))
@@ -256,21 +292,34 @@ const readParticipantSnapshots = async (
             'SHIFT',
             auctions.map(({ id, status, closeTick }) => ({ id, status, closeTick }))
         ),
+        snapshot('auction-bid-occurrence', 'KEEP', auctionBids),
         snapshot(
             'auction-finalizing-recovery',
             'REBUILD',
             auctions.map(({ id, status }) => ({ id, status }))
         ),
         snapshot(
-            'message-occurrence',
+            'message-action-occurrence',
             'KEEP',
-            messages.map(({ id, timeTick }) => ({ id, timeTick }))
+            messages.map(({ messageId, createdGameTick }) => ({ messageId, createdGameTick }))
         ),
         snapshot(
-            'message-expiry',
+            'message-action-expiry',
             'SHIFT',
-            messages.map(({ id, validUntilTick }) => ({ id, validUntilTick }))
+            messages
+                .filter(({ expiresGameTick }) => expiresGameTick !== null && expiresGameTick >= cutTick)
+                .map(({ messageId, expiresGameTick }) => ({ messageId, expiresGameTick }))
         ),
+        snapshot(
+            'message-action-clock-coordinate',
+            'REBUILD',
+            messages.map(({ messageId, clockRevision, deadlineGeneration }) => ({
+                messageId,
+                clockRevision,
+                deadlineGeneration,
+            }))
+        ),
+        snapshot('inheritance-effect-coordinate', 'KEEP', inheritanceEffects),
         snapshot(
             'vote-start-occurrence',
             'KEEP',
@@ -283,7 +332,7 @@ const readParticipantSnapshots = async (
         ),
         snapshot('select-pool-reservation', 'SHIFT', pool),
         snapshot('npc-selection-window', 'SHIFT', npcTokens),
-        snapshot('accepted-command-coordinate', 'KEEP', commands),
+        snapshot('daemon-command-coordinate', 'KEEP', commands),
         snapshot('movable-json-rule-anchors', 'SHIFT', [
             {
                 lastTurnTime: Reflect.get(meta, 'lastTurnTime'),
@@ -429,15 +478,20 @@ const assertShiftFits = (participants: readonly ParticipantSnapshot[], shiftTick
 const assertScheduleRanges = async (db: GamePrisma.TransactionClient, shiftTicks: number): Promise<void> => {
     const shift = BigInt(shiftTicks);
     const maximum = BigInt(MAX_SAFE_GAME_TICK) - shift;
-    const [general, auction, message, vote, pool, npcValid, npcMore] = await Promise.all([
+    const [general, reselection, auction, message, vote, pool, npcValid, npcMore] = await Promise.all([
         db.general.aggregate({ _max: { turnTick: true }, where: { turnTick: { not: null } } }),
+        db.$queryRaw<Array<{ maxTick: bigint | null }>>(GamePrisma.sql`
+            SELECT MAX((meta->>'next_change_tick')::bigint) AS "maxTick"
+            FROM general
+            WHERE meta->>'next_change_tick' ~ '^-?[0-9]+$'
+        `),
         db.auction.aggregate({
             _max: { closeTick: true },
             where: { status: { in: ['OPEN', 'FINALIZING'] }, closeTick: { not: null } },
         }),
-        db.message.aggregate({
-            _max: { validUntilTick: true },
-            where: { validUntilTick: { not: null, lt: BigInt(MAX_SAFE_GAME_TICK) } },
+        db.messageAction.aggregate({
+            _max: { expiresGameTick: true },
+            where: { status: 'PENDING', expiresGameTick: { not: null } },
         }),
         db.votePoll.aggregate({ _max: { endTick: true }, where: { closedAt: null, endTick: { not: null } } }),
         db.selectPoolEntry.aggregate({
@@ -452,8 +506,9 @@ const assertScheduleRanges = async (db: GamePrisma.TransactionClient, shiftTicks
     ]);
     const values: Array<[string, bigint | null]> = [
         ['general.turn_tick', general._max.turnTick],
+        ['general.meta.next_change_tick', reselection[0]?.maxTick ?? null],
         ['auction.close_tick', auction._max.closeTick],
-        ['message.valid_until_tick', message._max.validUntilTick],
+        ['message_action.expires_game_tick', message._max.expiresGameTick],
         ['vote_poll.end_tick', vote._max.endTick],
         ['select_pool.reserved_until_tick', pool._max.reservedUntilTick],
         ['select_npc_token.valid_until_tick', npcValid._max.validUntilTick],
@@ -494,6 +549,32 @@ const applyParticipantShift = async (
         `)
     );
     affected.set(
+        'selection-reselection-deadline',
+        await db.$executeRaw(GamePrisma.sql`
+            UPDATE general
+            SET meta = jsonb_set(
+                jsonb_set(
+                    jsonb_set(
+                        meta,
+                        '{next_change_tick}',
+                        to_jsonb((meta->>'next_change_tick')::bigint + ${shiftTicks}),
+                        true
+                    ),
+                    '{next_change}',
+                    to_jsonb(((meta->>'next_change')::timestamp
+                        + ${projectionDeltaMilliseconds} * INTERVAL '1 millisecond')::text),
+                    true
+                ),
+                '{nextChangeAt}',
+                to_jsonb(((meta->>'nextChangeAt')::timestamp
+                    + ${projectionDeltaMilliseconds} * INTERVAL '1 millisecond')::text),
+                true
+            )
+            WHERE meta->>'next_change_tick' ~ '^-?[0-9]+$'
+              AND (meta->>'next_change_tick')::bigint >= ${cutTick}
+        `)
+    );
+    affected.set(
         'auction-deadline',
         await db.$executeRaw(GamePrisma.sql`
             UPDATE auction
@@ -504,14 +585,37 @@ const applyParticipantShift = async (
         `)
     );
     affected.set(
-        'message-expiry',
+        'message-action-clock-coordinate',
+        (
+            await db.messageAction.updateMany({
+                where: { status: 'PENDING' },
+                data: {
+                    clockRevision: targetRevision,
+                    deadlineGeneration: targetGeneration,
+                },
+            })
+        ).count
+    );
+    affected.set(
+        'message-action-expiry',
         await db.$executeRaw(GamePrisma.sql`
-            UPDATE message
-            SET valid_until_tick = valid_until_tick + ${shiftTicks},
-                valid_until = valid_until + ${projectionDeltaMilliseconds} * INTERVAL '1 millisecond'
-            WHERE valid_until_tick IS NOT NULL
-              AND valid_until_tick >= ${cutTick}
-              AND valid_until_tick < ${BigInt(MAX_SAFE_GAME_TICK)}
+            WITH shifted AS (
+                UPDATE message_action
+                SET expires_game_tick = expires_game_tick + ${shiftTicks},
+                    clock_revision = ${targetRevision},
+                    deadline_generation = ${targetGeneration},
+                    updated_at_wall = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                WHERE status = 'PENDING'
+                  AND expires_game_tick IS NOT NULL
+                  AND expires_game_tick >= ${cutTick}
+                RETURNING message_id, expires_game_tick
+            )
+            UPDATE message AS envelope
+            SET valid_until_tick = shifted.expires_game_tick,
+                valid_until = envelope.valid_until
+                    + ${projectionDeltaMilliseconds} * INTERVAL '1 millisecond'
+            FROM shifted
+            WHERE envelope.id = shifted.message_id
         `)
     );
     affected.set(

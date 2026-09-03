@@ -710,7 +710,7 @@ describe('appRouter', () => {
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
-    it('queues selection-pool reservation with the authenticated actor and server logical time', async () => {
+    it('queues selection-pool reservation without pre-assigning an API game coordinate', async () => {
         const transport = new InMemoryTurnDaemonTransport();
         const requestId = 'select-pool-reserve-http';
         const commandRequestId = `select-pool:user-1:${requestId}:reserve`;
@@ -741,8 +741,6 @@ describe('appRouter', () => {
             requestId: commandRequestId,
             userId: 'user-1',
             seedOwnerIdentity: 'user-1',
-            acceptedGameAt,
-            acceptedGameTick: 0,
         });
     });
 

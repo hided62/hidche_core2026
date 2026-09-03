@@ -1260,7 +1260,7 @@ export const adminRouter = router({
                 if (!canReadProfile(adminAuth, initialOperation.profileName)) {
                     throw new TRPCError({ code: 'FORBIDDEN', message: 'Permission denied.' });
                 }
-                const deadline = Date.now() + input.timeoutMs;
+                const deadline = performance.now() + input.timeoutMs;
                 while (true) {
                     const [operation, entries] = await Promise.all([
                         ctx.profiles.getOperation(input.id),
@@ -1270,7 +1270,7 @@ export const adminRouter = router({
                         throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile operation not found.' });
                     }
                     const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status);
-                    if (entries.length || terminal || Date.now() >= deadline) {
+                    if (entries.length || terminal || performance.now() >= deadline) {
                         return {
                             operation,
                             entries,
@@ -1942,7 +1942,7 @@ export const adminRouter = router({
                 })
             )
             .query(async ({ ctx, input }) => {
-                const deadline = Date.now() + input.timeoutMs;
+                const deadline = performance.now() + input.timeoutMs;
                 while (true) {
                     const [operation, entries] = await Promise.all([
                         ctx.releases.getOperation(input.id),
@@ -1952,7 +1952,7 @@ export const adminRouter = router({
                         throw new TRPCError({ code: 'NOT_FOUND', message: 'Gateway release operation not found.' });
                     }
                     const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(operation.status);
-                    if (entries.length || terminal || Date.now() >= deadline) {
+                    if (entries.length || terminal || performance.now() >= deadline) {
                         return {
                             operation,
                             entries,
@@ -2519,8 +2519,8 @@ export const adminRouter = router({
                         reason: input.reason,
                         requestedBy: adminAuth.user.id,
                     });
-                    const deadline = Date.now() + 10 * 60_000;
-                    while (Date.now() < deadline) {
+                    const deadline = performance.now() + 10 * 60_000;
+                    while (performance.now() < deadline) {
                         await ctx.orchestrator.runOperationsNow();
                         const current = await ctx.profiles.getOperation(operation.id);
                         if (current?.status === 'SUCCEEDED') {

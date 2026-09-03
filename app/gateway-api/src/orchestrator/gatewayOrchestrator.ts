@@ -2995,7 +2995,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         profile: GatewayProfileRecord,
         assertLease?: () => Promise<void>
     ): Promise<boolean> {
-        const deadline = Date.now() + this.profileReadinessTimeoutMs;
+        const deadline = performance.now() + this.profileReadinessTimeoutMs;
         const definitions = buildProcessDefinitions(profile, this.processConfig);
         const expectedNames = Object.entries(definitions)
             .filter(([role]) => this.frontendServeMode === 'preview' || role !== 'frontend')
@@ -3008,7 +3008,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                       this.processConfig.frontendReadinessOrigin ?? 'http://caddy'
                   ).toString()
                 : `http://127.0.0.1:${profile.apiPort - 1}/${profile.profile}/`;
-        while (Date.now() < deadline) {
+        while (performance.now() < deadline) {
             await assertLease?.();
             try {
                 const [api, frontend, processes] = await Promise.all([

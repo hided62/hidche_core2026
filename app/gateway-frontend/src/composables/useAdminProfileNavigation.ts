@@ -14,13 +14,13 @@ let cachedAt = 0;
 let inFlight: Promise<AdminProfileNavigationItem[]> | undefined;
 
 export const loadAdminProfileNavigation = async (): Promise<AdminProfileNavigationItem[]> => {
-    if (cachedProfiles && Date.now() - cachedAt < 5_000) return cachedProfiles;
+    if (cachedProfiles && performance.now() - cachedAt < 5_000) return cachedProfiles;
     if (inFlight) return inFlight;
     inFlight = directTrpc.admin.profiles.listNavigation
         .query()
         .then((profiles) => {
             cachedProfiles = profiles as AdminProfileNavigationItem[];
-            cachedAt = Date.now();
+            cachedAt = performance.now();
             return cachedProfiles;
         })
         .finally(() => {

@@ -48,6 +48,16 @@ chain을 적용하고 두 번째 실행은 `No pending migrations to apply`여�
 - `select_npc_token`, `select_npc_token_valid_until_idx`
 - `general_user_id_key`
 
+## 시간 도메인 populated upgrade 검증
+
+메시지 envelope의 WALL_TIME, actionable message와 선택 cooldown·경매의
+GAME_TIME backfill, 유산 receipt table, 두 번째 deploy no-op을 전용 tmpfs
+PostgreSQL에서 검증합니다. 영속 Docker volume은 만들지 않습니다.
+
+```sh
+pnpm --filter @sammo-ts/infra verify:migration:time-domains
+```
+
 검증이 끝나면 이름을 직접 확인한 임시 database와 role만 제거합니다. 공유
 database나 Compose volume을 삭제하지 않습니다.
 

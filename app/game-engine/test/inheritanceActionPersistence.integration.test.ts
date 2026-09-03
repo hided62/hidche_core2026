@@ -165,6 +165,7 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         db = connector.prisma;
         disconnect = () => connector.disconnect();
         await dropFailureConstraints();
+        await db.inheritanceLedger.deleteMany({ where: { requestId: { startsWith: requestPrefix } } });
         await db.inputEvent.deleteMany({ where: { requestId: { startsWith: requestPrefix } } });
         await db.message.deleteMany({ where: { mailbox: { in: [actorGeneralId, targetGeneralId] } } });
         await db.inheritanceLog.deleteMany({ where: { userId: { in: [actorUserId, targetUserId] } } });
@@ -198,6 +199,7 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         await hooks?.close();
         if (db) {
             await dropFailureConstraints();
+            await db.inheritanceLedger.deleteMany({ where: { requestId: { startsWith: requestPrefix } } });
             await db.inputEvent.deleteMany({ where: { requestId: { startsWith: requestPrefix } } });
             await db.message.deleteMany({ where: { mailbox: { in: [actorGeneralId, targetGeneralId] } } });
             await db.inheritanceLog.deleteMany({ where: { userId: { in: [actorUserId, targetUserId] } } });
@@ -284,7 +286,13 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
                 },
             });
         };
-        const assertStored = async (point: number, spent: number, logCount: number, messageCount: number) => {
+        const assertStored = async (
+            point: number,
+            spent: number,
+            logCount: number,
+            messageCount: number,
+            ledgerCount: number
+        ) => {
             await expect(
                 db.inheritancePoint.findUniqueOrThrow({
                     where: { userId_key: { userId: actorUserId, key: 'previous' } },
@@ -299,6 +307,9 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
             await expect(
                 db.message.count({ where: { mailbox: { in: [actorGeneralId, targetGeneralId] } } })
             ).resolves.toBe(messageCount);
+            await expect(
+                db.inheritanceLedger.count({ where: { requestId: { startsWith: requestPrefix } } })
+            ).resolves.toBe(ledgerCount);
         };
 
         const pointCommand = buildCommand('point', {
@@ -315,7 +326,7 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         await expect(execute(pointCommand)).rejects.toThrow(`violates check constraint "${pointConstraint}"`);
         expect(world.getGeneralById(actorGeneralId)?.meta).toMatchObject({ inherit_spent_dyn: 17 });
         expect(world.getGeneralById(actorGeneralId)?.meta).not.toHaveProperty('inheritBuff');
-        await assertStored(10_000, 17, 0, 0);
+        await assertStored(10_000, 17, 0, 0, 0);
         await expect(
             db.inputEvent.findUniqueOrThrow({ where: { requestId: pointCommand.requestId! } })
         ).resolves.toMatchObject({
@@ -324,7 +335,7 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         });
         await db.$executeRawUnsafe(`ALTER TABLE inheritance_point DROP CONSTRAINT ${pointConstraint}`);
         await expect(execute(pointCommand)).resolves.toMatchObject({ ok: true, remainPoint: 9_800 });
-        await assertStored(9_800, 217, 1, 0);
+        await assertStored(9_800, 217, 1, 0, 1);
 
         const rankCommand = buildCommand('rank', { action: 'checkOwner', targetGeneralId });
         await createInputEvent(rankCommand);
@@ -335,14 +346,14 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         `);
         await expect(execute(rankCommand)).rejects.toThrow(`violates check constraint "${rankConstraint}"`);
         expect(world.peekDirtyState().messages).toEqual([]);
-        await assertStored(9_800, 217, 1, 0);
+        await assertStored(9_800, 217, 1, 0, 1);
         await db.$executeRawUnsafe(`ALTER TABLE rank_data DROP CONSTRAINT ${rankConstraint}`);
         await expect(execute(rankCommand)).resolves.toMatchObject({
             ok: true,
             remainPoint: 8_800,
             ownerName: '레거시 소유자',
         });
-        await assertStored(8_800, 1_217, 2, 2);
+        await assertStored(8_800, 1_217, 2, 2, 2);
 
         const currentLog = await db.inheritanceLog.findFirstOrThrow({
             where: { userId: actorUserId },
@@ -358,10 +369,10 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         `);
         await expect(execute(logCommand)).rejects.toThrow(`violates check constraint "${logConstraint}"`);
         expect(world.getGeneralById(actorGeneralId)?.meta).not.toHaveProperty('inheritRandomUnique');
-        await assertStored(8_800, 1_217, 2, 2);
+        await assertStored(8_800, 1_217, 2, 2, 2);
         await db.$executeRawUnsafe(`ALTER TABLE inheritance_log DROP CONSTRAINT ${logConstraint}`);
         await expect(execute(logCommand)).resolves.toMatchObject({ ok: true, remainPoint: 5_800 });
-        await assertStored(5_800, 4_217, 3, 2);
+        await assertStored(5_800, 4_217, 3, 2, 3);
 
         const freeStatCommand = buildCommand('free-stat', {
             action: 'resetStat',
@@ -372,7 +383,21 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         });
         await createInputEvent(freeStatCommand);
         await expect(execute(freeStatCommand)).resolves.toMatchObject({ ok: true, remainPoint: 5_800 });
-        await assertStored(5_800, 4_217, 5, 2);
+        await assertStored(5_800, 4_217, 5, 2, 4);
+
+        const ledgers = await db.inheritanceLedger.findMany({
+            where: { requestId: { startsWith: requestPrefix } },
+            orderBy: { id: 'asc' },
+        });
+        expect(ledgers.map(({ action, cost, status }) => ({ action, cost, status }))).toEqual([
+            { action: 'buyHiddenBuff', cost: 200, status: 'APPLIED' },
+            { action: 'checkOwner', cost: 1_000, status: 'APPLIED' },
+            { action: 'buyRandomUnique', cost: 3_000, status: 'APPLIED' },
+            { action: 'resetStat', cost: 0, status: 'APPLIED' },
+        ]);
+        expect(ledgers.every((row) => row.consumedAtWall instanceof Date && row.createdAtWall instanceof Date)).toBe(
+            true
+        );
 
         const messages = await db.message.findMany({
             where: { mailbox: { in: [actorGeneralId, targetGeneralId] } },

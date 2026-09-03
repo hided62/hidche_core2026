@@ -2,7 +2,7 @@ import { parseReadModelOutboxPayload, type ReadModelOutboxPayloadV1 } from '@sam
 
 import { GamePrisma, type GamePrismaClient } from './gamePrisma.js';
 
-export interface ReadModelOutboxDatabase extends Pick<GamePrismaClient, '$queryRaw'> {
+export interface ReadModelOutboxDatabase extends Pick<GamePrismaClient, '$queryRaw' | '$executeRaw'> {
     readModelOutbox: GamePrisma.ReadModelOutboxDelegate;
 }
 
@@ -58,15 +58,16 @@ export const claimReadModelOutboxBatch = async (
     }
     const limit = normalizeLimit(options.limit);
     const leaseMs = normalizeDuration(options.leaseMs, 30_000);
-    const now = options.now ?? new Date();
-    const leaseExpiredBefore = new Date(now.getTime() - leaseMs);
+    const nowSql = options.now
+        ? GamePrisma.sql`${options.now}`
+        : GamePrisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
     const rows = await db.$queryRaw<ClaimedRow[]>(GamePrisma.sql`
         WITH candidates AS (
             SELECT "id"
             FROM "read_model_outbox"
             WHERE "delivered_at" IS NULL
-              AND "available_at" <= ${now}
-              AND ("locked_at" IS NULL OR "locked_at" < ${leaseExpiredBefore})
+              AND "available_at" <= ${nowSql}
+              AND ("locked_at" IS NULL OR "locked_at" < ${nowSql} - ${leaseMs} * INTERVAL '1 millisecond')
             ORDER BY "id"
             LIMIT ${limit}
             FOR UPDATE SKIP LOCKED
@@ -74,7 +75,7 @@ export const claimReadModelOutboxBatch = async (
         UPDATE "read_model_outbox" AS outbox
         SET
             "attempts" = outbox."attempts" + 1,
-            "locked_at" = ${now},
+            "locked_at" = ${nowSql},
             "lock_owner" = ${options.owner},
             "last_error" = NULL
         FROM candidates
@@ -89,32 +90,43 @@ export const markReadModelOutboxDelivered = async (
     db: ReadModelOutboxDatabase,
     input: { id: bigint; owner: string; deliveredAt?: Date }
 ): Promise<boolean> => {
-    const result = await db.readModelOutbox.updateMany({
-        where: { id: input.id, lockOwner: input.owner, deliveredAt: null },
-        data: {
-            deliveredAt: input.deliveredAt ?? new Date(),
-            lockedAt: null,
-            lockOwner: null,
-            lastError: null,
-        },
-    });
-    return result.count === 1;
+    const deliveredAtSql = input.deliveredAt
+        ? GamePrisma.sql`${input.deliveredAt}`
+        : GamePrisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
+    return (
+        (await db.$executeRaw(GamePrisma.sql`
+            UPDATE "read_model_outbox"
+            SET "delivered_at" = ${deliveredAtSql},
+                "locked_at" = NULL,
+                "lock_owner" = NULL,
+                "last_error" = NULL
+            WHERE "id" = ${input.id}
+              AND "lock_owner" = ${input.owner}
+              AND "delivered_at" IS NULL
+        `)) === 1
+    );
 };
 
 export const releaseReadModelOutbox = async (
     db: ReadModelOutboxDatabase,
-    input: { id: bigint; owner: string; error: unknown; availableAt: Date }
+    input: { id: bigint; owner: string; error: unknown; availableAt?: Date; availableAfterMs?: number }
 ): Promise<boolean> => {
-    const result = await db.readModelOutbox.updateMany({
-        where: { id: input.id, lockOwner: input.owner, deliveredAt: null },
-        data: {
-            availableAt: input.availableAt,
-            lockedAt: null,
-            lockOwner: null,
-            lastError: formatDispatchError(input.error),
-        },
-    });
-    return result.count === 1;
+    const availableAtSql = input.availableAt
+        ? GamePrisma.sql`${input.availableAt}`
+        : GamePrisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            + ${normalizeDuration(input.availableAfterMs, 1_000)} * INTERVAL '1 millisecond'`;
+    return (
+        (await db.$executeRaw(GamePrisma.sql`
+            UPDATE "read_model_outbox"
+            SET "available_at" = ${availableAtSql},
+                "locked_at" = NULL,
+                "lock_owner" = NULL,
+                "last_error" = ${formatDispatchError(input.error)}
+            WHERE "id" = ${input.id}
+              AND "lock_owner" = ${input.owner}
+              AND "delivered_at" IS NULL
+        `)) === 1
+    );
 };
 
 export const dispatchReadModelOutboxBatch = async (
@@ -122,14 +134,14 @@ export const dispatchReadModelOutboxBatch = async (
     publish: (payload: ReadModelOutboxPayloadV1, outboxId: bigint) => Promise<void>,
     options: ReadModelOutboxDispatchOptions
 ): Promise<ReadModelOutboxDispatchResult> => {
-    const now = options.now ?? (() => new Date());
+    const testNow = options.now;
     const retryBaseMs = normalizeDuration(options.retryBaseMs, 1_000);
     const retryMaxMs = Math.max(retryBaseMs, normalizeDuration(options.retryMaxMs, 60_000));
     const claimed = await claimReadModelOutboxBatch(db, {
         owner: options.owner,
         limit: options.limit,
         leaseMs: options.leaseMs,
-        now: now(),
+        ...(testNow ? { now: testNow() } : {}),
     });
     let delivered = 0;
     let failed = 0;
@@ -141,7 +153,13 @@ export const dispatchReadModelOutboxBatch = async (
                 throw new Error(`Read-model outbox ${item.id.toString()} has an invalid payload.`);
             }
             await publish(payload, item.id);
-            if (!(await markReadModelOutboxDelivered(db, { id: item.id, owner: options.owner, deliveredAt: now() }))) {
+            if (
+                !(await markReadModelOutboxDelivered(db, {
+                    id: item.id,
+                    owner: options.owner,
+                    ...(testNow ? { deliveredAt: testNow() } : {}),
+                }))
+            ) {
                 throw new Error(`Read-model outbox ${item.id.toString()} lost its delivery lease.`);
             }
             delivered += 1;
@@ -151,7 +169,9 @@ export const dispatchReadModelOutboxBatch = async (
                 id: item.id,
                 owner: options.owner,
                 error,
-                availableAt: new Date(now().getTime() + retryDelayMs(item.attempts, retryBaseMs, retryMaxMs)),
+                ...(testNow
+                    ? { availableAt: new Date(testNow().getTime() + retryDelayMs(item.attempts, retryBaseMs, retryMaxMs)) }
+                    : { availableAfterMs: retryDelayMs(item.attempts, retryBaseMs, retryMaxMs) }),
             });
         }
     }

@@ -27,15 +27,16 @@ const payload = (
 
 const createFixture = (rows: readonly object[]) => {
     const queryRaw = vi.fn().mockResolvedValueOnce(rows).mockResolvedValue([]);
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const executeRaw = vi.fn().mockResolvedValue(1);
     const incr = vi.fn().mockResolvedValue(41);
     const publish = vi.fn().mockResolvedValue(1);
     const db = {
         $queryRaw: queryRaw,
-        readModelOutbox: { updateMany },
+        $executeRaw: executeRaw,
+        readModelOutbox: {},
     } as unknown as ReadModelOutboxDatabase;
     const redis = { incr, publish } as unknown as RedisConnector['client'];
-    return { db, redis, queryRaw, updateMany, incr, publish };
+    return { db, redis, queryRaw, executeRaw, incr, publish };
 };
 
 describe('ReadModelOutboxWorker', () => {
@@ -47,7 +48,7 @@ describe('ReadModelOutboxWorker', () => {
         });
 
         worker.start();
-        await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(fixture.executeRaw).toHaveBeenCalledTimes(1));
         await worker.stop();
 
         expect(JSON.parse(String(fixture.publish.mock.calls[0]?.[1]))).toMatchObject({
@@ -64,7 +65,7 @@ describe('ReadModelOutboxWorker', () => {
         });
 
         worker.start();
-        await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(fixture.executeRaw).toHaveBeenCalledTimes(1));
         await worker.stop();
 
         expect(fixture.incr).toHaveBeenCalledWith('sammo:che:default:read-model:revision');
@@ -74,9 +75,7 @@ describe('ReadModelOutboxWorker', () => {
             revision: 41,
             changes: { frontStatusActorIds: [7] },
         });
-        expect(fixture.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { id: 11n, lockOwner: 'worker-test', deliveredAt: null } })
-        );
+        expect((fixture.executeRaw.mock.calls[0]?.[0] as { sql: string }).sql).toContain('"delivered_at"');
     });
 
     it.each(['access.general', 'dashboard.global', 'tournament', 'betting'] as const)(
@@ -89,7 +88,7 @@ describe('ReadModelOutboxWorker', () => {
             });
 
             worker.start();
-            await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+            await vi.waitFor(() => expect(fixture.executeRaw).toHaveBeenCalledTimes(1));
             await worker.stop();
 
             expect(fixture.incr).not.toHaveBeenCalled();
@@ -105,7 +104,7 @@ describe('ReadModelOutboxWorker', () => {
         });
 
         worker.start();
-        await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(fixture.executeRaw).toHaveBeenCalledTimes(1));
         await worker.stop();
 
         expect(fixture.incr).not.toHaveBeenCalled();
@@ -150,22 +149,15 @@ describe('ReadModelOutboxWorker', () => {
         });
 
         worker.start();
-        await vi.waitFor(() => expect(fixture.updateMany).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(fixture.executeRaw).toHaveBeenCalledTimes(1));
         await worker.stop();
 
         expect(onError).toHaveBeenCalledWith(
             expect.objectContaining({ message: '1 read-model outbox delivery attempt(s) failed.' })
         );
-        expect(fixture.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { id: 13n, lockOwner: 'worker-test', deliveredAt: null },
-                data: expect.objectContaining({
-                    lockedAt: null,
-                    lockOwner: null,
-                    lastError: expect.stringContaining('redis unavailable'),
-                }),
-            })
-        );
+        const releaseQuery = fixture.executeRaw.mock.calls[0]?.[0] as { sql: string; values: unknown[] };
+        expect(releaseQuery.sql).toContain('"available_at"');
+        expect(releaseQuery.values).toContainEqual(expect.stringContaining('redis unavailable'));
     });
 
     it('prunes only a bounded retention batch on the lower-frequency cadence', async () => {

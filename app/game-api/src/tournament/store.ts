@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { parseTournamentSourceRevision, writeTournamentProjection, type TournamentClockFence } from '@sammo-ts/common';
 import { z } from 'zod';
 
@@ -136,7 +137,7 @@ const parseProjection = <T>(raw: string | null, key: string, schema: z.ZodType<T
 };
 
 export interface TournamentClockContext {
-    phase: 'RUNNING';
+    phase: 'RUNNING' | 'MANUAL' | 'SUSPENDED';
     revision: number;
     deadlineGeneration: number;
     dateToTick(date: Date): number | null;
@@ -198,8 +199,8 @@ export class TournamentStore {
 
         const lockKey = `${this.keys.stateKey}:mutation-lock`;
         const token = randomUUID();
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
+        const deadline = performance.now() + timeoutMs;
+        while (performance.now() < deadline) {
             const acquired = await this.redis.set(lockKey, token, { NX: true, PX: 30_000 });
             if (acquired) {
                 try {

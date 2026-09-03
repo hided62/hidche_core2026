@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { performance } from 'node:perf_hooks';
+import { GamePrisma, readInputEventClockCoordinate, type GamePrismaClient } from '@sammo-ts/infra';
 
 import { normalizeTurnDaemonCommand } from '../turn/commandRegistry.js';
 import type {
@@ -10,8 +11,9 @@ import type {
     TurnDaemonStatus,
 } from './types.js';
 
-const asJson = (value: unknown): GamePrisma.InputJsonValue => value as GamePrisma.InputJsonValue;
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const serializeResult = (value: unknown): string =>
+    JSON.stringify(value, (_key, item: unknown) => (typeof item === 'bigint' ? item.toString() : item)) ?? 'null';
 
 export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, TurnDaemonCommandResponder {
     private readonly localQueue: TurnDaemonCommand[] = [];
@@ -35,8 +37,9 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
         return local.concat(remote);
     }
 
-    async waitUntil(deadlineMs: number | null): Promise<TurnDaemonCommand | null> {
-        while (deadlineMs === null || Date.now() < deadlineMs) {
+    async waitFor(timeoutMs: number | null): Promise<TurnDaemonCommand | null> {
+        const deadline = timeoutMs === null ? null : performance.now() + Math.max(0, timeoutMs);
+        while (deadline === null || performance.now() < deadline) {
             const local = this.localQueue.shift();
             if (local) {
                 return local;
@@ -45,7 +48,7 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
             if (remote[0]) {
                 return remote[0];
             }
-            const remaining = deadlineMs === null ? 100 : Math.max(1, Math.min(100, deadlineMs - Date.now()));
+            const remaining = deadline === null ? 100 : Math.max(1, Math.min(100, deadline - performance.now()));
             await delay(remaining);
         }
         return null;
@@ -84,35 +87,37 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                 return;
             }
             const terminal = event.attempts >= this.maxAttempts;
-            await transaction.inputEvent.updateMany({
-                where: {
-                    requestId,
-                    target: 'ENGINE',
-                    status: 'PROCESSING',
-                    lockedBy: this.workerId,
-                    attempts: event.attempts,
-                },
-                data: {
-                    status: terminal ? 'FAILED' : 'PENDING',
-                    processingAt: null,
-                    lockedBy: null,
-                    leaseUntil: null,
-                    completedAt: terminal ? new Date() : null,
-                    result: GamePrisma.DbNull,
-                    error: message,
-                },
-            });
+            await transaction.$executeRaw(GamePrisma.sql`
+                UPDATE input_event
+                SET status = ${terminal ? 'FAILED' : 'PENDING'}::"InputEventStatus",
+                    processing_at = NULL,
+                    locked_by = NULL,
+                    lease_until = NULL,
+                    completed_at = CASE
+                        WHEN ${terminal} THEN CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                        ELSE NULL
+                    END,
+                    result = NULL,
+                    error = ${message}
+                WHERE request_id = ${requestId}
+                  AND target = 'ENGINE'::"InputEventTarget"
+                  AND status = 'PROCESSING'::"InputEventStatus"
+                  AND locked_by = ${this.workerId}
+                  AND attempts = ${event.attempts}
+            `);
         });
     }
 
     private async claimPending(limit = 100): Promise<TurnDaemonCommand[]> {
         await this.recoverExpiredLeases();
         return this.db.$transaction(async (transaction) => {
+            const claimCoordinate = await readInputEventClockCoordinate(transaction);
             const world = await transaction.worldState.findFirst({
                 orderBy: { id: 'asc' },
                 select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true },
             });
             const gameplayAllowed = !world || world.clockPhase === 'RUNNING' || world.clockPhase === 'MANUAL';
+            const suspendedTournamentBetCommand = world?.clockPhase === 'SUSPENDED';
             const currentRevision = world?.clockRevision ?? null;
             const rows = await transaction.$queryRaw<
                 Array<{
@@ -142,14 +147,25 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                       ${gameplayAllowed}
                       OR "event_type" = 'getStatus'
                       OR (
+                          ${suspendedTournamentBetCommand}
+                          AND "event_type" IN ('adjustGeneralResources', 'adjustGeneralMeta')
+                          AND "payload" ->> 'reason' IN ('tournamentBet', 'tournamentBetRollback')
+                      )
+                      OR (
                           ${world?.clockPhase === 'SUSPENDED'}
                           AND "event_type" = 'messageRespond'
                           AND "payload" ->> 'messageId' ~ '^[1-9][0-9]*$'
                           AND EXISTS (
                               SELECT 1
                               FROM "message" AS pending_message
+                              JOIN "message_action" AS pending_action
+                                ON pending_action."message_id" = pending_message."id"
                               WHERE pending_message."id" = ("input_event"."payload" ->> 'messageId')::integer
                                 AND pending_message."message" #>> '{option,action}' = 'raiseInvader'
+                                AND pending_action."action_type" = 'raiseInvader'
+                                AND pending_action."status" = 'PENDING'
+                                AND pending_action."clock_revision" = ${currentRevision}
+                                AND pending_action."deadline_generation" = ${world?.deadlineGeneration ?? null}
                           )
                           AND EXISTS (
                               SELECT 1
@@ -175,9 +191,9 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                   })
                 : [];
             const convertTick = (row: (typeof rows)[number]): bigint | null | undefined => {
-                if (row.eventType === 'getStatus') return row.acceptedGameTick;
+                if (row.eventType === 'getStatus') return row.acceptedGameTick ?? claimCoordinate.gameTick;
                 if (row.acceptedGameTick === null || row.acceptedClockRevision === null || currentRevision === null) {
-                    return row.acceptedGameTick ?? world?.clockTick ?? null;
+                    return claimCoordinate.gameTick;
                 }
                 if (row.acceptedClockRevision > currentRevision) return undefined;
                 let revision = row.acceptedClockRevision;
@@ -197,19 +213,25 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                         entry.processingGameTick !== undefined
                 );
             for (const { row, processingGameTick } of processableRows) {
-                await transaction.inputEvent.update({
-                    where: { sequence: row.sequence },
-                    data: {
-                        status: 'PROCESSING',
-                        processingAt: new Date(),
-                        processingGameTick,
-                        processingClockRevision: currentRevision,
-                        processingDeadlineGeneration: world?.deadlineGeneration ?? null,
-                        lockedBy: this.workerId,
-                        leaseUntil: new Date(Date.now() + this.leaseDurationMs),
-                        attempts: { increment: 1 },
-                    },
-                });
+                await transaction.$executeRaw(GamePrisma.sql`
+                    UPDATE input_event
+                    SET status = 'PROCESSING'::"InputEventStatus",
+                        processing_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                        accepted_game_tick = COALESCE(accepted_game_tick, ${processingGameTick}),
+                        accepted_clock_revision = COALESCE(accepted_clock_revision, ${currentRevision}),
+                        accepted_deadline_generation = COALESCE(
+                            accepted_deadline_generation,
+                            ${world?.deadlineGeneration ?? null}
+                        ),
+                        processing_game_tick = ${processingGameTick},
+                        processing_clock_revision = ${currentRevision},
+                        processing_deadline_generation = ${world?.deadlineGeneration ?? null},
+                        locked_by = ${this.workerId},
+                        lease_until = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                            + ${this.leaseDurationMs} * INTERVAL '1 millisecond',
+                        attempts = attempts + 1
+                    WHERE sequence = ${row.sequence}
+                `);
             }
 
             const commands: TurnDaemonCommand[] = [];
@@ -220,39 +242,34 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                     command: row.payload as TurnDaemonCommand,
                 });
                 if (!command) {
-                    await transaction.inputEvent.update({
-                        where: { sequence: row.sequence },
-                        data: {
-                            status: 'FAILED',
-                            error: `Invalid command payload for ${row.eventType}`,
-                            completedAt: new Date(),
-                            lockedBy: null,
-                            leaseUntil: null,
-                        },
-                    });
+                    await transaction.$executeRaw(GamePrisma.sql`
+                        UPDATE input_event
+                        SET status = 'FAILED'::"InputEventStatus",
+                            error = ${`Invalid command payload for ${row.eventType}`},
+                            completed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                            locked_by = NULL,
+                            lease_until = NULL
+                        WHERE sequence = ${row.sequence}
+                    `);
                     continue;
                 }
-                if (
-                    processingGameTick !== null &&
-                    row.acceptedGameTick !== null &&
-                    processingGameTick !== row.acceptedGameTick
-                ) {
+                if (processingGameTick !== null) {
                     const value = Number(processingGameTick);
                     if (!Number.isSafeInteger(value)) {
-                        await transaction.inputEvent.update({
-                            where: { sequence: row.sequence },
-                            data: {
-                                status: 'FAILED',
-                                error: 'Converted processing game tick is outside the safe integer range.',
-                                completedAt: new Date(),
-                                lockedBy: null,
-                                leaseUntil: null,
-                            },
-                        });
+                        await transaction.$executeRaw(GamePrisma.sql`
+                            UPDATE input_event
+                            SET status = 'FAILED'::"InputEventStatus",
+                                error = 'Converted processing game tick is outside the safe integer range.',
+                                completed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                                locked_by = NULL,
+                                lease_until = NULL
+                            WHERE sequence = ${row.sequence}
+                        `);
                         continue;
                     }
                     Reflect.set(command, 'processingGameTick', value);
                 }
+                Reflect.set(command, 'requestedAtWall', row.createdAt);
                 commands.push(command);
             }
             return commands;
@@ -260,23 +277,20 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
     }
 
     private async complete(requestId: string, result: unknown): Promise<void> {
-        const completed = await this.db.inputEvent.updateMany({
-            where: {
-                requestId,
-                target: 'ENGINE',
-                status: 'PROCESSING',
-                lockedBy: this.workerId,
-            },
-            data: {
-                status: 'SUCCEEDED',
-                result: asJson(result),
-                completedAt: new Date(),
-                error: null,
-                lockedBy: null,
-                leaseUntil: null,
-            },
-        });
-        if (completed.count > 0) {
+        const completed = await this.db.$executeRaw(GamePrisma.sql`
+            UPDATE input_event
+            SET status = 'SUCCEEDED'::"InputEventStatus",
+                result = CAST(${serializeResult(result)} AS jsonb),
+                completed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                error = NULL,
+                locked_by = NULL,
+                lease_until = NULL
+            WHERE request_id = ${requestId}
+              AND target = 'ENGINE'::"InputEventTarget"
+              AND status = 'PROCESSING'::"InputEventStatus"
+              AND locked_by = ${this.workerId}
+        `);
+        if (completed > 0) {
             return;
         }
         // Database hooks commit mutation results atomically with game state and
@@ -297,19 +311,15 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
     }
 
     private async recoverExpiredLeases(): Promise<void> {
-        const now = new Date();
-        await this.db.inputEvent.updateMany({
-            where: {
-                target: 'ENGINE',
-                status: 'PROCESSING',
-                leaseUntil: { lt: now },
-            },
-            data: {
-                status: 'PENDING',
-                processingAt: null,
-                lockedBy: null,
-                leaseUntil: null,
-            },
-        });
+        await this.db.$executeRaw(GamePrisma.sql`
+            UPDATE input_event
+            SET status = 'PENDING'::"InputEventStatus",
+                processing_at = NULL,
+                locked_by = NULL,
+                lease_until = NULL
+            WHERE target = 'ENGINE'::"InputEventTarget"
+              AND status = 'PROCESSING'::"InputEventStatus"
+              AND lease_until < CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+        `);
     }
 }

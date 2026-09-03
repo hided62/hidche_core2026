@@ -3,13 +3,21 @@ import { z } from 'zod';
 
 import type { GameApiContext } from '../src/context.js';
 import { createApiInputPayloadIdentity } from '../src/inputEventBoundary.js';
-import { procedure, router } from '../src/trpc.js';
+import { procedure, router, wallProcedure } from '../src/trpc.js';
 
 const testRouter = router({
     mutate: procedure.input(z.object({ fail: z.boolean().optional().default(false) })).mutation(({ ctx, input }) => {
         (ctx as GameApiContext & { testOrder: string[] }).testOrder.push('handler');
         ctx.changeJournal?.mark('front.general', 7);
         if (input.fail) throw new Error('injected rollback');
+        return { ok: true };
+    }),
+});
+
+const wallTestRouter = router({
+    mutate: wallProcedure.input(z.object({})).mutation(({ ctx }) => {
+        (ctx as GameApiContext & { testOrder: string[] }).testOrder.push('handler');
+        ctx.changeJournal?.mark('front.general', 7);
         return { ok: true };
     }),
 });
@@ -40,7 +48,18 @@ const createContext = (payload: unknown = {}) => {
     const transaction = {
         $queryRaw: queryRaw,
         $executeRaw: vi.fn(async (query: { sql?: string }) => {
-            order.push(query.sql?.includes('pg_advisory_xact_lock') ? 'clock-fence' : 'accepted');
+            const sql = query.sql ?? '';
+            order.push(
+                sql.includes('pg_advisory_xact_lock')
+                    ? 'clock-fence'
+                    : sql.includes("status = 'PROCESSING'")
+                      ? 'processing'
+                      : sql.includes("status = 'SUCCEEDED'")
+                        ? 'succeeded'
+                        : sql.includes("status = 'FAILED'")
+                          ? 'failed'
+                          : 'accepted'
+            );
             return 1;
         }),
         $executeRawUnsafe: vi.fn(async (statement: string) => {
@@ -130,5 +149,25 @@ describe('API input-event change journal boundary', () => {
         expect(fixture.queryRaw).toHaveBeenCalledTimes(1);
         expect(fixture.redisPublish).not.toHaveBeenCalled();
         expect(fixture.wake).not.toHaveBeenCalled();
+    });
+
+    it('keeps a WALL-only mutation durable without acquiring the GAME clock fence', async () => {
+        const fixture = createContext();
+
+        await expect(wallTestRouter.createCaller(fixture.context).mutate({})).resolves.toEqual({ ok: true });
+
+        expect(fixture.order).toEqual([
+            'transaction-begin',
+            'accepted',
+            'locked',
+            'processing',
+            'savepoint',
+            'handler',
+            'journal',
+            'succeeded',
+            'savepoint-release',
+            'commit',
+            'wake',
+        ]);
     });
 });

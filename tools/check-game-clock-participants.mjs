@@ -26,6 +26,8 @@ for (const modelMatch of schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
             databaseField.endsWith('_tick') ||
             databaseField === 'clock_revision' ||
             databaseField === 'deadline_generation' ||
+            databaseField.endsWith('_clock_revision') ||
+            databaseField.endsWith('_deadline_generation') ||
             (table.startsWith('clock_') && databaseField.endsWith('_revision'))
         ) {
             discovered.push(`${table}.${databaseField}`);
@@ -57,17 +59,21 @@ for (const requiredKey of [
     'world-clock',
     'turn-cursor',
     'general-next-turn',
+    'selection-reselection-deadline',
     'general-recent-war-occurrence',
     'auction-open-occurrence',
+    'auction-bid-occurrence',
     'auction-deadline',
     'auction-finalizing-recovery',
-    'message-occurrence',
-    'message-expiry',
+    'message-action-occurrence',
+    'message-action-expiry',
+    'message-action-clock-coordinate',
+    'inheritance-effect-coordinate',
     'vote-start-occurrence',
     'vote-end-deadline',
     'select-pool-reservation',
     'npc-selection-window',
-    'accepted-command-coordinate',
+    'daemon-command-coordinate',
     'tournament-deadlines',
     'movable-json-rule-anchors',
     'unification-wait',

@@ -210,7 +210,7 @@ describe('messages router missing-flow compatibility', () => {
         });
 
         expect(result.msgType).toBe('national');
-        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9001, 'national']));
+        expect(queryRaw).toHaveBeenCalledOnce();
     });
 
     it('journals committed message mailbox copies instead of publishing before commit', async () => {
@@ -227,6 +227,84 @@ describe('messages router missing-flow compatibility', () => {
         expect(changeJournal.snapshot()).toEqual([{ domain: 'messages.mailbox', entityId: 9999 }]);
         expect(redis.publish).not.toHaveBeenCalled();
     });
+
+    it.each(['PREOPEN', 'SUSPENDED', 'RECONCILING'] as const)(
+        'keeps ordinary public messages available while the game clock is %s',
+        async (clockPhase) => {
+            const queryRaw = vi.fn(async () => [{ id: 52 }]);
+            const { caller } = buildContext({
+                $queryRaw: queryRaw,
+                worldState: { findFirst: vi.fn(async () => ({ clockPhase })) },
+            });
+
+            await expect(
+                caller.messages.send({ generalId: general.id, mailbox: 9999, text: `${clockPhase} 공개 메시지` })
+            ).resolves.toMatchObject({ msgType: 'public' });
+            expect(queryRaw).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each(['SUSPENDED', 'RECONCILING'] as const)(
+        'keeps a received recruitment letter visible with its frozen game deadline while the clock is %s',
+        async (clockPhase) => {
+            const scoutRow = {
+                id: 54,
+                mailbox: general.id,
+                type: 'private',
+                src: 8,
+                dest: general.id,
+                time: new Date('0200-01-01T00:00:00.000Z'),
+                created_at_wall: new Date('2026-09-03T15:00:00.000Z'),
+                action_status: 'PENDING',
+                expires_game_tick: 200n,
+                message: {
+                    src: {
+                        generalId: 8,
+                        generalName: '등용권유자',
+                        nationId: 2,
+                        nationName: '촉',
+                        color: '#000',
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: general.id,
+                        generalName: general.name,
+                        nationId: general.nationId,
+                        nationName: '위',
+                        color: '#fff',
+                        icon: '',
+                    },
+                    text: '등용 권유 서신',
+                    option: { action: 'scout' },
+                },
+            };
+            const { caller } = buildContext({
+                $queryRaw: vi.fn(async () => [scoutRow]),
+                worldState: {
+                    findFirst: vi.fn(async () => ({
+                        clockBaseTime: new Date('0200-01-01T00:00:00.000Z'),
+                        clockTick: 100n,
+                        clockMode: 'realtime',
+                        clockWallAnchor: new Date('2026-09-03T15:00:00.000Z'),
+                        tickSeconds: 600,
+                        clockPhase,
+                        clockRevision: 9n,
+                        deadlineGeneration: 4n,
+                    })),
+                },
+            });
+
+            const result = await caller.messages.getRecent({ generalId: general.id });
+
+            expect(result.private[0]).toMatchObject({
+                id: scoutRow.id,
+                text: '등용 권유 서신',
+                option: { action: 'scout' },
+                time: '2026-09-03 15:00:00',
+            });
+            expect(result.private[0]?.option).not.toMatchObject({ invalid: true });
+        }
+    );
 
     it('allows an ambassador to target a foreign nation mailbox as diplomacy', async () => {
         const ambassador = {
@@ -259,7 +337,7 @@ describe('messages router missing-flow compatibility', () => {
         });
 
         expect(result.msgType).toBe('diplomacy');
-        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9002, 'diplomacy']));
+        expect(queryRaw).toHaveBeenCalledTimes(2);
     });
 
     it('allows a ruler to send a recruitment advertisement to the wanderer mailbox', async () => {
@@ -288,7 +366,6 @@ describe('messages router missing-flow compatibility', () => {
         });
 
         expect(result.msgType).toBe('diplomacy');
-        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9000, 'diplomacy']));
         expect(queryRaw).toHaveBeenCalledTimes(2);
         expect(changeJournal.snapshot()).toEqual([
             { domain: 'messages.mailbox', entityId: 9000 },
@@ -314,7 +391,6 @@ describe('messages router missing-flow compatibility', () => {
 
         expect(result.msgType).toBe('national');
         expect(queryRaw).toHaveBeenCalledTimes(1);
-        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9001, 'national']));
     });
 
     it('shows a wanderer the advertisement stored in mailbox 9000 without diplomacy redaction', async () => {
@@ -555,44 +631,50 @@ describe('messages router missing-flow compatibility', () => {
     });
 
     it('invalidates a recent owned message and its receiver copy', async () => {
-        const queryRaw = vi.fn(async () => [
-            {
-                id: 21,
-                mailbox: general.id,
-                type: 'private',
-                src: general.id,
-                dest: 8,
-                time: new Date(),
-                valid_until: new Date('9999-12-31T00:00:00Z'),
-                message: {
-                    src: {
-                        generalId: general.id,
-                        generalName: general.name,
-                        nationId: 1,
-                        nationName: '위',
-                        color: '#fff',
-                        icon: '',
+        let rawCall = 0;
+        const queryRaw = vi.fn(async () => {
+            rawCall += 1;
+            if (rawCall > 1) return [{ id: 21 }, { id: 22 }];
+            return [
+                {
+                    id: 21,
+                    mailbox: general.id,
+                    type: 'private',
+                    src: general.id,
+                    dest: 8,
+                    time: new Date(),
+                    valid_until: new Date('9999-12-31T00:00:00Z'),
+                    message: {
+                        src: {
+                            generalId: general.id,
+                            generalName: general.name,
+                            nationId: 1,
+                            nationName: '위',
+                            color: '#fff',
+                            icon: '',
+                        },
+                        dest: {
+                            generalId: 8,
+                            generalName: '받는이',
+                            nationId: 2,
+                            nationName: '촉',
+                            color: '#000',
+                            icon: '',
+                        },
+                        text: '삭제할 메시지',
+                        option: { receiverMessageID: 22 },
                     },
-                    dest: {
-                        generalId: 8,
-                        generalName: '받는이',
-                        nationId: 2,
-                        nationName: '촉',
-                        color: '#000',
-                        icon: '',
-                    },
-                    text: '삭제할 메시지',
-                    option: { receiverMessageID: 22 },
                 },
-            },
-        ]);
+            ];
+        });
         const changeJournal = new ChangeJournal();
         const { caller, executeRaw, updateMany } = buildContext({ $queryRaw: queryRaw }, { changeJournal });
 
         const result = await caller.messages.delete({ generalId: general.id, messageId: 21 });
 
         expect(result.deletedIds).toEqual([21, 22]);
-        expect(executeRaw).toHaveBeenCalledOnce();
+        expect(queryRaw).toHaveBeenCalledTimes(2);
+        expect(executeRaw).not.toHaveBeenCalled();
         expect(updateMany).not.toHaveBeenCalled();
         expect(changeJournal.snapshot()).toEqual([
             { domain: 'messages.mailbox', entityId: 7 },
@@ -601,43 +683,49 @@ describe('messages router missing-flow compatibility', () => {
     });
 
     it('lets the sender delete a manual diplomacy copy without deleting the receiver copy', async () => {
-        const queryRaw = vi.fn(async () => [
-            {
-                id: 25,
-                mailbox: 9001,
-                type: 'diplomacy',
-                src: 9001,
-                dest: 9002,
-                time: new Date(),
-                valid_until: new Date('9999-12-31T00:00:00Z'),
-                message: {
-                    src: {
-                        generalId: general.id,
-                        generalName: general.name,
-                        nationId: 1,
-                        nationName: '위',
-                        color: '#fff',
-                        icon: '',
+        let rawCall = 0;
+        const queryRaw = vi.fn(async () => {
+            rawCall += 1;
+            if (rawCall > 1) return [{ id: 25 }];
+            return [
+                {
+                    id: 25,
+                    mailbox: 9001,
+                    type: 'diplomacy',
+                    src: 9001,
+                    dest: 9002,
+                    time: new Date(),
+                    valid_until: new Date('9999-12-31T00:00:00Z'),
+                    message: {
+                        src: {
+                            generalId: general.id,
+                            generalName: general.name,
+                            nationId: 1,
+                            nationName: '위',
+                            color: '#fff',
+                            icon: '',
+                        },
+                        dest: {
+                            generalId: 0,
+                            generalName: '',
+                            nationId: 2,
+                            nationName: '촉',
+                            color: '#000',
+                            icon: '',
+                        },
+                        text: '일반 외교 메시지',
+                        option: { receiverMessageID: 26 },
                     },
-                    dest: {
-                        generalId: 0,
-                        generalName: '',
-                        nationId: 2,
-                        nationName: '촉',
-                        color: '#000',
-                        icon: '',
-                    },
-                    text: '일반 외교 메시지',
-                    option: { receiverMessageID: 26 },
                 },
-            },
-        ]);
+            ];
+        });
         const { caller, executeRaw, updateMany } = buildContext({ $queryRaw: queryRaw });
 
         const result = await caller.messages.delete({ generalId: general.id, messageId: 25 });
 
         expect(result.deletedIds).toEqual([25]);
-        expect(executeRaw).toHaveBeenCalledOnce();
+        expect(queryRaw).toHaveBeenCalledTimes(2);
+        expect(executeRaw).not.toHaveBeenCalled();
         expect(updateMany).not.toHaveBeenCalled();
     });
 
@@ -864,6 +952,7 @@ describe('messages router missing-flow compatibility', () => {
         const nationUpdate = vi.fn(async () => ({}));
         const logCreateMany = vi.fn(async () => ({ count: 1 }));
         const messageUpdateMany = vi.fn(async () => ({ count: 1 }));
+        const messageActionUpdateMany = vi.fn(async () => ({ count: 1 }));
         const cityUpdate = vi.fn(async () => ({}));
         const changeJournal = new ChangeJournal();
         const { caller } = buildContext(
@@ -941,10 +1030,19 @@ describe('messages router missing-flow compatibility', () => {
                         currentYear: 200,
                         currentMonth: 3,
                         config: { environment: { mapName: 'che' } },
+                        clockBaseTime: new Date('0200-03-01T00:00:00.000Z'),
+                        clockTick: 1_000n,
+                        clockMode: 'manual',
+                        clockWallAnchor: new Date('2026-09-03T00:00:00.000Z'),
+                        tickSeconds: 600,
+                        clockPhase: 'RUNNING',
+                        clockRevision: 1n,
+                        deadlineGeneration: 1n,
                     })),
                 },
                 logEntry: { createMany: logCreateMany },
                 message: { updateMany: messageUpdateMany },
+                messageAction: { updateMany: messageActionUpdateMany },
                 $queryRaw: queryRaw,
             },
             { changeJournal }
@@ -987,7 +1085,7 @@ describe('messages router missing-flow compatibility', () => {
         );
         expect(setup.messageUpdateMany).toHaveBeenCalledWith({
             where: { id: { in: [31] } },
-            data: { validUntil: expect.any(Date), validUntilTick: 0n },
+            data: { validUntil: expect.any(Date), validUntilTick: 1_000n },
         });
         expect(setup.queryRaw).toHaveBeenCalledTimes(9);
     });

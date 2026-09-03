@@ -222,7 +222,7 @@ export class TurnDaemonLifecycle {
                 continue;
             }
 
-            const command = await this.controlQueue.waitUntil(nowMs + (nextTurnMs - gameNowMs));
+            const command = await this.controlQueue.waitFor(Math.max(0, nextTurnMs - gameNowMs));
             if (command) {
                 await this.handleCommand(command);
             }
@@ -268,7 +268,7 @@ export class TurnDaemonLifecycle {
     }
 
     private async waitForResume(): Promise<void> {
-        const command = await this.controlQueue.waitUntil(null);
+        const command = await this.controlQueue.waitFor(null);
         if (command) {
             await this.handleCommand(command);
         }

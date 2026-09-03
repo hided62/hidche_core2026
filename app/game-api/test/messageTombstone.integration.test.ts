@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 
-import { tombstoneMessages } from '../src/messages/store.js';
+import { tombstoneMessages, tombstoneMessagesWithinDeleteWindow } from '../src/messages/store.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -70,12 +70,52 @@ integration('message deletion tombstone persistence', () => {
                 expect(rows).toHaveLength(2);
                 for (const row of rows) {
                     expect(row.validUntil).toEqual(validUntil);
+                    expect(row.tombstonedAtWall).not.toBeNull();
                     expect(row.message).toMatchObject({
                         text: '삭제된 메시지입니다.',
                         option: { invalid: true },
                     });
                     expect(JSON.stringify(row.message)).not.toContain('사본 원문');
                 }
+
+                throw rollback;
+            })
+        ).rejects.toBe(rollback);
+    });
+
+    it('uses the DB wall deadline even when the game clock is not advancing', async () => {
+        const rollback = new Error('rollback wall deletion fixture');
+        await expect(
+            db.$transaction(async (transaction) => {
+                const [{ now_wall: nowWall }] = await transaction.$queryRaw<Array<{ now_wall: Date }>>`
+                    SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS now_wall
+                `;
+                const draft = (text: string) => ({
+                    mailbox: 7,
+                    type: 'private' as const,
+                    src: 7,
+                    dest: 8,
+                    time: new Date('0200-01-01T00:00:00.000Z'),
+                    validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                    createdAtWall: nowWall,
+                    message: {
+                        src: { generalId: 7 },
+                        dest: { generalId: 8 },
+                        text,
+                        option: {},
+                    },
+                });
+                const deletable = await transaction.message.create({
+                    data: { ...draft('future wall deadline'), deleteUntilWall: new Date(nowWall.getTime() + 60_000) },
+                });
+                const expired = await transaction.message.create({
+                    data: { ...draft('past wall deadline'), deleteUntilWall: new Date(nowWall.getTime() - 60_000) },
+                });
+
+                expect(
+                    await tombstoneMessagesWithinDeleteWindow(transaction, deletable.id, [deletable.id])
+                ).toEqual([deletable.id]);
+                expect(await tombstoneMessagesWithinDeleteWindow(transaction, expired.id, [expired.id])).toEqual([]);
 
                 throw rollback;
             })

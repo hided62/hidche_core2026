@@ -94,7 +94,11 @@ const openResourceAuction = async (
         return fail(`기본 ${hostResource === 'rice' ? '쌀' : '금'} ${minimumResource}은 거래할 수 없습니다.`);
     }
 
-    const now = world.getGameNow(new Date());
+    const processingGameTick = Reflect.get(command, 'processingGameTick');
+    if (typeof processingGameTick !== 'number' || !Number.isSafeInteger(processingGameTick)) {
+        throw new Error('auctionOpen requires an authoritative daemon processing game tick.');
+    }
+    const now = world.gameTickToDate(processingGameTick);
     const turnMinutes = Math.max(1, Math.round(world.getState().tickSeconds / 60));
     const closeAt = new Date(now.getTime() + closeTurnCnt * turnMinutes * 60_000);
     const auction = await db.auction.create({
@@ -113,7 +117,7 @@ const openResourceAuction = async (
             },
             status: 'OPEN',
             closeAt,
-            openTick: BigInt(world.dateToGameTick(now)),
+            openTick: BigInt(processingGameTick),
             closeTick: BigInt(world.dateToGameTick(closeAt)),
         },
     });
@@ -125,6 +129,7 @@ const openResourceAuction = async (
         ok: true,
         auctionId: auction.id,
         closeAt: closeAt.toISOString(),
+        closeTick: world.dateToGameTick(closeAt),
     };
 };
 
@@ -220,8 +225,16 @@ const openUniqueAuction = async (
     }
 
     const state = world.getState();
+    const processingGameTick = Reflect.get(command, 'processingGameTick');
+    if (typeof processingGameTick !== 'number' || !Number.isSafeInteger(processingGameTick)) {
+        throw new Error('auctionOpen requires an authoritative daemon processing game tick.');
+    }
+    const requestedAtWall = Reflect.get(command, 'requestedAtWall');
+    if (!(requestedAtWall instanceof Date) || Number.isNaN(requestedAtWall.getTime())) {
+        throw new Error('auctionOpen requires its durable input-event wall occurrence.');
+    }
     const turnMinutes = Math.max(1, Math.round(state.tickSeconds / 60));
-    const now = world.getGameNow(new Date());
+    const now = world.gameTickToDate(processingGameTick);
     const closeMinutes = Math.max(MIN_AUCTION_CLOSE_MINUTES, turnMinutes * COEFF_AUCTION_CLOSE_MINUTES);
     const closeAt = new Date(now.getTime() + closeMinutes * 60_000);
     const extensionLimitMinutes = Math.max(
@@ -253,7 +266,7 @@ const openUniqueAuction = async (
             },
             status: 'OPEN',
             closeAt,
-            openTick: BigInt(world.dateToGameTick(now)),
+            openTick: BigInt(processingGameTick),
             closeTick: BigInt(world.dateToGameTick(closeAt)),
             latestEventId: eventId,
             latestEventAt: now,
@@ -263,6 +276,8 @@ const openUniqueAuction = async (
                     amount: command.amount,
                     eventId,
                     eventAt: now,
+                    occurredGameTick: BigInt(processingGameTick),
+                    requestedAtWall,
                     meta: buildInitialUniqueAuctionBidMeta(alias, command.amount),
                 },
             },
@@ -308,6 +323,7 @@ const openUniqueAuction = async (
         ok: true,
         auctionId: auction.id,
         closeAt: closeAt.toISOString(),
+        closeTick: world.dateToGameTick(closeAt),
     };
 };
 

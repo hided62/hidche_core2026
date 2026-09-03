@@ -326,18 +326,14 @@ describe('general access tracking', () => {
                     : [{ id: 41 }];
             }),
             $executeRaw: vi.fn(async (query: unknown) => {
-                if (((query as { sql?: string }).sql ?? '').includes('INSERT INTO input_event')) {
+                const sql = (query as { sql?: string }).sql ?? '';
+                if (sql.includes('INSERT INTO input_event')) {
                     events.push('input-event-create');
                 }
+                if (sql.includes("status = 'FAILED'")) events.push('input-event-failed');
                 return 1;
             }),
             $executeRawUnsafe: vi.fn(async () => 0),
-            inputEvent: {
-                update: vi.fn(async (args: { data: { status: string } }) => {
-                    if (args.data.status === 'FAILED') events.push('input-event-failed');
-                    return {};
-                }),
-            },
         };
         const db = {
             general: {

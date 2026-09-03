@@ -190,7 +190,7 @@ export type TurnDaemonCommand =
           requestId?: string;
           auctionId: number;
           expectedCloseAt?: string;
-          expectedCloseTick?: number;
+          expectedCloseTick: number;
       }
     | {
           type: 'auctionOpen';
@@ -260,7 +260,6 @@ export type TurnDaemonCommand =
           voteId: number;
           generalId: number;
           selection: number[];
-          acceptedGameTick?: number;
       }
     | {
           type: 'setNationSetting';
@@ -386,15 +385,12 @@ export type TurnDaemonCommand =
           ownerLegacyPenalty?: Record<string, unknown>;
           generalId: number;
           tokenNonce: number;
-          acceptedGameAt?: string;
       }
     | {
           type: 'selectPoolReserve';
           requestId?: string;
           userId: string;
           seedOwnerIdentity: string | number;
-          acceptedGameAt: string;
-          acceptedGameTick?: number;
       }
     | {
           type: 'selectPoolCreate';
@@ -407,8 +403,6 @@ export type TurnDaemonCommand =
           ownerPicture?: string;
           ownerImageServer?: number;
           ownerIconRevision?: string;
-          acceptedGameAt?: string;
-          acceptedGameTick?: number;
       }
     | {
           type: 'selectPoolReselect';
@@ -416,8 +410,6 @@ export type TurnDaemonCommand =
           userId: string;
           ownerDisplayName: string;
           uniqueName: string;
-          acceptedGameAt?: string;
-          acceptedGameTick?: number;
       }
     | {
           type: 'auctionBid';
@@ -426,7 +418,6 @@ export type TurnDaemonCommand =
           auctionId: number;
           generalId: number;
           amount: number;
-          acceptedGameTick?: number;
           tryExtendCloseDate?: boolean;
       };
 
@@ -505,6 +496,7 @@ export type TurnDaemonCommandResult =
           ok: true;
           auctionId: number;
           closeAt: string;
+          closeTick: number;
       }
     | {
           type: 'auctionOpen';
@@ -835,6 +827,7 @@ export type TurnDaemonCommandResult =
           ok: true;
           auctionId: number;
           closeAt: string;
+          closeTick: number;
       }
     | {
           type: 'auctionBid';

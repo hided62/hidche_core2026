@@ -96,6 +96,7 @@ const buildContext = (options: {
                 ok: true as const,
                 auctionId: 91,
                 closeAt: '2026-07-27T00:00:00.000Z',
+                closeTick: 200,
             };
         }
         return {
@@ -103,6 +104,7 @@ const buildContext = (options: {
             ok: true as const,
             auctionId: 91,
             closeAt: '2026-07-27T00:00:00.000Z',
+            closeTick: 200,
         };
     });
     const queryRaw = vi.fn(options.queryRaw ?? (async () => []));
@@ -112,14 +114,10 @@ const buildContext = (options: {
         currentYear: 200,
         currentMonth: 1,
         tickSeconds: 3600,
-        ...(options.clockTick === undefined
-            ? {}
-            : {
-                  clockBaseTime: new Date('2026-07-26T00:00:00.000Z'),
-                  clockTick: BigInt(options.clockTick),
-                  clockMode: 'manual',
-                  clockWallAnchor: new Date('2026-07-26T00:00:00.000Z'),
-              }),
+        clockBaseTime: new Date('2026-07-26T00:00:00.000Z'),
+        clockTick: BigInt(options.clockTick ?? 100),
+        clockMode: 'manual',
+        clockWallAnchor: new Date('2026-07-26T00:00:00.000Z'),
         config: {
             const: {
                 auctionName: ['청룡', '백호', '주작', '현무'],
@@ -194,7 +192,7 @@ describe('auction router actor and permission boundaries', () => {
                 tick: 72_000_001,
             })
         ).toBe(true);
-        expect(hasAuctionClosePassed({ closeAt, closeTick: null }, { now: closeAt, tick: null })).toBe(false);
+        expect(hasAuctionClosePassed({ closeAt, closeTick: null }, { now: closeAt, tick: null })).toBe(true);
     });
 
     it('rejects unauthenticated auction reads', async () => {
@@ -423,7 +421,6 @@ describe('auction router actor and permission boundaries', () => {
             auctionId: 31,
             generalId: 7,
             amount: 110,
-            acceptedGameTick: 100,
             tryExtendCloseDate: false,
         });
     });
@@ -441,6 +438,7 @@ describe('auction router actor and permission boundaries', () => {
                         detail: { title: '쌀 100 경매', amount: 100, startBidAmount: 500, isReverse: false },
                         status: 'OPEN',
                         closeAt: new Date(Date.now() + 60 * 60_000),
+                        closeTick: 200n,
                     },
                 ];
             }
@@ -501,7 +499,6 @@ describe('auction router actor and permission boundaries', () => {
             auctionId: 31,
             generalId: 7,
             amount: 500,
-            acceptedGameTick: 100,
             tryExtendCloseDate: true,
         });
     });

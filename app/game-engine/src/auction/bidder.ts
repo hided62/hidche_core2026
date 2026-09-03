@@ -60,27 +60,27 @@ export const hasAuctionClosePassed = (
     auction: { closeAt: Date; closeTick: bigint | null },
     now: Date,
     nowTick: number | null
-): boolean =>
-    auction.closeTick !== null && nowTick !== null
-        ? auction.closeTick < BigInt(nowTick)
-        : auction.closeAt.getTime() < now.getTime();
+): boolean => {
+    void now;
+    return auction.closeTick === null || nowTick === null || auction.closeTick < BigInt(nowTick);
+};
 
 export const resolveAuctionBidTiming = (
-    world: Pick<InMemoryTurnWorld, 'dateToGameTick' | 'gameTickToDate'>,
-    processingNow: Date,
-    acceptedGameTick?: number
-): { bidAt: Date; bidTick: number } =>
-    acceptedGameTick === undefined
-        ? { bidAt: processingNow, bidTick: world.dateToGameTick(processingNow) }
-        : { bidAt: world.gameTickToDate(acceptedGameTick), bidTick: acceptedGameTick };
+    world: Pick<InMemoryTurnWorld, 'gameTickToDate'>,
+    processingGameTick: number
+): { bidAt: Date; bidTick: number } => {
+    if (!Number.isSafeInteger(processingGameTick)) {
+        throw new Error('Auction bid requires an authoritative daemon processing game tick.');
+    }
+    return { bidAt: world.gameTickToDate(processingGameTick), bidTick: processingGameTick };
+};
 
 export const hasAuctionBidClosePassed = (
     auction: { closeAt: Date; closeTick: bigint | null },
-    world: Pick<InMemoryTurnWorld, 'dateToGameTick' | 'gameTickToDate'>,
-    processingNow: Date,
-    acceptedGameTick?: number
+    world: Pick<InMemoryTurnWorld, 'gameTickToDate'>,
+    processingGameTick: number
 ): boolean => {
-    const { bidAt, bidTick } = resolveAuctionBidTiming(world, processingNow, acceptedGameTick);
+    const { bidAt, bidTick } = resolveAuctionBidTiming(world, processingGameTick);
     return hasAuctionClosePassed(auction, bidAt, bidTick);
 };
 
@@ -268,15 +268,15 @@ export const createAuctionBidder = async (options: {
                     reason: '경매가 종료되었습니다.',
                 };
             }
-            const processingNow = world.getGameNow(new Date());
             const convertedProcessingTick = Reflect.get(command, 'processingGameTick');
-            const { bidAt, bidTick } = resolveAuctionBidTiming(
-                world,
-                processingNow,
-                typeof convertedProcessingTick === 'number' && Number.isSafeInteger(convertedProcessingTick)
-                    ? convertedProcessingTick
-                    : command.acceptedGameTick
-            );
+            if (typeof convertedProcessingTick !== 'number' || !Number.isSafeInteger(convertedProcessingTick)) {
+                throw new Error('auctionBid requires an authoritative daemon processing game tick.');
+            }
+            const requestedAtWall = Reflect.get(command, 'requestedAtWall');
+            if (!(requestedAtWall instanceof Date) || Number.isNaN(requestedAtWall.getTime())) {
+                throw new Error('auctionBid requires its durable input-event wall occurrence.');
+            }
+            const { bidAt, bidTick } = resolveAuctionBidTiming(world, convertedProcessingTick);
             if (hasAuctionClosePassed(auction, bidAt, bidTick)) {
                 return {
                     type: 'auctionBid',
@@ -510,13 +510,24 @@ export const createAuctionBidder = async (options: {
                 const persistBid = async (tx: GamePrisma.TransactionClient): Promise<void> => {
                     await tx.$executeRaw(
                         GamePrisma.sql`
-                            INSERT INTO auction_bid (auction_id, general_id, amount, event_id, event_at, meta)
+                            INSERT INTO auction_bid (
+                                auction_id,
+                                general_id,
+                                amount,
+                                event_id,
+                                event_at,
+                                occurred_game_tick,
+                                requested_at_wall,
+                                meta
+                            )
                             VALUES (
                                 ${command.auctionId},
                                 ${command.generalId},
                                 ${command.amount},
                                 ${eventId},
                                 ${eventAt},
+                                ${BigInt(bidTick)},
+                                ${requestedAtWall},
                                 ${JSON.stringify({
                                     tryExtendCloseDate: command.tryExtendCloseDate ?? true,
                                     ...(auction.type === 'UNIQUE_ITEM'
@@ -536,7 +547,7 @@ export const createAuctionBidder = async (options: {
                                 close_tick = ${BigInt(world.dateToGameTick(nextCloseAt))},
                                 latest_event_id = ${eventId},
                                 latest_event_at = ${eventAt},
-                                updated_at = ${eventAt}
+                                updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                             WHERE id = ${command.auctionId}
                               AND status = 'OPEN'
                               AND latest_event_id = ${auction.latestEventId}
@@ -556,7 +567,7 @@ export const createAuctionBidder = async (options: {
                             GamePrisma.sql`
                                 UPDATE inheritance_point
                                 SET value = value - ${morePoint},
-                                    updated_at = ${eventAt}
+                                    updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                                 WHERE user_id = ${userId}
                                   AND key = 'previous'
                                   AND value >= ${morePoint}
@@ -587,11 +598,16 @@ export const createAuctionBidder = async (options: {
                             await tx.$executeRaw(
                                 GamePrisma.sql`
                                     INSERT INTO inheritance_point (user_id, key, value, updated_at)
-                                    VALUES (${prevUserId}, 'previous', ${highestBid.amount}, ${eventAt})
+                                    VALUES (
+                                        ${prevUserId},
+                                        'previous',
+                                        ${highestBid.amount},
+                                        CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                                    )
                                     ON CONFLICT (user_id, key)
                                     DO UPDATE SET
                                         value = inheritance_point.value + EXCLUDED.value,
-                                        updated_at = EXCLUDED.updated_at
+                                        updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                                 `
                             );
                             await tx.$executeRaw(
@@ -711,6 +727,7 @@ export const createAuctionBidder = async (options: {
                 ok: true,
                 auctionId: command.auctionId,
                 closeAt: nextCloseAt.toISOString(),
+                closeTick: world.dateToGameTick(nextCloseAt),
             };
         },
         close: async (): Promise<void> => {

@@ -24,7 +24,7 @@ export interface TournamentClockFence {
     phaseKey: string;
     revision: number;
     deadlineGeneration: number;
-    phase: 'RUNNING';
+    phase: 'RUNNING' | 'MANUAL' | 'SUSPENDED';
 }
 
 const WRITE_TOURNAMENT_PROJECTION_SCRIPT = `

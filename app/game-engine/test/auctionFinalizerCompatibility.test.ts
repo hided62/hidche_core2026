@@ -27,6 +27,12 @@ import {
 import { buildInitialUniqueAuctionBidMeta, openAuction } from '../src/auction/opener.js';
 import type { TurnGeneral } from '../src/turn/types.js';
 
+const withDaemonBoundary = <T extends object>(command: T, processingGameTick = 72_000_000): T =>
+    Object.assign(command, {
+        processingGameTick,
+        requestedAtWall: new Date('2026-09-03T00:00:00.000Z'),
+    });
+
 describe('unique auction inheritance log compatibility', () => {
     it('keeps the authenticated UUID owner instead of coercing it to a legacy number', () => {
         const userId = '4c2f2f6d-8a37-4f22-a4f9-1a6f5e4c22ec';
@@ -113,19 +119,20 @@ describe('unique auction inheritance log compatibility', () => {
             }),
             getGameNow: () => new Date('0193-07-01T00:00:00.000Z'),
             dateToGameTick: (date: Date) => Math.floor(date.getTime() / 1_000),
+            gameTickToDate: () => new Date('0193-07-01T00:00:00.000Z'),
             updateGeneral: (_id: number, patch: Partial<TurnGeneral>) => Object.assign(general, patch),
             pushLog: () => {},
         };
 
         const result = await openAuction(
-            {
+            withDaemonBoundary({
                 type: 'auctionOpen',
                 userId: 'user-7',
                 auctionType: 'UNIQUE_ITEM',
                 generalId: general.id,
                 amount: 6_000,
                 itemKey: 'che_무기_12_칠성검',
-            },
+            }),
             world as unknown as Parameters<typeof openAuction>[1],
             db as unknown as NonNullable<Parameters<typeof openAuction>[2]>
         );
@@ -192,6 +199,7 @@ describe('unique auction inheritance log compatibility', () => {
         const world = {
             getGameNow: () => closeAt,
             dateToGameTick: () => 72_000_000,
+            gameTickToDate: () => closeAt,
             pushLog: vi.fn(),
         };
         const finalizer = await createAuctionFinalizer({
@@ -201,12 +209,12 @@ describe('unique auction inheritance log compatibility', () => {
 
         await expect(
             finalizer.finalize(
-                {
+                withDaemonBoundary({
                     type: 'auctionFinalize',
                     auctionId: 31,
                     expectedCloseAt: closeAt.toISOString(),
                     expectedCloseTick: 72_000_000,
-                },
+                }),
                 commandDb as unknown as NonNullable<Parameters<typeof finalizer.finalize>[1]>
             )
         ).resolves.toEqual({ type: 'auctionFinalize', ok: true, auctionId: 31 });
@@ -241,6 +249,7 @@ describe('unique auction inheritance log compatibility', () => {
         const world = {
             getGameNow: () => closeAt,
             dateToGameTick: () => nowTick,
+            gameTickToDate: () => closeAt,
         };
         const finalizer = await createAuctionFinalizer({
             databaseUrl: 'postgresql://unused',
@@ -249,11 +258,23 @@ describe('unique auction inheritance log compatibility', () => {
         const db = commandDb as unknown as NonNullable<Parameters<typeof finalizer.finalize>[1]>;
 
         await expect(
-            finalizer.finalize({ type: 'auctionFinalize', auctionId: 31, expectedCloseTick: 72_000_000 }, db)
+            finalizer.finalize(
+                withDaemonBoundary(
+                    { type: 'auctionFinalize', auctionId: 31, expectedCloseTick: 72_000_000 },
+                    71_999_999
+                ),
+                db
+            )
         ).resolves.toMatchObject({ ok: false, reason: '경매 마감 시각이 아직 지나지 않았습니다.' });
         nowTick = 72_000_000;
         await expect(
-            finalizer.finalize({ type: 'auctionFinalize', auctionId: 31, expectedCloseTick: 71_999_999 }, db)
+            finalizer.finalize(
+                withDaemonBoundary(
+                    { type: 'auctionFinalize', auctionId: 31, expectedCloseTick: 71_999_999 },
+                    72_000_000
+                ),
+                db
+            )
         ).resolves.toMatchObject({ ok: false, reason: '경매 마감 세대가 변경되었습니다.' });
         expect(executeRaw).not.toHaveBeenCalled();
 
@@ -276,12 +297,16 @@ describe('unique auction inheritance log compatibility', () => {
                     detail: { amount: 100 },
                     status: 'OPEN',
                     closeAt,
-                    closeTick: null,
+                    closeTick: 72_000_000n,
                 },
             ];
         });
         const commandDb = { $queryRaw: queryRaw, $executeRaw: vi.fn(async () => 0) };
-        const world = { getGameNow: () => closeAt, dateToGameTick: () => 72_000_000 };
+        const world = {
+            getGameNow: () => closeAt,
+            dateToGameTick: () => 72_000_000,
+            gameTickToDate: () => closeAt,
+        };
         const finalizer = await createAuctionFinalizer({
             databaseUrl: 'postgresql://unused',
             world: world as unknown as Parameters<typeof createAuctionFinalizer>[0]['world'],
@@ -289,7 +314,12 @@ describe('unique auction inheritance log compatibility', () => {
 
         await expect(
             finalizer.finalize(
-                { type: 'auctionFinalize', auctionId: 31, expectedCloseAt: closeAt.toISOString() },
+                withDaemonBoundary({
+                    type: 'auctionFinalize',
+                    auctionId: 31,
+                    expectedCloseAt: closeAt.toISOString(),
+                    expectedCloseTick: 72_000_000,
+                }),
                 commandDb as unknown as NonNullable<Parameters<typeof finalizer.finalize>[1]>
             )
         ).rejects.toThrow('경매 확정 상태 전이에 실패했습니다: 31');
@@ -317,6 +347,7 @@ describe('unique auction inheritance log compatibility', () => {
         const queueMessage = vi.fn();
         const world = {
             getGameNow: () => new Date('0193-07-01T00:00:00.000Z'),
+            gameTickToDate: () => new Date('0193-07-01T00:00:00.000Z'),
             getGeneralById: (id: number) => (id === bidder.id ? bidder : id === host.id ? host : null),
             getNationById: () => ({ name: '촉', color: '#ff0000' }),
             updateGeneral,
@@ -350,7 +381,7 @@ describe('unique auction inheritance log compatibility', () => {
 
         await expect(
             finalizer.finalize(
-                { type: 'auctionFinalize', auctionId: 31 },
+                withDaemonBoundary({ type: 'auctionFinalize', auctionId: 31, expectedCloseTick: 72_000_000 }),
                 commandDb as unknown as NonNullable<Parameters<typeof finalizer.finalize>[1]>
             )
         ).resolves.toMatchObject({

@@ -691,7 +691,7 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         return mapOperation(row);
     },
     async claimNextOperation(
-        now: Date,
+        _now: Date,
         lease?: { ownerId: string; durationMs: number }
     ): Promise<GatewayOperationRecord | null> {
         const row = await prisma.$transaction(async (tx) => {
@@ -700,6 +700,12 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                     hashtextextended(${CONTROL_PLANE_OPERATION_CLAIM_LOCK}, 0)
                 )::text AS lock_result
             `;
+            const [{ now }] = await tx.$queryRaw<Array<{ now: Date }>>`
+                SELECT CURRENT_TIMESTAMP AS "now"
+            `;
+            if (!now) {
+                throw new Error('Database wall clock is unavailable while claiming a Gateway operation.');
+            }
             const runningRelease = await tx.gatewayReleaseOperation.findFirst({
                 where: { status: 'RUNNING' },
                 select: { id: true },
@@ -815,13 +821,21 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         });
         return row ? mapOperation(row) : null;
     },
-    async renewOperationLease(id: string, ownerId: string, now: Date, durationMs: number): Promise<boolean> {
-        const renewed = await prisma.gatewayOperation.updateMany({
-            where: { id, status: 'RUNNING', leaseOwner: ownerId },
-            data: {
-                leaseUntil: new Date(now.getTime() + durationMs),
-                heartbeatAt: now,
-            },
+    async renewOperationLease(id: string, ownerId: string, _now: Date, durationMs: number): Promise<boolean> {
+        const renewed = await prisma.$transaction(async (tx) => {
+            const [{ now }] = await tx.$queryRaw<Array<{ now: Date }>>`
+                SELECT CURRENT_TIMESTAMP AS "now"
+            `;
+            if (!now) {
+                throw new Error('Database wall clock is unavailable while renewing a Gateway operation lease.');
+            }
+            return tx.gatewayOperation.updateMany({
+                where: { id, status: 'RUNNING', leaseOwner: ownerId },
+                data: {
+                    leaseUntil: new Date(now.getTime() + durationMs),
+                    heartbeatAt: now,
+                },
+            });
         });
         return renewed.count === 1;
     },

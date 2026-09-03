@@ -107,6 +107,7 @@ const runDelayedResourceBid = async (finishImmediately: boolean) => {
         world: world as unknown as Parameters<typeof createAuctionBidder>[0]['world'],
     });
     const amount = finishImmediately ? 500 : 200;
+    const requestedAtWall = new Date('2026-08-23T00:00:00.000Z');
     const result = await auctionBidder.bid(
         {
             type: 'auctionBid',
@@ -114,8 +115,9 @@ const runDelayedResourceBid = async (finishImmediately: boolean) => {
             auctionId: 31,
             generalId: general.id,
             amount,
-            acceptedGameTick: 100,
-        },
+            processingGameTick: 100,
+            requestedAtWall,
+        } as any,
         commandDb as any
     );
     await auctionBidder.close();
@@ -125,7 +127,7 @@ const runDelayedResourceBid = async (finishImmediately: boolean) => {
     );
     const insert = statements.find((query) => query.strings.join(' ').includes('INSERT INTO auction_bid'));
     const update = statements.find((query) => query.strings.join(' ').includes('UPDATE auction'));
-    return { acceptedAt, processingAt, result, insert, update };
+    return { acceptedAt, processingAt, requestedAtWall, result, insert, update };
 };
 
 describe('resource auction Ref compatibility', () => {
@@ -135,21 +137,19 @@ describe('resource auction Ref compatibility', () => {
 
         expect(hasAuctionClosePassed(auction, closeAt, 72_000_000)).toBe(false);
         expect(hasAuctionClosePassed(auction, new Date(closeAt.getTime() + 1), 72_000_001)).toBe(true);
-        expect(hasAuctionClosePassed({ closeAt, closeTick: null }, closeAt, null)).toBe(false);
+        expect(hasAuctionClosePassed({ closeAt, closeTick: null }, closeAt, null)).toBe(true);
         expect(hasAuctionClosePassed({ closeAt, closeTick: null }, new Date(closeAt.getTime() + 1), null)).toBe(true);
     });
 
-    it('uses the durable API acceptance tick when queue processing crosses the close boundary', () => {
+    it('uses only the authoritative daemon processing tick at the close boundary', () => {
         const closeAt = new Date('0190-02-01T00:00:00.000Z');
         const auction = { closeAt, closeTick: 72_000_000n };
         const world = {
             dateToGameTick: () => 72_000_001,
             gameTickToDate: (tick: number) => (tick === 72_000_000 ? closeAt : new Date(closeAt.getTime() + 1)),
         };
-        const processingNow = new Date(closeAt.getTime() + 1);
-
-        expect(hasAuctionBidClosePassed(auction, world, processingNow, 72_000_000)).toBe(false);
-        expect(hasAuctionBidClosePassed(auction, world, processingNow)).toBe(true);
+        expect(hasAuctionBidClosePassed(auction, world, 72_000_000)).toBe(false);
+        expect(hasAuctionBidClosePassed(auction, world, 72_000_001)).toBe(true);
         expect(
             normalizeTurnDaemonCommand({
                 requestId: 'auction-bid-accepted-tick',
@@ -161,22 +161,25 @@ describe('resource auction Ref compatibility', () => {
                     generalId: 7,
                     amount: 500,
                     acceptedGameTick: 72_000_000,
-                },
+                } as any,
             })
-        ).toMatchObject({ acceptedGameTick: 72_000_000 });
+        ).not.toHaveProperty('acceptedGameTick');
     });
 
     it('uses the accepted logical time for delayed extension and persisted bid timestamps', async () => {
-        const { acceptedAt, processingAt, result, insert, update } = await runDelayedResourceBid(false);
+        const { acceptedAt, processingAt, requestedAtWall, result, insert, update } =
+            await runDelayedResourceBid(false);
 
         expect(result).toMatchObject({ type: 'auctionBid', ok: true });
         expect(new Date(String(result && 'closeAt' in result ? result.closeAt : '')).getTime()).toBe(
             acceptedAt.getTime() + 100_000
         );
-        expect(insert?.values.filter((value): value is Date => value instanceof Date)).toEqual([acceptedAt]);
+        expect(insert?.values.filter((value): value is Date => value instanceof Date)).toEqual([
+            acceptedAt,
+            requestedAtWall,
+        ]);
         expect(update?.values.filter((value): value is Date => value instanceof Date)).toEqual([
             new Date(acceptedAt.getTime() + 100_000),
-            acceptedAt,
             acceptedAt,
         ]);
         expect(update?.values).not.toContain(processingAt);

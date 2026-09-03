@@ -278,18 +278,12 @@ const resolveSelectionCommandAcceptedAt = async (
     world: InMemoryTurnWorld,
     command: Extract<TurnDaemonCommand, { type: 'selectPoolReserve' | 'selectPoolCreate' | 'selectPoolReselect' }>
 ): Promise<Date> => {
-    const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    await resolveCommandAcceptedAt(db, command);
     const processingGameTick = Reflect.get(command, 'processingGameTick');
     if (typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)) {
         return world.gameTickToDate(processingGameTick);
     }
-    if (command.acceptedGameTick !== undefined) {
-        return world.gameTickToDate(command.acceptedGameTick);
-    }
-    if (command.acceptedGameAt !== undefined) {
-        return new Date(command.acceptedGameAt);
-    }
-    return world.getGameNow(operationalAcceptedAt);
+    throw new Error(`${command.type} requires an authoritative daemon processing game tick.`);
 };
 
 const resolveOperationalAcceptedAt = async (
@@ -417,12 +411,9 @@ async function handleNpcPossessGeneral(
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
     const processingGameTick = Reflect.get(command, 'processingGameTick');
-    const acceptedAt =
-        typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)
-            ? ctx.world.gameTickToDate(processingGameTick)
-            : command.acceptedGameAt
-              ? new Date(command.acceptedGameAt)
-              : ctx.world.getGameNow(operationalAcceptedAt);
+    if (typeof processingGameTick !== 'number' || !Number.isSafeInteger(processingGameTick)) {
+        throw new Error('npcPossessGeneral requires an authoritative daemon processing game tick.');
+    }
     try {
         return {
             type: 'npcPossessGeneral',
@@ -436,7 +427,8 @@ async function handleNpcPossessGeneral(
                 ...(command.ownerLegacyPenalty !== undefined ? { ownerLegacyPenalty: command.ownerLegacyPenalty } : {}),
                 generalId: command.generalId,
                 tokenNonce: command.tokenNonce,
-                acceptedAt,
+                requestedAtWall: operationalAcceptedAt,
+                processingGameTick,
             })),
         };
     } catch (error) {
@@ -465,15 +457,11 @@ async function handleSelectPoolCreate(
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
     const processingGameTick = Reflect.get(command, 'processingGameTick');
-    const acceptedAt =
-        typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)
-            ? ctx.world.gameTickToDate(processingGameTick)
-            : command.acceptedGameTick !== undefined
-              ? ctx.world.gameTickToDate(command.acceptedGameTick)
-              : command.acceptedGameAt !== undefined
-                ? new Date(command.acceptedGameAt)
-                : ctx.world.getGameNow(operationalAcceptedAt);
-    const turnScheduleAt = ctx.world.getRunnableGameNow(operationalAcceptedAt);
+    if (typeof processingGameTick !== 'number' || !Number.isSafeInteger(processingGameTick)) {
+        throw new Error('selectPoolCreate requires an authoritative daemon processing game tick.');
+    }
+    const acceptedAt = ctx.world.gameTickToDate(processingGameTick);
+    const turnScheduleAt = acceptedAt;
     try {
         return {
             type: 'selectPoolCreate',
@@ -492,6 +480,7 @@ async function handleSelectPoolCreate(
                 now: acceptedAt,
                 turnScheduleAt,
                 operationalAcceptedAt,
+                processingGameTick,
             })),
         };
     } catch (error) {
@@ -530,10 +519,7 @@ async function handleSelectPoolReserve(
                 userId: command.userId,
                 seedOwnerIdentity: command.seedOwnerIdentity,
                 now: acceptedAt,
-                ...(command.acceptedGameTick === undefined ? {} : { acceptedGameTick: command.acceptedGameTick }),
-                ...(typeof Reflect.get(command, 'processingGameTick') === 'number'
-                    ? { processingGameTick: Reflect.get(command, 'processingGameTick') as number }
-                    : {}),
+                processingGameTick: Reflect.get(command, 'processingGameTick') as number,
             }),
         };
     } catch (error) {
@@ -572,6 +558,7 @@ async function handleSelectPoolReselect(
                 ownerDisplayName: command.ownerDisplayName,
                 uniqueName: command.uniqueName,
                 now: acceptedAt,
+                processingGameTick: Reflect.get(command, 'processingGameTick') as number,
             })),
         };
     } catch (error) {
@@ -2745,17 +2732,16 @@ type VotePollValidationRow = {
 
 export const hasVotePollDeadlinePassed = (
     poll: Pick<VotePollValidationRow, 'endAt' | 'endTick' | 'closedAt'>,
-    acceptedGameAt: Date,
-    acceptedGameTick: number
+    currentGameTick: number
 ): boolean => {
     const endTick =
         poll.endTick === null ? null : typeof poll.endTick === 'bigint' ? poll.endTick : BigInt(poll.endTick);
-    return (
-        poll.closedAt !== null ||
-        (endTick !== null
-            ? endTick < BigInt(acceptedGameTick)
-            : Boolean(poll.endAt && poll.endAt.getTime() < acceptedGameAt.getTime()))
-    );
+    if (poll.closedAt !== null) return true;
+    // No projection and no tick means an intentionally unbounded poll. A
+    // projection without its authoritative tick is a broken GAME deadline and
+    // therefore fails closed.
+    if (endTick === null) return poll.endAt !== null;
+    return endTick < BigInt(currentGameTick);
 };
 
 const parseVoteOptionCount = (value: unknown): number => {
@@ -2790,17 +2776,11 @@ const validateVoteSelectionInTransaction = async (
     const poll = rows[0];
     if (!poll) return '설문조사가 없습니다.';
 
-    const processingNow = ctx.world.getGameNow(new Date());
     const convertedProcessingTick = Reflect.get(command, 'processingGameTick');
-    const acceptedGameTick =
-        typeof convertedProcessingTick === 'number' && Number.isSafeInteger(convertedProcessingTick)
-            ? convertedProcessingTick
-            : (command.acceptedGameTick ?? ctx.world.dateToGameTick(processingNow));
-    const acceptedGameAt =
-        command.acceptedGameTick === undefined && convertedProcessingTick === undefined
-            ? processingNow
-            : ctx.world.gameTickToDate(acceptedGameTick);
-    if (hasVotePollDeadlinePassed(poll, acceptedGameAt, acceptedGameTick)) {
+    if (typeof convertedProcessingTick !== 'number' || !Number.isSafeInteger(convertedProcessingTick)) {
+        throw new Error('voteReward requires an authoritative daemon processing game tick.');
+    }
+    if (hasVotePollDeadlinePassed(poll, convertedProcessingTick)) {
         return '설문조사가 종료되었습니다.';
     }
 

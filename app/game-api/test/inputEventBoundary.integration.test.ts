@@ -528,10 +528,6 @@ integration('API input event boundary', () => {
     it('reuses the same engine child event but rejects a changed retry payload', async () => {
         const transport = new DatabaseTurnDaemonTransport(db, 100);
         const requestId = 'integration:api:engine-child';
-        const worldClock = await db.worldState.findFirst({
-            orderBy: { id: 'asc' },
-            select: { clockRevision: true, deadlineGeneration: true },
-        });
         const acceptedWindowStart = Date.now();
         await transport.sendCommand({ type: 'vacation', requestId, userId: 'user-7', generalId: 7 });
         const acceptedWindowEnd = Date.now();
@@ -539,9 +535,10 @@ integration('API input event boundary', () => {
         expect(event.actorUserId).toBe('user-7');
         expect(event.createdAt.getTime()).toBeGreaterThanOrEqual(acceptedWindowStart);
         expect(event.createdAt.getTime()).toBeLessThanOrEqual(acceptedWindowEnd);
-        expect(event.acceptedGameTick).not.toBeNull();
-        expect(event.acceptedClockRevision).toBe(worldClock?.clockRevision ?? null);
-        expect(event.acceptedDeadlineGeneration).toBe(worldClock?.deadlineGeneration ?? null);
+        expect(event.acceptedGameTick).toBeNull();
+        expect(event.acceptedClockRevision).toBeNull();
+        expect(event.acceptedDeadlineGeneration).toBeNull();
+        expect(event.processingGameTick).toBeNull();
         await expect(
             transport.sendCommand({ type: 'vacation', requestId, userId: 'user-7', generalId: 7 })
         ).resolves.toBe(requestId);

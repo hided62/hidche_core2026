@@ -25,9 +25,6 @@ interface LockedInputEvent {
     status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
     result: GamePrisma.JsonValue | null;
     attempts: number;
-    acceptedGameTick: bigint | null;
-    acceptedClockRevision: bigint | null;
-    acceptedDeadlineGeneration: bigint | null;
 }
 
 type InputEventOutcome<T> =
@@ -36,8 +33,6 @@ type InputEventOutcome<T> =
 type SavepointDatabaseClient = InfraDatabaseClient & {
     $executeRawUnsafe(query: string): Promise<number>;
 };
-
-const asJson = (value: unknown): GamePrisma.InputJsonValue => value as GamePrisma.InputJsonValue;
 
 const canonicalJson = (value: unknown): string =>
     JSON.stringify(value, (_key, entry: unknown) => {
@@ -106,9 +101,9 @@ const insertPendingIfAbsent = async (
                 ${options.actorUserId},
                 'PENDING'::"InputEventStatus",
                 0,
-                (SELECT clock_tick FROM world_state ORDER BY id ASC LIMIT 1),
-                (SELECT clock_revision FROM world_state ORDER BY id ASC LIMIT 1),
-                (SELECT deadline_generation FROM world_state ORDER BY id ASC LIMIT 1),
+                NULL,
+                NULL,
+                NULL,
                 CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             )
             ON CONFLICT (request_id) DO NOTHING
@@ -126,10 +121,7 @@ const lockInputEvent = async (db: DatabaseClient, requestId: string): Promise<Lo
                 actor_user_id AS "actorUserId",
                 status,
                 result,
-                attempts,
-                accepted_game_tick AS "acceptedGameTick",
-                accepted_clock_revision AS "acceptedClockRevision",
-                accepted_deadline_generation AS "acceptedDeadlineGeneration"
+                attempts
             FROM input_event
             WHERE request_id = ${requestId}
             FOR UPDATE
@@ -168,26 +160,24 @@ const isMatchingIdentity = (
 const claimInputEvent = async (
     db: DatabaseClient,
     requestId: string,
-    payloadIdentity: ApiInputPayloadIdentity,
-    row: LockedInputEvent
+    payloadIdentity: ApiInputPayloadIdentity
 ): Promise<void> => {
-    await db.inputEvent.update({
-        where: { requestId },
-        data: {
-            payload: asJson(payloadIdentity),
-            status: 'PROCESSING',
-            result: GamePrisma.DbNull,
-            error: null,
-            attempts: { increment: 1 },
-            lockedBy: null,
-            leaseUntil: null,
-            processingAt: new Date(),
-            processingGameTick: row.acceptedGameTick,
-            processingClockRevision: row.acceptedClockRevision,
-            processingDeadlineGeneration: row.acceptedDeadlineGeneration,
-            completedAt: null,
-        },
-    });
+    await db.$executeRaw(GamePrisma.sql`
+        UPDATE input_event
+        SET payload = CAST(${JSON.stringify(payloadIdentity)} AS jsonb),
+            status = 'PROCESSING'::"InputEventStatus",
+            result = NULL,
+            error = NULL,
+            attempts = attempts + 1,
+            locked_by = NULL,
+            lease_until = NULL,
+            processing_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+            processing_game_tick = NULL,
+            processing_clock_revision = NULL,
+            processing_deadline_generation = NULL,
+            completed_at = NULL
+        WHERE request_id = ${requestId}
+    `);
 };
 
 const markUnexpectedFailure = async (
@@ -198,6 +188,7 @@ const markUnexpectedFailure = async (
         actorUserId: string | null;
         payloadIdentity: ApiInputPayloadIdentity;
         error: unknown;
+        acquireClockFence: boolean;
     }
 ): Promise<void> => {
     if (!db.$transaction) return;
@@ -205,7 +196,9 @@ const markUnexpectedFailure = async (
 
     try {
         await db.$transaction(async (transaction) => {
-            await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+            if (options.acquireClockFence) {
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+            }
             await insertPendingIfAbsent(transaction, options);
             const row = await lockInputEvent(transaction, options.requestId);
             const identityMatches = isMatchingIdentity(row, options) || canAdoptLegacyFailedPayload(row, options);
@@ -214,20 +207,19 @@ const markUnexpectedFailure = async (
                 // late failure recorder must never replace its durable success.
                 return;
             }
-            await transaction.inputEvent.update({
-                where: { requestId: options.requestId },
-                data: {
-                    payload: asJson(options.payloadIdentity),
-                    status: 'FAILED',
-                    result: GamePrisma.DbNull,
-                    error: message,
-                    attempts: { increment: 1 },
-                    lockedBy: null,
-                    leaseUntil: null,
-                    processingAt: new Date(),
-                    completedAt: new Date(),
-                },
-            });
+            await transaction.$executeRaw(GamePrisma.sql`
+                UPDATE input_event
+                SET payload = CAST(${JSON.stringify(options.payloadIdentity)} AS jsonb),
+                    status = 'FAILED'::"InputEventStatus",
+                    result = NULL,
+                    error = ${message},
+                    attempts = attempts + 1,
+                    locked_by = NULL,
+                    lease_until = NULL,
+                    processing_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                    completed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                WHERE request_id = ${options.requestId}
+            `);
         });
     } catch {
         // Preserve the transaction failure that the caller actually observed. If
@@ -242,10 +234,12 @@ export const executeInputEvent = async <T>(options: {
     eventType: string;
     payload: unknown;
     actorUserId?: string | null;
+    acquireClockFence?: boolean;
     execute(db: DatabaseClient): Promise<T>;
 }): Promise<T> => {
     const { db, requestId, eventType, payload, execute } = options;
     const actorUserId = options.actorUserId ?? null;
+    const acquireClockFence = options.acquireClockFence !== false;
     const payloadIdentity = createApiInputPayloadIdentity(payload);
     if (!db.$transaction) {
         return execute(db);
@@ -255,7 +249,9 @@ export const executeInputEvent = async <T>(options: {
     let outcome: InputEventOutcome<T>;
     try {
         outcome = await db.$transaction(async (transaction) => {
-            await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+            if (acquireClockFence) {
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+            }
             await insertPendingIfAbsent(transaction, { requestId, eventType, actorUserId, payloadIdentity });
             const row = await lockInputEvent(transaction, requestId);
             const identityMatches = isMatchingIdentity(row, { eventType, actorUserId, payloadIdentity });
@@ -274,43 +270,48 @@ export const executeInputEvent = async <T>(options: {
                 throw new DuplicateInputEventError(requestId);
             }
 
-            await claimInputEvent(transaction, requestId, payloadIdentity, row);
+            await claimInputEvent(transaction, requestId, payloadIdentity);
             const savepointDb = transaction as SavepointDatabaseClient;
             await savepointDb.$executeRawUnsafe(`SAVEPOINT ${BUSINESS_SAVEPOINT}`);
             businessStarted = true;
             try {
                 const value = await execute(transaction);
                 const durableResult = canonicalJsonValue(value);
-                await transaction.inputEvent.update({
-                    where: { requestId },
-                    data: {
-                        status: 'SUCCEEDED',
-                        result: asJson(durableResult),
-                        error: null,
-                        completedAt: new Date(),
-                    },
-                });
+                await transaction.$executeRaw(GamePrisma.sql`
+                    UPDATE input_event
+                    SET status = 'SUCCEEDED'::"InputEventStatus",
+                        result = CAST(${JSON.stringify(durableResult)} AS jsonb),
+                        error = NULL,
+                        completed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                    WHERE request_id = ${requestId}
+                `);
                 await savepointDb.$executeRawUnsafe(`RELEASE SAVEPOINT ${BUSINESS_SAVEPOINT}`);
                 return { kind: 'executed', value };
             } catch (error) {
                 await savepointDb.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${BUSINESS_SAVEPOINT}`);
                 await savepointDb.$executeRawUnsafe(`RELEASE SAVEPOINT ${BUSINESS_SAVEPOINT}`);
                 const message = error instanceof Error ? error.message : 'Unknown API input event error.';
-                await transaction.inputEvent.update({
-                    where: { requestId },
-                    data: {
-                        status: 'FAILED',
-                        result: GamePrisma.DbNull,
-                        error: message,
-                        completedAt: new Date(),
-                    },
-                });
+                await transaction.$executeRaw(GamePrisma.sql`
+                    UPDATE input_event
+                    SET status = 'FAILED'::"InputEventStatus",
+                        result = NULL,
+                        error = ${message},
+                        completed_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                    WHERE request_id = ${requestId}
+                `);
                 return { kind: 'failed', error };
             }
         });
     } catch (error) {
         if (businessStarted && !(error instanceof DuplicateInputEventError)) {
-            await markUnexpectedFailure(db, { requestId, eventType, actorUserId, payloadIdentity, error });
+            await markUnexpectedFailure(db, {
+                requestId,
+                eventType,
+                actorUserId,
+                payloadIdentity,
+                error,
+                acquireClockFence,
+            });
         }
         throw error;
     }

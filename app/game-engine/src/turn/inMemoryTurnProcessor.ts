@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+
 import type { TurnCheckpoint, TurnProcessor, TurnRunBudget, TurnRunResult } from '../lifecycle/types.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { InMemoryTurnWorld, TurnCalendarContext } from './inMemoryWorld.js';
@@ -50,16 +52,16 @@ export class InMemoryTurnProcessor implements TurnProcessor {
     }
 
     async run(targetTime: Date, budget: TurnRunBudget, checkpoint?: TurnCheckpoint): Promise<TurnRunResult> {
-        const startMs = Date.now();
+        const startMs = performance.now();
         const deadlineMs = startMs + Math.max(0, budget.budgetMs);
-        const isBudgetExpired = () => Date.now() >= deadlineMs;
+        const isBudgetExpired = () => performance.now() >= deadlineMs;
 
         if (isWorldUnited(this.world)) {
             return {
                 lastTurnTime: this.world.getState().lastTurnTime.toISOString(),
                 processedGenerals: 0,
                 processedTurns: 0,
-                durationMs: Math.max(0, Date.now() - startMs),
+                durationMs: Math.max(0, performance.now() - startMs),
                 partial: false,
                 checkpoint,
             };
@@ -171,7 +173,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
             lastTurnTime,
             processedGenerals,
             processedTurns,
-            durationMs: Math.max(0, Date.now() - startMs),
+            durationMs: Math.max(0, performance.now() - startMs),
             partial,
             checkpoint: nextCheckpoint,
         };

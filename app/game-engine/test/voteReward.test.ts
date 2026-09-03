@@ -12,7 +12,6 @@ import {
 } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { normalizeTurnDaemonCommand } from '../src/turn/commandRegistry.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnDaemonCommandHandler, hasVotePollDeadlinePassed } from '../src/turn/worldCommandHandler.js';
 
@@ -81,38 +80,12 @@ const buildDefaultUniquePoolSnapshot = (general: TurnGeneral): TurnWorldSnapshot
 });
 
 describe('voteReward command', () => {
-    it('keeps the wall-time fallback open at exact deadline equality', () => {
+    it('fails closed when a GAME_TIME poll lost its authoritative end tick', () => {
         const deadline = new Date('0180-01-01T00:00:00.000Z');
 
-        expect(hasVotePollDeadlinePassed({ endAt: deadline, endTick: null, closedAt: null }, deadline, 0)).toBe(false);
-        expect(
-            hasVotePollDeadlinePassed(
-                { endAt: deadline, endTick: null, closedAt: null },
-                new Date(deadline.getTime() + 1),
-                0
-            )
-        ).toBe(true);
-    });
-
-    it('preserves the server-accepted game tick through durable command normalization', () => {
-        expect(
-            normalizeTurnDaemonCommand({
-                requestId: 'vote-accepted-tick',
-                sentAt: '2026-08-23T00:00:00.000Z',
-                command: {
-                    type: 'voteReward',
-                    userId: 'user-1',
-                    voteId: 1,
-                    generalId: 1,
-                    selection: [0],
-                    acceptedGameTick: 100,
-                },
-            })
-        ).toMatchObject({
-            type: 'voteReward',
-            requestId: 'vote-accepted-tick',
-            acceptedGameTick: 100,
-        });
+        expect(hasVotePollDeadlinePassed({ endAt: deadline, endTick: null, closedAt: null }, 0)).toBe(true);
+        expect(hasVotePollDeadlinePassed({ endAt: deadline, endTick: 0n, closedAt: null }, 0)).toBe(false);
+        expect(hasVotePollDeadlinePassed({ endAt: deadline, endTick: 0n, closedAt: null }, 1)).toBe(true);
     });
 
     it('applies gold, unique item, logs, and idempotency', async () => {
@@ -290,9 +263,7 @@ describe('voteReward command', () => {
             voteId: 1,
             generalId: 1,
             selection: [0],
-            // Ref accepts the request at exact equality. Engine processing may
-            // occur after the logical clock has advanced beyond the deadline.
-            acceptedGameTick: 0,
+            processingGameTick: 0,
         };
 
         const writerWindowStart = Date.now();
@@ -418,29 +389,26 @@ describe('voteReward command', () => {
             { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
         );
         const legacyLateHandler = createTurnDaemonCommandHandler({ world: legacyLateWorld });
-        const { acceptedGameTick: _acceptedGameTick, ...legacyLateCommand } = command;
-        const legacyLateResult = await legacyLateHandler.handle(legacyLateCommand, {
-            db: {
-                ...actorBindingDb(),
-                $queryRaw: async (query: { strings: readonly string[] }) =>
-                    query.strings.join(' ').includes('SELECT options')
-                        ? [
-                              {
-                                  options: ['찬성'],
-                                  multipleOptions: 1,
-                                  endAt: null,
-                                  endTick: 0n,
-                                  closedAt: null,
-                              },
-                          ]
-                        : [],
-            } as any,
-        });
-        expect(legacyLateResult).toMatchObject({
-            type: 'voteReward',
-            ok: false,
-            reason: '설문조사가 종료되었습니다.',
-        });
+        const { processingGameTick: _processingGameTick, ...missingBoundaryCommand } = command;
+        await expect(
+            legacyLateHandler.handle(missingBoundaryCommand, {
+                db: {
+                    ...actorBindingDb(),
+                    $queryRaw: async (query: { strings: readonly string[] }) =>
+                        query.strings.join(' ').includes('SELECT options')
+                            ? [
+                                  {
+                                      options: ['찬성'],
+                                      multipleOptions: 1,
+                                      endAt: null,
+                                      endTick: 0n,
+                                      closedAt: null,
+                                  },
+                              ]
+                            : [],
+                } as any,
+            })
+        ).rejects.toThrow('authoritative daemon processing game tick');
     });
 
     it.each([
@@ -501,8 +469,8 @@ describe('voteReward command', () => {
                     voteId,
                     generalId: 1,
                     selection: [0],
-                    acceptedGameTick,
-                },
+                    processingGameTick: acceptedGameTick,
+                } as any,
                 { db: commandDb as any }
             );
 
@@ -602,7 +570,8 @@ describe('voteReward command', () => {
                 voteId: 1,
                 generalId: 1,
                 selection: [0],
-            },
+                processingGameTick: 0,
+            } as any,
             { db: commandDb as any }
         );
 

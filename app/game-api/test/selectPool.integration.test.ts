@@ -227,19 +227,17 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 .listGeneralPoolCandidates(new Date(firstReservation.validUntil))
                 ?.some((candidate) => reservedNames.has(candidate.uniqueName))
         ).toBe(false);
-        await expect(
-            db.inputEvent.findUniqueOrThrow({
-                where: { requestId: `select-pool:${userId}:select-pool-reserve-a:reserve` },
-            })
-        ).resolves.toMatchObject({
+        const reserveEvent = await db.inputEvent.findUniqueOrThrow({
+            where: { requestId: `select-pool:${userId}:select-pool-reserve-a:reserve` },
+        });
+        expect(reserveEvent).toMatchObject({
             eventType: 'selectPoolReserve',
             status: 'SUCCEEDED',
             actorUserId: userId,
-            payload: {
-                acceptedGameAt: expect.any(String),
-                acceptedGameTick: expect.any(Number),
-            },
+            processingGameTick: expect.anything(),
         });
+        expect(reserveEvent.payload).not.toHaveProperty('acceptedGameAt');
+        expect(reserveEvent.payload).not.toHaveProperty('acceptedGameTick');
 
         const createRequestIds = ['select-pool-create-a', 'select-pool-create-b'] as const;
         const attempts = await Promise.allSettled([
@@ -357,6 +355,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         ).rejects.toMatchObject({ message: '아직 다시 고를 수 없습니다' });
 
         const cooledAt = '2026-07-29T00:00:00.000Z';
+        const cooledTick = runtime!.world.dateToGameTick(runtime!.world.getGameNow(new Date())) - 1;
         await expect(
             turnDaemon.requestCommand({
                 type: 'patchGeneral',
@@ -366,6 +365,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                     meta: {
                         next_change: cooledAt,
                         nextChangeAt: cooledAt,
+                        next_change_tick: cooledTick,
                     },
                 },
             })
@@ -380,16 +380,16 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 .createCaller(buildContext('select-pool-reselect'))
                 .join.reselectPoolGeneral({ uniqueName: target.uniqueName })
         ).resolves.toEqual({ ok: true, generalId: initial.id });
-        await expect(
-            db.inputEvent.findUniqueOrThrow({ where: { requestId: 'select-pool-reselect:join.reselectPoolGeneral' } })
-        ).resolves.toMatchObject({
+        const reselectionEvent = await db.inputEvent.findUniqueOrThrow({
+            where: { requestId: 'select-pool-reselect:join.reselectPoolGeneral' },
+        });
+        expect(reselectionEvent).toMatchObject({
             eventType: 'selectPoolReselect',
             actorUserId: userId,
-            payload: {
-                acceptedGameAt: expect.any(String),
-                acceptedGameTick: expect.any(Number),
-            },
+            processingGameTick: expect.anything(),
         });
+        expect(reselectionEvent.payload).not.toHaveProperty('acceptedGameAt');
+        expect(reselectionEvent.payload).not.toHaveProperty('acceptedGameTick');
 
         const updated = await db.general.findUniqueOrThrow({ where: { id: initial.id } });
         expect(updated).toMatchObject({
@@ -455,6 +455,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             data: { config: { ...fullConfig, maxGeneral: 1 } as GamePrisma.InputJsonValue },
         });
         const secondCooledAt = '2026-07-28T00:00:00.000Z';
+        const secondCooledTick = runtime!.world.dateToGameTick(runtime!.world.getGameNow(new Date())) - 1;
         await turnDaemon.requestCommand({
             type: 'patchGeneral',
             requestId: 'select-pool-full-cooldown-patch',
@@ -463,6 +464,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 meta: {
                     next_change: secondCooledAt,
                     nextChangeAt: secondCooledAt,
+                    next_change_tick: secondCooledTick,
                 },
             },
         });
@@ -571,21 +573,19 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             .join.selectPoolGeneral(stableInput);
         expect(retried).toEqual(first);
         expect(await db.general.count({ where: { userId: otherUserId } })).toBe(1);
-        await expect(
-            db.inputEvent.findUniqueOrThrow({
-                where: {
-                    requestId: `select-pool:${otherUserId}:${stableClientRequestId}:create`,
-                },
-            })
-        ).resolves.toMatchObject({
+        const stableEvent = await db.inputEvent.findUniqueOrThrow({
+            where: {
+                requestId: `select-pool:${otherUserId}:${stableClientRequestId}:create`,
+            },
+        });
+        expect(stableEvent).toMatchObject({
             status: 'SUCCEEDED',
             attempts: 1,
             actorUserId: otherUserId,
-            payload: {
-                acceptedGameAt: expect.any(String),
-                acceptedGameTick: expect.any(Number),
-            },
+            processingGameTick: expect.anything(),
         });
+        expect(stableEvent.payload).not.toHaveProperty('acceptedGameAt');
+        expect(stableEvent.payload).not.toHaveProperty('acceptedGameTick');
     }, 30_000);
 
     it('rolls back a hard failure and retries the same ENGINE event exactly once', async () => {

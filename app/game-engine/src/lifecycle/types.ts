@@ -82,7 +82,7 @@ export interface TurnStateStore {
 export interface TurnDaemonControlQueue {
     enqueue(command: TurnDaemonCommand): void;
     drain(): Promise<TurnDaemonCommand[]>;
-    waitUntil(deadlineMs: number | null): Promise<TurnDaemonCommand | null>;
+    waitFor(timeoutMs: number | null): Promise<TurnDaemonCommand | null>;
     getDepth(): number;
 }
 

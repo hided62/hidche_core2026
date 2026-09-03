@@ -42,6 +42,7 @@ const buildContext = (
             turnDaemonLease: {
                 findUnique: vi.fn(async () => ({ leaseUntil: new Date('2099-01-01T00:00:00.000Z') })),
             },
+            $queryRaw: vi.fn(async () => [{ running: true }]),
         } as unknown as DatabaseClient,
         profileStatusSource: { get: vi.fn(async () => 'RUNNING' as const) },
     }) as unknown as GameApiContext;

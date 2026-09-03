@@ -3,11 +3,13 @@
 ## Product contract
 
 Gameplay time is an integer `GameTick`; one turn is permanently `36,000,000`
-ticks. Wall time is an observation and operational-control input, never the
-authority for gameplay ordering. A long suspension advances the observed game
-coordinate to the resume wall instant without replaying skipped turns, monthly
-events, RNG, auctions, or tournaments. Every movable future schedule is shifted
-by the same exact tick delta, including the sub-turn remainder.
+ticks. Wall time is separately authoritative for account, community, audit,
+lease, retry, notification, and operational rules. It is never projected into a
+game deadline. A long suspension advances the observed game coordinate to the
+resume wall instant without replaying skipped turns, monthly events, RNG,
+auctions, or tournaments. Every movable future GAME schedule is shifted by the
+same exact tick delta, including the sub-turn remainder. WALL occurrences and
+deadlines are outside that operation.
 
 The clock state is stored in `world_state`:
 
@@ -49,6 +51,16 @@ The authoritative registry is
 [`game-clock-participants.json`](./game-clock-participants.json). The
 architecture gate rejects a new tick/revision field that is absent from that
 inventory.
+
+The participant set contains only GAME authority or its projections: world and
+turn cursors, general turns/recent-war occurrences/reselection deadlines,
+auction occurrences/deadlines, actionable-message occurrences/deadlines,
+vote deadlines, selection/NPC windows, input-event game coordinates,
+tournament Redis deadlines, and clock-operation metadata. A normal message's
+`created_at_wall`/`delete_until_wall`, inheritance receipts, notification and
+outbox retry timestamps, leases, and audit columns are explicitly excluded.
+The former broad `message-expiry` meaning is split into
+`message-action-expiry`; an envelope has no GAME lifetime.
 
 ## Unification wait
 
@@ -109,9 +121,11 @@ turn-daemon fencing row
 -> Redis outbox projection
 ```
 
-The ordinary turn flush already validates phase, revision, and deadline
-generation after taking this lock prefix. Clock operation participants will be
-added without changing that prefix.
+The ordinary turn flush and daemon command claim validate phase, revision, and
+deadline generation after taking this lock prefix. WALL-only message/account
+operations do not take this lock and remain available while suspended. Hybrid
+operations commit their GAME effect only behind this fence; inheritance debit,
+receipt, effect, and command success are one transaction.
 
 ## Opening invariant
 
@@ -137,8 +151,17 @@ all present. Before that boundary, the loader and ordinary turn-flush fence both
 treat the row as legacy `MANUAL`; the first fenced flush installs the complete
 snapshot atomically instead of trusting the new column's `RUNNING` database
 default. Input-event acceptance does not use that compatibility fallback: an
-API or worker may enqueue gameplay only after the authoritative clock is fully
-initialized.
+API or worker records only a DB-wall receipt, then the daemon establishes the
+GAME coordinate while claiming under the authoritative fence. Rolling-upgrade
+payload coordinates may be parsed and ignored, but never become rule authority.
+
+Migration `20260903140000_split_message_wall_and_game_time` separates message
+envelopes from actions and adds explicit auction-bid occurrence/request facts,
+inheritance receipts, and selection cooldown tick authority. Legacy projection
+columns remain temporarily for old readers. A missing GAME tick fails closed;
+it never changes the rule to WALL_TIME. A WALL rule likewise never derives an
+authority tick. See [`time-domains.md`](./time-domains.md) for the complete
+inventory and migration policy.
 
 No active participant remains `FORBID`. Tournament writes carry
 tick/revision/generation coordinates and are revision-fenced in Redis.
