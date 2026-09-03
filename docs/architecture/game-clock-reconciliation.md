@@ -131,6 +131,15 @@ future anchored realtime profiles as `PREOPEN`, and other profiles as
 `RUNNING`. Existing DateTime columns remain projections while tick columns are
 authoritative.
 
+A row is considered an initialized authoritative clock only when
+`clock_base_time`, `clock_tick`, `clock_wall_anchor`, and `last_turn_tick` are
+all present. Before that boundary, the loader and ordinary turn-flush fence both
+treat the row as legacy `MANUAL`; the first fenced flush installs the complete
+snapshot atomically instead of trusting the new column's `RUNNING` database
+default. Input-event acceptance does not use that compatibility fallback: an
+API or worker may enqueue gameplay only after the authoritative clock is fully
+initialized.
+
 No active participant remains `FORBID`. Tournament writes carry
 tick/revision/generation coordinates and are revision-fenced in Redis.
 Unification wait uses the same durable ledger and outbox boundary; the former

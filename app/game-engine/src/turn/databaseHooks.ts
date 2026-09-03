@@ -1193,12 +1193,17 @@ export const createDatabaseTurnHooks = async (
                     clock_phase: string;
                     clock_revision: bigint;
                     deadline_generation: bigint;
+                    clock_initialized: boolean;
                     opening_reached: boolean;
                 }>
             >(GamePrisma.sql`
                 SELECT clock_phase,
                        clock_revision,
                        deadline_generation,
+                       clock_base_time IS NOT NULL
+                           AND clock_tick IS NOT NULL
+                           AND clock_wall_anchor IS NOT NULL
+                           AND last_turn_tick IS NOT NULL AS clock_initialized,
                        clock_wall_anchor <= CURRENT_TIMESTAMP AS opening_reached
                 FROM world_state
                 WHERE id = ${state.id}
@@ -1211,33 +1216,43 @@ export const createDatabaseTurnHooks = async (
             const expectedPhase = state.clockPhase ?? (state.clockMode === 'realtime' ? 'RUNNING' : 'MANUAL');
             const expectedRevision = BigInt(state.clockRevision ?? 1);
             const expectedGeneration = BigInt(state.deadlineGeneration ?? 1);
+            // Match worldLoader's dual-read boundary: a legacy row is not an
+            // authoritative RUNNING clock merely because the newly-added phase
+            // column has its database default. Its first fenced flush installs
+            // the complete MANUAL snapshot atomically.
+            const durablePhase = durableClock.clock_initialized ? durableClock.clock_phase : 'MANUAL';
             const stateMeta = asRecord(state.meta);
             const unificationSuspensionId =
                 typeof stateMeta.unificationClockSuspensionId === 'string'
                     ? stateMeta.unificationClockSuspensionId
                     : null;
             const openingPhaseTransition =
-                durableClock.clock_phase === 'PREOPEN' && expectedPhase === 'RUNNING' && durableClock.opening_reached;
+                durableClock.clock_initialized &&
+                durablePhase === 'PREOPEN' &&
+                expectedPhase === 'RUNNING' &&
+                durableClock.opening_reached;
             const unificationSuspensionTransition =
-                durableClock.clock_phase === 'RUNNING' &&
+                durableClock.clock_initialized &&
+                durablePhase === 'RUNNING' &&
                 expectedPhase === 'SUSPENDED' &&
                 Number(stateMeta.isunited ?? stateMeta.isUnited ?? 0) === 2 &&
                 Boolean(unificationSuspensionId);
             const completionPhaseTransition =
-                durableClock.clock_phase === 'RUNNING' &&
+                durableClock.clock_initialized &&
+                durablePhase === 'RUNNING' &&
                 expectedPhase === 'COMPLETED' &&
                 Number(stateMeta.isunited ?? stateMeta.isUnited ?? 0) >= 2;
             if (
                 (!openingPhaseTransition &&
                     !unificationSuspensionTransition &&
                     !completionPhaseTransition &&
-                    durableClock.clock_phase !== expectedPhase) ||
+                    durablePhase !== expectedPhase) ||
                 durableClock.clock_revision !== expectedRevision ||
                 durableClock.deadline_generation !== expectedGeneration
             ) {
                 throw new Error(
                     `Game clock fence changed before flush: expected ${expectedPhase}@${expectedRevision}/${expectedGeneration}, ` +
-                        `found ${durableClock.clock_phase}@${durableClock.clock_revision}/${durableClock.deadline_generation}.`
+                        `found ${durablePhase}@${durableClock.clock_revision}/${durableClock.deadline_generation}.`
                 );
             }
             const unificationCutWallAt = unificationSuspensionTransition ? await readClockDatabaseWall(prisma) : null;

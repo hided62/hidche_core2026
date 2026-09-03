@@ -174,6 +174,7 @@ describe('HWE-shaped unification invader resume', () => {
         const world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 1 }] },
         });
+        const addGeneral = vi.spyOn(world, 'addGeneral');
         const reservedTurns = new InMemoryReservedTurnStore(
             {
                 generalTurn: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
@@ -301,6 +302,14 @@ describe('HWE-shaped unification invader resume', () => {
         });
         expect(world.listNations().filter((entry) => entry.name.startsWith('ⓞ'))).toHaveLength(1);
         expect(world.listGenerals().filter((entry) => entry.npcState === 9)).toHaveLength(10);
+        const initialInvaderTurnTimes = addGeneral.mock.calls
+            .map(([general]) => general)
+            .filter((general) => general.npcState === 9)
+            .map((general) => general.turnTime.getTime());
+        const alignedMonthlyBoundary = addMinutes(liveLastTurnTime, 3).getTime();
+        expect(initialInvaderTurnTimes).toHaveLength(10);
+        expect(Math.min(...initialInvaderTurnTimes)).toBeGreaterThanOrEqual(alignedMonthlyBoundary);
+        expect(Math.max(...initialInvaderTurnTimes)).toBeLessThan(alignedMonthlyBoundary + 60_000);
         expect(run).toHaveBeenCalledTimes(2);
         expect(run.mock.calls.map(([targetTime]) => targetTime.toISOString())).toEqual([
             '2026-08-20T06:24:58.611Z',

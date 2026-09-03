@@ -300,6 +300,7 @@ const respondToRaiseInvader = async (options: {
         authority: options.clockOperationAuthority,
     });
     world.applyClockReconciliation(alignment);
+    const alignedState = world.getState();
     const args = asRecord(payload.option).args;
     if (!Array.isArray(args) || args.length !== 4 || args.some((value) => typeof value !== 'number')) {
         return { ok: false, action: 'raiseInvader', reason: '이민족 소환 인자가 올바르지 않습니다.' };
@@ -315,14 +316,14 @@ const respondToRaiseInvader = async (options: {
     await handler(
         args,
         {
-            year: state.currentYear,
-            month: state.currentMonth,
-            startyear: asNumber(state.meta.startYear, state.currentYear),
+            year: alignedState.currentYear,
+            month: alignedState.currentMonth,
+            startyear: asNumber(alignedState.meta.startYear, alignedState.currentYear),
             currentEventID: 0,
-            // Ref uses the frozen game_env.turntime while unification is paused.
-            // `now` is the realtime game projection and can be hours ahead after
-            // a long response wait, delaying every newly summoned invader turn.
-            turnTime: state.lastTurnTime,
+            // The exact reconciliation snapshot is the authority even when the
+            // turn rate stays unchanged. Using the pre-reconciliation cursor here
+            // would create immediately overdue invader turns after a long wait.
+            turnTime: alignedState.lastTurnTime,
         },
         event
     );

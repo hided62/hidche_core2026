@@ -13,7 +13,10 @@ import {
 } from '../src/turn-differential/referenceSnapshot.js';
 
 const workspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT ?? findTurnDifferentialWorkspaceRoot(process.cwd());
-const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
+const integration =
+    workspaceRoot && process.env.TURN_DIFFERENTIAL_REFERENCE === '1'
+        ? describe
+        : (_name: string, _factory: () => void): void => undefined;
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const persistence = describe.skipIf(!databaseUrl);
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };

@@ -263,6 +263,7 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
         const createInputEvent = async (
             command: Extract<TurnDaemonCommand, { type: 'inheritanceAction' }>
         ): Promise<void> => {
+            const clock = world.getGameClockState();
             await db.inputEvent.create({
                 data: {
                     requestId: command.requestId!,
@@ -274,6 +275,12 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
                     leaseUntil: new Date('2026-08-24T01:00:00.000Z'),
                     attempts: 1,
                     payload: command as GamePrisma.InputJsonValue,
+                    acceptedGameTick: BigInt(clock.tick),
+                    acceptedClockRevision: BigInt(clock.revision),
+                    acceptedDeadlineGeneration: BigInt(clock.deadlineGeneration),
+                    processingGameTick: BigInt(clock.tick),
+                    processingClockRevision: BigInt(clock.revision),
+                    processingDeadlineGeneration: BigInt(clock.deadlineGeneration),
                 },
             });
         };

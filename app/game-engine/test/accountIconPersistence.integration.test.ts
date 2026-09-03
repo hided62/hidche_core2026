@@ -283,6 +283,7 @@ integration('adjustGeneralIcon PostgreSQL persistence', () => {
             command: Extract<TurnDaemonCommand, { type: 'adjustGeneralIcon' }>,
             actorUserId = command.userId
         ): Promise<void> => {
+            const clock = world.getGameClockState();
             await db.inputEvent.create({
                 data: {
                     requestId: command.requestId!,
@@ -294,6 +295,12 @@ integration('adjustGeneralIcon PostgreSQL persistence', () => {
                     leaseUntil: new Date('2026-07-31T09:30:00.000Z'),
                     attempts: 1,
                     payload: command as GamePrisma.InputJsonValue,
+                    acceptedGameTick: BigInt(clock.tick),
+                    acceptedClockRevision: BigInt(clock.revision),
+                    acceptedDeadlineGeneration: BigInt(clock.deadlineGeneration),
+                    processingGameTick: BigInt(clock.tick),
+                    processingClockRevision: BigInt(clock.revision),
+                    processingDeadlineGeneration: BigInt(clock.deadlineGeneration),
                 },
             });
         };

@@ -99,9 +99,7 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
     afterAll(async () => {
         await hooks?.close();
         if (db) {
-            await db.$executeRawUnsafe(
-                `ALTER TABLE read_model_outbox DROP CONSTRAINT IF EXISTS ${rollbackConstraint}`
-            );
+            await db.$executeRawUnsafe(`ALTER TABLE read_model_outbox DROP CONSTRAINT IF EXISTS ${rollbackConstraint}`);
             await db.inputEvent.deleteMany({ where: { requestId } });
             await db.logEntry.deleteMany({ where: { text: { startsWith: '[read-model-journal]' } } });
             await db.worldState.deleteMany({ where: { id: worldId } });
@@ -187,6 +185,7 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
             currentMonth: 2,
         });
 
+        const commandClock = world.getGameClockState();
         await db.inputEvent.create({
             data: {
                 requestId,
@@ -194,6 +193,12 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
                 eventType: 'shiftSchedule',
                 status: 'PROCESSING',
                 payload: {},
+                acceptedGameTick: BigInt(commandClock.tick),
+                acceptedClockRevision: BigInt(commandClock.revision),
+                acceptedDeadlineGeneration: BigInt(commandClock.deadlineGeneration),
+                processingGameTick: BigInt(commandClock.tick),
+                processingClockRevision: BigInt(commandClock.revision),
+                processingDeadlineGeneration: BigInt(commandClock.deadlineGeneration),
             },
         });
         const directResult: TurnDaemonCommandResult = {
@@ -250,9 +255,9 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
             { domain: 'records.history', entityId: 0, revision: 1n },
         ]);
         await expect(db.readModelOutbox.count()).resolves.toBe(3);
-        await expect(db.logEntry.count({ where: { text: { startsWith: '[read-model-journal] direct' } } })).resolves.toBe(
-            3
-        );
+        await expect(
+            db.logEntry.count({ where: { text: { startsWith: '[read-model-journal] direct' } } })
+        ).resolves.toBe(3);
 
         world.updateWorldMeta({ queueProbe: 1 });
         await hooks.hooks.flushChanges?.(turnRunResult(world));

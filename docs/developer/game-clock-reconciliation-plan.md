@@ -139,3 +139,43 @@ mean deployment or production validation.
   state into the next file.
 - User-test deployment and public runtime evidence remain deliberately open:
   Git push is not deployment, and no deployment was authorized in this work.
+
+### 2026-09-03 - completion audit
+
+- The invader response now reads the exact post-alignment world snapshot even
+  when the turn rate is unchanged. The HWE-shaped regression asserts all ten
+  first turns are in the aligned next-month window rather than already due.
+- The ordinary flush fence now uses the same incomplete-row dual-read rule as
+  `worldLoader`: a legacy row is `MANUAL` until all four clock snapshot fields
+  exist. Input-event acceptance remains fail-closed until initialization.
+- Auction OPEN/FINALIZING recovery fixtures and direct PROCESSING input-event
+  fixtures now carry explicit phase/revision/generation coordinates. The
+  optional Ref-only troop parity suite is registered only in Ref mode, so the
+  Core conditional gate reports only tests it actually ran.
+- `pnpm check:architecture` passed with 22 authoritative fields and all 18
+  required DB/JSON participants. The gate now rejects duplicate or `FORBID`
+  participants, missing required participants, and unimplemented/duplicate
+  Redis participants.
+- `CI=1 TURBO_CONCURRENCY=1 pnpm test:integration:conditional` passed 79 files
+  and 234 tests against isolated PostgreSQL/Redis schemas with zero skipped and
+  zero failed files.
+- On the audited diff, `pnpm check:architecture` passed, full typecheck passed
+  21/21 tasks, workspace test passed 12/12 tasks, build passed 26/26 tasks, and
+  workspace lint completed without errors.
+
+The required acceptance cases map to automated evidence as follows:
+
+| Contract                                                                              | Automated evidence                                                                                                                             |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| PREOPEN signed tick, tick-zero opening, executable floor; RUNNING rewind monotonicity | `packages/common/test/gameClock.test.ts`, `app/game-engine/test/scenarioSeeder.test.ts`, `app/gateway-api/test/orchestratorOperations.test.ts` |
+| Exact 24-hour and 65m17.250s gaps; ordering, remaining distance, occurrence history   | `app/game-engine/test/clockReconciliation.integration.test.ts`, `packages/common/test/gameClock.test.ts`                                       |
+| DB commit/Redis failure and incomplete-status recovery                                | `app/game-engine/test/clockReconciliation.integration.test.ts`, `app/game-engine/test/unificationFinalization.integration.test.ts`             |
+| Auction OPEN/FINALIZING and tournament revision races                                 | `app/game-api/test/auctionWorker.integration.test.ts`, `app/game-api/test/tournamentStoreRevision.integration.test.ts`                         |
+| Pending commands crossing a clock revision                                            | `app/game-engine/test/databaseCommandQueue.integration.test.ts`, `app/game-api/test/inputEventBoundary.integration.test.ts`                    |
+| Delayed opening                                                                       | `app/gateway-api/test/orchestratorOperations.test.ts`, `app/game-engine/test/scenarioSeeder.test.ts`                                           |
+| 36-hour unification wait, rate change, deterministic retry, future invader turns      | `app/game-engine/test/unificationFinalization.integration.test.ts`, `app/game-engine/test/unificationInvaderResume.test.ts`                    |
+| DB wall despite host drift; general-access lock ordering                              | `app/game-engine/test/clockReconciliation.integration.test.ts`, `app/game-engine/test/profileSchemaAdvisoryLock.integration.test.ts`           |
+| Generated exact-gap ordering/remaining/history invariants                             | `packages/common/test/gameClock.test.ts`                                                                                                       |
+
+Deployment and public-runtime evidence remain outside this audit and are still
+open pending explicit user-test deployment authorization.
