@@ -651,11 +651,18 @@ const resolveTurnTimeBase = (worldState: WorldStateRow, now: Date): Date => {
     return now;
 };
 
-const buildInitialTurnTime = (rng: RandUtil, worldState: WorldStateRow, now: Date): Date => {
+export const buildInitialTurnTime = (
+    rng: Pick<RandUtil, 'nextRangeInt'>,
+    worldState: WorldStateRow,
+    now: Date,
+    notBefore: Date = now
+): Date => {
     const termSeconds = resolveTurnTermMinutes(worldState) * 60;
     const seconds = rng.nextRangeInt(0, termSeconds - 1);
     const microseconds = rng.nextRangeInt(0, 999_999);
-    return new Date(resolveTurnTimeBase(worldState, now).getTime() + seconds * 1000 + microseconds / 1000);
+    const base = resolveTurnTimeBase(worldState, now);
+    const safeBase = base.getTime() < notBefore.getTime() ? notBefore : base;
+    return new Date(safeBase.getTime() + seconds * 1000 + microseconds / 1000);
 };
 
 const appendSelectionLogs = async (options: {
@@ -702,6 +709,7 @@ export const createGeneralFromSelectionPool = async (options: {
     uniqueName: string;
     personality: string;
     now?: Date;
+    turnScheduleAt?: Date;
     operationalAcceptedAt: Date;
     seedOwnerIdentity?: string | number;
     ownerPicture?: string;
@@ -761,7 +769,7 @@ export const createGeneralFromSelectionPool = async (options: {
         );
     }
     const city = rng.choice(cities);
-    const turnTime = buildInitialTurnTime(rng, worldState, now);
+    const turnTime = buildInitialTurnTime(rng, worldState, now, options.turnScheduleAt ?? now);
     const age = 20;
     const specialityAges = resolveSpecialityAges(worldState, age);
     const nextChangeAt = new Date(

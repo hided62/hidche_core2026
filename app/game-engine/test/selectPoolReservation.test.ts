@@ -4,7 +4,11 @@ import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import { parseScenarioGeneralPoolCandidate } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { reserveSelectionPool, resolveSelectionPoolUserIcon } from '../src/turn/selectPoolService.js';
+import {
+    buildInitialTurnTime,
+    reserveSelectionPool,
+    resolveSelectionPoolUserIcon,
+} from '../src/turn/selectPoolService.js';
 import type { TurnGeneralPoolEntry, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 interface TestPoolRow {
@@ -27,6 +31,30 @@ interface PoolWhere {
 }
 
 const acceptedAt = new Date('0200-05-01T00:00:00.000Z');
+
+describe('selection-pool initial turn scheduling', () => {
+    it('does not inherit a turntime base from before the opening boundary', () => {
+        const openingGameAt = new Date('0200-01-01T00:00:00.000Z');
+        const preopenGameAt = new Date(openingGameAt.getTime() - 30 * 60_000);
+        const rng = {
+            nextRangeInt(min: number) {
+                return min;
+            },
+        };
+
+        const turnTime = buildInitialTurnTime(
+            rng,
+            {
+                tickSeconds: 300,
+                meta: { turntime: preopenGameAt.toISOString() },
+            } as unknown as Parameters<typeof buildInitialTurnTime>[1],
+            preopenGameAt,
+            openingGameAt
+        );
+
+        expect(turnTime.getTime()).toBeGreaterThanOrEqual(openingGameAt.getTime());
+    });
+});
 
 const buildRows = (): TestPoolRow[] =>
     Array.from({ length: 29 }, (_, index) => {

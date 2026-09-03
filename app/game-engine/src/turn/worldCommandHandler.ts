@@ -340,6 +340,7 @@ async function handleJoinCreateGeneral(
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
     const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
+    const turnScheduleAt = ctx.world.getRunnableGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'joinCreateGeneral',
@@ -377,6 +378,7 @@ async function handleJoinCreateGeneral(
                     ...(command.inheritBonusStat !== undefined ? { inheritBonusStat: command.inheritBonusStat } : {}),
                 },
                 acceptedAt,
+                turnScheduleAt,
                 operationalAcceptedAt,
             })),
         };
@@ -455,6 +457,7 @@ async function handleSelectPoolCreate(
             : command.acceptedGameAt !== undefined
               ? new Date(command.acceptedGameAt)
               : ctx.world.getGameNow(operationalAcceptedAt);
+    const turnScheduleAt = ctx.world.getRunnableGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'selectPoolCreate',
@@ -471,6 +474,7 @@ async function handleSelectPoolCreate(
                 ...(command.ownerImageServer !== undefined ? { ownerImageServer: command.ownerImageServer } : {}),
                 ...(command.ownerIconRevision ? { ownerIconRevision: command.ownerIconRevision } : {}),
                 now: acceptedAt,
+                turnScheduleAt,
                 operationalAcceptedAt,
             })),
         };

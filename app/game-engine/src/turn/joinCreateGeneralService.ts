@@ -383,7 +383,9 @@ export const resolveJoinTurnTime = (
     }
     let turnTime = new Date(turnTimeBase.getTime() + offsetSeconds * 1000 + offsetMicros / 1000);
     if (turnTime.getTime() <= acceptedAt.getTime()) {
-        turnTime = new Date(turnTime.getTime() + tickSeconds * 1000);
+        const termMs = tickSeconds * 1000;
+        const missedTerms = Math.floor((acceptedAt.getTime() - turnTime.getTime()) / termMs) + 1;
+        turnTime = new Date(turnTime.getTime() + missedTerms * termMs);
     }
     return turnTime;
 };
@@ -523,9 +525,11 @@ export const createGeneralFromJoin = async (options: {
     worldState: WorldStateRow;
     input: JoinCreateGeneralInput;
     acceptedAt: Date;
+    turnScheduleAt?: Date;
     operationalAcceptedAt: Date;
 }): Promise<{ ok: true; generalId: number }> => {
     const { db, world, worldState, input, acceptedAt, operationalAcceptedAt } = options;
+    const turnScheduleAt = options.turnScheduleAt ?? acceptedAt;
     await lockJoinMutation(db, input.userId);
     await assertGeneralIdSnapshotMatches(db, world);
 
@@ -707,7 +711,7 @@ export const createGeneralFromJoin = async (options: {
     const turnTime = resolveJoinTurnTime(
         rng,
         worldState,
-        acceptedAt,
+        turnScheduleAt,
         world.getState().lastTurnTime,
         input.inheritTurntimeZone
     );

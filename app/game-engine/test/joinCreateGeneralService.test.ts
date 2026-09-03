@@ -80,6 +80,27 @@ describe('generic join deterministic contracts', () => {
         ]);
     });
 
+    it('moves an inherited turn phase past the runnable opening boundary', () => {
+        const rng = {
+            nextRangeInt(min: number) {
+                return min;
+            },
+        };
+        const openingGameAt = new Date('2026-07-30T10:00:00.000Z');
+        const preopenCursor = new Date(openingGameAt.getTime() - 30 * 60_000);
+
+        const turnTime = resolveJoinTurnTime(
+            rng,
+            { tickSeconds: 60 } as Parameters<typeof resolveJoinTurnTime>[1],
+            openingGameAt,
+            preopenCursor,
+            0
+        );
+
+        expect(turnTime.getTime()).toBeGreaterThan(openingGameAt.getTime());
+        expect((turnTime.getTime() - preopenCursor.getTime()) % 60_000).toBe(0);
+    });
+
     it('uses the HiDCHe product name without the legacy PHP runtime label', () => {
         expect(JOIN_WELCOME_MESSAGE).toBe('삼국지 모의전투 HiDCHe의 세계에 오신 것을 환영합니다 ^o^');
         expect(JOIN_WELCOME_MESSAGE).not.toContain('PHP');

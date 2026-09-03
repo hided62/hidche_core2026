@@ -174,6 +174,26 @@ describe('runtime clock shift', () => {
         expect(world.getGameClockState().wallAnchor).toEqual(resumedAt);
     });
 
+    it('keeps runnable general scheduling at the future opening anchor during PREOPEN', () => {
+        const gameBase = new Date('2026-07-30T10:00:00.000Z');
+        const openAt = new Date('2026-09-02T23:30:00.000Z');
+        const world = buildWorld({
+            clockBaseTime: gameBase,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: openAt,
+            lastTurnTick: 0,
+        });
+        const preopenAt = new Date('2026-09-02T23:03:00.000Z');
+
+        expect(world.getGameNow(preopenAt).getTime()).toBeLessThan(gameBase.getTime());
+        expect(world.getRunnableGameNow(preopenAt)).toEqual(gameBase);
+        expect(world.getRunnableGameNow(openAt)).toEqual(gameBase);
+        expect(world.getRunnableGameNow(new Date(openAt.getTime() + 60_000))).toEqual(
+            new Date(gameBase.getTime() + 60_000)
+        );
+    });
+
     it.each([
         [5, 6],
         [10, 3],

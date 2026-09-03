@@ -656,6 +656,16 @@ export class InMemoryTurnWorld {
         return this.getGameClock().now(wallNow);
     }
 
+    getRunnableGameNow(wallNow: Date): Date {
+        const clock = this.getGameClock();
+        // PREOPEN still needs negative game ticks for cooldowns, but executable
+        // turn schedules must not precede the wall-clock opening boundary.
+        if (clock.mode === 'realtime' && wallNow.getTime() < clock.wallAnchor.getTime()) {
+            return clock.now(clock.wallAnchor);
+        }
+        return clock.now(wallNow);
+    }
+
     dateToGameTick(date: Date): number {
         return this.getGameClock().dateToTick(date);
     }
