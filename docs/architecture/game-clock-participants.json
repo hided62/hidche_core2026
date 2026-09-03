@@ -6,6 +6,10 @@
     "coveredFields": [
         "input_event.accepted_game_tick",
         "input_event.accepted_clock_revision",
+        "input_event.accepted_deadline_generation",
+        "input_event.processing_game_tick",
+        "input_event.processing_clock_revision",
+        "input_event.processing_deadline_generation",
         "world_state.clock_tick",
         "world_state.last_turn_tick",
         "world_state.clock_revision",
@@ -125,8 +129,16 @@
         {
             "key": "accepted-command-coordinate",
             "policy": "KEEP",
-            "authorityFields": ["input_event.accepted_game_tick", "input_event.accepted_clock_revision"],
-            "projectionFields": [],
+            "authorityFields": [
+                "input_event.accepted_game_tick",
+                "input_event.accepted_clock_revision",
+                "input_event.accepted_deadline_generation"
+            ],
+            "projectionFields": [
+                "input_event.processing_game_tick",
+                "input_event.processing_clock_revision",
+                "input_event.processing_deadline_generation"
+            ],
             "owner": "game-api/input-event"
         },
         {
@@ -139,11 +151,15 @@
         },
         {
             "key": "movable-json-rule-anchors",
-            "policy": "FORBID",
-            "authorityFields": ["world_state.meta.turntime", "world_state.meta.starttime", "world_state.meta.tnmt_time"],
+            "policy": "SHIFT",
+            "authorityFields": [
+                "world_state.meta.turntime",
+                "world_state.meta.starttime",
+                "world_state.meta.tnmt_time"
+            ],
             "projectionFields": [],
-            "owner": "game-engine/world-meta",
-            "migration": "Register typed columns or explicit participant adapters before exact reconciliation can complete."
+            "owner": "game-engine/clock-operation",
+            "migration": "Explicit adapter shifts registered ISO projections while typed tick columns remain authoritative."
         },
         {
             "key": "unification-wait",
@@ -179,12 +195,12 @@
         {
             "keyPattern": "sammo:{profile}:auction:timer",
             "policy": "REBUILD",
-            "status": "implemented-without-clock-revision-fence"
+            "status": "implemented-with-clock-revision-phase-generation-fence"
         },
         {
             "keyPattern": "sammo:{profile}:tournament:state",
             "policy": "REBUILD",
-            "status": "legacy-date-dual-write-required"
+            "status": "implemented-with-tick-dual-write-and-clock-fence"
         }
     ],
     "wallOnly": [

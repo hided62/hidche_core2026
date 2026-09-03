@@ -13,9 +13,10 @@ import { DatabaseTurnDaemonTransport } from '../daemon/databaseTransport.js';
 import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
 import { loadCurrentGameTime } from '../services/gameClock.js';
 import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
+import { ensureActiveRedisClockFence } from '../services/redisClockFence.js';
 import type { TurnDaemonTransport } from '../daemon/transport.js';
 import { buildTournamentKeys } from './keys.js';
-import { TournamentStore } from './store.js';
+import { TournamentStore, stampTournamentClock, type TournamentClockContext } from './store.js';
 import type { TournamentMatchEntry, TournamentState } from './types.js';
 import {
     applyGroupMatch,
@@ -595,41 +596,63 @@ export const processTournamentTick = async (options: {
     prisma: GamePrismaClient;
     daemonTransport: TurnDaemonTransport;
     now?: () => number;
+    clockContext?: TournamentClockContext;
 }): Promise<TournamentState | null> => {
     const { store, prisma, daemonTransport } = options;
     const now = options.now ?? Date.now;
     let processedState: TournamentState | null = null;
 
-    await store.withMutationLock(async () => {
-        const state = await store.getState();
-        if (!state || (!state.auto && !needsSettlement(state))) {
-            return;
-        }
-        const nextAt = new Date(state.nextAt).getTime();
-        if (state.auto && Number.isFinite(nextAt) && nextAt > now()) {
-            return;
-        }
+    const processWithLock = async (): Promise<void> =>
+        store.withMutationLock(async () => {
+            const state = await store.getState();
+            if (!state || (!state.auto && !needsSettlement(state))) {
+                return;
+            }
+            if (
+                options.clockContext &&
+                (state.clockRevision !== options.clockContext.revision ||
+                    state.deadlineGeneration !== options.clockContext.deadlineGeneration)
+            ) {
+                throw new Error('Tournament state does not match the active clock revision.');
+            }
+            const nextAt = new Date(state.nextAt).getTime();
+            const notDue = options.clockContext
+                ? !Number.isSafeInteger(state.nextTick) ||
+                  state.nextTick! > options.clockContext.dateToTick(new Date(now()))!
+                : Number.isFinite(nextAt) && nextAt > now();
+            if (state.auto && notDue) {
+                if (options.clockContext && !Number.isSafeInteger(state.nextTick)) {
+                    throw new Error('Active tournament nextAt lacks the authoritative nextTick dual-write.');
+                }
+                return;
+            }
 
-        if (needsSettlement(state)) {
-            processedState = (await settleTournamentOutcome({ store, daemonTransport, state })) ?? state;
-            return;
-        }
+            if (needsSettlement(state)) {
+                processedState = (await settleTournamentOutcome({ store, daemonTransport, state })) ?? state;
+                return;
+            }
 
-        const worldState = await prisma.worldState.findFirst();
-        const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
-        let nextState = state;
-        if (isBattleStage(state.stage)) {
-            nextState = await applyBattle(store, state, String(baseSeed), daemonTransport);
-        } else if (isPreBattleStage(state.stage)) {
-            nextState = await applyPreBattleStage(store, prisma, state, String(baseSeed), daemonTransport, now);
-        }
-        processedState =
-            (await settleTournamentOutcome({
-                store,
-                daemonTransport,
-                state: nextState,
-            })) ?? nextState;
-    });
+            const worldState = await prisma.worldState.findFirst();
+            const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
+            let nextState = state;
+            if (isBattleStage(state.stage)) {
+                nextState = await applyBattle(store, state, String(baseSeed), daemonTransport);
+            } else if (isPreBattleStage(state.stage)) {
+                nextState = await applyPreBattleStage(store, prisma, state, String(baseSeed), daemonTransport, now);
+            }
+            processedState =
+                (await settleTournamentOutcome({
+                    store,
+                    daemonTransport,
+                    state: nextState,
+                })) ?? nextState;
+        });
+
+    if (options.clockContext) {
+        await store.withClockContext(options.clockContext, processWithLock);
+    } else {
+        await processWithLock();
+    }
 
     return processedState;
 };
@@ -656,16 +679,60 @@ export const runTournamentWorker = async (options: TournamentWorkerOptions = {})
 
     try {
         while (!control.signal.aborted) {
-            const state = await store.getState();
+            let state = await store.getState();
             if (!state || (!state.auto && !needsSettlement(state))) {
                 await waitForWorkerPoll(control.signal, config.tournamentPollMs);
                 continue;
             }
 
+            const gameTime = await loadCurrentGameTime(postgres.prisma);
+            if (gameTime.phase && gameTime.phase !== 'RUNNING') {
+                await waitForWorkerPoll(control.signal, config.tournamentPollMs);
+                continue;
+            }
+            const clockFence = gameTime.phase
+                ? await ensureActiveRedisClockFence(redis.client, config.profileName, gameTime)
+                : null;
+            if (gameTime.phase && !clockFence) {
+                await waitForWorkerPoll(control.signal, config.tournamentPollMs);
+                continue;
+            }
+            const clockContext: TournamentClockContext | undefined = clockFence
+                ? {
+                      phase: 'RUNNING',
+                      revision: clockFence.revision,
+                      deadlineGeneration: clockFence.generation,
+                      dateToTick: gameTime.dateToTick,
+                  }
+                : undefined;
+            if (
+                clockContext &&
+                (!Number.isSafeInteger(state.nextTick) ||
+                    state.clockRevision === undefined ||
+                    state.deadlineGeneration === undefined)
+            ) {
+                state = stampTournamentClock(state, clockContext);
+                await store.withClockContext(clockContext, () => store.setState(state!));
+            }
+            if (
+                clockContext &&
+                (state.clockRevision !== clockContext.revision ||
+                    state.deadlineGeneration !== clockContext.deadlineGeneration)
+            ) {
+                await waitForWorkerPoll(control.signal, config.tournamentPollMs);
+                continue;
+            }
+
             const nextAt = new Date(state.nextAt).getTime();
-            const gameNow = (await loadCurrentGameTime(postgres.prisma)).now.getTime();
-            if (state.auto && Number.isFinite(nextAt) && nextAt > gameNow) {
-                await waitForWorkerPoll(control.signal, Math.min(config.tournamentPollMs, nextAt - gameNow));
+            const gameNow = gameTime.now.getTime();
+            const notDue = clockContext
+                ? state.nextTick! > gameTime.tick!
+                : Number.isFinite(nextAt) && nextAt > gameNow;
+            if (state.auto && notDue) {
+                await waitForWorkerPoll(
+                    control.signal,
+                    Math.min(config.tournamentPollMs, Math.max(1, nextAt - gameNow))
+                );
                 continue;
             }
 
@@ -675,6 +742,7 @@ export const runTournamentWorker = async (options: TournamentWorkerOptions = {})
                     prisma: postgres.prisma,
                     daemonTransport,
                     now: () => gameNow,
+                    clockContext,
                 });
             } catch (error) {
                 const message = error instanceof Error ? error.message : 'Unknown error';
@@ -700,7 +768,11 @@ export const runTournamentWorker = async (options: TournamentWorkerOptions = {})
                     lastError: message,
                     lastErrorAt: failedAt,
                 };
-                await store.setState(nextState);
+                if (clockContext) {
+                    await store.withClockContext(clockContext, () => store.setState(nextState));
+                } else {
+                    await store.setState(nextState);
+                }
             }
 
             await waitForWorkerPoll(control.signal, config.tournamentPollMs);

@@ -20,6 +20,8 @@ export * from './turn/engineStateManager.js';
 export * from './turn/inMemoryStateStore.js';
 export * from './turn/inMemoryTurnProcessor.js';
 export * from './turn/databaseHooks.js';
+export * from './turn/clockReconciliation.js';
+export * from './turn/clockProjectionOutbox.js';
 export * from './turn/joinCreateGeneralService.js';
 export * from './turn/npcPossessionService.js';
 export * from './turn/selectPoolService.js';

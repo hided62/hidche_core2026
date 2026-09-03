@@ -46,6 +46,9 @@ export interface DatabaseClient {
     vote: GamePrisma.VoteDelegate;
     inputEvent: GamePrisma.InputEventDelegate;
     turnDaemonLease: GamePrisma.TurnDaemonLeaseDelegate;
+    clockSuspension?: GamePrisma.ClockSuspensionDelegate;
+    clockReconciliationParticipant?: GamePrisma.ClockReconciliationParticipantDelegate;
+    clockProjectionOutbox?: GamePrisma.ClockProjectionOutboxDelegate;
     readModelOutbox: GamePrisma.ReadModelOutboxDelegate;
     webPushOutbox: GamePrisma.WebPushOutboxDelegate;
 }

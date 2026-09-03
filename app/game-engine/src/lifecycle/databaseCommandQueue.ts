@@ -108,6 +108,13 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
     private async claimPending(limit = 100): Promise<TurnDaemonCommand[]> {
         await this.recoverExpiredLeases();
         return this.db.$transaction(async (transaction) => {
+            const world = await transaction.worldState.findFirst({
+                orderBy: { id: 'asc' },
+                select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true },
+            });
+            const gameplayAllowed =
+                !world || world.clockPhase === 'RUNNING' || world.clockPhase === 'MANUAL';
+            const currentRevision = world?.clockRevision ?? null;
             const rows = await transaction.$queryRaw<
                 Array<{
                     sequence: bigint;
@@ -115,6 +122,9 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                     eventType: string;
                     payload: unknown;
                     createdAt: Date;
+                    acceptedGameTick: bigint | null;
+                    acceptedClockRevision: bigint | null;
+                    acceptedDeadlineGeneration: bigint | null;
                 }>
             >(GamePrisma.sql`
                 SELECT
@@ -122,10 +132,14 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                     "request_id" AS "requestId",
                     "event_type" AS "eventType",
                     "payload",
-                    "created_at" AS "createdAt"
+                    "created_at" AS "createdAt",
+                    "accepted_game_tick" AS "acceptedGameTick",
+                    "accepted_clock_revision" AS "acceptedClockRevision",
+                    "accepted_deadline_generation" AS "acceptedDeadlineGeneration"
                 FROM "input_event"
                 WHERE "target" = 'ENGINE'::"InputEventTarget"
                   AND "status" = 'PENDING'::"InputEventStatus"
+                  AND (${gameplayAllowed} OR "event_type" = 'getStatus')
                 ORDER BY "sequence" ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT ${limit}
@@ -133,23 +147,53 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
             if (rows.length === 0) {
                 return [];
             }
-            await transaction.inputEvent.updateMany({
-                where: {
-                    sequence: { in: rows.map((row) => row.sequence) },
-                    target: 'ENGINE',
-                    status: 'PENDING',
-                },
-                data: {
-                    status: 'PROCESSING',
-                    processingAt: new Date(),
-                    lockedBy: this.workerId,
-                    leaseUntil: new Date(Date.now() + this.leaseDurationMs),
-                    attempts: { increment: 1 },
-                },
-            });
+            const appliedSuspensions = currentRevision
+                ? await transaction.clockSuspension.findMany({
+                      where: { status: 'APPLIED', targetRevision: { lte: currentRevision } },
+                      orderBy: { sourceRevision: 'asc' },
+                      select: { sourceRevision: true, targetRevision: true, shiftTicks: true },
+                  })
+                : [];
+            const convertTick = (row: (typeof rows)[number]): bigint | null | undefined => {
+                if (row.eventType === 'getStatus') return row.acceptedGameTick;
+                if (row.acceptedGameTick === null || row.acceptedClockRevision === null || currentRevision === null) {
+                    return row.acceptedGameTick ?? world?.clockTick ?? null;
+                }
+                if (row.acceptedClockRevision > currentRevision) return undefined;
+                let revision = row.acceptedClockRevision;
+                let tick = row.acceptedGameTick;
+                while (revision < currentRevision) {
+                    const step = appliedSuspensions.find((entry) => entry.sourceRevision === revision);
+                    if (!step || step.shiftTicks === null || step.targetRevision !== revision + 1n) return undefined;
+                    tick += step.shiftTicks;
+                    revision = step.targetRevision;
+                }
+                return tick;
+            };
+            const processableRows = rows
+                .map((row) => ({ row, processingGameTick: convertTick(row) }))
+                .filter(
+                    (entry): entry is { row: (typeof rows)[number]; processingGameTick: bigint | null } =>
+                        entry.processingGameTick !== undefined
+                );
+            for (const { row, processingGameTick } of processableRows) {
+                await transaction.inputEvent.update({
+                    where: { sequence: row.sequence },
+                    data: {
+                        status: 'PROCESSING',
+                        processingAt: new Date(),
+                        processingGameTick,
+                        processingClockRevision: currentRevision,
+                        processingDeadlineGeneration: world?.deadlineGeneration ?? null,
+                        lockedBy: this.workerId,
+                        leaseUntil: new Date(Date.now() + this.leaseDurationMs),
+                        attempts: { increment: 1 },
+                    },
+                });
+            }
 
             const commands: TurnDaemonCommand[] = [];
-            for (const row of rows) {
+            for (const { row, processingGameTick } of processableRows) {
                 const command = normalizeTurnDaemonCommand({
                     requestId: row.requestId,
                     sentAt: row.createdAt.toISOString(),
@@ -167,6 +211,27 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                         },
                     });
                     continue;
+                }
+                if (
+                    processingGameTick !== null &&
+                    row.acceptedGameTick !== null &&
+                    processingGameTick !== row.acceptedGameTick
+                ) {
+                    const value = Number(processingGameTick);
+                    if (!Number.isSafeInteger(value)) {
+                        await transaction.inputEvent.update({
+                            where: { sequence: row.sequence },
+                            data: {
+                                status: 'FAILED',
+                                error: 'Converted processing game tick is outside the safe integer range.',
+                                completedAt: new Date(),
+                                lockedBy: null,
+                                leaseUntil: null,
+                            },
+                        });
+                        continue;
+                    }
+                    Reflect.set(command, 'processingGameTick', value);
                 }
                 commands.push(command);
             }

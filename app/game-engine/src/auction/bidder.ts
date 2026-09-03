@@ -269,7 +269,14 @@ export const createAuctionBidder = async (options: {
                 };
             }
             const processingNow = world.getGameNow(new Date());
-            const { bidAt, bidTick } = resolveAuctionBidTiming(world, processingNow, command.acceptedGameTick);
+            const convertedProcessingTick = Reflect.get(command, 'processingGameTick');
+            const { bidAt, bidTick } = resolveAuctionBidTiming(
+                world,
+                processingNow,
+                typeof convertedProcessingTick === 'number' && Number.isSafeInteger(convertedProcessingTick)
+                    ? convertedProcessingTick
+                    : command.acceptedGameTick
+            );
             if (hasAuctionClosePassed(auction, bidAt, bidTick)) {
                 return {
                     type: 'auctionBid',

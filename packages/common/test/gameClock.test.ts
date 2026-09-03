@@ -6,6 +6,7 @@ import {
     MAX_SAFE_GAME_TICK,
     asGameTick,
     asObservedGameInstant,
+    buildClockAlignmentPlan,
     buildExactClockAlignmentPlan,
     createDeadline,
     scheduleNotBefore,
@@ -111,6 +112,64 @@ describe('GameClock', () => {
 
         expect(plan.gapTicks).toBe(24 * GAME_TICKS_PER_TURN);
         expect(plan.alignedTick).toBe(26 * GAME_TICKS_PER_TURN);
+    });
+
+    it('keeps legacy complete-turn rebasing separate from bounded catch-up', () => {
+        const common = {
+            sourceRevision: 4,
+            cutTick: 100,
+            cutWall: new Date('2026-01-01T00:00:00.000Z'),
+            resumeWall: new Date('2026-01-01T01:05:17.250Z'),
+            ticksPerSecond: 10_000,
+        };
+        const legacy = buildClockAlignmentPlan({ ...common, policy: 'LEGACY_COMPLETE_TURNS' });
+        const catchUp = buildClockAlignmentPlan({ ...common, policy: 'CATCH_UP', catchUpTicks: 1_000_000 });
+
+        expect(legacy).toMatchObject({
+            policy: 'LEGACY_COMPLETE_TURNS',
+            gapTicks: 39_172_500,
+            shiftTicks: GAME_TICKS_PER_TURN,
+            catchUpTicks: 3_172_500,
+        });
+        expect(catchUp).toMatchObject({
+            policy: 'CATCH_UP',
+            gapTicks: 39_172_500,
+            shiftTicks: 38_172_500,
+            catchUpTicks: 1_000_000,
+        });
+        expect(() => buildClockAlignmentPlan({ ...common, policy: 'EXACT', catchUpTicks: 1 })).toThrow(
+            'EXACT alignment does not allow catch-up ticks'
+        );
+    });
+
+    it('preserves schedule ordering, remaining distance, and occurrence ticks across generated exact gaps', () => {
+        let seed = 0x5eed1234;
+        const next = (): number => {
+            seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+            return seed;
+        };
+        for (let iteration = 0; iteration < 500; iteration += 1) {
+            const cutTick = next() % 1_000_000_000;
+            const gapMilliseconds = next() % (7 * 24 * 60 * 60 * 1_000);
+            const ticksPerSecond = [5_000, 10_000, 60_000][next() % 3]!;
+            const offsets = Array.from({ length: 8 }, () => next() % (3 * GAME_TICKS_PER_TURN)).sort(
+                (left, right) => left - right
+            );
+            const occurrenceTicks = Array.from({ length: 4 }, () => cutTick - (next() % GAME_TICKS_PER_TURN));
+            const plan = buildClockAlignmentPlan({
+                policy: 'EXACT',
+                sourceRevision: 1 + (next() % 10_000),
+                cutTick,
+                cutWall: new Date(0),
+                resumeWall: new Date(gapMilliseconds),
+                ticksPerSecond,
+            });
+            const shifted = offsets.map((offset) => cutTick + offset + plan.shiftTicks);
+
+            expect(shifted.map((deadline) => deadline - plan.alignedTick)).toEqual(offsets);
+            expect([...shifted].sort((left, right) => left - right)).toEqual(shifted);
+            expect(occurrenceTicks).toEqual([...occurrenceTicks]);
+        }
     });
 
     it('projects near the safe tick boundary without unsafe intermediate multiplication', () => {

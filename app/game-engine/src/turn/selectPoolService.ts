@@ -439,14 +439,19 @@ export const reserveSelectionPool = async (options: {
     userId: string;
     now?: Date;
     acceptedGameTick?: number;
+    processingGameTick?: number;
     seedOwnerIdentity?: string | number;
 }): Promise<SelectPoolReservationDto> => {
     const { db, world, worldState, userId } = options;
     requirePoolWorld(worldState);
     const now = options.now ?? new Date();
     const acceptedGameTick = options.acceptedGameTick ?? resolveAcceptedGameTick(world, now);
+    const processingGameTick = options.processingGameTick ?? acceptedGameTick;
     if (!Number.isSafeInteger(acceptedGameTick)) {
         fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
+    }
+    if (!Number.isSafeInteger(processingGameTick)) {
+        fail('INTERNAL_SERVER_ERROR', '장수 선택 처리 tick이 안전한 정수 범위를 벗어났습니다.');
     }
     await lockSelectionUser(db, userId);
     await lockSelectionMutationTables(db);
@@ -461,7 +466,7 @@ export const reserveSelectionPool = async (options: {
 
     let currentRows = await synchronizeSelectionPoolWorld(db, world);
     const existing = currentRows.filter(
-        (row) => row.ownerUserId === userId && row.generalId === null && isReservationActive(row, now, acceptedGameTick)
+        (row) => row.ownerUserId === userId && row.generalId === null && isReservationActive(row, now, processingGameTick)
     );
     if (existing.length > 0) {
         return toReservationDto(existing, Boolean(general), worldState, world);
@@ -471,7 +476,7 @@ export const reserveSelectionPool = async (options: {
         where: {
             generalId: null,
             OR: [
-                { reservedUntilTick: { lt: BigInt(acceptedGameTick) } },
+                { reservedUntilTick: { lt: BigInt(processingGameTick) } },
                 { reservedUntilTick: null, reservedUntil: { lt: now } },
             ],
         },
@@ -483,7 +488,7 @@ export const reserveSelectionPool = async (options: {
     });
     currentRows = await synchronizeSelectionPoolWorld(db, world);
     const availableIds = new Set(
-        world.listGeneralPoolCandidates(now, acceptedGameTick)?.map((candidate) => candidate.poolEntryId) ?? []
+        world.listGeneralPoolCandidates(now, processingGameTick)?.map((candidate) => candidate.poolEntryId) ?? []
     );
     const available = currentRows.filter(
         (row) =>
@@ -507,7 +512,7 @@ export const reserveSelectionPool = async (options: {
         (row) =>
             [row, calculateSelectionCandidateWeight(poolName, parseCandidate(row), true)] as [SelectPoolRow, number]
     );
-    const reservedUntilTick = acceptedGameTick + RESERVATION_TURN_MULTIPLIER * GAME_TICKS_PER_TURN;
+    const reservedUntilTick = processingGameTick + RESERVATION_TURN_MULTIPLIER * GAME_TICKS_PER_TURN;
     if (!Number.isSafeInteger(reservedUntilTick)) {
         fail('INTERNAL_SERVER_ERROR', '장수 선택 예약 tick이 안전한 정수 범위를 벗어났습니다.');
     }

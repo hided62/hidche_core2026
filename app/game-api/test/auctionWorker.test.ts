@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { GamePrismaClient } from '@sammo-ts/infra';
 
-import { processDueAuctionId, reconcilePendingAuctionTimers } from '../src/auction/worker.js';
+import { popDueAuctionIds, processDueAuctionId, reconcilePendingAuctionTimers } from '../src/auction/worker.js';
 import { resolveAuctionSeedScore } from '../src/auction/scheduler.js';
 
 const buildRedis = () => ({
@@ -55,6 +55,38 @@ const buildDb = (options: {
 };
 
 describe('auction worker clock-shift race', () => {
+    it('uses one Redis script for revision, generation, phase, due-read, and removal', async () => {
+        const redis = { ...buildRedis(), eval: vi.fn(async () => ['7', '9']) };
+        await expect(
+            popDueAuctionIds(redis, 'auction-timer', 123_456, 100, {
+                activeRevisionKey: 'clock-revision',
+                deadlineGenerationKey: 'deadline-generation',
+                phaseKey: 'clock-phase',
+                revision: 4,
+                generation: 8,
+            })
+        ).resolves.toEqual(['7', '9']);
+        expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining('ZRANGEBYSCORE'), {
+            keys: ['auction-timer', 'clock-revision', 'deadline-generation', 'clock-phase'],
+            arguments: ['4', '8', '123456', '100'],
+        });
+        expect(redis.zRangeByScore).not.toHaveBeenCalled();
+        expect(redis.zRem).not.toHaveBeenCalled();
+    });
+
+    it('returns no due member when the atomic Redis clock fence rejects the pop', async () => {
+        const redis = { ...buildRedis(), eval: vi.fn(async () => ['__CLOCK_FENCE__']) };
+        await expect(
+            popDueAuctionIds(redis, 'auction-timer', 123_456, 100, {
+                activeRevisionKey: 'clock-revision',
+                deadlineGenerationKey: 'deadline-generation',
+                phaseKey: 'clock-phase',
+                revision: 4,
+                generation: 8,
+            })
+        ).resolves.toEqual([]);
+    });
+
     it('seeds OPEN at its deadline but retries FINALIZING at the current logical tick', () => {
         const now = new Date('2026-07-30T12:00:00.000Z');
         const time = {
@@ -292,6 +324,7 @@ describe('auction worker clock-shift race', () => {
                 requestId,
                 target: 'ENGINE',
                 eventType: 'auctionFinalize',
+                acceptedGameTick: 72_000_000n,
                 payload: {
                     type: 'auctionFinalize',
                     requestId,

@@ -30,11 +30,31 @@ class MemoryRedis {
     }
 
     async eval(_script: string, options: { keys: string[]; arguments: string[] }): Promise<string> {
-        const [valueKey, revisionKey] = options.keys;
-        const [value] = options.arguments;
+        if (options.keys.length === 3 && options.keys[0]?.endsWith(':clock:active-revision')) {
+            const current = options.keys.map((key) => this.values.get(key));
+            if (current.every((value) => value === undefined)) {
+                options.keys.forEach((key, index) => this.values.set(key, options.arguments[index]!));
+                return '1';
+            }
+            return current.every((value, index) => value === options.arguments[index]) ? '2' : '0';
+        }
+        const fenced = options.keys.at(-1)?.endsWith(':clock:phase') === true;
+        const writeCount = options.keys.length - (fenced ? 4 : 1);
+        if (fenced) {
+            const clockKeys = options.keys.slice(-3);
+            const expected = options.arguments.slice(-3);
+            if (!clockKeys.every((key, index) => this.values.get(key) === expected[index])) {
+                return '__CLOCK_FENCE__';
+            }
+        }
+        const valueKey = options.keys[0];
+        const revisionKey = options.keys[writeCount];
+        const value = options.arguments[0];
         if (!valueKey || !revisionKey || value === undefined) throw new Error('invalid eval arguments');
         const revision = Number(this.values.get(revisionKey) ?? '0') + 1;
-        this.values.set(valueKey, value);
+        for (let index = 0; index < writeCount; index += 1) {
+            this.values.set(options.keys[index]!, options.arguments[index]!);
+        }
         this.values.set(revisionKey, String(revision));
         return String(revision);
     }
@@ -144,6 +164,14 @@ const buildContext = (options: {
         },
         worldState: {
             findFirst: async () => ({
+                clockBaseTime: new Date('2026-01-01T00:00:00.000Z'),
+                clockTick: 0n,
+                clockMode: 'realtime',
+                clockWallAnchor: new Date('2026-01-01T00:00:00.000Z'),
+                clockPhase: 'RUNNING',
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+                tickSeconds: 60,
                 config: { const: { develCost: options.develCost ?? 200 } },
                 ...(options.currentDevelCost === undefined ? {} : { meta: { develcost: options.currentDevelCost } }),
             }),
@@ -394,7 +422,10 @@ describe('tournament router permissions and mutations', () => {
                 roles: ['admin.tournament:che:default'],
             })
         );
-        await expect(adminCaller.tournament.getAdminStatus()).resolves.toEqual({ ok: true });
+        await expect(adminCaller.tournament.getAdminStatus()).resolves.toMatchObject({
+            ok: true,
+            clock: { reconciliationComplete: false, latestReconciliation: null },
+        });
     });
 
     it('applies the admin role boundary to every tournament mutation', async () => {
@@ -479,9 +510,7 @@ describe('tournament router permissions and mutations', () => {
             ])
         ).resolves.toEqual({ ok: true, count: 1 });
         await expect(
-            caller.tournament.setBettingEntries([
-                { generalId: general.id, targetId: rival.id, amount: 100 },
-            ])
+            caller.tournament.setBettingEntries([{ generalId: general.id, targetId: rival.id, amount: 100 }])
         ).resolves.toEqual({ ok: true, count: 1 });
         await expect(caller.tournament.seedParticipants({ generalIds: [general.id, rival.id] })).resolves.toEqual({
             ok: true,

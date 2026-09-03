@@ -28,6 +28,18 @@ service. The service must re-read participant checksums and either return the
 already-applied result or resume the pending outbox. Never create a replacement
 revision to hide a failed target revision.
 
+When an outbox row is `FAILED`, the profile must remain `RECONCILING`. A retry
+is safe in both crash locations:
+
+- before Redis commit, the Lua operation reapplies from the source revision;
+- after Redis commit but before DB finalization, the Lua operation returns the
+  already-active target result and DB finalization resumes without shifting any
+  tournament deadline twice.
+
+`lastError` naming a legacy tournament deadline means the tournament lacks its
+tick dual-write. Do not force the active revision; migrate or prove the
+tournament inactive, then retry the same outbox.
+
 ## Rollback
 
 There is no blind inverse update. Before enabling exact reconciliation in an

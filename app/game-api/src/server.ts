@@ -50,6 +50,7 @@ import { ReadModelOutboxWorker } from './realtime/outboxWorker.js';
 import { DeferredGeneralAccessWorker } from './services/deferredGeneralAccess.js';
 import { WebPushOutboxWorker } from './services/webPushOutboxWorker.js';
 import { scopeHttpIdempotencyKey } from './requestId.js';
+import { loadClockReadiness } from './services/clockReadiness.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -420,12 +421,17 @@ export const createGameApiServer = async () => {
         request.raw.on('aborted', close);
     });
 
-    app.get('/healthz', async () => ({
-        ok: true,
-        profile: config.profileName,
-        postgresPool: postgres.getPoolStats(),
-        accountIconReconciliation: accountIconResetReconciler.getHealth(),
-    }));
+    app.get('/healthz', async (_request, reply) => {
+        const clock = await loadClockReadiness(postgres.prisma);
+        if (!clock.reconciliationComplete) reply.code(503);
+        return {
+            ok: clock.reconciliationComplete,
+            profile: config.profileName,
+            postgresPool: postgres.getPoolStats(),
+            accountIconReconciliation: accountIconResetReconciler.getHealth(),
+            clock,
+        };
+    });
 
     try {
         await realtimeHub.start();

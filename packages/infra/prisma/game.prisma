@@ -63,23 +63,27 @@ enum InputEventTarget {
 }
 
 model InputEvent {
-  sequence              BigInt           @id @default(autoincrement())
-  requestId             String           @unique @map("request_id")
-  target                InputEventTarget
-  eventType             String           @map("event_type")
-  payload               Json             @default(dbgenerated("'{}'::jsonb"))
-  actorUserId           String?          @map("actor_user_id")
-  acceptedGameTick      BigInt?          @map("accepted_game_tick")
-  acceptedClockRevision BigInt?          @map("accepted_clock_revision")
-  status                InputEventStatus @default(PENDING)
-  result                Json?
-  error                 String?
-  attempts              Int              @default(0)
-  lockedBy              String?          @map("locked_by")
-  leaseUntil            DateTime?        @map("lease_until")
-  createdAt             DateTime         @default(now()) @map("created_at")
-  processingAt          DateTime?        @map("processing_at")
-  completedAt           DateTime?        @map("completed_at")
+  sequence                     BigInt           @id @default(autoincrement())
+  requestId                    String           @unique @map("request_id")
+  target                       InputEventTarget
+  eventType                    String           @map("event_type")
+  payload                      Json             @default(dbgenerated("'{}'::jsonb"))
+  actorUserId                  String?          @map("actor_user_id")
+  acceptedGameTick             BigInt?          @map("accepted_game_tick")
+  acceptedClockRevision        BigInt?          @map("accepted_clock_revision")
+  acceptedDeadlineGeneration   BigInt?          @map("accepted_deadline_generation")
+  processingGameTick           BigInt?          @map("processing_game_tick")
+  processingClockRevision      BigInt?          @map("processing_clock_revision")
+  processingDeadlineGeneration BigInt?          @map("processing_deadline_generation")
+  status                       InputEventStatus @default(PENDING)
+  result                       Json?
+  error                        String?
+  attempts                     Int              @default(0)
+  lockedBy                     String?          @map("locked_by")
+  leaseUntil                   DateTime?        @map("lease_until")
+  createdAt                    DateTime         @default(now()) @map("created_at")
+  processingAt                 DateTime?        @map("processing_at")
+  completedAt                  DateTime?        @map("completed_at")
 
   @@index([target, status, sequence])
   @@map("input_event")

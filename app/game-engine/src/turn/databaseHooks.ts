@@ -1218,6 +1218,34 @@ export const createDatabaseTurnHooks = async (
                         `found ${durableClock.clock_phase}@${durableClock.clock_revision}/${durableClock.deadline_generation}.`
                 );
             }
+            if (commandCompletion) {
+                const commandFence = await prisma.$queryRaw<
+                    Array<{
+                        status: string;
+                        processing_clock_revision: bigint | null;
+                        processing_deadline_generation: bigint | null;
+                    }>
+                >(GamePrisma.sql`
+                    SELECT status,
+                           processing_clock_revision,
+                           processing_deadline_generation
+                    FROM input_event
+                    WHERE request_id = ${commandCompletion.requestId}
+                      AND target = 'ENGINE'::"InputEventTarget"
+                    FOR UPDATE
+                `);
+                const event = commandFence[0];
+                if (
+                    !event ||
+                    event.status !== 'PROCESSING' ||
+                    event.processing_clock_revision !== expectedRevision ||
+                    event.processing_deadline_generation !== expectedGeneration
+                ) {
+                    throw new Error(
+                        `Input event processing clock fence changed before commit: ${commandCompletion.requestId}.`
+                    );
+                }
+            }
             let neutralAuctionsToCreate = pendingNeutralAuctions;
             if (pendingNeutralAuctions.length > 0) {
                 const latestRegistrationKey =

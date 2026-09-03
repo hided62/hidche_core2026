@@ -17,8 +17,8 @@ export type ScheduleInstant = GameTick & { readonly [scheduleInstantBrand]: 'Sch
 export type ClockRevision = number & { readonly [clockRevisionBrand]: 'ClockRevision' };
 export type WallInstant = Date & { readonly [wallInstantBrand]: 'WallInstant' };
 
-export interface ExactClockAlignmentPlan {
-    policy: 'EXACT';
+export interface ClockAlignmentPlan {
+    policy: ClockAlignmentPolicy;
     sourceRevision: ClockRevision;
     targetRevision: ClockRevision;
     cutTick: GameTick;
@@ -84,6 +84,15 @@ export const parseGameClockPhase = (value: string): GameClockPhase => {
     throw new Error(`Unknown game clock phase: ${value}`);
 };
 
+const CLOCK_ALIGNMENT_POLICIES: readonly ClockAlignmentPolicy[] = ['EXACT', 'LEGACY_COMPLETE_TURNS', 'CATCH_UP'];
+
+export const parseClockAlignmentPolicy = (value: string): ClockAlignmentPolicy => {
+    if ((CLOCK_ALIGNMENT_POLICIES as readonly string[]).includes(value)) {
+        return value as ClockAlignmentPolicy;
+    }
+    throw new Error(`Unknown clock alignment policy: ${value}`);
+};
+
 export const scheduleNotBefore = (instant: ObservedGameInstant, phase: GameClockPhase): ScheduleInstant => {
     if (phase === 'PREOPEN') {
         return asScheduleInstant(Math.max(0, instant));
@@ -103,14 +112,15 @@ export const assertGameplayCommitAllowed = (phase: GameClockPhase): void => {
     }
 };
 
-export const buildExactClockAlignmentPlan = (input: {
+const buildAlignmentPlan = (input: {
+    policy: ClockAlignmentPolicy;
     sourceRevision: number;
     cutTick: number;
     cutWall: Date;
     resumeWall: Date;
     ticksPerSecond: number;
     catchUpTicks?: number;
-}): ExactClockAlignmentPlan => {
+}): ClockAlignmentPlan => {
     const sourceRevision = asClockRevision(input.sourceRevision);
     const cutTick = asGameTick(input.cutTick);
     const cutWall = asWallInstant(input.cutWall);
@@ -136,7 +146,7 @@ export const buildExactClockAlignmentPlan = (input: {
     }
     const shiftTicks = asGameTick(gapTicks - catchUpTicks);
     return {
-        policy: 'EXACT',
+        policy: input.policy,
         sourceRevision,
         targetRevision: asClockRevision(sourceRevision + 1),
         cutTick,
@@ -144,6 +154,37 @@ export const buildExactClockAlignmentPlan = (input: {
         catchUpTicks,
         shiftTicks,
         alignedTick: asGameTick(cutTick + gapTicks),
+    };
+};
+
+export const buildExactClockAlignmentPlan = (
+    input: Omit<Parameters<typeof buildAlignmentPlan>[0], 'policy'>
+): ClockAlignmentPlan => buildAlignmentPlan({ ...input, policy: 'EXACT' });
+
+export const buildClockAlignmentPlan = (input: {
+    policy: ClockAlignmentPolicy;
+    sourceRevision: number;
+    cutTick: number;
+    cutWall: Date;
+    resumeWall: Date;
+    ticksPerSecond: number;
+    catchUpTicks?: number;
+}): ClockAlignmentPlan => {
+    if (input.policy === 'EXACT') {
+        if ((input.catchUpTicks ?? 0) !== 0) {
+            throw new Error('EXACT alignment does not allow catch-up ticks.');
+        }
+        return buildAlignmentPlan({ ...input, policy: 'EXACT', catchUpTicks: 0 });
+    }
+    if (input.policy === 'CATCH_UP') {
+        return buildAlignmentPlan({ ...input, policy: 'CATCH_UP' });
+    }
+    const exact = buildAlignmentPlan({ ...input, policy: 'LEGACY_COMPLETE_TURNS', catchUpTicks: 0 });
+    const shiftTicks = asGameTick(Math.floor(exact.gapTicks / GAME_TICKS_PER_TURN) * GAME_TICKS_PER_TURN);
+    return {
+        ...exact,
+        catchUpTicks: asGameTick(exact.gapTicks - shiftTicks),
+        shiftTicks,
     };
 };
 

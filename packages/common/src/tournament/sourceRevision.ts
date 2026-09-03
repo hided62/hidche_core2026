@@ -18,6 +18,15 @@ export interface TournamentProjectionWrite {
     value: unknown;
 }
 
+export interface TournamentClockFence {
+    activeRevisionKey: string;
+    deadlineGenerationKey: string;
+    phaseKey: string;
+    revision: number;
+    deadlineGeneration: number;
+    phase: 'RUNNING';
+}
+
 const WRITE_TOURNAMENT_PROJECTION_SCRIPT = `
 local revision_key = KEYS[#KEYS]
 local current = redis.call('GET', revision_key)
@@ -55,6 +64,49 @@ local revision = redis.call('INCR', revision_key)
 return tostring(revision) .. ':' .. (stage_changed and '1' or '0') .. ':' .. (rankings_changed and '1' or '0')
 `;
 
+const WRITE_FENCED_TOURNAMENT_PROJECTION_SCRIPT = `
+local revision_key_index = #KEYS - 3
+if redis.call('GET', KEYS[#KEYS - 2]) ~= ARGV[#ARGV - 2]
+   or redis.call('GET', KEYS[#KEYS - 1]) ~= ARGV[#ARGV - 1]
+   or redis.call('GET', KEYS[#KEYS]) ~= ARGV[#ARGV] then
+    return '__CLOCK_FENCE__'
+end
+local revision_key = KEYS[revision_key_index]
+local current = redis.call('GET', revision_key)
+if current then
+    if not string.match(current, '^%d+$') then
+        return redis.error_reply('invalid tournament source revision')
+    end
+    if string.len(current) > 18 then
+        return redis.error_reply('tournament source revision exhausted')
+    end
+end
+local stage_changed = false
+local rankings_changed = false
+for index = 1, revision_key_index - 1 do
+    local next_ok, next_value = pcall(cjson.decode, ARGV[index])
+    if next_ok and type(next_value) == 'table' and next_value['stage'] ~= nil then
+        local previous = redis.call('GET', KEYS[index])
+        local previous_stage = nil
+        local previous_value = nil
+        if previous then
+            local previous_ok
+            previous_ok, previous_value = pcall(cjson.decode, previous)
+            if previous_ok and type(previous_value) == 'table' then
+                previous_stage = previous_value['stage']
+            end
+        end
+        local next_stage = next_value['stage']
+        stage_changed = (not previous) or previous_stage ~= next_stage
+        local previous_reward_settled = previous_value and previous_value['rewardSettled'] or false
+        rankings_changed = next_value['rewardSettled'] == true and previous_reward_settled ~= true
+    end
+    redis.call('SET', KEYS[index], ARGV[index])
+end
+local revision = redis.call('INCR', revision_key)
+return tostring(revision) .. ':' .. (stage_changed and '1' or '0') .. ':' .. (rankings_changed and '1' or '0')
+`;
+
 export const parseTournamentSourceRevision = (value: unknown): string | null => {
     if (typeof value === 'number') {
         return Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
@@ -69,7 +121,8 @@ export const parseTournamentSourceRevision = (value: unknown): string | null => 
 export const writeTournamentProjection = async (
     redis: TournamentProjectionRedis,
     keys: TournamentSourceKeys,
-    writes: readonly TournamentProjectionWrite[]
+    writes: readonly TournamentProjectionWrite[],
+    clockFence?: TournamentClockFence
 ): Promise<string> => {
     if (writes.length === 0) {
         throw new Error('Tournament projection write must contain at least one payload.');
@@ -90,10 +143,27 @@ export const writeTournamentProjection = async (
             value !== null &&
             (value as { rewardSettled?: unknown }).rewardSettled === true
     );
-    const result = await redis.eval(WRITE_TOURNAMENT_PROJECTION_SCRIPT, {
-        keys: [...writes.map(({ key }) => key), keys.sourceRevisionKey],
-        arguments: writes.map(({ value }) => JSON.stringify(value)),
-    });
+    const result = await redis.eval(
+        clockFence ? WRITE_FENCED_TOURNAMENT_PROJECTION_SCRIPT : WRITE_TOURNAMENT_PROJECTION_SCRIPT,
+        {
+            keys: [
+                ...writes.map(({ key }) => key),
+                keys.sourceRevisionKey,
+                ...(clockFence
+                    ? [clockFence.activeRevisionKey, clockFence.deadlineGenerationKey, clockFence.phaseKey]
+                    : []),
+            ],
+            arguments: [
+                ...writes.map(({ value }) => JSON.stringify(value)),
+                ...(clockFence
+                    ? [String(clockFence.revision), String(clockFence.deadlineGeneration), clockFence.phase]
+                    : []),
+            ],
+        }
+    );
+    if (result === '__CLOCK_FENCE__') {
+        throw new Error('Tournament projection clock revision fence failed.');
+    }
     const scriptResult = typeof result === 'string' ? /^(\d+):([01])(?::([01]))?$/u.exec(result) : null;
     const sourceRevision = parseTournamentSourceRevision(scriptResult?.[1] ?? result);
     // Plain revision results remain accepted for rolling deployments and small

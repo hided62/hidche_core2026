@@ -5,12 +5,14 @@ import { asRecord } from '@sammo-ts/common';
 import type { TournamentType } from '@sammo-ts/logic';
 import type { TournamentState } from '../../tournament/types.js';
 
-import { TournamentStore } from '../../tournament/store.js';
+import { TournamentStore, type TournamentClockContext } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
 import { assignManualApplicantGroup } from '../../tournament/workerHelpers.js';
 import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
+import { ensureActiveRedisClockFence } from '../../services/redisClockFence.js';
+import { loadClockAdminStatus } from '../../services/clockReadiness.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -43,6 +45,32 @@ const adminProcedure = authedProcedure.use(({ ctx, next }) => {
     }
     return next();
 });
+
+const withTournamentClockMutation = async <T>(
+    ctx: {
+        db: Parameters<typeof loadCurrentGameTime>[0];
+        redis: Parameters<typeof ensureActiveRedisClockFence>[0];
+        profile: { name: string };
+    },
+    store: TournamentStore,
+    operation: () => Promise<T>
+): Promise<T> => {
+    const gameTime = await loadCurrentGameTime(ctx.db);
+    const fence = await ensureActiveRedisClockFence(ctx.redis, ctx.profile.name, gameTime);
+    if (!fence) {
+        throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Clock reconciliation is incomplete; tournament mutation is disabled.',
+        });
+    }
+    const clockContext: TournamentClockContext = {
+        phase: 'RUNNING',
+        revision: fence.revision,
+        deadlineGeneration: fence.generation,
+        dateToTick: gameTime.dateToTick,
+    };
+    return store.withClockContext(clockContext, () => store.withMutationLock(operation));
+};
 
 const zTournamentState = z.object({
     stage: z.number().int().min(0),
@@ -143,7 +171,10 @@ export const tournamentRouter = router({
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         return store.getState();
     }),
-    getAdminStatus: adminProcedure.query(async () => ({ ok: true })),
+    getAdminStatus: adminProcedure.query(async ({ ctx }) => ({
+        ok: true,
+        clock: await loadClockAdminStatus(ctx.db),
+    })),
     getSnapshot: accessAuthedProcedure.query(async ({ ctx }) => {
         await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
@@ -271,7 +302,7 @@ export const tournamentRouter = router({
     }),
     setState: adminProcedure.input(zTournamentState).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             await store.setState({
                 ...input,
                 type: input.type as TournamentType,
@@ -281,7 +312,7 @@ export const tournamentRouter = router({
     }),
     patchState: adminProcedure.input(zTournamentState.partial()).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             const current = await store.getState();
             if (!current) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
@@ -297,21 +328,21 @@ export const tournamentRouter = router({
     }),
     setParticipants: adminProcedure.input(z.array(zParticipant)).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             await store.setParticipants(input);
             return { ok: true, count: input.length };
         });
     }),
     setMatches: adminProcedure.input(z.array(zMatch)).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             await store.setMatches(input);
             return { ok: true, count: input.length };
         });
     }),
     setBettingEntries: adminProcedure.input(z.array(zBetEntry)).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             await store.setBettingEntries(input);
             return { ok: true, count: input.length };
         });
@@ -347,7 +378,7 @@ export const tournamentRouter = router({
             };
         });
 
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             await store.setParticipants(participants);
             return { ok: true, count: participants.length };
         });
@@ -394,7 +425,7 @@ export const tournamentRouter = router({
     join: authedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             const state = await store.getState();
             if (!state || state.stage !== 1 || state.participantsLockedAt) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
@@ -459,7 +490,7 @@ export const tournamentRouter = router({
     }),
     cancel: adminProcedure.mutation(async ({ ctx }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return store.withMutationLock(async () => {
+        return withTournamentClockMutation(ctx, store, async () => {
             const state = await store.getState();
             if (!state) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
@@ -523,7 +554,7 @@ export const tournamentRouter = router({
         .mutation(async ({ ctx, input }) => {
             const general = await getMyGeneral(ctx);
             const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-            return store.withMutationLock(async () => {
+            return withTournamentClockMutation(ctx, store, async () => {
                 const state = await store.getState();
                 if (!state || state.stage !== 6) {
                     throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅 기간이 아닙니다.' });

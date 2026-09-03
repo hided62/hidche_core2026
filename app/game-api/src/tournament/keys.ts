@@ -8,6 +8,9 @@ export interface TournamentKeys {
     sourceRevisionKey: string;
     sourceRevisionChannel: string;
     realtimeEventChannel: string;
+    activeClockRevisionKey: string;
+    deadlineGenerationKey: string;
+    clockPhaseKey: string;
 }
 
 export const buildTournamentKeys = (profileName: string): TournamentKeys => ({
@@ -18,4 +21,7 @@ export const buildTournamentKeys = (profileName: string): TournamentKeys => ({
     sourceRevisionKey: `sammo:${profileName}:tournament:source-revision`,
     sourceRevisionChannel: `sammo:${profileName}:tournament:source-changed`,
     realtimeEventChannel: buildGameEventChannel(profileName),
+    activeClockRevisionKey: `sammo:${profileName}:clock:active-revision`,
+    deadlineGenerationKey: `sammo:${profileName}:clock:deadline-generation`,
+    clockPhaseKey: `sammo:${profileName}:clock:phase`,
 });

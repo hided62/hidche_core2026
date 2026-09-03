@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { acquireGameSchemaAdvisoryXactLock, type DatabaseClient, type GamePrisma } from '@sammo-ts/infra';
+import {
+    acquireGameSchemaAdvisoryXactLock,
+    readInputEventClockCoordinate,
+    type DatabaseClient,
+    type GamePrisma,
+    type InputEventClockCoordinate,
+} from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './transport.js';
 import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonStatus } from './types.js';
@@ -103,10 +109,10 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
         try {
             if (command.type === 'npcPossessGeneral' && this.db.$transaction) {
                 const rejectionReason = await this.db.$transaction(async (transaction) => {
+                    const coordinate = await readInputEventClockCoordinate(transaction);
                     await acquireGameSchemaAdvisoryXactLock(transaction, 'npc-possession:global');
                     await acquireGameSchemaAdvisoryXactLock(transaction, `npc-possession:user:${command.userId}`);
-                    const acceptedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
-                    const acceptedGameAt = (await loadCurrentGameTime(transaction, acceptedAt)).now;
+                    const acceptedGameAt = coordinate.gameAt;
                     const token = await transaction.npcSelectionToken.findFirst({
                         where: {
                             ownerUserId: command.userId,
@@ -130,14 +136,21 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                         ...(durableCommand as Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }>),
                         acceptedGameAt: acceptedGameAt.toISOString(),
                     };
-                    await this.createInputEvent(transaction, acceptedCommand, requestId, acceptedAt);
+                    await this.createInputEvent(transaction, acceptedCommand, requestId, coordinate);
                     return null;
                 });
                 if (rejectionReason) {
                     throw new RejectedNpcPossessionCommandError('PRECONDITION_FAILED', rejectionReason);
                 }
             } else {
-                await this.createInputEvent(this.db, durableCommand, requestId);
+                if (this.db.$transaction) {
+                    await this.db.$transaction(async (transaction) => {
+                        const coordinate = await readInputEventClockCoordinate(transaction);
+                        await this.createInputEvent(transaction, durableCommand, requestId, coordinate);
+                    });
+                } else {
+                    await this.createInputEvent(this.db, durableCommand, requestId);
+                }
             }
         } catch (error) {
             if (error instanceof RejectedNpcPossessionCommandError) {
@@ -166,8 +179,20 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
         db: DatabaseClient,
         command: TurnDaemonCommand,
         requestId: string,
-        createdAt?: Date
+        coordinate?: InputEventClockCoordinate
     ): Promise<void> {
+        const gameTime = coordinate ? null : await loadCurrentGameTime(db, new Date());
+        const commandAcceptedTick = Reflect.get(command, 'acceptedGameTick');
+        const acceptedGameTick =
+            typeof commandAcceptedTick === 'number' && Number.isSafeInteger(commandAcceptedTick)
+                ? commandAcceptedTick
+                : coordinate
+                  ? Number(coordinate.gameTick)
+                  : gameTime!.tick;
+        const acceptedClockRevision = coordinate ? Number(coordinate.clockRevision) : gameTime!.revision;
+        const acceptedDeadlineGeneration = coordinate
+            ? Number(coordinate.deadlineGeneration)
+            : gameTime!.deadlineGeneration;
         await db.inputEvent.create({
             data: {
                 requestId,
@@ -175,7 +200,14 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                 eventType: command.type,
                 payload: asJson(command),
                 actorUserId: 'userId' in command && typeof command.userId === 'string' ? command.userId : null,
-                ...(createdAt ? { createdAt } : {}),
+                ...(acceptedGameTick === null ? {} : { acceptedGameTick: BigInt(acceptedGameTick) }),
+                ...(acceptedClockRevision === null || acceptedClockRevision === undefined
+                    ? {}
+                    : { acceptedClockRevision: BigInt(acceptedClockRevision) }),
+                ...(acceptedDeadlineGeneration === null || acceptedDeadlineGeneration === undefined
+                    ? {}
+                    : { acceptedDeadlineGeneration: BigInt(acceptedDeadlineGeneration) }),
+                ...(coordinate ? { createdAt: coordinate.wallAt } : {}),
             },
         });
     }

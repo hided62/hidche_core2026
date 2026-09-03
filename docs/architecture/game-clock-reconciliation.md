@@ -65,6 +65,19 @@ pop is one Redis operation: verify revision/phase, read `-inf..nowTick`, and
 remove the claimed members. A failed Redis rebuild therefore leaves the game in
 `RECONCILING`; process liveness alone is not readiness.
 
+`applyNextClockProjection()` claims rows with `FOR UPDATE SKIP LOCKED` and uses
+PostgreSQL UTC wall time for claim/retry timestamps. One Redis Lua operation
+compares the active source revision, rebuilds the auction timer, conditionally
+replaces the exact tournament source snapshot, and writes target revision plus
+deadline generation. The DB finalizer then re-acquires the clock-operation lock
+and changes `RECONCILING -> RUNNING` only when target revision and generation
+still match. If the process dies after the Lua commit, retry observes the
+already-active target revision and performs only the DB finalizer.
+
+An active legacy tournament containing only `nextAt`/`bettingCloseAt` is a
+fail-closed migration boundary. Reconciliation remains incomplete until its
+authoritative `nextTick`/`bettingCloseTick` dual-write exists.
+
 ## Lock order
 
 All mutation paths use this order:
@@ -101,7 +114,9 @@ future anchored realtime profiles as `PREOPEN`, and other profiles as
 `RUNNING`. Existing DateTime columns remain projections while tick columns are
 authoritative.
 
-Exact reconciliation stays disabled while any registry participant is
-`FORBID`. In particular, Redis-only tournament dates and unification wait must
-be moved to durable tick/revision contracts before the operation can reach
-`RUNNING`. Removing these guards to make a partial operation pass is prohibited.
+Exact reconciliation stays disabled while an active registry participant is
+`FORBID`. Tournament writes now carry tick/revision/generation coordinates and
+are revision-fenced in Redis. The remaining unification wait participant must
+be moved from its `lastTurnTime` workaround to a durable suspension before that
+workflow can reach `RUNNING`. Removing this guard to make a partial operation
+pass is prohibited.

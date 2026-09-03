@@ -9,8 +9,12 @@ export interface TournamentState {
     openMonth: number;
     termSeconds: number;
     nextAt: string;
+    nextTick?: number;
+    clockRevision?: number;
+    deadlineGeneration?: number;
     bettingId?: number;
     bettingCloseAt?: string;
+    bettingCloseTick?: number;
     winnerId?: number;
     bettingSettled?: boolean;
     rewardSettled?: boolean;

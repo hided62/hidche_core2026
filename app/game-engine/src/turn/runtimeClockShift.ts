@@ -1,4 +1,4 @@
-import type { GamePrisma, GamePrismaClient } from '@sammo-ts/infra';
+import { readInputEventClockCoordinate, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -137,13 +137,20 @@ const ensureEngineCommand = async (
         deltaMinutes,
     };
     try {
-        await db.inputEvent.create({
-            data: {
-                requestId,
-                target: 'ENGINE',
-                eventType: command.type,
-                payload: asJson(command),
-            },
+        await db.$transaction(async (transaction) => {
+            const coordinate = await readInputEventClockCoordinate(transaction);
+            await transaction.inputEvent.create({
+                data: {
+                    requestId,
+                    target: 'ENGINE',
+                    eventType: command.type,
+                    payload: asJson(command),
+                    acceptedGameTick: coordinate.gameTick,
+                    acceptedClockRevision: coordinate.clockRevision,
+                    acceptedDeadlineGeneration: coordinate.deadlineGeneration,
+                    createdAt: coordinate.wallAt,
+                },
+            });
         });
     } catch (error) {
         if (!isUniqueConflict(error)) {

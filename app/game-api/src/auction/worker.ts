@@ -1,4 +1,7 @@
 import {
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
+    GamePrisma,
+    acquireGameSchemaAdvisoryXactLock,
     createGamePostgresConnector,
     createRedisConnector,
     type GamePrismaClient,
@@ -10,6 +13,7 @@ import { resolveGameApiConfigFromEnv } from '../config.js';
 import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
 import { loadCurrentGameTime, type CurrentGameTime } from '../services/gameClock.js';
 import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
+import { ensureActiveRedisClockFence } from '../services/redisClockFence.js';
 import { buildAuctionTimerKeys } from './keys.js';
 import { resolveAuctionTimerScore, seedAuctionTimers } from './scheduler.js';
 
@@ -24,7 +28,21 @@ interface RedisTimerClient {
     zAdd(key: string, values: Array<{ score: number; value: string }>): Promise<number>;
     zRem(key: string, values: string | string[]): Promise<number>;
     zRemRangeByScore(key: string, min: number, max: number): Promise<number>;
+    eval?(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
 }
+
+const POP_DUE_AUCTIONS_SCRIPT = `
+if redis.call('GET', KEYS[2]) ~= ARGV[1]
+   or redis.call('GET', KEYS[3]) ~= ARGV[2]
+   or redis.call('GET', KEYS[4]) ~= 'RUNNING' then
+  return { '__CLOCK_FENCE__' }
+end
+local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[3], 'LIMIT', 0, ARGV[4])
+if #ids > 0 then
+  redis.call('ZREM', KEYS[1], unpack(ids))
+end
+return ids
+`;
 
 const AUCTION_FINALIZE_RECOVERY_LIMIT = 1;
 
@@ -115,12 +133,29 @@ const isSuccessfulAuctionFinalizeResult = (result: unknown, auctionId: number): 
     return resultRecord.type === 'auctionFinalize' && resultRecord.ok === true && resultRecord.auctionId === auctionId;
 };
 
-const popDueAuctionIds = async (
+export const popDueAuctionIds = async (
     redis: RedisTimerClient,
     timerKey: string,
     nowMs: number,
-    batchSize: number
+    batchSize: number,
+    clockFence?: {
+        activeRevisionKey: string;
+        deadlineGenerationKey: string;
+        phaseKey: string;
+        revision: number;
+        generation: number;
+    }
 ): Promise<string[]> => {
+    if (clockFence) {
+        if (!redis.eval) throw new Error('Redis EVAL is required for revision-fenced auction due-pop.');
+        const result = await redis.eval(POP_DUE_AUCTIONS_SCRIPT, {
+            keys: [timerKey, clockFence.activeRevisionKey, clockFence.deadlineGenerationKey, clockFence.phaseKey],
+            arguments: [String(clockFence.revision), String(clockFence.generation), String(nowMs), String(batchSize)],
+        });
+        if (!Array.isArray(result)) throw new Error('Auction due-pop returned an invalid Redis result.');
+        if (result[0] === '__CLOCK_FENCE__') return [];
+        return result.map(String);
+    }
     const ids = await redis.zRangeByScore(timerKey, 0, nowMs, { LIMIT: { offset: 0, count: batchSize } });
     if (ids.length > 0) {
         await redis.zRem(timerKey, ids);
@@ -205,6 +240,8 @@ export const processDueAuctionId = async (options: {
     nowMs: number;
     nowTick?: number | null;
     historyNowMs?: number;
+    expectedClockRevision?: number;
+    expectedDeadlineGeneration?: number;
 }): Promise<'PENDING' | 'RESCHEDULED' | 'IGNORED'> => {
     const { db, redis, timerKey, historyKey, id, nowMs, nowTick = null, historyNowMs = nowMs } = options;
     const auctionId = Number(id);
@@ -213,6 +250,29 @@ export const processDueAuctionId = async (options: {
     }
     const now = new Date(nowMs);
     const outcome = await db.$transaction(async (transaction) => {
+        if (options.expectedClockRevision !== undefined || options.expectedDeadlineGeneration !== undefined) {
+            await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+            const [world] = await transaction.$queryRaw<
+                Array<{ clockPhase: string | null; clockRevision: bigint; deadlineGeneration: bigint }>
+            >(GamePrisma.sql`
+                SELECT
+                    clock_phase AS "clockPhase",
+                    clock_revision AS "clockRevision",
+                    deadline_generation AS "deadlineGeneration"
+                FROM world_state
+                ORDER BY id ASC
+                LIMIT 1
+                FOR UPDATE
+            `);
+            if (
+                !world ||
+                world.clockPhase !== 'RUNNING' ||
+                world.clockRevision !== BigInt(options.expectedClockRevision ?? -1) ||
+                world.deadlineGeneration !== BigInt(options.expectedDeadlineGeneration ?? -1)
+            ) {
+                return { status: 'RESCHEDULED' as const, clockFenceFailed: true };
+            }
+        }
         const current = await transaction.auction.findUnique({
             where: { id: auctionId },
             select: { status: true, closeAt: true, closeTick: true },
@@ -259,6 +319,13 @@ export const processDueAuctionId = async (options: {
                         target: 'ENGINE',
                         eventType: nextCommand.type,
                         payload: { ...nextCommand },
+                        ...(nowTick === null ? {} : { acceptedGameTick: BigInt(nowTick) }),
+                        ...(options.expectedClockRevision === undefined
+                            ? {}
+                            : { acceptedClockRevision: BigInt(options.expectedClockRevision) }),
+                        ...(options.expectedDeadlineGeneration === undefined
+                            ? {}
+                            : { acceptedDeadlineGeneration: BigInt(options.expectedDeadlineGeneration) }),
                     },
                 });
                 return { status: 'PENDING' as const };
@@ -284,6 +351,10 @@ export const processDueAuctionId = async (options: {
         return 'PENDING';
     }
     if (outcome.status === 'RESCHEDULED') {
+        if ('clockFenceFailed' in outcome) {
+            await redis.zAdd(timerKey, [{ score: nowTick ?? nowMs, value: id }]);
+            return 'RESCHEDULED';
+        }
         const gameTime = await loadCurrentGameTime(db, now);
         await redis.zAdd(timerKey, [
             {
@@ -324,6 +395,17 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
             const gameTime = await loadCurrentGameTime(postgres.prisma, new Date(operationalNowMs));
             const gameNowMs = gameTime.now.getTime();
             const dueScore = gameTime.tick ?? gameNowMs;
+            if (gameTime.phase && gameTime.phase !== 'RUNNING') {
+                await waitForWorkerPoll(control.signal, config.auctionTimerPollMs);
+                continue;
+            }
+            const clockFence = gameTime.phase
+                ? await ensureActiveRedisClockFence(redis.client, config.profileName, gameTime)
+                : null;
+            if (gameTime.phase && !clockFence) {
+                await waitForWorkerPoll(control.signal, config.auctionTimerPollMs);
+                continue;
+            }
             if (operationalNowMs >= nextResyncAt) {
                 await seedAuctionTimers(postgres.prisma, redis.client, keys);
                 nextResyncAt = operationalNowMs + config.auctionTimerResyncMs;
@@ -345,7 +427,7 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
             if (historyTrimBefore > 0) {
                 await redis.client.zRemRangeByScore(keys.historyKey, 0, historyTrimBefore);
             }
-            const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, dueScore, 100);
+            const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, dueScore, 100, clockFence ?? undefined);
             if (dueIds.length > 0) {
                 for (const id of dueIds) {
                     try {
@@ -358,6 +440,12 @@ export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Prom
                             nowMs: gameNowMs,
                             nowTick: gameTime.tick,
                             historyNowMs: operationalNowMs,
+                            ...(clockFence
+                                ? {
+                                      expectedClockRevision: clockFence.revision,
+                                      expectedDeadlineGeneration: clockFence.generation,
+                                  }
+                                : {}),
                         });
                         if (outcome === 'PENDING') {
                             pendingFinalizationIds.add(Number(id));

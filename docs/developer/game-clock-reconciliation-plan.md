@@ -11,7 +11,7 @@ mean deployment or production validation.
 ## Milestone 1 - authority and inventory
 
 - [x] Branded `GameTick`, `ObservedGameInstant`, `ScheduleInstant`,
-  `WallInstant`, and `ClockRevision` boundaries.
+      `WallInstant`, and `ClockRevision` boundaries.
 - [x] Explicit clock phase and monotonic RUNNING projection.
 - [x] Exact alignment arithmetic preserving millisecond/sub-turn remainder.
 - [x] Opening tick zero and PREOPEN executable floor in the shared seeder.
@@ -19,49 +19,50 @@ mean deployment or production validation.
 - [x] Suspension, participant-checksum, and Redis projection outbox tables.
 - [x] Machine-readable DB/Redis/JSON participant inventory and architecture gate.
 - [x] Turn flush lock prefix and phase/revision/generation fence.
-- [ ] Empty and upgraded database migration execution evidence.
+- [x] Empty and upgraded database migration execution evidence.
 
 ## Milestone 2 - exact DB reconciliation
 
-- [ ] Suspension start command with DB wall time and idempotent source revision.
-- [ ] Exact resume plan transaction with deterministic participant lock order.
-- [ ] SHIFT adapters for cursor, generals, active auctions, message expiry, vote
-  end, select pool, and NPC selection windows.
-- [ ] KEEP checksum adapters for occurrences and history.
-- [ ] Explicit `LEGACY_COMPLETE_TURNS` and bounded `CATCH_UP` policies.
-- [ ] Property tests for remaining distance, ordering, and history invariants.
-- [ ] 24-hour and 65m17.250s PostgreSQL integration evidence.
+- [x] Suspension start command with DB wall time and idempotent source revision.
+- [x] Exact resume plan transaction with deterministic participant lock order.
+- [x] SHIFT adapters for cursor, generals, active auctions, message expiry, vote
+      end, select pool, and NPC selection windows.
+- [x] KEEP checksum adapters for occurrences and accepted command coordinates.
+- [x] Explicit `LEGACY_COMPLETE_TURNS` and bounded `CATCH_UP` policies.
+- [x] Property tests for remaining distance, ordering, and history invariants.
+- [x] 24-hour and 65m17.250s PostgreSQL integration evidence.
 
 ## Milestone 3 - revisioned Redis and workers
 
-- [ ] Projection outbox claimer/retry/recovery state machine.
-- [ ] Redis active revision and atomic due-pop script.
-- [ ] Auction OPEN/FINALIZING revision and generation fence.
-- [ ] Tournament durable tick dual-write and projection rebuild.
-- [ ] DB-commit/Redis-failure restart tests and readiness integration.
+- [x] Projection outbox claimer/retry/recovery state machine.
+- [x] Redis active revision and atomic due-pop script.
+- [x] Auction OPEN/FINALIZING revision and generation fence.
+- [x] Tournament durable tick dual-write and projection rebuild.
+- [x] DB-commit/Redis-failure crash-restart test.
+- [x] Readiness integration in Gateway/API process health.
 
 ## Milestone 4 - command and lifecycle workflows
 
-- [ ] All durable input events record accepted tick and accepted revision.
-- [ ] Processing converts accepted coordinates across revisions or fails closed.
+- [x] All durable input events record accepted tick and accepted revision.
+- [x] Processing converts accepted coordinates across revisions or fails closed.
 - [ ] Gateway pause/resume/open orchestration writes the DB clock phase.
 - [ ] Unification wait becomes a durable `UNIFICATION_WAIT` suspension.
 - [ ] Alignment, optional rate change, invader IDs/RNG, creation, first schedule,
-  outbox, verification, and RUNNING transition form one retry-safe workflow.
+      outbox, verification, and RUNNING transition form one retry-safe workflow.
 - [ ] Multi-host drift and general-access/clock-operation deadlock tests.
 
 ## Milestone 5 - test-branch release gate
 
 - [ ] Full typecheck, architecture, lint, unit, build, and non-conditional
-  integration suites.
+      integration suites.
 - [ ] Dedicated PostgreSQL/Redis conditional integration suite with skip count
-  recorded.
+      recorded.
 - [ ] Recovery runbook exercised from each incomplete status.
-- [ ] Admin status/readiness exposes revision, phase, participant checksums, and
-  incomplete outbox state.
+- [x] Admin status/readiness exposes revision, phase, participant checksums, and
+      incomplete outbox state.
 - [ ] User-test deployment evidence is recorded separately from Git push.
 - [ ] All `FORBID` inventory entries are removed by typed migrations or proven
-  inactive preconditions.
+      inactive preconditions.
 
 ## Evidence log
 
@@ -78,4 +79,25 @@ mean deployment or production validation.
 - `pnpm check:architecture`: package boundaries passed; 21 authoritative clock
   fields and 18 participants were registered.
 - Migration SQL was generated, formatted, validated, and registered as the
-  release manifest head. Empty/upgraded PostgreSQL execution is still pending.
+  release manifest head. All 43 migrations applied to the empty dedicated
+  PostgreSQL instance. A second schema upgraded from the previous head with an
+  existing manual `world_state` row and verified `MANUAL:1:1` plus all three
+  reconciliation tables.
+- Dedicated PostgreSQL/Redis fixtures proved exact 24-hour and 65m17.250s gaps,
+  schedule distance/order preservation, occurrence checksums, live-lease
+  fencing, a single durable outbox, Redis target revision, and recovery after a
+  crash between Redis commit and DB finalization.
+
+### 2026-09-03 - revisioned workers and input coordinates
+
+- `CI=1 TURBO_CONCURRENCY=1 pnpm typecheck`: 21/21 tasks passed after the
+  worker/input contract changes.
+- `CI=1 TURBO_CONCURRENCY=1 pnpm test`: 12/12 package tasks passed.
+- Dedicated PostgreSQL runs passed `databaseCommandQueue.integration.test.ts`
+  6/6 and `runtimeClockShiftPersistence.integration.test.ts` 3/3 when executed
+  sequentially; the latter now clears each single-world fixture before the next
+  case. Dedicated Redis passed tournament source revision 4/4, including an
+  atomic stale-clock rejection. API input-event integration passed 13/13.
+- The 24-hour/65m17.250s reconciliation suite passed 2/2 after the other DB
+  suites. Conditional files share a deliberately dedicated schema and are run
+  sequentially to prevent their fixture cleanup from racing another file.

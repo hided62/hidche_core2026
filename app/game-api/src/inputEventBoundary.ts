@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { GamePrisma, type DatabaseClient as InfraDatabaseClient } from '@sammo-ts/infra';
+import {
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
+    GamePrisma,
+    acquireGameSchemaAdvisoryXactLock,
+    type DatabaseClient as InfraDatabaseClient,
+} from '@sammo-ts/infra';
 
 import type { DatabaseClient } from './context.js';
 
@@ -20,6 +25,9 @@ interface LockedInputEvent {
     status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
     result: GamePrisma.JsonValue | null;
     attempts: number;
+    acceptedGameTick: bigint | null;
+    acceptedClockRevision: bigint | null;
+    acceptedDeadlineGeneration: bigint | null;
 }
 
 type InputEventOutcome<T> =
@@ -85,6 +93,9 @@ const insertPendingIfAbsent = async (
                 actor_user_id,
                 status,
                 attempts,
+                accepted_game_tick,
+                accepted_clock_revision,
+                accepted_deadline_generation,
                 created_at
             )
             VALUES (
@@ -95,6 +106,9 @@ const insertPendingIfAbsent = async (
                 ${options.actorUserId},
                 'PENDING'::"InputEventStatus",
                 0,
+                (SELECT clock_tick FROM world_state ORDER BY id ASC LIMIT 1),
+                (SELECT clock_revision FROM world_state ORDER BY id ASC LIMIT 1),
+                (SELECT deadline_generation FROM world_state ORDER BY id ASC LIMIT 1),
                 CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             )
             ON CONFLICT (request_id) DO NOTHING
@@ -112,7 +126,10 @@ const lockInputEvent = async (db: DatabaseClient, requestId: string): Promise<Lo
                 actor_user_id AS "actorUserId",
                 status,
                 result,
-                attempts
+                attempts,
+                accepted_game_tick AS "acceptedGameTick",
+                accepted_clock_revision AS "acceptedClockRevision",
+                accepted_deadline_generation AS "acceptedDeadlineGeneration"
             FROM input_event
             WHERE request_id = ${requestId}
             FOR UPDATE
@@ -151,7 +168,8 @@ const isMatchingIdentity = (
 const claimInputEvent = async (
     db: DatabaseClient,
     requestId: string,
-    payloadIdentity: ApiInputPayloadIdentity
+    payloadIdentity: ApiInputPayloadIdentity,
+    row: LockedInputEvent
 ): Promise<void> => {
     await db.inputEvent.update({
         where: { requestId },
@@ -164,6 +182,9 @@ const claimInputEvent = async (
             lockedBy: null,
             leaseUntil: null,
             processingAt: new Date(),
+            processingGameTick: row.acceptedGameTick,
+            processingClockRevision: row.acceptedClockRevision,
+            processingDeadlineGeneration: row.acceptedDeadlineGeneration,
             completedAt: null,
         },
     });
@@ -184,6 +205,7 @@ const markUnexpectedFailure = async (
 
     try {
         await db.$transaction(async (transaction) => {
+            await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
             await insertPendingIfAbsent(transaction, options);
             const row = await lockInputEvent(transaction, options.requestId);
             const identityMatches = isMatchingIdentity(row, options) || canAdoptLegacyFailedPayload(row, options);
@@ -233,6 +255,7 @@ export const executeInputEvent = async <T>(options: {
     let outcome: InputEventOutcome<T>;
     try {
         outcome = await db.$transaction(async (transaction) => {
+            await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
             await insertPendingIfAbsent(transaction, { requestId, eventType, actorUserId, payloadIdentity });
             const row = await lockInputEvent(transaction, requestId);
             const identityMatches = isMatchingIdentity(row, { eventType, actorUserId, payloadIdentity });
@@ -251,7 +274,7 @@ export const executeInputEvent = async <T>(options: {
                 throw new DuplicateInputEventError(requestId);
             }
 
-            await claimInputEvent(transaction, requestId, payloadIdentity);
+            await claimInputEvent(transaction, requestId, payloadIdentity, row);
             const savepointDb = transaction as SavepointDatabaseClient;
             await savepointDb.$executeRawUnsafe(`SAVEPOINT ${BUSINESS_SAVEPOINT}`);
             businessStarted = true;

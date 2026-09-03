@@ -14,8 +14,12 @@ interface TournamentState {
     openMonth: number;
     termSeconds: number;
     nextAt: string;
+    nextTick?: number;
+    clockRevision?: number;
+    deadlineGeneration?: number;
     bettingId?: number;
     bettingCloseAt?: string;
+    bettingCloseTick?: number;
     winnerId?: number;
     bettingSettled?: boolean;
     rewardSettled?: boolean;
@@ -76,6 +80,9 @@ export const createTournamentAutoStartHandler = (options: {
         sourceRevisionKey: `sammo:${options.profileName}:tournament:source-revision`,
         sourceRevisionChannel: `sammo:${options.profileName}:tournament:source-changed`,
         realtimeEventChannel: buildGameEventChannel(options.profileName),
+        activeClockRevisionKey: `sammo:${options.profileName}:clock:active-revision`,
+        deadlineGenerationKey: `sammo:${options.profileName}:clock:deadline-generation`,
+        clockPhaseKey: `sammo:${options.profileName}:clock:phase`,
     };
     return {
         onMonthChanged: async (context) => {
@@ -118,6 +125,8 @@ export const createTournamentAutoStartHandler = (options: {
                 previousState && Number.isFinite(previousState.termSeconds) && previousState.termSeconds > 0
                     ? previousState.termSeconds
                     : resolveTermSeconds(state.tickSeconds);
+            const nextAt = new Date(now.getTime() + termSeconds * 60_000);
+            const clockState = world.getGameClockState();
             const nextState: TournamentState = {
                 stage: 1,
                 phase: 0,
@@ -129,7 +138,10 @@ export const createTournamentAutoStartHandler = (options: {
                 // Ref startTournament() passes calcTournamentTerm()'s seconds
                 // value to DateInterval's minute field. Preserve that historical
                 // initial enrollment delay; later tournament phases use seconds.
-                nextAt: new Date(now.getTime() + termSeconds * 60_000).toISOString(),
+                nextAt: nextAt.toISOString(),
+                nextTick: world.dateToGameTick(nextAt),
+                clockRevision: clockState.revision,
+                deadlineGeneration: clockState.deadlineGeneration,
                 bettingId:
                     typeof previousState?.bettingId === 'number' && Number.isFinite(previousState.bettingId)
                         ? previousState.bettingId + 1
@@ -142,12 +154,26 @@ export const createTournamentAutoStartHandler = (options: {
                 lastError: undefined,
                 lastErrorAt: undefined,
             };
-            await writeTournamentProjection(redis, keys, [
-                { key: keys.participantsKey, value: [] },
-                { key: keys.matchesKey, value: [] },
-                { key: keys.bettingKey, value: [] },
-                { key: keys.stateKey, value: nextState },
-            ]);
+            await writeTournamentProjection(
+                redis,
+                keys,
+                [
+                    { key: keys.participantsKey, value: [] },
+                    { key: keys.matchesKey, value: [] },
+                    { key: keys.bettingKey, value: [] },
+                    { key: keys.stateKey, value: nextState },
+                ],
+                clockState.phase === 'RUNNING'
+                    ? {
+                          activeRevisionKey: keys.activeClockRevisionKey,
+                          deadlineGenerationKey: keys.deadlineGenerationKey,
+                          phaseKey: keys.clockPhaseKey,
+                          revision: clockState.revision,
+                          deadlineGeneration: clockState.deadlineGeneration,
+                          phase: 'RUNNING',
+                      }
+                    : undefined
+            );
 
             const [typeText, generalTypeText] = TOURNAMENT_TEXT[type] ?? TOURNAMENT_TEXT[0];
             const emperor = world

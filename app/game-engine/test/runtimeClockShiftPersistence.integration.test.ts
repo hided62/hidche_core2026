@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
@@ -77,38 +77,32 @@ integration('runtime clock shift persistence', () => {
     let db: GamePrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
 
+    const cleanupFixtures = async (): Promise<void> => {
+        await db.inputEvent.deleteMany({ where: { requestId: { in: [requestId, runtimeSettingsRequestId] } } });
+        await db.votePoll.deleteMany({ where: { openerGeneralId: generalIds[2] } });
+        await db.message.deleteMany({ where: { mailbox: generalIds[2] } });
+        await db.logEntry.deleteMany({ where: { text: runtimeSettingsLogText } });
+        await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
+        await db.selectPoolEntry.deleteMany({ where: { uniqueName: backlogPoolUniqueName } });
+        await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
+        await db.worldState.deleteMany({
+            where: {
+                scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings', 'realtime-backlog-rebase'] },
+            },
+        });
+    };
+
     beforeAll(async () => {
         const connector = createGamePostgresConnector({ url: databaseUrl! });
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
-        await db.inputEvent.deleteMany({ where: { requestId: { in: [requestId, runtimeSettingsRequestId] } } });
-        await db.votePoll.deleteMany({ where: { openerGeneralId: generalIds[2] } });
-        await db.message.deleteMany({ where: { mailbox: generalIds[2] } });
-        await db.logEntry.deleteMany({ where: { text: runtimeSettingsLogText } });
-        await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
-        await db.selectPoolEntry.deleteMany({ where: { uniqueName: backlogPoolUniqueName } });
-        await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
-        await db.worldState.deleteMany({
-            where: {
-                scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings', 'realtime-backlog-rebase'] },
-            },
-        });
     });
 
+    beforeEach(cleanupFixtures);
+
     afterAll(async () => {
-        await db.inputEvent.deleteMany({ where: { requestId: { in: [requestId, runtimeSettingsRequestId] } } });
-        await db.votePoll.deleteMany({ where: { openerGeneralId: generalIds[2] } });
-        await db.message.deleteMany({ where: { mailbox: generalIds[2] } });
-        await db.logEntry.deleteMany({ where: { text: runtimeSettingsLogText } });
-        await db.auction.deleteMany({ where: { hostGeneralId: { in: [...generalIds] } } });
-        await db.selectPoolEntry.deleteMany({ where: { uniqueName: backlogPoolUniqueName } });
-        await db.general.deleteMany({ where: { id: { in: [...generalIds] } } });
-        await db.worldState.deleteMany({
-            where: {
-                scenarioCode: { in: ['runtime-clock-shift', 'runtime-game-settings', 'realtime-backlog-rebase'] },
-            },
-        });
+        await cleanupFixtures();
         await closeDb?.();
     });
 
@@ -469,6 +463,7 @@ integration('runtime clock shift persistence', () => {
                 clockBaseTime: base,
                 clockTick: 0,
                 clockMode: 'manual',
+                clockPhase: 'MANUAL',
                 clockWallAnchor: base,
                 lastTurnTick: 0,
                 config: { turnTermMinutes: 10, blockGeneralCreate: 0 },

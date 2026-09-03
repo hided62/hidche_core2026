@@ -448,6 +448,21 @@ describe('runtime clock shift projection', () => {
             return {};
         });
         const db = {
+            $transaction: async (operation: (transaction: GamePrismaClient) => Promise<unknown>) => operation(db),
+            $executeRaw: vi.fn(async () => 1),
+            $queryRaw: vi.fn(async () => [{ wallNow: new Date('2026-07-30T10:00:00.000Z') }]),
+            worldState: {
+                findFirst: vi.fn(async () => ({
+                    clockBaseTime: new Date('2026-07-30T10:00:00.000Z'),
+                    clockTick: 0n,
+                    clockMode: 'realtime',
+                    clockWallAnchor: new Date('2026-07-30T10:00:00.000Z'),
+                    tickSeconds: 600,
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    deadlineGeneration: 1n,
+                })),
+            },
             inputEvent: {
                 create: inputEventCreate,
                 findUniqueOrThrow: vi.fn(async () =>
@@ -567,6 +582,21 @@ describe('runtime game settings projection', () => {
         let eventStatus: 'PENDING' | 'SUCCEEDED' = 'PENDING';
         let created = false;
         const db = {
+            $transaction: async (operation: (transaction: GamePrismaClient) => Promise<unknown>) => operation(db),
+            $executeRaw: vi.fn(async () => 1),
+            $queryRaw: vi.fn(async () => [{ wallNow: new Date('2026-07-30T10:00:00.000Z') }]),
+            worldState: {
+                findFirst: vi.fn(async () => ({
+                    clockBaseTime: new Date('2026-07-30T10:00:00.000Z'),
+                    clockTick: 0n,
+                    clockMode: 'realtime',
+                    clockWallAnchor: new Date('2026-07-30T10:00:00.000Z'),
+                    tickSeconds: 600,
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    deadlineGeneration: 1n,
+                })),
+            },
             inputEvent: {
                 create: vi.fn(async () => {
                     if (created) throw { code: 'P2002' };

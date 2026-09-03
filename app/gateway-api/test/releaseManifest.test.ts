@@ -39,7 +39,7 @@ describe('readReleaseManifest', () => {
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
             gatewaySchemaHead: '20260825000000_add_bulk_release_batches',
-            gameSchemaHead: '20260903090000_add_game_clock_reconciliation',
+            gameSchemaHead: '20260903103000_add_input_event_clock_processing',
         });
     });
 

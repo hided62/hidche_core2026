@@ -28,6 +28,9 @@ const createContext = (payload: unknown = {}) => {
                     status: 'PENDING',
                     result: null,
                     attempts: 0,
+                    acceptedGameTick: 100n,
+                    acceptedClockRevision: 3n,
+                    acceptedDeadlineGeneration: 2n,
                 },
             ];
         }
@@ -36,8 +39,8 @@ const createContext = (payload: unknown = {}) => {
     });
     const transaction = {
         $queryRaw: queryRaw,
-        $executeRaw: vi.fn(async () => {
-            order.push('accepted');
+        $executeRaw: vi.fn(async (query: { sql?: string }) => {
+            order.push(query.sql?.includes('pg_advisory_xact_lock') ? 'clock-fence' : 'accepted');
             return 1;
         }),
         $executeRawUnsafe: vi.fn(async (statement: string) => {
@@ -88,6 +91,7 @@ describe('API input-event change journal boundary', () => {
 
         expect(fixture.order).toEqual([
             'transaction-begin',
+            'clock-fence',
             'accepted',
             'locked',
             'processing',
@@ -112,6 +116,7 @@ describe('API input-event change journal boundary', () => {
 
         expect(fixture.order).toEqual([
             'transaction-begin',
+            'clock-fence',
             'accepted',
             'locked',
             'processing',

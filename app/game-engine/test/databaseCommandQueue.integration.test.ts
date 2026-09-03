@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TurnDaemonCommand } from '@sammo-ts/common';
 import { createGamePostgresConnector } from '@sammo-ts/infra';
@@ -23,6 +23,12 @@ integration('database command queue', () => {
         await db.inputEvent.deleteMany({
             where: { requestId: { startsWith: 'integration:engine:' } },
         });
+    });
+
+    beforeEach(async () => {
+        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: 'integration:engine:' } } });
+        await db.clockSuspension.deleteMany({ where: { id: 'integration-queue-revision-8-9' } });
+        await db.worldState.updateMany({ data: { clockPhase: 'RUNNING' } });
     });
 
     afterAll(async () => {
@@ -228,5 +234,120 @@ integration('database command queue', () => {
         await expect(new DatabaseTurnDaemonCommandQueue(db).drain()).resolves.toEqual([]);
         expect(handle).toHaveBeenCalledOnce();
         expect(mutation).not.toHaveBeenCalled();
+    });
+
+    it('dequeues gameplay only in an executable phase and records the processing clock generation', async () => {
+        const existingWorld = await db.worldState.findFirst({ orderBy: { id: 'asc' } });
+        const world = existingWorld
+            ? await db.worldState.update({
+                  where: { id: existingWorld.id },
+                  data: { clockPhase: 'SUSPENDED', clockRevision: 9n, deadlineGeneration: 4n, clockTick: 123n },
+              })
+            : await db.worldState.create({
+                  data: {
+                      scenarioCode: 'queue-clock-test',
+                      currentYear: 180,
+                      currentMonth: 1,
+                      tickSeconds: 600,
+                      clockPhase: 'SUSPENDED',
+                      clockRevision: 9n,
+                      deadlineGeneration: 4n,
+                      clockTick: 123n,
+                  },
+              });
+        const gameplayId = 'integration:engine:clock-gated-gameplay';
+        const statusId = 'integration:engine:clock-gated-status';
+        const staleId = 'integration:engine:clock-gated-stale';
+        await db.inputEvent.createMany({
+            data: [
+                {
+                    requestId: gameplayId,
+                    target: 'ENGINE',
+                    eventType: 'vacation',
+                    actorUserId: 'user-7',
+                    acceptedGameTick: 100n,
+                    acceptedClockRevision: 9n,
+                    acceptedDeadlineGeneration: 4n,
+                    payload: { type: 'vacation', requestId: gameplayId, userId: 'user-7', generalId: 7 },
+                },
+                {
+                    requestId: statusId,
+                    target: 'ENGINE',
+                    eventType: 'getStatus',
+                    acceptedGameTick: 100n,
+                    acceptedClockRevision: 9n,
+                    acceptedDeadlineGeneration: 4n,
+                    payload: { type: 'getStatus', requestId: statusId },
+                },
+                {
+                    requestId: staleId,
+                    target: 'ENGINE',
+                    eventType: 'vacation',
+                    actorUserId: 'user-8',
+                    acceptedGameTick: 90n,
+                    acceptedClockRevision: 8n,
+                    acceptedDeadlineGeneration: 3n,
+                    payload: { type: 'vacation', requestId: staleId, userId: 'user-8', generalId: 8 },
+                },
+            ],
+        });
+        const queue = new DatabaseTurnDaemonCommandQueue(db);
+
+        expect(await queue.drain()).toEqual([{ type: 'getStatus', requestId: statusId }]);
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: gameplayId } })).toMatchObject({
+            status: 'PENDING',
+            processingClockRevision: null,
+        });
+        await db.worldState.update({ where: { id: world.id }, data: { clockPhase: 'RUNNING' } });
+
+        expect(await queue.drain()).toEqual([
+            { type: 'vacation', requestId: gameplayId, userId: 'user-7', generalId: 7 },
+        ]);
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: gameplayId } })).toMatchObject({
+            status: 'PROCESSING',
+            processingGameTick: 100n,
+            processingClockRevision: 9n,
+            processingDeadlineGeneration: 4n,
+        });
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: staleId } })).toMatchObject({
+            status: 'PENDING',
+            processingClockRevision: null,
+        });
+        await db.clockSuspension.deleteMany({ where: { id: 'integration-queue-revision-8-9' } });
+        await db.clockSuspension.create({
+            data: {
+                id: 'integration-queue-revision-8-9',
+                worldStateId: world.id,
+                source: 'MAINTENANCE',
+                policy: 'EXACT',
+                status: 'APPLIED',
+                sourceRevision: 8n,
+                targetRevision: 9n,
+                cutTick: 90n,
+                cutWallAt: new Date(),
+                resumeWallAt: new Date(),
+                rateTicksPerSecond: 60_000,
+                gapTicks: 33n,
+                shiftTicks: 33n,
+                alignedTick: 123n,
+            },
+        });
+        expect(await queue.drain()).toEqual([
+            {
+                type: 'vacation',
+                requestId: staleId,
+                userId: 'user-8',
+                generalId: 8,
+                processingGameTick: 123,
+            },
+        ]);
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId: staleId } })).toMatchObject({
+            status: 'PROCESSING',
+            acceptedGameTick: 90n,
+            acceptedClockRevision: 8n,
+            processingGameTick: 123n,
+            processingClockRevision: 9n,
+            processingDeadlineGeneration: 4n,
+        });
     });
 });

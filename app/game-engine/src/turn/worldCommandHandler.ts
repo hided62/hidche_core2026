@@ -274,6 +274,10 @@ const resolveSelectionCommandAcceptedAt = async (
     command: Extract<TurnDaemonCommand, { type: 'selectPoolReserve' | 'selectPoolCreate' | 'selectPoolReselect' }>
 ): Promise<Date> => {
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const processingGameTick = Reflect.get(command, 'processingGameTick');
+    if (typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)) {
+        return world.gameTickToDate(processingGameTick);
+    }
     if (command.acceptedGameTick !== undefined) {
         return world.gameTickToDate(command.acceptedGameTick);
     }
@@ -407,9 +411,13 @@ async function handleNpcPossessGeneral(
         throw new Error('NPC possession world state is missing.');
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
-    const acceptedAt = command.acceptedGameAt
-        ? new Date(command.acceptedGameAt)
-        : ctx.world.getGameNow(operationalAcceptedAt);
+    const processingGameTick = Reflect.get(command, 'processingGameTick');
+    const acceptedAt =
+        typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)
+            ? ctx.world.gameTickToDate(processingGameTick)
+            : command.acceptedGameAt
+              ? new Date(command.acceptedGameAt)
+              : ctx.world.getGameNow(operationalAcceptedAt);
     try {
         return {
             type: 'npcPossessGeneral',
@@ -451,8 +459,11 @@ async function handleSelectPoolCreate(
         throw new Error('Selection-pool world state is missing.');
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
+    const processingGameTick = Reflect.get(command, 'processingGameTick');
     const acceptedAt =
-        command.acceptedGameTick !== undefined
+        typeof processingGameTick === 'number' && Number.isSafeInteger(processingGameTick)
+            ? ctx.world.gameTickToDate(processingGameTick)
+            : command.acceptedGameTick !== undefined
             ? ctx.world.gameTickToDate(command.acceptedGameTick)
             : command.acceptedGameAt !== undefined
               ? new Date(command.acceptedGameAt)
@@ -515,6 +526,9 @@ async function handleSelectPoolReserve(
                 seedOwnerIdentity: command.seedOwnerIdentity,
                 now: acceptedAt,
                 ...(command.acceptedGameTick === undefined ? {} : { acceptedGameTick: command.acceptedGameTick }),
+                ...(typeof Reflect.get(command, 'processingGameTick') === 'number'
+                    ? { processingGameTick: Reflect.get(command, 'processingGameTick') as number }
+                    : {}),
             }),
         };
     } catch (error) {
@@ -2770,9 +2784,15 @@ const validateVoteSelectionInTransaction = async (
     if (!poll) return '설문조사가 없습니다.';
 
     const processingNow = ctx.world.getGameNow(new Date());
-    const acceptedGameTick = command.acceptedGameTick ?? ctx.world.dateToGameTick(processingNow);
+    const convertedProcessingTick = Reflect.get(command, 'processingGameTick');
+    const acceptedGameTick =
+        typeof convertedProcessingTick === 'number' && Number.isSafeInteger(convertedProcessingTick)
+            ? convertedProcessingTick
+            : (command.acceptedGameTick ?? ctx.world.dateToGameTick(processingNow));
     const acceptedGameAt =
-        command.acceptedGameTick === undefined ? processingNow : ctx.world.gameTickToDate(command.acceptedGameTick);
+        command.acceptedGameTick === undefined && convertedProcessingTick === undefined
+            ? processingNow
+            : ctx.world.gameTickToDate(acceptedGameTick);
     if (hasVotePollDeadlinePassed(poll, acceptedGameAt, acceptedGameTick)) {
         return '설문조사가 종료되었습니다.';
     }

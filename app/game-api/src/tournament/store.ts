@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { parseTournamentSourceRevision, writeTournamentProjection } from '@sammo-ts/common';
+import { parseTournamentSourceRevision, writeTournamentProjection, type TournamentClockFence } from '@sammo-ts/common';
 import { z } from 'zod';
 
 import type { TournamentKeys } from './keys.js';
@@ -37,8 +37,12 @@ const zTournamentState = z
         openMonth: z.number().int(),
         termSeconds: z.number(),
         nextAt: z.string(),
+        nextTick: z.number().int().safe().optional(),
+        clockRevision: z.number().int().positive().safe().optional(),
+        deadlineGeneration: z.number().int().positive().safe().optional(),
         bettingId: z.number().int().optional(),
         bettingCloseAt: z.string().optional(),
+        bettingCloseTick: z.number().int().safe().optional(),
         winnerId: z.number().int().optional(),
         bettingSettled: z.boolean().optional(),
         rewardSettled: z.boolean().optional(),
@@ -131,11 +135,61 @@ const parseProjection = <T>(raw: string | null, key: string, schema: z.ZodType<T
     return parsed.data;
 };
 
+export interface TournamentClockContext {
+    phase: 'RUNNING';
+    revision: number;
+    deadlineGeneration: number;
+    dateToTick(date: Date): number | null;
+}
+
+const parseDeadlineTick = (value: string, context: TournamentClockContext, field: string): number => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        throw new Error(`Tournament ${field} is not a valid instant.`);
+    }
+    const tick = context.dateToTick(date);
+    if (tick === null || !Number.isSafeInteger(tick)) {
+        throw new Error(`Tournament ${field} cannot be represented in the active game clock.`);
+    }
+    return tick;
+};
+
+export const stampTournamentClock = (state: TournamentState, context: TournamentClockContext): TournamentState => ({
+    ...state,
+    nextTick: parseDeadlineTick(state.nextAt, context, 'nextAt'),
+    clockRevision: context.revision,
+    deadlineGeneration: context.deadlineGeneration,
+    ...(state.bettingCloseAt
+        ? { bettingCloseTick: parseDeadlineTick(state.bettingCloseAt, context, 'bettingCloseAt') }
+        : { bettingCloseTick: undefined }),
+});
+
+const toClockFence = (keys: TournamentKeys, context: TournamentClockContext): TournamentClockFence => ({
+    activeRevisionKey: keys.activeClockRevisionKey,
+    deadlineGenerationKey: keys.deadlineGenerationKey,
+    phaseKey: keys.clockPhaseKey,
+    revision: context.revision,
+    deadlineGeneration: context.deadlineGeneration,
+    phase: context.phase,
+});
+
 export class TournamentStore {
+    private clockContext: TournamentClockContext | null = null;
+
     constructor(
         private readonly redis: RedisClientLike,
         private readonly keys: TournamentKeys
     ) {}
+
+    async withClockContext<T>(context: TournamentClockContext, operation: () => Promise<T>): Promise<T> {
+        const previous = this.clockContext;
+        this.clockContext = context;
+        try {
+            return await operation();
+        } finally {
+            this.clockContext = previous;
+        }
+    }
 
     async withMutationLock<T>(operation: () => Promise<T>, timeoutMs = 2_000): Promise<T> {
         if (!this.redis.del) {
@@ -174,11 +228,15 @@ export class TournamentStore {
     }
 
     private async writeWithSourceRevision(key: string, value: unknown): Promise<string> {
-        return writeTournamentProjection(this.redis, this.keys, [{ key, value }]);
+        const fence = this.clockContext ? toClockFence(this.keys, this.clockContext) : undefined;
+        return writeTournamentProjection(this.redis, this.keys, [{ key, value }], fence);
     }
 
     async setState(state: TournamentState): Promise<string> {
-        return this.writeWithSourceRevision(this.keys.stateKey, state);
+        return this.writeWithSourceRevision(
+            this.keys.stateKey,
+            this.clockContext ? stampTournamentClock(state, this.clockContext) : state
+        );
     }
 
     async getParticipants(): Promise<TournamentParticipantEntry[]> {

@@ -41,6 +41,9 @@ integration('TournamentStore Redis source revision', () => {
             keys.matchesKey,
             keys.bettingKey,
             keys.sourceRevisionKey,
+            keys.activeClockRevisionKey,
+            keys.deadlineGenerationKey,
+            keys.clockPhaseKey,
         ]);
         if (subscriber) {
             await subscriber.client.unsubscribe(keys.sourceRevisionChannel);
@@ -123,5 +126,49 @@ integration('TournamentStore Redis source revision', () => {
                 invalidation: expect.objectContaining({ rankings: false }),
             }),
         ]);
+    });
+
+    it('dual-writes deadline ticks and rejects a Redis clock revision race atomically', async () => {
+        const store = new TournamentStore(connector.client, keys);
+        await Promise.all([
+            connector.client.set(keys.activeClockRevisionKey, '7'),
+            connector.client.set(keys.deadlineGenerationKey, '3'),
+            connector.client.set(keys.clockPhaseKey, 'RUNNING'),
+        ]);
+        const clockContext = {
+            phase: 'RUNNING' as const,
+            revision: 7,
+            deadlineGeneration: 3,
+            dateToTick: (date: Date) => Math.trunc(date.getTime() / 1_000),
+        };
+        const nextAt = '2026-09-03T10:00:00.000Z';
+        await store.withClockContext(clockContext, () =>
+            store.setState({
+                stage: 6,
+                phase: 0,
+                type: 0,
+                auto: true,
+                openYear: 200,
+                openMonth: 1,
+                termSeconds: 10,
+                nextAt,
+                bettingCloseAt: '2026-09-03T09:59:50.000Z',
+            })
+        );
+        await expect(store.getState()).resolves.toMatchObject({
+            nextTick: Math.trunc(new Date(nextAt).getTime() / 1_000),
+            bettingCloseTick: Math.trunc(new Date('2026-09-03T09:59:50.000Z').getTime() / 1_000),
+            clockRevision: 7,
+            deadlineGeneration: 3,
+        });
+
+        const beforeRevision = await store.getSourceRevision();
+        await connector.client.set(keys.activeClockRevisionKey, '8');
+        await expect(
+            store.withClockContext(clockContext, () =>
+                store.setMatches([{ id: 99, stage: 7, roundIndex: 0, attackerId: 1, defenderId: 2 }])
+            )
+        ).rejects.toThrow('clock revision fence failed');
+        await expect(store.getSourceRevision()).resolves.toBe(beforeRevision);
     });
 });
