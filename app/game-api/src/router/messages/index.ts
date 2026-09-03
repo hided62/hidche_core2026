@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { asRecord, ChangeJournal } from '@sammo-ts/common';
@@ -14,7 +12,6 @@ import {
     authedProcedure,
     engineAuthedProcedure,
     router,
-    scopeApiInputEventRequestId,
     wallAuthedProcedure,
 } from '../../trpc.js';
 import {
@@ -357,7 +354,7 @@ export const messagesRouter = router({
             let journalPersisted = false;
             const response = await executeInputEvent({
                 db: ctx.db,
-                requestId: scopeApiInputEventRequestId(ctx.requestId ?? randomUUID(), 'messages.respond.diplomatic', 0),
+                requestId: `messages.respond.diplomatic:${input.messageId}`,
                 eventType: 'messages.respond.diplomatic',
                 payload: input,
                 actorUserId: ctx.auth?.user.id,
@@ -393,13 +390,39 @@ export const messagesRouter = router({
                             await writeReadModelChangeJournal(transaction, changeJournal.snapshot())
                         );
                     }
-                    return { result: result.result, reason: result.reason };
+                    return {
+                        result: result.result,
+                        reason: result.reason,
+                        affectedNationIds: result.affectedNationIds,
+                        affectedCityIds: result.affectedCityIds,
+                    };
                 },
             });
             if (journalPersisted) {
                 ctx.readModelOutbox?.wake();
             }
-            return response;
+            if (response.result && (response.affectedNationIds.length > 0 || response.affectedCityIds.length > 0)) {
+                if (!ctx.auth) {
+                    throw new TRPCError({ code: 'UNAUTHORIZED' });
+                }
+                const synchronized = await ctx.turnDaemon.requestCommand({
+                    type: 'syncDiplomaticResponse',
+                    userId: ctx.auth.user.id,
+                    generalId: general.id,
+                    messageId: input.messageId,
+                    nationIds: response.affectedNationIds,
+                    cityIds: response.affectedCityIds,
+                });
+                if (!synchronized || synchronized.type !== 'syncDiplomaticResponse' || !synchronized.ok) {
+                    const synchronizationReason =
+                        synchronized?.type === 'syncDiplomaticResponse' ? synchronized.reason : undefined;
+                    throw new TRPCError({
+                        code: 'INTERNAL_SERVER_ERROR',
+                        message: synchronizationReason ?? '외교 상태를 게임 엔진에 동기화하지 못했습니다.',
+                    });
+                }
+            }
+            return { result: response.result, reason: response.reason };
         }),
     getOld: authedProcedure
         .input(

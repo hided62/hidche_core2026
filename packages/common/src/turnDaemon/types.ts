@@ -161,6 +161,15 @@ export type TurnDaemonCommand =
           messageId: number;
           response: boolean;
       }
+    | {
+          type: 'syncDiplomaticResponse';
+          requestId?: string;
+          userId: string;
+          generalId: number;
+          messageId: number;
+          nationIds: number[];
+          cityIds: number[];
+      }
     | { type: 'vacation'; requestId?: string; userId: string; generalId: number }
     | {
           type: 'setMySetting';
@@ -574,6 +583,16 @@ export type TurnDaemonCommandResult =
           messageId: number;
           action?: 'scout' | 'raiseInvader';
           reason: string;
+      }
+    | {
+          type: 'syncDiplomaticResponse';
+          ok: boolean;
+          generalId: number;
+          messageId: number;
+          nations: number;
+          diplomacy: number;
+          cities: number;
+          reason?: string;
       }
     | { type: 'vacation'; ok: boolean; generalId: number; reason?: string }
     | { type: 'setMySetting'; ok: boolean; generalId: number; reason?: string }

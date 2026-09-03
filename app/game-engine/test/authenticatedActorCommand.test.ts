@@ -46,6 +46,15 @@ const buildActorBoundCommands = (userId = 'old-owner'): TurnDaemonCommand[] => [
         officerLevel: 4,
     },
     { type: 'voteReward', requestId: 'voteReward', userId, generalId: 7, voteId: 1, selection: [0] },
+    {
+        type: 'syncDiplomaticResponse',
+        requestId: 'syncDiplomaticResponse',
+        userId,
+        generalId: 7,
+        messageId: 31,
+        nationIds: [1, 2],
+        cityIds: [1],
+    },
 ];
 
 const buildReadOnlyWorld = (ownerUserId: string) => {
@@ -179,6 +188,66 @@ describe('authenticated actor-bound command registry and execution', () => {
         expect(result).toMatchObject({ type: 'commandRejected', ok: false, commandType: 'vacation' });
         expect(getGeneralById).not.toHaveBeenCalled();
         expect(mutation).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the daemon world from the committed diplomatic response before the next turn', async () => {
+        const updateNation = vi.fn();
+        const applyDiplomacyPatch = vi.fn();
+        const updateCity = vi.fn();
+        const world = {
+            getGeneralById: vi.fn(() => ({ id: 7, userId: 'old-owner' })),
+            updateNation,
+            applyDiplomacyPatch,
+            updateCity,
+        } as unknown as InMemoryTurnWorld;
+        const db = {
+            inputEvent: {
+                findUnique: vi.fn(async () => ({
+                    actorUserId: 'old-owner',
+                    target: 'ENGINE',
+                    eventType: 'syncDiplomaticResponse',
+                })),
+            },
+            messageAction: { findUnique: vi.fn(async () => ({ status: 'RESOLVED' })) },
+            nation: { findMany: vi.fn(async () => [{ id: 1, meta: { policy: 'balanced' } }]) },
+            diplomacy: {
+                findMany: vi.fn(async () => [
+                    { srcNationId: 1, destNationId: 2, stateCode: 7, term: 12, meta: { dead: 3 } },
+                ]),
+            },
+            city: { findMany: vi.fn(async () => [{ id: 4, frontState: 2 }]) },
+        };
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        await expect(
+            handler.handle(
+                {
+                    type: 'syncDiplomaticResponse',
+                    requestId: 'syncDiplomaticResponse',
+                    userId: 'old-owner',
+                    generalId: 7,
+                    messageId: 31,
+                    nationIds: [1, 2],
+                    cityIds: [4],
+                },
+                { db: db as never }
+            )
+        ).resolves.toEqual({
+            type: 'syncDiplomaticResponse',
+            ok: true,
+            generalId: 7,
+            messageId: 31,
+            nations: 1,
+            diplomacy: 1,
+            cities: 1,
+        });
+        expect(updateNation).toHaveBeenCalledWith(1, { meta: { policy: 'balanced' } });
+        expect(applyDiplomacyPatch).toHaveBeenCalledWith({
+            srcNationId: 1,
+            destNationId: 2,
+            patch: { state: 7, term: 12, dead: 3, meta: {} },
+        });
+        expect(updateCity).toHaveBeenCalledWith(4, { frontState: 2 });
     });
 
     it('preserves direct in-memory invocation when no command database is supplied', async () => {

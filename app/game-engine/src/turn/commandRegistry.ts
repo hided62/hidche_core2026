@@ -131,6 +131,15 @@ const zMessageRespond = z.object({
     response: z.boolean(),
 });
 
+const zSyncDiplomaticResponse = z.object({
+    type: z.literal('syncDiplomaticResponse'),
+    userId: z.string().min(1),
+    generalId: z.number().int().positive(),
+    messageId: z.number().int().positive(),
+    nationIds: z.array(z.number().int().positive()).max(4),
+    cityIds: z.array(z.number().int().positive()).max(256),
+});
+
 const zVacation = z.object({
     type: z.literal('vacation'),
     userId: z.string().min(1),
@@ -609,6 +618,14 @@ const normalizeMessageRespond: CommandNormalizer<'messageRespond'> = (envelope) 
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeSyncDiplomaticResponse: CommandNormalizer<'syncDiplomaticResponse'> = (envelope) => {
+    const command = parseWith(zSyncDiplomaticResponse, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeVacation: CommandNormalizer<'vacation'> = (envelope) => {
     const command = parseWith(zVacation, envelope.command);
     if (!command) {
@@ -859,6 +876,7 @@ const normalizers: CommandNormalizerMap = {
     buildNationCandidate: normalizeBuildNationCandidate,
     instantRetreat: normalizeInstantRetreat,
     messageRespond: normalizeMessageRespond,
+    syncDiplomaticResponse: normalizeSyncDiplomaticResponse,
     vacation: normalizeVacation,
     setMySetting: normalizeSetMySetting,
     dropItem: normalizeDropItem,

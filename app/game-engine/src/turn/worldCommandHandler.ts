@@ -29,6 +29,7 @@ import {
     normalizeTroopName,
     resolveTroopSecretPermission,
     resolveMessageTargetIcon,
+    readDiplomacyMeta,
     type GeneralActionModule,
     rollUniqueLottery,
     type ItemModule,
@@ -182,6 +183,7 @@ const ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST = [
     'kick',
     'appoint',
     'voteReward',
+    'syncDiplomaticResponse',
 ] as const satisfies readonly TurnDaemonCommand['type'][];
 
 type ActorBoundGeneralCommandType = (typeof ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST)[number];
@@ -1839,6 +1841,72 @@ async function handleMessageRespond(
     };
 }
 
+async function handleSyncDiplomaticResponse(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'syncDiplomaticResponse' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const action = await db.messageAction.findUnique({
+        where: { messageId: command.messageId },
+        select: { status: true },
+    });
+    if (action?.status !== 'RESOLVED') {
+        return {
+            type: 'syncDiplomaticResponse',
+            ok: false,
+            generalId: command.generalId,
+            messageId: command.messageId,
+            nations: 0,
+            diplomacy: 0,
+            cities: 0,
+            reason: '해결되지 않은 외교서신은 동기화할 수 없습니다.',
+        };
+    }
+
+    const nationIds = [...new Set(command.nationIds)];
+    const cityIds = [...new Set(command.cityIds)];
+    const [nations, diplomacy, cities] = await Promise.all([
+        db.nation.findMany({ where: { id: { in: nationIds } }, select: { id: true, meta: true } }),
+        nationIds.length === 0
+            ? Promise.resolve([])
+            : db.diplomacy.findMany({
+                  where: { srcNationId: { in: nationIds }, destNationId: { in: nationIds } },
+                  select: { srcNationId: true, destNationId: true, stateCode: true, term: true, meta: true },
+              }),
+        db.city.findMany({ where: { id: { in: cityIds } }, select: { id: true, frontState: true } }),
+    ]);
+
+    for (const nation of nations) {
+        ctx.world.updateNation(nation.id, { meta: asRecord(nation.meta) as Record<string, TriggerValue> });
+    }
+    for (const entry of diplomacy) {
+        const parsedMeta = readDiplomacyMeta(asRecord(entry.meta));
+        ctx.world.applyDiplomacyPatch({
+            srcNationId: entry.srcNationId,
+            destNationId: entry.destNationId,
+            patch: {
+                state: entry.stateCode,
+                term: entry.term,
+                dead: parsedMeta.dead,
+                meta: parsedMeta.meta as Record<string, TriggerValue>,
+            },
+        });
+    }
+    for (const city of cities) {
+        ctx.world.updateCity(city.id, { frontState: city.frontState });
+    }
+
+    return {
+        type: 'syncDiplomaticResponse',
+        ok: true,
+        generalId: command.generalId,
+        messageId: command.messageId,
+        nations: nations.length,
+        diplomacy: diplomacy.length,
+        cities: cities.length,
+    };
+}
+
 async function handleVacation(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'vacation' }>
@@ -3151,6 +3219,11 @@ export const createTurnDaemonCommandHandler = (options: {
             handleInstantRetreat(ctx, command as Extract<TurnDaemonCommand, { type: 'instantRetreat' }>),
         messageRespond: (command) =>
             handleMessageRespond(ctx, command as Extract<TurnDaemonCommand, { type: 'messageRespond' }>),
+        syncDiplomaticResponse: (command) =>
+            handleSyncDiplomaticResponse(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'syncDiplomaticResponse' }>
+            ),
         vacation: (command) => handleVacation(ctx, command as Extract<TurnDaemonCommand, { type: 'vacation' }>),
         setMySetting: (command) =>
             handleSetMySetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setMySetting' }>),

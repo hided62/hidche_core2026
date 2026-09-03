@@ -959,6 +959,15 @@ describe('messages router missing-flow compatibility', () => {
         const messageActionUpdateMany = vi.fn(async () => ({ count: 1 }));
         const cityUpdate = vi.fn(async () => ({}));
         const changeJournal = new ChangeJournal();
+        const requestCommand = vi.fn(async (command: { type: string; generalId: number; messageId: number }) => ({
+            type: 'syncDiplomaticResponse' as const,
+            ok: true,
+            generalId: command.generalId,
+            messageId: command.messageId,
+            nations: 2,
+            diplomacy: 2,
+            cities: 0,
+        }));
         const { caller } = buildContext(
             {
                 general: {
@@ -1049,7 +1058,7 @@ describe('messages router missing-flow compatibility', () => {
                 messageAction: { updateMany: messageActionUpdateMany },
                 $queryRaw: queryRaw,
             },
-            { changeJournal }
+            { changeJournal, turnDaemon: { requestCommand } }
         );
         return {
             caller,
@@ -1062,6 +1071,7 @@ describe('messages router missing-flow compatibility', () => {
             messageUpdateMany,
             cityUpdate,
             changeJournal,
+            requestCommand,
         };
     };
 
@@ -1075,6 +1085,14 @@ describe('messages router missing-flow compatibility', () => {
         });
 
         expect(result).toEqual({ result: true, reason: 'success' });
+        expect(setup.requestCommand).toHaveBeenCalledWith({
+            type: 'syncDiplomaticResponse',
+            userId: auth.user.id,
+            generalId: setup.actor.id,
+            messageId: 31,
+            nationIds: [1, 2],
+            cityIds: [],
+        });
         expect(setup.diplomacyUpdate).toHaveBeenCalledTimes(2);
         expect(setup.nationUpdate).toHaveBeenCalledWith(
             expect.objectContaining({
