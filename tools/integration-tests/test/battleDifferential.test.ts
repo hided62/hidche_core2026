@@ -582,7 +582,28 @@ const runReferenceTraceBatch = (workspaceRoot: string, fixtureLines: string[]): 
     }
     const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
     if (!compareSourceRoot) {
-        throw new Error('BATTLE_CORPUS_PATH requires REF_COMPARE_SOURCE_ROOT with the JSONL-capable ref harness.');
+        const stdout = execFileSync(
+            'docker',
+            ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/battle_trace.php', '--jsonl'],
+            {
+                cwd: path.join(workspaceRoot, 'docker_compose_files/reference'),
+                input: normalizeJsonlForManifest(fixtureLines),
+                encoding: 'utf8',
+                stdio: ['pipe', 'pipe', 'pipe'],
+                maxBuffer: 512 * 1024 * 1024,
+            }
+        );
+        const traces = stdout
+            .split(/\r?\n/u)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as ReferenceTrace);
+        if (traces.length !== fixtureLines.length) {
+            throw new Error(`ref batch returned ${traces.length} traces for ${fixtureLines.length} fixtures`);
+        }
+        traces.forEach((trace, index) =>
+            assertReferenceFixtureIdentity(trace, fixtureLines[index]!, `compose trace[${index}]`)
+        );
+        return traces;
     }
     const stdout = runReferenceSourceScript({
         workspaceRoot,
@@ -2370,6 +2391,14 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             },
         };
         const failures: string[] = [];
+        const cases: Array<{
+            itemKey: string;
+            base: BattleSimRequestPayload & { startYear: number };
+            coreEvents: WarBattleTraceEvent[];
+            coreLogs: CoreLogCapture;
+            coreRng: TracingRng | null;
+            coreOutcome: WarBattleOutcome | null;
+        }> = [];
 
         const itemFilter = process.env['ITEM_PARITY_FILTER'];
         for (const [itemKey, slot] of [...itemSlots].sort(([lhs], [rhs]) => lhs.localeCompare(rhs))) {
@@ -2423,7 +2452,16 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     return coreRng.createRandUtil();
                 },
             });
-            const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+            cases.push({ itemKey, base, coreEvents, coreLogs, coreRng, coreOutcome });
+        }
+
+        const references = runReferenceTraceBatch(
+            workspaceRoot!,
+            cases.map(({ base }) => JSON.stringify(base))
+        );
+        for (let index = 0; index < cases.length; index += 1) {
+            const { itemKey, base, coreEvents, coreLogs, coreRng, coreOutcome } = cases[index]!;
+            const reference = references[index]!;
             try {
                 assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
                 assertAllLogBucketsParity(coreLogs, reference, base, `item.attacker.${itemKey}`);
@@ -2487,6 +2525,14 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             },
         };
         const failures: string[] = [];
+        const cases: Array<{
+            itemKey: string;
+            base: BattleSimRequestPayload & { startYear: number };
+            coreEvents: WarBattleTraceEvent[];
+            coreLogs: CoreLogCapture;
+            coreRng: TracingRng | null;
+            coreOutcome: WarBattleOutcome | null;
+        }> = [];
 
         const itemFilter = process.env['ITEM_PARITY_FILTER'];
         for (const [itemKey, slot] of [...itemSlots].sort(([lhs], [rhs]) => lhs.localeCompare(rhs))) {
@@ -2538,7 +2584,16 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     return coreRng.createRandUtil();
                 },
             });
-            const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+            cases.push({ itemKey, base, coreEvents, coreLogs, coreRng, coreOutcome });
+        }
+
+        const references = runReferenceTraceBatch(
+            workspaceRoot!,
+            cases.map(({ base }) => JSON.stringify(base))
+        );
+        for (let index = 0; index < cases.length; index += 1) {
+            const { itemKey, base, coreEvents, coreLogs, coreRng, coreOutcome } = cases[index]!;
+            const reference = references[index]!;
             try {
                 assertTraceParity(coreEvents, reference, coreRng, coreOutcome);
                 assertAllLogBucketsParity(coreLogs, reference, base, `item.defender.${itemKey}`);

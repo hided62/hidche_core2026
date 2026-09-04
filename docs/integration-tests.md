@@ -134,3 +134,9 @@ PostgreSQL·Redis 경계를 증명하지 않습니다. Full suite 실패는 변�
 
 Ref 호환성 판정은 [차등 검증](architecture/turn-state-differential-testing.md),
 UI는 [프론트엔드 호환 검증](frontend-legacy-parity.md)을 함께 사용합니다.
+
+전투 아이템 전체 차등 검증은 공격자·방어자 각각 145개 fixture를 모두 Core와
+Ref에서 실행하고 event, RNG, outcome, 전체 log bucket을 항목별로 비교합니다.
+Ref harness는 fixture마다 새 PHP process를 띄우지 않고 `--jsonl` 입력을 한
+process에서 일괄 처리합니다. `ITEM_PARITY_FILTER`는 특정 항목을 진단할 때만
+사용하며, 전체 검증의 fixture 수나 assertion을 줄이는 최적화로 사용하지 않습니다.
