@@ -44,6 +44,7 @@ import {
 import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { asRecord, JosaUtil, LEGACY_RANK_DATA_TYPES, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { isEqual } from 'es-toolkit';
 
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
@@ -385,7 +386,7 @@ const normalizeLastTurn = (value: unknown): LegacyLastTurn => {
 };
 
 const sameArgs = (left: Record<string, unknown> | undefined, right: Record<string, unknown>): boolean =>
-    JSON.stringify(left ?? {}) === JSON.stringify(right);
+    isEqual(left ?? {}, right);
 
 const readNextAvailableTurn = (nation: Nation, actionName: string): number | null => {
     const raw = asRecord(nation.meta)[`next_execute_${actionName}`];

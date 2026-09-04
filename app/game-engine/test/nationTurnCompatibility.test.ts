@@ -39,6 +39,135 @@ const createChief = (userId: string | null): TurnGeneral => ({
 });
 
 describe('레거시 사령부 턴 실행 호환성', () => {
+    it('피장파장은 같은 두 턴의 사기진작과 병행해도 2회째에 완료한다', async () => {
+        const cities = buildLargeTestCities();
+        for (const city of cities) {
+            city.nationId = city.id === 1 ? 1 : city.id === 2 ? 2 : 0;
+        }
+        const chief = createChief('test-user');
+        chief.crew = 1_000;
+        chief.train = 80;
+        chief.atmos = 80;
+        const snapshot: TurnWorldSnapshot = {
+            generals: [chief],
+            cities,
+            nations: [
+                {
+                    id: 1,
+                    name: '테스트국',
+                    color: '#aa0000',
+                    capitalCityId: 1,
+                    chiefGeneralId: 1,
+                    gold: 1_000_000,
+                    rice: 1_000_000,
+                    power: 0,
+                    level: 1,
+                    typeCode: 'large_test_map_def',
+                    meta: { strategic_cmd_limit: 0, gennum: 10 },
+                },
+                {
+                    id: 2,
+                    name: '상대국',
+                    color: '#0000aa',
+                    capitalCityId: 2,
+                    chiefGeneralId: null,
+                    gold: 1_000_000,
+                    rice: 1_000_000,
+                    power: 0,
+                    level: 1,
+                    typeCode: 'large_test_map_def',
+                    meta: {},
+                },
+            ],
+            troops: [],
+            diplomacy: [
+                { fromNationId: 1, toNationId: 2, state: 0, term: 1200, dead: 0, meta: {} },
+                { fromNationId: 2, toNationId: 1, state: 0, term: 1200, dead: 0, meta: {} },
+            ],
+            events: [],
+            initialEvents: [],
+            map: LARGE_TEST_MAP,
+            scenarioConfig: {
+                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                iconPath: '',
+                map: {},
+                const: {
+                    openingPartYear: 3,
+                    develCost: 10,
+                    baseGold: 1000,
+                    baseRice: 1000,
+                    maxResourceActionAmount: 10000,
+                    maxTechLevel: 12000,
+                },
+                environment: { mapName: 'large_test_map', unitSet: 'default' },
+            },
+            scenarioMeta: { startYear: 189 } as never,
+            unitSet: {} as never,
+        };
+        const state: TurnWorldState = {
+            id: 1,
+            currentYear: 189,
+            currentMonth: 1,
+            tickSeconds: 600,
+            lastTurnTime: mockDate,
+            meta: { seed: 1 },
+        };
+        const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
+        const resolvedActions: Array<{ kind: string; actionKey: string; completed?: boolean }> = [];
+        const { world, reservedTurnStore, runOneTick } = await createTurnTestHarness({
+            snapshot,
+            state,
+            schedule,
+            map: LARGE_TEST_MAP,
+            reservedTurnStoreOptions: { maxGeneralTurns: 12, maxNationTurns: 12 },
+            onActionResolved: (event) => resolvedActions.push(event),
+        });
+        const counterStrategy = {
+            action: 'che_피장파장',
+            args: { destNationId: 2, commandType: 'che_허보' },
+        };
+        reservedTurnStore.getNationTurns(1, 12).splice(0, 2, counterStrategy, counterStrategy);
+        reservedTurnStore.getGeneralTurns(1).splice(
+            0,
+            2,
+            { action: 'che_사기진작', args: {} },
+            { action: 'che_사기진작', args: {} }
+        );
+
+        await runOneTick();
+        expect(world.getNationById(1)!.meta.turn_last_12).toMatchObject({
+            command: '피장파장',
+            term: 1,
+        });
+        expect(resolvedActions).toContainEqual(
+            expect.objectContaining({ kind: 'nation', actionKey: 'che_피장파장', completed: false })
+        );
+        expect(resolvedActions).toContainEqual(
+            expect.objectContaining({ kind: 'general', actionKey: 'che_사기진작', completed: true })
+        );
+
+        // PostgreSQL jsonb는 object key 순서를 보존하지 않는다. 첫 턴의
+        // turn_last를 DB에 저장했다가 재적재한 상태를 그대로 재현한다.
+        const nationAfterFirstTurn = world.getNationById(1)!;
+        world.updateNation(1, {
+            meta: {
+                ...nationAfterFirstTurn.meta,
+                turn_last_12: {
+                    command: '피장파장',
+                    arg: { commandType: 'che_허보', destNationId: 2 },
+                    term: 1,
+                },
+            },
+        });
+
+        resolvedActions.length = 0;
+        await runOneTick();
+        expect(resolvedActions).toContainEqual(
+            expect.objectContaining({ kind: 'nation', actionKey: 'che_피장파장', completed: true })
+        );
+        expect(world.getNationById(2)!.meta.next_execute_허보).toBe(189 * 12 + 1 + 60);
+    });
+
     it.each([
         { ownerLabel: '소유 장수', userId: 'test-user', expectedActiveAction: 1 },
         { ownerLabel: '무소유 장수', userId: null, expectedActiveAction: undefined },
