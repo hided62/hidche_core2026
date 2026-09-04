@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     hasRealtimeReadModelChanges,
     parseReadModelOutboxPayload,
+    readModelOutboxPayloadToDiplomacyMailboxes,
     readModelOutboxPayloadToMessageMailboxes,
     readModelOutboxPayloadToChanges,
     resolveRealtimeReadModelInvalidation,
@@ -93,11 +94,13 @@ describe('read-model outbox payload', () => {
                 ['messages.mailbox', 9999, '3'],
                 ['messages.mailbox', 7, '2'],
                 ['messages.mailbox', 7, '2'],
+                ['messages.diplomacyMailbox', 9007, '4'],
             ],
         });
         if (!payload) throw new Error('valid payload rejected');
 
         expect(readModelOutboxPayloadToMessageMailboxes(payload)).toEqual([7, 9999]);
+        expect(readModelOutboxPayloadToDiplomacyMailboxes(payload)).toEqual([9007]);
         expect(hasRealtimeReadModelChanges(readModelOutboxPayloadToChanges(payload))).toBe(false);
     });
 });

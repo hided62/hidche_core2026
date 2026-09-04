@@ -63,7 +63,7 @@ const isFixtureOutboxPayload = (payload: unknown): boolean => {
         changes.some(
             (change) =>
                 Array.isArray(change) &&
-                change[0] === 'messages.mailbox' &&
+                (change[0] === 'messages.mailbox' || change[0] === 'messages.diplomacyMailbox') &&
                 fixtureMailboxes.includes(change[1] as (typeof fixtureMailboxes)[number])
         )
     );
@@ -94,7 +94,10 @@ integration('diplomacy document message persistence', () => {
         await db.inputEvent.deleteMany({ where: { requestId: { startsWith: requestPrefix } } });
         await deleteFixtureOutboxes();
         await db.readModelRevision.deleteMany({
-            where: { domain: 'messages.mailbox', entityId: { in: [...fixtureMailboxes] } },
+            where: {
+                domain: { in: ['messages.mailbox', 'messages.diplomacyMailbox'] },
+                entityId: { in: [...fixtureMailboxes] },
+            },
         });
     };
 
@@ -575,7 +578,10 @@ integration('diplomacy document message persistence', () => {
         await expect(db.message.count({ where: { mailbox: { in: [...fixtureMailboxes] } } })).resolves.toBe(0);
         await expect(
             db.readModelRevision.count({
-                where: { domain: 'messages.mailbox', entityId: { in: [...fixtureMailboxes] } },
+                where: {
+                    domain: { in: ['messages.mailbox', 'messages.diplomacyMailbox'] },
+                    entityId: { in: [...fixtureMailboxes] },
+                },
             })
         ).resolves.toBe(0);
         await expect(

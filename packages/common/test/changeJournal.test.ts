@@ -17,6 +17,7 @@ describe('ChangeJournal', () => {
                 'contacts.world',
                 'reserved.general',
                 'messages.mailbox',
+                'messages.diplomacyMailbox',
                 'dashboard.global',
             ])
         );

@@ -1852,6 +1852,7 @@ export const createDatabaseTurnHooks = async (
                 await persistYearbookSnapshot(prisma, snapshot);
             }
             const persistedMessageMailboxes: number[] = [];
+            const persistedDiplomacyMailboxes: number[] = [];
             for (const finalization of pendingUnificationFinalizations) {
                 if (options?.profileName && finalization.profileName !== options.profileName) {
                     throw new Error(
@@ -1878,7 +1879,11 @@ export const createDatabaseTurnHooks = async (
                                 expiresGameTick,
                             });
                             await enqueuePrivateMessageWebPush(prisma, draft, id);
-                            persistedMessageMailboxes.push(draft.mailbox);
+                            if (draft.msgType === 'diplomacy') {
+                                persistedDiplomacyMailboxes.push(draft.mailbox);
+                            } else {
+                                persistedMessageMailboxes.push(draft.mailbox);
+                            }
                             return id;
                         },
                     },
@@ -1968,6 +1973,7 @@ export const createDatabaseTurnHooks = async (
                 journal.mark('dashboard.global');
             }
             markIds(journal, 'messages.mailbox', uniqueSortedIds(persistedMessageMailboxes));
+            markIds(journal, 'messages.diplomacyMailbox', uniqueSortedIds(persistedDiplomacyMailboxes));
             markIds(journal, 'access.general', accessScoreResetGeneralIds);
             if (pendingNationBettingOpens.length > 0 || pendingNationBettingFinishes.length > 0) {
                 journal.mark('betting');

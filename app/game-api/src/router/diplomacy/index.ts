@@ -86,8 +86,9 @@ const sendDocumentNotice = async (options: {
         await sendMessage(store, { ...draft, msgType: 'national' });
     }
 
-    options.ctx.changeJournal?.mark('messages.mailbox', MESSAGE_MAILBOX_NATIONAL_BASE + options.src.nationId);
-    options.ctx.changeJournal?.mark('messages.mailbox', MESSAGE_MAILBOX_NATIONAL_BASE + options.dest.nationId);
+    const messageDomain = options.includeNational ? 'messages.mailbox' : 'messages.diplomacyMailbox';
+    options.ctx.changeJournal?.mark(messageDomain, MESSAGE_MAILBOX_NATIONAL_BASE + options.src.nationId);
+    options.ctx.changeJournal?.mark(messageDomain, MESSAGE_MAILBOX_NATIONAL_BASE + options.dest.nationId);
 };
 
 const resolvePermissionLevel = async (ctx: Parameters<typeof getMyGeneral>[0], nationId: number) => {

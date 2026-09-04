@@ -15,6 +15,11 @@ export const readModelOutboxPayloadToMessageMailboxes = (
         payload.changes.flatMap(([domain, entityId]) => (domain === 'messages.mailbox' ? [entityId] : []))
     );
 
+export const readModelOutboxPayloadToDiplomacyMailboxes = (payload: ReadModelOutboxPayloadV1): readonly number[] =>
+    uniqueSortedIds(
+        payload.changes.flatMap(([domain, entityId]) => (domain === 'messages.diplomacyMailbox' ? [entityId] : []))
+    );
+
 export const parseReadModelOutboxPayload = (value: unknown): ReadModelOutboxPayloadV1 | null => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return null;
@@ -123,6 +128,7 @@ export const readModelOutboxPayloadToChanges = (
                 break;
             case 'access.general':
             case 'messages.mailbox':
+            case 'messages.diplomacyMailbox':
             case 'tournament':
             case 'betting':
                 // These domains have no browser-wide dashboard invalidation.

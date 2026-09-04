@@ -76,9 +76,14 @@ const hasPenalty = (penalty: unknown, key: string): boolean => {
     return value === true || value === 1 || value === '1';
 };
 
-const markMessageMailboxes = (ctx: Pick<GameApiContext, 'changeJournal'>, mailboxes: Iterable<number>): void => {
+const markMessageMailboxes = (
+    ctx: Pick<GameApiContext, 'changeJournal'>,
+    mailboxes: Iterable<number>,
+    msgType?: MessageType
+): void => {
+    const domain = msgType === 'diplomacy' ? 'messages.diplomacyMailbox' : 'messages.mailbox';
     for (const mailbox of mailboxes) {
-        ctx.changeJournal?.mark('messages.mailbox', mailbox);
+        ctx.changeJournal?.mark(domain, mailbox);
     }
 };
 
@@ -315,7 +320,11 @@ export const messagesRouter = router({
                         message.msgType === 'national'
                       ? MESSAGE_MAILBOX_NATIONAL_BASE + message.payload.dest.nationId
                       : null;
-            markMessageMailboxes(ctx, [message.mailbox, ...(receiverMailbox === null ? [] : [receiverMailbox])]);
+            markMessageMailboxes(
+                ctx,
+                [message.mailbox, ...(receiverMailbox === null ? [] : [receiverMailbox])],
+                message.msgType
+            );
             return { ok: true, deletedIds };
         }),
     respond: engineAuthedProcedure
@@ -333,6 +342,9 @@ export const messagesRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: '메시지가 없습니다.' });
             }
             const action = message.payload.option?.action;
+            if (message.payload.option?.invalid === true) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '삭제된 메시지에는 응답할 수 없습니다.' });
+            }
             if (action === 'scout' || action === 'raiseInvader') {
                 if (!ctx.auth) {
                     throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -620,7 +632,7 @@ export const messagesRouter = router({
                 : msgType === 'private'
                   ? general.id
                   : MESSAGE_MAILBOX_NATIONAL_BASE + general.nationId;
-        markMessageMailboxes(ctx, [receiverMailbox, ...(senderMailbox === null ? [] : [senderMailbox])]);
+        markMessageMailboxes(ctx, [receiverMailbox, ...(senderMailbox === null ? [] : [senderMailbox])], msgType);
 
         return { msgType, msgId: result.receiverId };
     }),

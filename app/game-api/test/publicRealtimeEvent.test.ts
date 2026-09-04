@@ -9,7 +9,7 @@ import {
     toPublicRealtimeEvent as convertPublicRealtimeEvent,
 } from '../src/realtime/publicEvent.js';
 
-const viewer = { generalId: 7, cityId: 3, nationId: 2 } as const;
+const viewer = { generalId: 7, cityId: 3, nationId: 2, canReadDiplomacy: true } as const;
 const refreshGrant = 'opaque-grant';
 const toPublicRealtimeEvent = (event: RealtimeEvent, identities: Parameters<typeof convertPublicRealtimeEvent>[1]) =>
     convertPublicRealtimeEvent(event, identities, () => refreshGrant);
@@ -198,6 +198,37 @@ describe('public realtime event privacy boundary', () => {
         expect(toPublicRealtimeEvent({ ...event, mailbox: MESSAGE_MAILBOX_NATIONAL_BASE + 8 }, [viewer])).toBeNull();
     });
 
+    it('suppresses diplomacy-only wake-ups for viewers without secret-message access', () => {
+        const mailbox = MESSAGE_MAILBOX_NATIONAL_BASE + viewer.nationId;
+        const blockedViewer = { ...viewer, canReadDiplomacy: false };
+        expect(
+            toPublicRealtimeEvent(
+                {
+                    type: 'messageCreated',
+                    at: '2026-09-04T00:00:00Z',
+                    mailbox,
+                    msgType: 'diplomacy',
+                    messageId: 1,
+                    senderId: 2,
+                },
+                [blockedViewer]
+            )
+        ).toBeNull();
+        expect(
+            toPublicRealtimeEvent({ type: 'messagesChanged', mailboxes: [], diplomacyMailboxes: [mailbox] }, [
+                blockedViewer,
+            ])
+        ).toBeNull();
+        expect(
+            toPublicRealtimeEvent({ type: 'messagesChanged', mailboxes: [mailbox], diplomacyMailboxes: [mailbox] }, [
+                blockedViewer,
+            ])
+        ).toEqual({ type: 'messagesInvalidated', refreshGrant });
+        expect(
+            toPublicRealtimeEvent({ type: 'messagesChanged', mailboxes: [], diplomacyMailboxes: [mailbox] }, [viewer])
+        ).toEqual({ type: 'messagesInvalidated', refreshGrant });
+    });
+
     it('redacts durable mailbox wake-ups to one viewer-safe boolean event', () => {
         const event: RealtimeEvent = {
             type: 'messagesChanged',
@@ -225,6 +256,12 @@ describe('public realtime event privacy boundary', () => {
                 viewer
             )
         ).toBe(false);
+        expect(
+            shouldReloadRealtimeViewerIdentity(
+                turnEvent({ ...createEmptyRealtimeReadModelChanges(), nationIds: [viewer.nationId] }),
+                viewer
+            )
+        ).toBe(true);
     });
 
     it('merges previous and committed identities across an ownership transition', () => {

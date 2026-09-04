@@ -73,12 +73,22 @@ const diplomacyMessage = {
     time: '0190-03-01 00:00:00',
 };
 
-const messageBundle = (visible: boolean, canRespondDiplomacy = true) => ({
+const messageBundle = (visible: boolean, canRespondDiplomacy = true, deleted = false) => ({
     result: true,
     private: [],
     public: [],
     national: [],
-    diplomacy: visible ? [diplomacyMessage] : [],
+    diplomacy: visible
+        ? [
+              deleted
+                  ? {
+                        ...diplomacyMessage,
+                        text: '삭제된 메시지입니다.',
+                        option: { ...diplomacyMessage.option, invalid: true },
+                    }
+                  : diplomacyMessage,
+          ]
+        : [],
     sequence: visible ? diplomacyMessage.id : -1,
     nationId: 1,
     generalName: general.name,
@@ -89,7 +99,7 @@ const messageBundle = (visible: boolean, canRespondDiplomacy = true) => ({
 
 const installFixture = async (
     page: Page,
-    options: { acceptResponse: boolean; canRespondDiplomacy?: boolean }
+    options: { acceptResponse: boolean; canRespondDiplomacy?: boolean; deleted?: boolean }
 ): Promise<Array<{ operation: string; body: unknown }>> => {
     let visible = true;
     const mutations: Array<{ operation: string; body: unknown }> = [];
@@ -168,7 +178,7 @@ const installFixture = async (
                 return response({ global: [], general: [], history: [] });
             }
             if (operation === 'messages.getRecent') {
-                return response(messageBundle(visible, options.canRespondDiplomacy));
+                return response(messageBundle(visible, options.canRespondDiplomacy, options.deleted));
             }
             if (operation === 'messages.getContacts') return response({ nation: [] });
             if (operation === 'board.getAccess') return response({ canMeeting: true, canSecret: true });
@@ -229,20 +239,20 @@ test.describe('instant diplomacy response UI', () => {
         });
 
         expect(geometry.buttons).toHaveLength(2);
-        expect(geometry.buttons[1]!.x - (geometry.buttons[0]!.x + geometry.buttons[0]!.width)).toBeCloseTo(0, 0);
+        expect(geometry.buttons[1]!.x - (geometry.buttons[0]!.x + geometry.buttons[0]!.width)).toBeCloseTo(4, 0);
         expect(geometry.buttons[0]).toMatchObject({
             color: 'rgb(255, 255, 255)',
             fontSize: '12.5px',
-            borderWidth: '1px',
+            borderWidth: '0px 1px 4px',
             cursor: 'pointer',
         });
         expect(geometry.buttons[1]).toMatchObject({
             color: 'rgb(255, 255, 255)',
             fontSize: '12.5px',
-            borderWidth: '1px',
+            borderWidth: '0px 1px 4px',
             cursor: 'pointer',
         });
-        expect(geometry.buttons.every((button) => button.height >= 22 && button.height <= 26)).toBe(true);
+        expect(geometry.buttons.every((button) => button.height >= 28 && button.height <= 34)).toBe(true);
 
         await decline.hover();
         expect(await decline.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
@@ -303,7 +313,7 @@ test.describe('instant diplomacy response UI', () => {
 
         if (artifactRoot) {
             await mkdir(artifactRoot, { recursive: true });
-            await page.locator('.mobile-panel').screenshot({
+            await page.locator('.mobile-panel[data-mobile-panel-id="messages"]').screenshot({
                 path: resolve(artifactRoot, 'instant-diplomacy-response-error-core-mobile.png'),
                 animations: 'disabled',
             });
@@ -331,5 +341,23 @@ test.describe('instant diplomacy response UI', () => {
         ).toEqual({ cursor: 'not-allowed', opacity: '0.65' });
         await accept.click({ force: true });
         expect(mutations).toHaveLength(0);
+    });
+
+    test('does not render response controls for a deleted diplomatic prompt', async ({ page }) => {
+        const mutations = await installFixture(page, { acceptResponse: true, deleted: true });
+        await page.setViewportSize({ width: 1365, height: 900 });
+        await page.goto(`http://127.0.0.1:${gamePort}/che/`);
+        await expect(page.getByText('삭제된 메시지입니다', { exact: true })).toBeVisible();
+        await expect(page.locator('.message-response')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: '수락' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: '거절' })).toHaveCount(0);
+        expect(mutations).toHaveLength(0);
+        if (artifactRoot) {
+            await mkdir(artifactRoot, { recursive: true });
+            await page.locator('.DiplomacyTalk .msg-plate').screenshot({
+                path: resolve(artifactRoot, 'deleted-diplomacy-message-core-desktop.png'),
+                animations: 'disabled',
+            });
+        }
     });
 });

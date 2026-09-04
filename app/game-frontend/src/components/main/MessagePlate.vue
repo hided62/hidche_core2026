@@ -266,9 +266,9 @@ onBeforeUnmount(() => {
                 {{ invalid ? '삭제된 메시지입니다' : message.text }}
             </div>
 
-            <div v-if="hasAction" class="message-response">
+            <div v-if="hasAction && !invalid" class="message-response">
                 <button
-                    class="prompt-yes"
+                    class="prompt-yes legacy-button legacy-button--primary"
                     type="button"
                     :disabled="message.msgType === 'diplomacy' && !canRespondDiplomacy"
                     @click="respond(true)"
@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
                     수락
                 </button>
                 <button
-                    class="prompt-no"
+                    class="prompt-no legacy-button legacy-button--danger"
                     type="button"
                     :disabled="message.msgType === 'diplomacy' && !canRespondDiplomacy"
                     @click="respond(false)"
@@ -414,17 +414,14 @@ button.msg-target {
 .message-response {
     display: flex;
     justify-content: flex-end;
-    gap: 0;
+    gap: 4px;
     margin-top: 5px;
     margin-right: 5px;
 }
 
-.message-response button {
+.message-response .legacy-button {
     min-width: 42px;
-    border: 1px outset buttonborder;
-    background: buttonface;
-    padding: 1px 6px;
-    color: buttontext;
+    padding: 2px 8px;
     font-size: 12.5px;
     cursor: pointer;
 }

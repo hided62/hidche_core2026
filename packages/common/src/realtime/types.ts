@@ -59,6 +59,8 @@ export interface RealtimeViewerIdentity {
     generalId: number | null;
     cityId: number | null;
     nationId: number | null;
+    /** Omitted by older internal producers; absence is treated as no access. */
+    canReadDiplomacy?: boolean;
 }
 
 export const createEmptyRealtimeReadModelInvalidation = (): RealtimeReadModelInvalidation => ({
@@ -216,6 +218,8 @@ export interface MessageCreatedEvent {
 export interface MessagesChangedEvent {
     type: 'messagesChanged';
     mailboxes: number[];
+    /** Nation mailboxes whose committed changes contain only diplomacy messages. */
+    diplomacyMailboxes?: number[];
 }
 
 /** Redis-owned tournament stage changed after its atomic source revision commit. */

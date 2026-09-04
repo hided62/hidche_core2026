@@ -81,7 +81,7 @@ const isFixtureOutboxPayload = (payload: unknown): boolean => {
         changes.some(
             (change) =>
                 Array.isArray(change) &&
-                change[0] === 'messages.mailbox' &&
+                (change[0] === 'messages.mailbox' || change[0] === 'messages.diplomacyMailbox') &&
                 fixtureMailboxes.includes(change[1] as (typeof fixtureMailboxes)[number])
         )
     );
@@ -101,7 +101,10 @@ const cleanup = async (): Promise<void> => {
     });
     await db.inputEvent.deleteMany({ where: { actorUserId: userId } });
     await db.readModelRevision.deleteMany({
-        where: { domain: 'messages.mailbox', entityId: { in: [...fixtureMailboxes] } },
+        where: {
+            domain: { in: ['messages.mailbox', 'messages.diplomacyMailbox'] },
+            entityId: { in: [...fixtureMailboxes] },
+        },
     });
     const outboxes = await db.readModelOutbox.findMany({ select: { id: true, payload: true } });
     const outboxIds = outboxes.filter(({ payload }) => isFixtureOutboxPayload(payload)).map(({ id }) => id);

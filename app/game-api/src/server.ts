@@ -38,6 +38,7 @@ import {
     shouldReloadRealtimeViewerIdentity,
     toPublicRealtimeEvent,
 } from './realtime/publicEvent.js';
+import { resolveNationPermission } from './router/nation/shared.js';
 import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
 import { GatewayHttpProfileStatusSource } from './auth/profileStatusSource.js';
 import { CachedTurnEngineStatus } from './services/turnEngineStatus.js';
@@ -313,11 +314,24 @@ export const createGameApiServer = async () => {
         const loadViewerIdentity = async (): Promise<RealtimeViewerIdentity> => {
             const general = await postgres.prisma.general.findFirst({
                 where: { userId: auth.user.id, npcState: 0 },
-                select: { id: true, cityId: true, nationId: true },
+                select: { id: true, cityId: true, nationId: true, officerLevel: true, meta: true, penalty: true },
             });
-            return general
-                ? { generalId: general.id, cityId: general.cityId, nationId: general.nationId }
-                : { generalId: null, cityId: null, nationId: null };
+            if (!general) {
+                return { generalId: null, cityId: null, nationId: null, canReadDiplomacy: false };
+            }
+            const nation =
+                general.nationId > 0
+                    ? await postgres.prisma.nation.findUnique({
+                          where: { id: general.nationId },
+                          select: { meta: true },
+                      })
+                    : null;
+            return {
+                generalId: general.id,
+                cityId: general.cityId,
+                nationId: general.nationId,
+                canReadDiplomacy: Boolean(nation && resolveNationPermission(general, nation.meta, false) >= 3),
+            };
         };
         let viewerIdentity = await loadViewerIdentity();
 

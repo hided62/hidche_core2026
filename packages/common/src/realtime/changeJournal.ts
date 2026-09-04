@@ -18,6 +18,7 @@ export const READ_MODEL_DOMAINS = [
     'contacts.world',
     'reserved.general',
     'messages.mailbox',
+    'messages.diplomacyMailbox',
     'tournament',
     'betting',
 ] as const;

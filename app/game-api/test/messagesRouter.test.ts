@@ -368,8 +368,8 @@ describe('messages router missing-flow compatibility', () => {
         expect(result.msgType).toBe('diplomacy');
         expect(queryRaw).toHaveBeenCalledTimes(2);
         expect(changeJournal.snapshot()).toEqual([
-            { domain: 'messages.mailbox', entityId: 9000 },
-            { domain: 'messages.mailbox', entityId: 9001 },
+            { domain: 'messages.diplomacyMailbox', entityId: 9000 },
+            { domain: 'messages.diplomacyMailbox', entityId: 9001 },
         ]);
     });
 
@@ -837,6 +837,7 @@ describe('messages router missing-flow compatibility', () => {
         proposerCurrentNationId?: number;
         proposerNationMeta?: Record<string, unknown>;
         diplomacyState?: number;
+        invalid?: boolean;
         response?: boolean;
         cities?: Array<{ id: number; nationId: number; frontState: number }>;
     }) => {
@@ -891,6 +892,7 @@ describe('messages router missing-flow compatibility', () => {
                 text: '외교 제안',
                 option: {
                     action,
+                    ...(options?.invalid ? { invalid: true } : {}),
                     ...(action === 'noAggression' ? { year: 201, month: 2 } : {}),
                 },
             },
@@ -1074,6 +1076,21 @@ describe('messages router missing-flow compatibility', () => {
             requestCommand,
         };
     };
+
+    it('rejects a response to a tombstoned diplomatic prompt before any state mutation', async () => {
+        const setup = buildDiplomaticContext({ invalid: true });
+
+        await expect(
+            setup.caller.messages.respond({
+                generalId: setup.actor.id,
+                messageId: 31,
+                response: true,
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: '삭제된 메시지에는 응답할 수 없습니다.' });
+        expect(setup.diplomacyUpdate).not.toHaveBeenCalled();
+        expect(setup.messageUpdateMany).not.toHaveBeenCalled();
+        expect(setup.requestCommand).not.toHaveBeenCalled();
+    });
 
     it('accepts a diplomatic prompt atomically and applies the legacy non-aggression effects', async () => {
         const setup = buildDiplomaticContext();

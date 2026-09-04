@@ -13,7 +13,7 @@ import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC } from '@sammo-ts
 const uniqueIdentities = (identities: readonly RealtimeViewerIdentity[]): RealtimeViewerIdentity[] => {
     const seen = new Set<string>();
     return identities.filter((identity) => {
-        const key = `${identity.generalId ?? ''}:${identity.cityId ?? ''}:${identity.nationId ?? ''}`;
+        const key = `${identity.generalId ?? ''}:${identity.cityId ?? ''}:${identity.nationId ?? ''}:${identity.canReadDiplomacy}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -44,6 +44,7 @@ export const shouldReloadRealtimeViewerIdentity = (event: RealtimeEvent, identit
     const changes = eventChanges(event);
     if (!changes) return false;
     const generalId = identity.generalId;
+    if (identity.nationId !== null && changes.nationIds.includes(identity.nationId)) return true;
     return [
         changes.generalIds,
         changes.mapGeneralIds ?? changes.generalIds,
@@ -69,8 +70,20 @@ export const toPublicRealtimeEvent = (
         identities.length > 0 ? identities : [{ generalId: null, cityId: null, nationId: null }]
     );
     if (event.type === 'messageCreated' || event.type === 'messagesChanged') {
-        const mailboxes = event.type === 'messageCreated' ? [event.mailbox] : event.mailboxes;
-        return viewers.some((identity) => mailboxes.some((mailbox) => isMailboxRelevant(mailbox, identity)))
+        const mailboxes =
+            event.type === 'messageCreated' ? (event.msgType === 'diplomacy' ? [] : [event.mailbox]) : event.mailboxes;
+        const diplomacyMailboxes =
+            event.type === 'messageCreated'
+                ? event.msgType === 'diplomacy'
+                    ? [event.mailbox]
+                    : []
+                : (event.diplomacyMailboxes ?? []);
+        return viewers.some(
+            (identity) =>
+                mailboxes.some((mailbox) => isMailboxRelevant(mailbox, identity)) ||
+                (identity.canReadDiplomacy &&
+                    diplomacyMailboxes.some((mailbox) => isMailboxRelevant(mailbox, identity)))
+        )
             ? { type: 'messagesInvalidated', refreshGrant: createRefreshGrant() }
             : null;
     }

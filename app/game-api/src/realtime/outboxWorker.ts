@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+    readModelOutboxPayloadToDiplomacyMailboxes,
     readModelOutboxPayloadToChanges,
     readModelOutboxPayloadToMessageMailboxes,
     type ReadModelDomain,
@@ -20,6 +21,7 @@ const NON_DASHBOARD_DOMAINS: ReadonlySet<ReadModelDomain> = new Set([
     'access.general',
     'dashboard.global',
     'messages.mailbox',
+    'messages.diplomacyMailbox',
     'tournament',
     'betting',
 ]);
@@ -86,8 +88,9 @@ export class ReadModelOutboxWorker implements ReadModelOutboxWakeup {
             this.db,
             async (payload) => {
                 const mailboxes = readModelOutboxPayloadToMessageMailboxes(payload);
-                if (mailboxes.length > 0) {
-                    await publishRealtimeMessageChanges(this.redis, this.profileName, mailboxes);
+                const diplomacyMailboxes = readModelOutboxPayloadToDiplomacyMailboxes(payload);
+                if (mailboxes.length > 0 || diplomacyMailboxes.length > 0) {
+                    await publishRealtimeMessageChanges(this.redis, this.profileName, mailboxes, diplomacyMailboxes);
                 }
                 if (payload.changes.some(([domain]) => !NON_DASHBOARD_DOMAINS.has(domain))) {
                     const changes = readModelOutboxPayloadToChanges(payload);

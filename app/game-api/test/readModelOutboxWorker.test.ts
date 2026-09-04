@@ -12,6 +12,7 @@ const payload = (
         | 'access.general'
         | 'dashboard.global'
         | 'messages.mailbox'
+        | 'messages.diplomacyMailbox'
         | 'tournament'
         | 'betting'
 ) => ({
@@ -19,7 +20,11 @@ const payload = (
     changes: [
         [
             domain,
-            domain === 'front.general' || domain === 'access.general' ? 7 : domain === 'messages.mailbox' ? 9999 : 0,
+            domain === 'front.general' || domain === 'access.general'
+                ? 7
+                : domain === 'messages.mailbox' || domain === 'messages.diplomacyMailbox'
+                  ? 9999
+                  : 0,
             '1',
         ],
     ],
@@ -111,6 +116,25 @@ describe('ReadModelOutboxWorker', () => {
         expect(JSON.parse(String(fixture.publish.mock.calls[0]?.[1]))).toEqual({
             type: 'messagesChanged',
             mailboxes: [9999],
+        });
+    });
+
+    it('labels diplomacy-only mailbox wake-ups for viewer permission filtering', async () => {
+        const fixture = createFixture([{ id: 15n, payload: payload('messages.diplomacyMailbox'), attempts: 1 }]);
+        const worker = new ReadModelOutboxWorker(fixture.db, fixture.redis, 'che:default', {
+            owner: 'worker-test',
+            intervalMs: 60_000,
+        });
+
+        worker.start();
+        await vi.waitFor(() => expect(fixture.executeRaw).toHaveBeenCalledTimes(1));
+        await worker.stop();
+
+        expect(fixture.incr).not.toHaveBeenCalled();
+        expect(JSON.parse(String(fixture.publish.mock.calls[0]?.[1]))).toEqual({
+            type: 'messagesChanged',
+            mailboxes: [],
+            diplomacyMailboxes: [9999],
         });
     });
 
