@@ -267,15 +267,26 @@ const buildCoreCaller = (testCase: (typeof actionCases)[number]) => {
     const proposalBefore = structuredClone(messages[0]!);
 
     const findGeneral = (id: number) => (id === actor.id ? actor : id === proposer.id ? proposer : null);
-    const queryRaw = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const queryRaw = vi.fn(async (query: unknown, ...taggedValues: unknown[]) => {
+        const queryObject = query as { strings?: readonly string[]; values?: readonly unknown[] };
+        const strings = Array.isArray(query) ? query.map(String) : (queryObject.strings ?? []);
+        const values = Array.isArray(query)
+            ? taggedValues
+            : Array.isArray(queryObject.values)
+              ? [...queryObject.values]
+              : taggedValues;
         const sql = strings.join('?');
-        if (sql.includes('FROM message') && sql.includes('WHERE id =')) {
+        if (sql.includes('FROM message') && (sql.includes('WHERE id =') || sql.includes('WHERE m.id ='))) {
             const id = Number(values[0]);
             const row = messages.find((message) => message.id === id);
             return row && row.valid_until.getTime() > Date.now() ? [row] : [];
         }
         if (sql.includes('INSERT INTO message')) {
-            const payload = JSON.parse(String(values[8])) as Record<string, unknown>;
+            const payloadValue = [...values]
+                .reverse()
+                .find((value) => typeof value === 'string' && value.startsWith('{'));
+            if (payloadValue === undefined) throw new Error('Inserted message payload was not captured.');
+            const payload = JSON.parse(payloadValue) as Record<string, unknown>;
             const row: CoreMessageRow = {
                 id: messages.at(-1)!.id + 1,
                 mailbox: Number(values[0]),
@@ -359,11 +370,14 @@ const buildCoreCaller = (testCase: (typeof actionCases)[number]) => {
                 currentYear: 190,
                 currentMonth: 3,
                 config: { environment: { mapName: 'che' } },
-                clockBaseTime: null,
-                clockTick: null,
-                clockMode: null,
-                clockWallAnchor: null,
-                tickSeconds: 60,
+                clockBaseTime: new Date('0190-03-01T00:00:00.000Z'),
+                clockTick: 1_000n,
+                clockMode: 'manual',
+                clockWallAnchor: new Date('2026-09-04T00:00:00.000Z'),
+                tickSeconds: 600,
+                clockPhase: 'RUNNING',
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
             })),
         },
         logEntry: {
@@ -381,6 +395,9 @@ const buildCoreCaller = (testCase: (typeof actionCases)[number]) => {
                     return { count: where.id.in.length };
                 }
             ),
+        },
+        messageAction: {
+            updateMany: vi.fn(async () => ({ count: 0 })),
         },
         $queryRaw: queryRaw,
     };
@@ -404,7 +421,9 @@ const buildCoreCaller = (testCase: (typeof actionCases)[number]) => {
         auth,
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
         redis: {},
-        turnDaemon: {},
+        turnDaemon: {
+            requestCommand: vi.fn(async () => ({ type: 'syncDiplomaticResponse', ok: true })),
+        },
         battleSim: {},
         uploadDir: 'uploads',
         uploadPath: '/uploads',

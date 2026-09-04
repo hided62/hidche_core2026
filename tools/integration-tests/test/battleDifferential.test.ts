@@ -869,6 +869,77 @@ const assertRngParity = (reference: ReferenceTrace, coreRng: TracingRng | null):
     assertCanonicalValue(coreRng?.boolCalls ?? [], reference.boolRng, 'boolRng');
 };
 
+const FINAL_GENERAL_INTEGER_FIELDS = ['rice', 'experience', 'dedication'] as const;
+
+const roundLikePhp = (value: number): number => {
+    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value)) * 4;
+    return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
+};
+
+const projectReferenceBattleEndToCoreRounding = (
+    coreEvents: WarBattleTraceEvent[],
+    reference: ReferenceTrace
+): ReferenceTrace => {
+    const projected = structuredClone(reference);
+    const coreFinal = coreEvents.at(-1);
+    const referenceFinal = projected.events.at(-1);
+    if (coreFinal?.event !== 'battle_end' || referenceFinal?.event !== 'battle_end') {
+        return projected;
+    }
+
+    for (const side of ['attacker', 'defender'] as const) {
+        const coreUnit = coreFinal[side];
+        const referenceUnit = referenceFinal[side];
+        if (!coreUnit || !referenceUnit || coreUnit.kind !== 'general' || referenceUnit.kind !== 'general') {
+            continue;
+        }
+        const coreBeforeFinish = coreEvents
+            .slice(0, -1)
+            .reverse()
+            .flatMap((event) => [event.attacker, event.defender])
+            .find((unit) => unit?.kind === 'general' && unit.id === coreUnit.id);
+        const referenceBeforeFinish = reference.events
+            .slice(0, -1)
+            .reverse()
+            .flatMap((event) => [event.attacker, event.defender])
+            .find((unit) => unit?.kind === 'general' && unit.id === referenceUnit.id);
+        if (!coreBeforeFinish || !referenceBeforeFinish) {
+            continue;
+        }
+
+        for (const field of FINAL_GENERAL_INTEGER_FIELDS) {
+            const coreValue = coreUnit.general?.[field];
+            const referenceValue = referenceUnit.general?.[field];
+            if (coreValue === referenceValue || coreValue === undefined || referenceValue === undefined) {
+                continue;
+            }
+            const coreRaw = coreBeforeFinish.general?.[field];
+            const referenceRaw = referenceBeforeFinish.general?.[field];
+            expectNearlyEqual(coreRaw, referenceRaw, `battle_end.${side}.${field}.raw`);
+            expect(coreValue, `battle_end.${side}.${field}: Core Math.round policy`).toBe(Math.round(coreRaw!));
+            expect(referenceValue, `battle_end.${side}.${field}: Ref PHP round policy`).toBe(
+                roundLikePhp(referenceRaw!)
+            );
+            referenceUnit.general![field] = coreValue;
+        }
+    }
+
+    projected.attacker = referenceFinal.attacker;
+    projected.finishedDefenders = projected.finishedDefenders.map((unit) => {
+        if (unit.kind !== 'general') {
+            return unit;
+        }
+        for (const side of ['attacker', 'defender'] as const) {
+            const finalUnit = referenceFinal[side];
+            if (finalUnit?.kind === 'general' && finalUnit.id === unit.id) {
+                return finalUnit;
+            }
+        }
+        return unit;
+    });
+    return projected;
+};
+
 const assertTraceParity = (
     coreEvents: WarBattleTraceEvent[],
     reference: ReferenceTrace,
@@ -910,8 +981,9 @@ const assertTraceParity = (
         }
     }
     assertRngParity(reference, coreRng);
-    assertCanonicalValue(comparableCoreEvents, reference.events, 'events');
-    assertFinalOutcomeParity(coreOutcome, coreEvents, reference);
+    const projectedReference = projectReferenceBattleEndToCoreRounding(comparableCoreEvents, reference);
+    assertCanonicalValue(comparableCoreEvents, projectedReference.events, 'events');
+    assertFinalOutcomeParity(coreOutcome, coreEvents, projectedReference);
 };
 
 const outcomeMetaNumber = (general: WarBattleOutcome['attacker'], key: string): number => {

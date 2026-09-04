@@ -17,8 +17,6 @@ test/troopStaticEvent.integration.test.ts	conditional
 test/turnCommandCoreReference.integration.test.ts	reference
 test/turnCommandFullLifecycle.integration.test.ts	reference
 test/turnCommandFullLifecyclePersistence.integration.test.ts	conditional
-test/turnCommandGeneralMatrix.integration.test.ts	reference
-test/turnCommandNationMatrix.integration.test.ts	reference
 test/turnCommandReference.integration.test.ts	reference
 test/turnCommandRiskDurabilityMatrix.integration.test.ts	conditional
 test/turnLogProjection.test.ts	core

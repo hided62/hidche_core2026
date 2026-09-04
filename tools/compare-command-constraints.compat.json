@@ -139,6 +139,22 @@
             "side": "php",
             "name": "alwaysFail",
             "note": "core preserves the legacy completed-false action in resolve-time handling"
+        },
+        {
+            "id": "non-aggression invalid term becomes legacy dynamic AlwaysFail",
+            "command": "Nation/che_불가침제의",
+            "kind": "full",
+            "side": "php",
+            "name": "alwaysFail",
+            "note": "legacy inserts AlwaysFail for a term shorter than six months"
+        },
+        {
+            "id": "non-aggression term range is explicit in core constraints",
+            "command": "Nation/che_불가침제의",
+            "kind": "full",
+            "side": "ts",
+            "name": "reqTreatyTermRange",
+            "note": "core exposes the equivalent six-month validation as a named constraint"
         }
     ]
 }

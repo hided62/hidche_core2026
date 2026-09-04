@@ -109,7 +109,6 @@ source입니다. 현재 이벤트는 장비 구매·판매, 계략 성공, 도�
 `actionModuleEvents.test.ts`는 표준 순서, 이벤트 brand와 잘못된 context의
 compile 실패를 검증합니다. `itemActionEvents.test.ts`는 도기 분기와
 연차 경계, 충차·환약 초기 충전, 계략 성공 소비를 검증합니다.
-`warAftermath.test.ts`는 도시 점령 대상과 공유 RNG 소비 순서를 검증합니다.
-ref↔core 실제 명령 차등은
-`turnCommandGeneralMatrix.integration.test.ts`의 도기 판매 fixture가
-담당합니다.
+`warAftermath.test.ts`는 도시 점령 대상과 공유 RNG 소비 순서를 검증합니다. 도기 판매는
+`itemActionEvents.test.ts`의 고정 seed Core 계약으로 검증하며, 실제 Ref 재조사가 필요한
+회귀만 command 단위의 좁은 차등 fixture로 추가합니다.

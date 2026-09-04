@@ -65,13 +65,13 @@ pnpm check:legacy:nation
 `instantDiplomacyCoreReference.integration.test.ts`에서 실제 Ref API entry와 Core
 router 결과를 별도로 비교합니다.
 
-장수·수뇌 registry 전수 성공 case는 각각
-`turnCommandGeneralMatrix.integration.test.ts`와
-`turnCommandNationMatrix.integration.test.ts`가 registry와 exact-set으로 닫습니다.
-두 matrix의 `includeLifecycle`은 요청 scope의 queue shift와 tail lifecycle까지이며,
-같은 actor의 수뇌→장수 제품 outer loop를 뜻하지 않습니다. 결합 outer lifecycle은
+장수·수뇌 명령 전체를 case마다 임시 MariaDB와 PHP Ref에 실행하던 matrix는 운영
+서비스가 안정화된 뒤 상시 회귀 비용이 각각 약 1시간에 달해 제거했습니다. 명령 key,
+constraint와 log의 정적 계약은 위 `check:legacy:*` 명령이 계속 검사하고, 계산·RNG와
+오류 경계는 command별 logic/engine unit이 담당합니다. 결합 outer lifecycle은
 `turnCommandFullLifecycle.integration.test.ts`, 실제 PostgreSQL flush/reload는
-`turnCommandFullLifecyclePersistence.integration.test.ts`가 대표 fixture로 검증합니다.
+`turnCommandFullLifecyclePersistence.integration.test.ts`의 대표 fixture로 검증합니다.
+새 호환성 의심은 전수 matrix를 복원하지 않고 해당 command의 좁은 fixture로 재현합니다.
 
 기본 Core canonical/projection 계약:
 

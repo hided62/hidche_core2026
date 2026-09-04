@@ -7,7 +7,7 @@ import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/l
 import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld, TurnCalendarHandler } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
-import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
+import { COMPACT_NPC_TEST_MAP, buildCompactNpcTestCities } from './fixtures/compactNpcTestScenario.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
 import { NpcUnificationMemoryProfiler } from './helpers/npcUnificationMemoryProfiler.js';
 
@@ -28,8 +28,8 @@ const createNpcGeneral = (
     role: {
         items: { horse: null, weapon: null, book: null, item: null },
         personality: null,
-        specialDomestic: null,
-        specialWar: null,
+        specialDomestic: id % 2 === 0 ? 'che_경작' : 'che_상재',
+        specialWar: id % 2 === 0 ? 'che_보병' : 'che_무쌍',
     },
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
     meta: { killturn: 800 },
@@ -47,7 +47,7 @@ const createNpcGeneral = (
     npcState: 2,
 });
 
-const maxCityStats = (city: ReturnType<typeof buildLargeTestCities>[number]) => ({
+const maxCityStats = (city: ReturnType<typeof buildCompactNpcTestCities>[number]) => ({
     ...city,
     population: city.populationMax,
     agriculture: city.agricultureMax,
@@ -156,7 +156,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
         const memoryProfileEnabled = process.env.NPC_UNIFICATION_MEMORY_PROFILE === '1';
         const rankingAuditEnabled = process.env.NPC_RANKING_AUDIT === '1';
         const profileStartedAtMs = performance.now();
-        const cities = buildLargeTestCities().map(maxCityStats);
+        const cities = buildCompactNpcTestCities().map(maxCityStats);
         for (const city of cities) {
             city.nationId = 0;
         }
@@ -208,7 +208,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
         };
 
         const generals: TurnGeneral[] = [];
-        const initialGeneralCount = rankingAuditEnabled ? 150 : 300;
+        const initialGeneralCount = rankingAuditEnabled ? 150 : 60;
         for (let i = 0; i < initialGeneralCount; i += 1) {
             const cityId = cities[i % cities.length]!.id;
             const stats =
@@ -217,6 +217,10 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     : { leadership: 75, strength: 10, intelligence: 75 };
             generals.push(createNpcGeneral(i + 1, cityId, stats));
         }
+        expect(new Set(generals.map((general) => general.role.specialDomestic))).toEqual(
+            new Set(['che_경작', 'che_상재'])
+        );
+        expect(new Set(generals.map((general) => general.role.specialWar))).toEqual(new Set(['che_보병', 'che_무쌍']));
 
         const snapshot: TurnWorldSnapshot = {
             generals: generals as any,
@@ -226,7 +230,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             diplomacy: [],
             events: [],
             initialEvents: [],
-            map: LARGE_TEST_MAP as any,
+            map: COMPACT_NPC_TEST_MAP as any,
             scenarioConfig: {
                 stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
                 iconPath: '',
@@ -239,7 +243,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     maxResourceActionAmount: 10000,
                     minAvailableRecruitPop: 0,
                 },
-                environment: { mapName: 'large_test_map', unitSet: 'default' },
+                environment: { mapName: 'compact_npc_test_map', unitSet: 'default' },
             },
             scenarioMeta: {
                 startYear: 180,
@@ -305,45 +309,44 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             getCollectedLogsCount,
             getCollectedLogsRange,
             getAndClearCollectedLogs,
-        } =
-            await createTurnTestHarness({
-                snapshot,
-                state,
-                schedule,
-                map: LARGE_TEST_MAP,
-                worldRef,
-                extraCalendarHandlers: [unificationHandler],
-                collectLogs: true,
-                onActionResolved: (payload) => {
-                    const currentWorld = worldRef.current;
-                    if (currentWorld) {
-                        const nationIds = new Set(currentWorld.listNations().map((nation) => nation.id));
-                        const orphanCities = currentWorld
-                            .listCities()
-                            .filter((city) => city.nationId > 0 && !nationIds.has(city.nationId));
-                        if (orphanCities.length > 0) {
-                            throw new Error(
-                                `orphan city ownership after ${lastResolvedAction}, before ${payload.kind}:${payload.actionKey}: ${orphanCities
-                                    .map((city) => `${city.id}->${city.nationId}`)
-                                    .join(', ')}`
-                            );
-                        }
+        } = await createTurnTestHarness({
+            snapshot,
+            state,
+            schedule,
+            map: COMPACT_NPC_TEST_MAP,
+            worldRef,
+            extraCalendarHandlers: [unificationHandler],
+            collectLogs: true,
+            onActionResolved: (payload) => {
+                const currentWorld = worldRef.current;
+                if (currentWorld) {
+                    const nationIds = new Set(currentWorld.listNations().map((nation) => nation.id));
+                    const orphanCities = currentWorld
+                        .listCities()
+                        .filter((city) => city.nationId > 0 && !nationIds.has(city.nationId));
+                    if (orphanCities.length > 0) {
+                        throw new Error(
+                            `orphan city ownership after ${lastResolvedAction}, before ${payload.kind}:${payload.actionKey}: ${orphanCities
+                                .map((city) => `${city.id}->${city.nationId}`)
+                                .join(', ')}`
+                        );
                     }
-                    lastResolvedAction = `${payload.kind}:${payload.actionKey}`;
-                    if (payload.kind === 'general') {
-                        if (payload.actionKey === 'che_출병') {
-                            sortieCount += 1;
-                        }
-                        return;
+                }
+                lastResolvedAction = `${payload.kind}:${payload.actionKey}`;
+                if (payload.kind === 'general') {
+                    if (payload.actionKey === 'che_출병') {
+                        sortieCount += 1;
                     }
-                    if (payload.nationId) {
-                        lastNationAiState.set(payload.nationId, payload.aiState ?? null);
-                    }
-                    if (payload.actionKey === 'che_선전포고') {
-                        declarationCount += 1;
-                    }
-                },
-            });
+                    return;
+                }
+                if (payload.nationId) {
+                    lastNationAiState.set(payload.nationId, payload.aiState ?? null);
+                }
+                if (payload.actionKey === 'che_선전포고') {
+                    declarationCount += 1;
+                }
+            },
+        });
         const memoryProfiler =
             memoryProfileEnabled && worldRef.current
                 ? new NpcUnificationMemoryProfiler(worldRef.current, reservedTurnStore)
@@ -410,6 +413,9 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             const foundedNations = world.listNations().filter((nation) => nation.level > 0);
             expect(foundedNations.length).toBeGreaterThanOrEqual(2);
             const foundedNationCount = foundedNations.length;
+            const foundedGenerals = world.listGenerals().filter((general) => general.nationId > 0);
+            expect(foundedGenerals.some((general) => general.role.specialDomestic !== null)).toBe(true);
+            expect(foundedGenerals.some((general) => general.role.specialWar !== null)).toBe(true);
             memoryProfiler?.sample('nations-founded');
 
             await runUntil(
@@ -436,7 +442,8 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
 
             if (declarationCount === 0) {
                 await runUntil(
-                    (current) => current.currentYear > 190 || (current.currentYear === 190 && current.currentMonth >= 1),
+                    (current) =>
+                        current.currentYear > 190 || (current.currentYear === 190 && current.currentMonth >= 1),
                     undefined,
                     observeProfileMonth
                 );
@@ -614,6 +621,9 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             const logs = getCollectedLogs();
             const hasUnificationLog =
                 unificationLogObserved || logs.some((log) => log.text.includes('전토를 통일하였습니다.'));
+            if (!rankingAuditEnabled) {
+                expect(unifiedAt).not.toBeNull();
+            }
             if (unifiedAt) {
                 expect(meta.isUnited).toBe(2);
                 expect(hasUnificationLog).toBe(true);
@@ -714,8 +724,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     startMonth: state.currentMonth,
                 });
                 const reportPath = resolve(
-                    process.env.NPC_UNIFICATION_MEMORY_REPORT_PATH ??
-                        'test-results/npc-unification-memory.json'
+                    process.env.NPC_UNIFICATION_MEMORY_REPORT_PATH ?? 'test-results/npc-unification-memory.json'
                 );
                 mkdirSync(dirname(reportPath), { recursive: true });
                 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');

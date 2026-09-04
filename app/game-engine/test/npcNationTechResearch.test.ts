@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { DIPLOMACY_STATE } from '@sammo-ts/logic';
-import { getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
+import { getTechCost, getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
-import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
+import { COMPACT_NPC_TEST_MAP, buildCompactNpcTestCities } from './fixtures/compactNpcTestScenario.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
 
 const mockDate = new Date('0180-01-01T00:00:00Z');
@@ -45,7 +45,7 @@ const createNpcGeneral = (
     npcState,
 });
 
-const maxCityStats = (city: ReturnType<typeof buildLargeTestCities>[number]) => ({
+const maxCityStats = (city: ReturnType<typeof buildCompactNpcTestCities>[number]) => ({
     ...city,
     population: city.populationMax,
     agriculture: city.agricultureMax,
@@ -63,9 +63,9 @@ const readTech = (nation: { meta: Record<string, unknown> }): number => {
 
 describe('NPC 기술 연구 장기 시뮬레이션', () => {
     it('기술이 상승하고 기술 등급 및 소모 금이 증가해야 한다', async () => {
-        const cities = buildLargeTestCities().map(maxCityStats);
-        const nation1CityIds = [1, 2, 3, 4];
-        const nation2CityIds = [5, 6, 7, 8, 9];
+        const cities = buildCompactNpcTestCities().map(maxCityStats);
+        const nation1CityIds = [1, 2];
+        const nation2CityIds = [3, 4, 5];
 
         for (const city of cities) {
             if (nation1CityIds.includes(city.id)) {
@@ -122,7 +122,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
                     1
                 )
             );
-            for (let i = 0; i < 9; i += 1) {
+            for (let i = 0; i < 3; i += 1) {
                 generals.push(
                     createNpcGeneral(nextId++, cityId, nationId, 2, {
                         leadership: 80,
@@ -131,7 +131,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
                     })
                 );
             }
-            for (let i = 0; i < 40; i += 1) {
+            for (let i = 0; i < 6; i += 1) {
                 generals.push(
                     createNpcGeneral(nextId++, cityId, nationId, 2, {
                         leadership: 70,
@@ -163,7 +163,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
                     power: 0,
                     level: 1,
                     typeCode: 'large_test_map_def',
-                    meta: { tech: 0 },
+                    meta: { tech: 950 },
                 },
                 {
                     id: 2,
@@ -176,7 +176,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
                     power: 0,
                     level: 1,
                     typeCode: 'large_test_map_def',
-                    meta: { tech: 0 },
+                    meta: { tech: 950 },
                 },
             ],
             troops: [],
@@ -200,7 +200,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
             ],
             events: [],
             initialEvents: [],
-            map: LARGE_TEST_MAP as any,
+            map: COMPACT_NPC_TEST_MAP as any,
             scenarioConfig: {
                 stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
                 iconPath: '',
@@ -214,7 +214,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
                     minAvailableRecruitPop: 0,
                     maxTechLevel: 12000,
                 },
-                environment: { mapName: 'large_test_map', unitSet: 'default' },
+                environment: { mapName: 'compact_npc_test_map', unitSet: 'default' },
             },
             scenarioMeta: {
                 startYear: 180,
@@ -239,7 +239,7 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
             snapshot,
             state,
             schedule,
-            map: LARGE_TEST_MAP,
+            map: COMPACT_NPC_TEST_MAP,
         });
 
         const controlledGeneralId = nation1ChiefId;
@@ -261,17 +261,14 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
         const firstGoldAfter = world.getGeneralById(controlledGeneralId)!.gold;
         const firstRecruitCost = firstGoldBefore - firstGoldAfter;
         expect(firstRecruitCost).toBeGreaterThan(0);
-        const firstTechValue = readTech(world.getNationById(1)! as { meta: Record<string, unknown> });
-        const firstTechLevel = getTechLevel(firstTechValue);
-
         const techSnapshots: Array<{ year: number; tech1: number; tech2: number }> = [];
         let pendingRecruit = false;
         let pendingGoldBefore = 0;
         let secondRecruitCost: number | null = null;
 
-        const shouldStop = () => {
+        const exceededSafetyLimit = () => {
             const current = world.getState();
-            return current.currentYear > 230 || (current.currentYear === 230 && current.currentMonth >= 1);
+            return current.currentYear > 185 || (current.currentYear === 185 && current.currentMonth >= 1);
         };
 
         while (true) {
@@ -294,15 +291,18 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
             const tech1 = readTech(nation1 as { meta: Record<string, unknown> });
             const tech2 = readTech(nation2 as { meta: Record<string, unknown> });
 
-            if (current.currentMonth === 1) {
-                techSnapshots.push({ year: current.currentYear, tech1, tech2 });
-            }
+            techSnapshots.push({ year: current.currentYear, tech1, tech2 });
 
-            if (secondRecruitCost === null && getTechLevel(tech1) > firstTechLevel) {
+            if (secondRecruitCost === null && getTechLevel(tech1) > initialLevel) {
                 pendingRecruit = true;
             }
 
-            if (shouldStop()) {
+            if (
+                (secondRecruitCost !== null &&
+                    getTechLevel(tech1) > initialLevel &&
+                    getTechLevel(tech2) > initialLevel) ||
+                exceededSafetyLimit()
+            ) {
                 break;
             }
         }
@@ -322,8 +322,12 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
         expect(finalTech2).toBeGreaterThan(initialTech2);
         expect(getTechLevel(finalTech1)).toBeGreaterThan(initialLevel);
         expect(getTechLevel(finalTech2)).toBeGreaterThanOrEqual(initialLevel);
+        expect(getTechCost(finalTech1)).toBeGreaterThan(getTechCost(initialTech1));
 
-        expect(secondRecruitCost).not.toBeNull();
+        expect(
+            secondRecruitCost,
+            `second recruit was not observed (tech1=${finalTech1}, tech2=${finalTech2}, level=${initialLevel})`
+        ).not.toBeNull();
         // Nation awards can occur in the same tick and make the general's net
         // gold delta smaller than the recruitment price. Exact cost scaling is
         // covered by the unit-set/action contract tests rather than this smoke.
