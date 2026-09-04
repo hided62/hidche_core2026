@@ -1402,6 +1402,13 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             },
         ];
 
+        const executions: Array<{
+            entry: (typeof cases)[number];
+            base: BattleSimRequestPayload & { startYear: number };
+            coreEvents: WarBattleTraceEvent[];
+            coreRng: TracingRng | null;
+            coreOutcome: WarBattleOutcome | null;
+        }> = [];
         for (const entry of cases) {
             const base = readJson<BattleSimRequestPayload & { startYear: number }>(
                 path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
@@ -1441,13 +1448,16 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     },
                 }
             );
+            executions.push({ entry, base, coreEvents, coreRng, coreOutcome });
+        }
+
+        const references = runReferenceTraceBatch(
+            workspaceRoot!,
+            executions.map(({ base }) => JSON.stringify(base))
+        );
+        executions.forEach(({ entry, coreEvents, coreRng, coreOutcome }, index) => {
             try {
-                assertTraceParity(
-                    coreEvents,
-                    runReferenceTrace(workspaceRoot!, JSON.stringify(base)),
-                    coreRng,
-                    coreOutcome
-                );
+                assertTraceParity(coreEvents, references[index]!, coreRng, coreOutcome);
             } catch (error) {
                 throw new Error(
                     `${entry.kind}/${entry.key}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1456,7 +1466,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     }
                 );
             }
-        }
+        });
     });
 
     it('loads every scenario item with the scenario slot', async () => {

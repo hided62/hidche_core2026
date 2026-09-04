@@ -143,7 +143,14 @@ Fastify transport, Prisma transaction, lease와 worker 경계를 검증합니다
 ```sh
 pnpm test:integration
 pnpm test:integration:conditional
+pnpm test:integration:reference
+INTEGRATION_LIFECYCLE_DISPOSABLE=1 pnpm test:integration:lifecycle
 ```
+
+기본 integration은 Core 계약의 빠른 feedback lane입니다. 실제 PostgreSQL/Redis,
+live Ref 호환성 감사, schema·PM2 전체 lifecycle은 각각 별도 명령으로 실행하며
+기본 명령의 skip으로 포함된 것처럼 보고하지 않습니다. 모든 integration test file의
+lane 소유권은 `tools/integration-tests/test-lanes.tsv`에서 exact-set으로 관리합니다.
 
 조건부 suite는 worktree별 PostgreSQL·Redis instance를 준비합니다. Test가
 schema truncate와 Redis 정리를 수행하므로 공유 개발 instance를 사용하지

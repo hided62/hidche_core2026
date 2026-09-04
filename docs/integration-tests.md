@@ -2,17 +2,38 @@
 
 ## 실행 명령
 
-외부 서비스 없이 실행 가능한 integration:
+빠른 기본 검증은 Core의 canonical snapshot, comparator, log/message projection과
+logical clock 계약만 실행합니다. Ref runtime이나 DB가 없어도 되며 skip을 성공으로
+세지 않습니다.
 
 ```sh
 pnpm test:integration
 ```
 
-전용 PostgreSQL·Redis를 사용하는 조건부 suite:
+실제 경계는 목적별 lane으로 분리합니다.
 
 ```sh
+# 고유 PostgreSQL schema와 Redis namespace
 pnpm test:integration:conditional
+
+# 필요할 때 실행하는 Ref 호환성 감사
+pnpm test:integration:reference
+
+# public/che schema와 Redis를 초기화하는 전용 stack 전용 lifecycle
+INTEGRATION_LIFECYCLE_DISPOSABLE=1 pnpm test:integration:lifecycle
 ```
+
+`tools/integration-tests/test-lanes.tsv`는 모든 `test/**/*.test.ts`를 `core`,
+`conditional`, `reference`, `lifecycle` 중 정확히 하나에 배정합니다. 기본 runner는
+실행 전에 실제 파일 집합과 registry를 대조하므로 새 파일의 미등록이나 중복 등록을
+허용하지 않습니다. Ref 차등과 lifecycle을 기본 명령에서 분리한 것은 test 삭제나
+silent skip이 아니라 실행 비용·외부 상태·판정 권위를 분리한 것입니다.
+
+Ref는 매 변경의 제품 실행 의존성이 아닙니다. 계승 계약을 새로 이관하거나 전투·RNG·
+명령 의미가 바뀌는 변경, 정기 호환성 감사에서는 `test:integration:reference`를
+실행합니다. 일반 Core 변경은 Core 자체의 versioned fixture, canonical projection과
+불변조건을 기본 acceptance로 사용합니다. 확인된 의도적 제품 차이는 Core 기대값을
+갱신하고 문서화하며, Ref 결과에 자동으로 되맞추지 않습니다.
 
 조건부 runner는 환경 변수 존재 여부만으로 안전성을 보장하지 않습니다.
 대상 host, port, database와 Redis prefix가 해당 worktree 전용인지 확인해
@@ -73,8 +94,9 @@ runtime role을 삭제하고 PID와 명령행 및 daemon 종료를 확인한 뒤
 - 관리자 시간 가속·연기의 durable action, checkpoint, Redis 부분 재시도와
   경매 timer race
 
-실제 포함 suite는 `tools/run-conditional-integration.sh`, 각 package의
-`package.json`, `*.integration.test.ts`를 기준으로 확인합니다. DB 조건부
+실제 포함 suite는 `tools/integration-tests/test-lanes.tsv`,
+`tools/run-conditional-integration.sh`, 각 package의 `package.json`,
+`*.integration.test.ts`를 기준으로 확인합니다. DB 조건부
 환경 변수는 `tools/conditional-integration-registry.tsv`에서 명시적으로
 관리합니다. 새 `*_DATABASE_URL` gate가 registry에 없거나 registry 항목이
 더 이상 테스트에 존재하지 않으면 runner가 테스트 실행 전에 실패합니다.
@@ -135,8 +157,8 @@ PostgreSQL·Redis 경계를 증명하지 않습니다. Full suite 실패는 변�
 Ref 호환성 판정은 [차등 검증](architecture/turn-state-differential-testing.md),
 UI는 [프론트엔드 호환 검증](frontend-legacy-parity.md)을 함께 사용합니다.
 
-전투 아이템 전체 차등 검증은 공격자·방어자 각각 145개 fixture를 모두 Core와
-Ref에서 실행하고 event, RNG, outcome, 전체 log bucket을 항목별로 비교합니다.
-Ref harness는 fixture마다 새 PHP process를 띄우지 않고 `--jsonl` 입력을 한
-process에서 일괄 처리합니다. `ITEM_PARITY_FILTER`는 특정 항목을 진단할 때만
-사용하며, 전체 검증의 fixture 수나 assertion을 줄이는 최적화로 사용하지 않습니다.
+Ref 감사 lane의 전투 아이템 전체 차등 검증은 공격자·방어자 각각 145개 fixture를
+모두 Core와 Ref에서 실행하고 event, RNG, outcome, 전체 log bucket을 항목별로
+비교합니다. Ref harness는 fixture마다 새 PHP process를 띄우지 않고 `--jsonl`
+batch를 한 process에서 처리합니다. `ITEM_PARITY_FILTER`는 특정 항목 진단에만
+사용하며 전체 감사의 fixture 수나 assertion을 줄이는 최적화로 사용하지 않습니다.

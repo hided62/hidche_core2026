@@ -73,7 +73,7 @@ router 결과를 별도로 비교합니다.
 `turnCommandFullLifecycle.integration.test.ts`, 실제 PostgreSQL flush/reload는
 `turnCommandFullLifecyclePersistence.integration.test.ts`가 대표 fixture로 검증합니다.
 
-기본 integration:
+기본 Core canonical/projection 계약:
 
 ```sh
 pnpm test:integration
@@ -85,11 +85,21 @@ PostgreSQL·Redis 조건부 경계:
 pnpm test:integration:conditional
 ```
 
+live Ref 명령·전투 차등 감사:
+
+```sh
+pnpm test:integration:reference
+```
+
+Ref runtime은 기본 Core acceptance의 필수 의존성이 아닙니다. 계승 계약 변경과
+정기 감사에서만 live 비교를 실행하고, 독립한 Core 영역은 versioned Core fixture와
+불변조건을 권위값으로 사용합니다.
+
 개별 suite와 test name은 package script 뒤에 전달합니다.
 
 ```sh
 pnpm --filter @sammo-ts/game-engine test inputEventAtomicity.test.ts
-pnpm --filter @sammo-ts/integration-tests test:integration
+pnpm --filter @sammo-ts/integration-tests test:integration:reference -- -t 'test name'
 ```
 
 실제 script 인자는 해당 package의 `package.json`을 확인해 주세요.

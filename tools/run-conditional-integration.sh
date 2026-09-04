@@ -571,6 +571,7 @@ run_redis_only_tests() {
 export PATH
 cd "$workspace_root"
 node "$script_dir/check-conditional-integration-files.mjs"
+node "$workspace_root/tools/integration-tests/run-test-lane.mjs" check
 validate_marker_registry
 
 pnpm install --frozen-lockfile
