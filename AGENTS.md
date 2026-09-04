@@ -1,40 +1,29 @@
 # core2026 작업 지침
 
-## 적용 범위와 목표
+## 적용 범위와 문서 역할
 
-이 파일은 `core2026/` 전체에 적용됩니다. 하위 디렉터리에 더 가까운
-`AGENTS.md`가 생기면 사용자 지시, 가까운 파일, 이 파일, 상위 작업공간
-지침 순으로 적용합니다.
+이 파일은 `core2026/`의 제품별 추가 규칙을 담습니다. 사용자 지시, 더 가까운
+AGENTS, 이 파일, [상위 AGENTS](../AGENTS.md) 순으로 적용합니다. 공통 Git·보고·
+보안·Ref 계약은 상위 지침을 따르며, 아래에 같은 정책을 별도로 재정의하지 않습니다.
 
-`../ref/sam`은 누락·회귀를 찾고 기존 개념과 사용자 기대를 이해하기 위한 PHP
-기준 구현입니다. `core2026`은 0.1.0 출시 이후 독립적으로 발전하는 제품이므로,
-이관 중인 계승 영역은 기존 결과·상태 전이·권한·화면·운영 경계를 우선 보존하되
-명시적인 신규 기능·밸런스·UX 결정까지 Ref와 기계적으로 일치시키지 않습니다.
+상위 지침의 상대 경로는 `sam_rebuild/`, 이 파일의 경로는 `core2026/` 기준입니다.
+독립 checkout에서 상위 작업공간 문서를 참조할 수 없으면 실제 작업공간 위치를
+확인하고, 확인하지 못한 규칙이나 Ref 근거를 읽었다고 보고하지 않습니다.
 
-## 현재 기준과 저장소 경계
+| 작업                       | 상세 기준                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| 구조·파일 책임             | [README](README.md#저장소-구성), [개발자 핸드북](docs/developer/index.md)                  |
+| Ref 비교·계측·분류         | [상위 호환성 계약](../AGENTS.md#호환성-계약), [매핑](../docs/ref-core2026-mapping.md)      |
+| 테스트 준비·실행·오류 복구 | [테스트 정책](docs/testing-policy.md)                                                      |
+| CSS·실제 Chromium 비교     | [CSS 구조](docs/frontend-css-architecture.md), [호환 검증](docs/frontend-legacy-parity.md) |
+| DB 이관                    | [이관 절차](tools/legacy-db-migration/README.md)                                           |
+| 배포 대상 선택             | [환경 라우팅](../docs/docker-environment-routing.md)                                       |
+| prefix·빌드 변수           | [Caddy 계약](docs/e2e-caddy-routing.md)                                                    |
+| Gateway·profile 릴리스     | [릴리스 운영](docs/release-operations.md)                                                  |
 
-- `core2026/`은 제품 구현 저장소입니다. gateway/game frontend·API, game engine,
-  공통 package, Prisma와 검증 도구가 실제로 존재합니다.
-- PHP 기준 구현은 이 저장소 내부 `legacy/`가 아니라 `../ref/sam`입니다.
-  `devel`은 변경하지 않는 기준선이고 비교 fixture·계측은 `ng_compare`에만
-  두어 주세요.
-- 아키텍처 매핑과 보고서는 별도 상위 저장소의
-  `../docs/ref-core2026-mapping.md`, `../report/`에 있습니다. 두 Git 경계의
-  commit과 상태를 혼동하지 말아 주세요.
-- 이미지의 운영 소유자는 외부 Caddy의 `/image/*`입니다. 제품 저장소에 무단
-  복제하거나 앱 경로로 rewrite하지 말아 주세요.
-
-작업 시작과 종료에 최소한 다음을 확인해 주세요.
-
-```sh
-git status --short --branch
-git remote -v
-git rev-parse HEAD
-```
-
-상위 매핑/보고서를 바꾸면 상위 저장소에서도 같은 검사를 별도로 수행해 주세요.
-dirty 파일은 사용자의 변경일 수 있으므로 관련 없는 수정, 정리, stage,
-commit 또는 삭제를 하지 말아 주세요.
+PHP 기준 구현은 `../ref/sam`이며 이 저장소 내부 `legacy/`가 아닙니다.
+매핑과 `../report/`는 별도 상위 Git 저장소 소유입니다. 변경 시작·종료에
+각 저장소의 status·branch·remote·HEAD를 확인하고 관련 없는 dirty 변경을 보존합니다.
 
 ## 완료 상태를 해석하는 법
 
@@ -55,87 +44,19 @@ commit 또는 삭제를 하지 말아 주세요.
 기능 작업 전에 관련 매핑 항목과 최신 report를 읽고, 오래된 결론은 현재
 코드와 commit으로 다시 확인해 주세요.
 
-## 실제 구조와 책임
-
-- `app/gateway-frontend`: 가입·로그인, 로비, 계정, 관리자 운영 UI
-- `app/gateway-api`: 계정·세션·profile 정책, operation queue와 PM2
-  orchestration
-- `app/game-frontend`: profile별 게임 SPA와 ref 호환 UI
-- `app/game-api`: tRPC/SSE, 조회·입력 API와 battle/auction/tournament worker
-- `app/game-engine`: turn daemon, scheduler, 월간 lifecycle와 DB flush
-- `packages/common`: 타입, 직렬화, RNG와 공통 유틸리티
-- `packages/logic`: 전투·명령·월간 action과 typed action module 도메인 로직
-- `packages/infra`: gateway/game Prisma schema, migration과 client
-- `tools/integration-tests`: PostgreSQL/Redis 및 ref↔core 차등
-- `tools/frontend-legacy-parity`: 실제 Chromium 비교
-- `tools/legacy-db-migration`: 장기보존 데이터 CLI 이관
-
-`tools/build-scripts/build-server.mjs`는 현재 profile resource 복사
-placeholder입니다. 이를 완성된 배포 bundle이나 검증된 profile build로 설명하지
-않습니다. 운영 build/reset/open은 gateway operation, commit별 worktree와
-orchestrator 실행 경로를 조사해 주세요.
+## 도메인 조립과 비교
 
 장수 action은 `packages/logic/src/actionModules/`에 둡니다. 계산 fold,
 priority/unique-ID trigger와 닫힌 의미 이벤트를 한 범용 hook으로 합치지
 말아 주세요. 제품용 module 순서는 `loadActionModuleBundle()`의
 `RefOrderedActionStack`에서만 조립하며, 새 의미 이벤트는
-`GeneralActionEventPayloadMap`에 payload와 필수 context를 먼저 선언해
-주세요. 자세한 계약은 `docs/architecture/action-module-protocol.md`에
-있습니다.
+`GeneralActionEventPayloadMap`에 payload와 필수 context를 먼저 선언합니다.
+상세 계약은 [행동 모듈 프로토콜](docs/architecture/action-module-protocol.md)을 따릅니다.
 
-## 레거시 매핑과 비교
-
-기능을 변경하기 전에 다음을 end-to-end로 연결해 주세요.
-
-1. ref entry point와 호출 순서
-2. PHP domain class, SQL read/write, template/CSS/JS와 사용자 출력
-3. core service/router/action/loader/flush와 frontend 호출부
-4. session/auth, validation, transaction, 비동기 경계와 오류 복구
-5. RNG 생성·소비와 persistence 순서
-
-`../docs/ref-core2026-mapping.md`에는 1:1 대응을 억지로 만들지 말고 1:N/N:1
-소유권과 변환 지점을 기록해 주세요. `확인`, `부분 확인`, `가설`, `미구현`,
-`의도적 차이`를 근거와 함께 사용해 주세요. 문서와 코드가 다르면 먼저 양쪽 기준
-commit과 실제 실행을 확인하고 사실관계를 고쳐 주세요.
-
-Ref 비교 전에 대상 계약도 구분해 주세요.
-
-- 별도 제품 결정이 없는 기존 기능은 **계승 계약**으로 보고 사용자 목적, 도메인
-  의미, 권한·소유권, 상태 수명주기와 관찰 가능한 결과를 비교합니다.
-- 신규 기능·밸런스·안전·운영·UX 정책은 **의도적 제품 차이**로 기록하고 목적,
-  적용 버전과 범위, 상태·후속 턴 영향, migration/호환 경계와 Core 회귀 테스트를
-  둡니다. Ref와 다른 값이 나오는 것 자체는 실패가 아닙니다.
-- 제품 결정 없이 기존 개념이나 정보가 사라진 경우는 **누락·회귀**, Ref에 대응
-  개념이 없는 기능은 **비교 불가**입니다. 후자는 자체 불변조건으로 검증합니다.
-
-차등 테스트는 차이를 감지하는 도구이지 제품 정책의 판정자가 아닙니다. 계승
-계약에만 exact equality를 요구하고, 의도적 차이는 별도 기대값·허용 목록·버전된
-fixture로 명시하여 무작정 테스트를 끄거나 Ref 기대값에 되맞추지 마세요.
-
-ref 계측이 필요하면 다음을 지켜 주세요.
-
-- `devel`에 test, endpoint, fixture나 debug 코드를 commit하지 말아 주세요.
-- 기존 `ng_compare` 이력과 분기 기준을 조사하고 reset/overwrite하지 말아 주세요.
-- 계측은 최소·deterministic·가능하면 read-only로 두고 test 환경 guard를
-  사용해 주세요.
-- 계측 유무가 결과, RNG 소비, DB mutation과 출력 순서를 바꾸지 않는지
-  확인해 주세요.
-- ref와 core 변경은 서로 다른 저장소와 commit으로 관리해 주세요.
-
-## 계승 계약의 호환성 우선순위
-
-1. 전투 결과, 계산식, 판정·반올림·정렬과 RNG 소비 순서
-2. 턴/명령 조건, 자원 변화, DB 상태 전이와 권한
-3. API 요청·응답·오류, session과 인증
-4. 문구, 로그, 화면 흐름과 룩앤필
-5. 내부 구현 세부사항
-
-레거시의 이상해 보이는 동작도 계승 계약일 수 있습니다. 보안 또는 데이터 손상
-위험이 아니면 먼저 재현하고 제품 변경은 분리해 주세요. 반대로 승인·출시된 Core
-차이는 Ref 결과만을 이유로 되돌리지 않습니다. 의도적 차이는 사용자 경험·저장
-상태·후속 턴에 영향을 줄 수 있으므로 그 영향과 전환 경계를 mapping/report에
-명시합니다. 보안, 데이터 무결성, 인증 actor 권한과 운영 안전은 신규 기능이라는
-이름만으로 완화하지 않습니다.
+차등 테스트는 계승 계약에 exact equality를 요구합니다. 의도적 제품 차이는
+별도 기대값·허용 목록·버전된 fixture로 명시하며 테스트를 끄거나 Ref 기대값에
+되맞추지 않습니다. 분류·호출 순서·소유권·계측의 공통 요구는 상위 호환성 계약을
+따릅니다.
 
 ## 인증과 권한
 
@@ -182,18 +103,18 @@ API request
 
 게임 난수는 `packages/common/src/util/LiteHashDRBG.ts`, `RNG.ts`,
 `RandUtil.ts` 흐름을 사용해 주세요. `Math.random()` 같은 임의 경로를 gameplay에
-추가하지 말아 주세요. 후보가 하나뿐인 선택, 실패 분기, fallback에서도 ref가
+추가하지 말아 주세요. 계승 계약에서는 후보가 하나뿐인 선택, 실패 분기, fallback에서도 Ref가
 소비하는 RNG call을 생략하지 말아 주세요.
 
 전투/RNG 변경에는 fixed seed 결과뿐 아니라 RNG trace, 로그, 전체 state
-side effect와 실패 경로의 ref 비교가 필요합니다. comparator ignore를 늘리기
+side effect와 실패 경로를 검증합니다. 계승 계약은 Ref와 비교하고 의도적 제품
+차이·Core 전용 기능은 문서화한 Core 기대값과 불변조건을 사용합니다. comparator ignore를 늘리기
 전에 canonical snapshot에서 누락된 field가 없는지 확인해 주세요.
 
 ## 프론트엔드와 룩앤필
 
-새 디자인 시스템이나 현대적 재해석을 임의로 도입하지 말아 주세요. 보존 범위는
-layout, font, line-height, 줄바꿈, 색상, texture, border, shadow, opacity,
-이미지 natural size/aspect ratio/object-fit과 표시 순서입니다.
+UI의 공통 보존·Chromium·artifact 요구는 [상위 UI 지침](../AGENTS.md#ui와-룩앤필)을
+따릅니다. 의도적 UX 차이는 Core geometry·interaction 기대값을 명시합니다.
 
 - gateway `/gateway/`, game `/che/`와 `/hwe/` prefix에서 direct navigation,
   refresh, tRPC, SSE와 asset URL을 확인해 주세요.
@@ -210,20 +131,10 @@ layout, font, line-height, 줄바꿈, 색상, texture, border, shadow, opacity,
 - `v-html`은 입력 source와 sanitization/allowlist를 확인해 주세요. 기존 warning을
   일괄 disable하지 말아 주세요.
 
-UI를 변경하면 실제 Chromium을 사용해 주세요.
-
-- ref와 core에 같은 Chromium, viewport, device scale, zoom, locale, font,
-  image와 로그인/test data를 사용해 주세요.
-- 전체·영역 screenshot과 `getBoundingClientRect()`,
-  `getComputedStyle()`을 수집해 주세요.
-- `hover()`, focus, pointer down/up, checked/selected/disabled, dropdown,
-  modal과 transition 상태를 실제 interaction으로 만들어 주세요.
-- pixel diff mask는 시간·난수 등 불가피한 영역만 최소화하고 이유를 기록해 주세요.
-- auth redirect만 확인하고 visual parity라고 주장하지 말아 주세요.
-- 민감정보가 보이는 artifact는 저장하거나 report에 넣지 말아 주세요.
-
+Chromium 비교는 같은 locale과 font도 맞추고 dropdown·modal을 실제로 열어
+확인합니다. auth redirect만 확인하고 visual parity로 보고하지 않습니다.
 CSS layer와 selector 경계는 `docs/frontend-css-architecture.md`, 비교 실행은
-`docs/frontend-legacy-parity.md`를 따라 주세요.
+`docs/frontend-legacy-parity.md`를 따릅니다.
 
 ## DB와 레거시 데이터 이관
 
@@ -263,94 +174,29 @@ schema 변경 후 최소한 다음을 위험도에 맞게 확인해 주세요.
 worktree가 같은 instance를 공유하지 않도록 해 주세요. volume 삭제 명령은 사용자가
 명시적으로 데이터 폐기를 요청하지 않으면 실행하지 말아 주세요.
 
-현재 외부 호스트 계약은 `0.0.0.0` bind와 `/gateway/`, `/che/`, `/hwe/`
-prefix입니다. Caddy는 외부 인프라로 취급하고 요청 없이 설정 변경을 전제하지
-않습니다. local preview/mock 성공을 외부 HTTPS 성공으로 보고하지 말아 주세요.
-
-Gateway preview를 검증할 때 최소 계약은 다음과 같습니다.
-
-```sh
-VITE_APP_BASE_PATH=/gateway \
-VITE_GATEWAY_API_URL=/gateway/api/trpc \
-VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc' \
-VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' \
-pnpm --filter @sammo-ts/gateway-frontend build
-```
-
-profile별 정확한 포트와 game frontend/API 변수는
-`docs/e2e-caddy-routing.md`에서 확인하고 현재 인프라와 대조해 주세요.
+컨테이너 서비스는 필요한 listener를 `0.0.0.0`에 bind합니다. 로컬 E2E의
+`/gateway/`, `/che/`, `/hwe/`와 운영 stack의 활성 prefix를 혼동하지 않습니다.
+대상 선택은 상위 환경 라우팅, frontend/API 변수와 preview 명령은
+`docs/e2e-caddy-routing.md`를 확인합니다. local preview/mock 성공은 외부
+HTTPS 검증과 구분합니다.
 
 ## 개발과 검증 절차
 
-1. 현재 branch/status/remote, 사용자 변경과 가까운 지침을 확인해 주세요.
-2. 관련 mapping/report와 ref/core 호출 경로를 조사해 주세요.
-3. 보존할 계약, 허용할 차이와 검증 범위를 먼저 정합니다.
-4. 코드와 함께 type/schema/migration/fixture/mapping을 갱신해 주세요.
-5. 좁은 단위 test → typecheck/lint/build → DB integration → ref 차등 →
-   Chromium E2E 순으로 위험에 맞게 넓혀 주세요.
-6. 명령, 결과, skip/미검증과 baseline failure를 분리해 report에 기록해 주세요.
-7. 양쪽 Git diff/status와 필요한 ancestry를 다시 확인해 주세요.
+상위 [작업 흐름과 검증](../AGENTS.md#작업-흐름과-검증)에 따라 변경 계약에 가까운
+검증부터 실행하고, 명령·결과·skip·baseline 실패와 미검증 범위를 보고합니다.
+명령 목록·간단 출력 정책·새 worktree 준비·Playwright port 격리는
+[테스트 정책](docs/testing-policy.md)을 기준으로 합니다.
 
-기본 정적 검사는 실제 루트 script를 사용해 주세요.
-
-```sh
-CI=1 pnpm typecheck
-pnpm check:architecture
-pnpm lint
-pnpm test
-pnpm build
-```
-
-루트 `pnpm test`와 `pnpm build`는 간단 출력이 기본입니다. Codex도 일반 검증에는
-이 명령을 사용하고, 실패 진단이나 전체 task 진행이 필요한 경우에만
-`pnpm test-verbose`, `pnpm build-verbose`를 사용해 주세요. 서버 빌드 워커의
-streaming 상세 로그는 관리자 관찰 계약이므로 간단 출력으로 바꾸지 말아 주세요.
-
-- 모든 코드 변경 후 `CI=1 pnpm typecheck`를 실행해 주세요.
-- package import나 파일 위치를 변경한 뒤 `pnpm check:architecture`를 실행해
-  주세요. `packages/logic`의 runtime I/O는 `ports/` interface와 app/infra
-  adapter로 분리합니다.
-- `pnpm test`의 skip 수를 pass처럼 보고하지 말아 주세요.
-- Vitest file/name filter는 package script 뒤에 불필요한 `--`를 넣지 말아 주세요.
+- 모든 코드 변경 후 `CI=1 pnpm typecheck`를 실행합니다.
+- package import나 파일 위치 변경 후 `pnpm check:architecture`를 실행합니다.
+  `packages/logic`의 runtime I/O는 `ports/`와 app/infra adapter로 분리합니다.
+- Vitest filter에 불필요한 `--`를 넣지 않습니다.
   예: `pnpm --filter @sammo-ts/game-engine test monthlyCoreEventHandler.test.ts`
-- frontend package의 `test` placeholder를 실제 UI 검증으로 오해하지 말아 주세요.
-  해당 Playwright script 또는 legacy parity suite를 사용해 주세요.
-- 새 worktree에서 direct Playwright를 실행하기 전에 현재 호스트의 `fnm use`
-  (nvm 환경은 `nvm use`) 후
-  `pnpm test:bootstrap`을 실행해 install, Prisma client와
-  common → logic → infra → game-engine → API 산출물을 준비해 주세요. 이미
-  install된 checkout은 `pnpm test:prepare`를 사용합니다. Playwright
-  `webServer` 실패를 이 준비가 끝나기 전 제품 회귀로 분류하지 말아 주세요.
-- E2E port가 다른 worktree와 겹치면 설정 파일을 임시 수정하지 말고
-  `PLAYWRIGHT_FRONTEND_PORT`, `PLAYWRIGHT_GATEWAY_FRONTEND_PORT` 또는
-  `FRONTEND_PARITY_*_PORT`를 지정합니다. 같은 game frontend `dist`를 쓰는
-  profile production run은 직렬로 실행합니다.
-- 전체 lint/test의 기존 실패가 있으면 targeted 결과와 baseline 재현 결과를
-  구분하고, 관련 없는 기대값을 완화해 숨기지 말아 주세요.
-
-외부 서비스 없는 기본 integration:
-
-```sh
-pnpm test:integration
-```
-
-전용 PostgreSQL/Redis를 준비한 조건부 전체 경계:
-
-```sh
-pnpm test:integration:conditional
-```
-
-ref 명령과 UI entry point:
-
-```sh
-pnpm check:legacy:general
-pnpm check:legacy:nation
-pnpm test:e2e:frontend-legacy
-```
-
-각 command가 요구하는 ref checkout, Docker, DB URL, secret과 fixture는 관련
-docs에서 확인해 주세요. 존재하지 않는 명령을 오래된 report나 제안 문서만 보고
-실행하지 말아 주세요.
+- frontend package의 `test` placeholder는 UI 검증이 아닙니다. 해당 Playwright
+  script 또는 legacy parity suite를 실행합니다.
+- ref checkout·Docker·DB·secret 요구는 해당 실행 문서에서 확인합니다.
+  오래된 report만 보고 명령을 가정하지 않습니다.
+- 문서만 변경할 때의 검증도 테스트 정책을 따릅니다.
 
 ## 코드 스타일
 
@@ -374,42 +220,27 @@ docs에서 확인해 주세요. 존재하지 않는 명령을 오래된 report�
 
 ## 문서와 보고서
 
-기능·운영·호환성에 의미 있는 변경은 코드와 같은 작업에서 다음을 갱신해 주세요.
+변경이 영향을 주는 문서만 같은 작업에서 갱신합니다. 구조·시작점은 README,
+반복 규칙은 AGENTS, 구현·운영 상세는 `docs/`, Ref 대응은 상위 매핑이 소유합니다.
+모든 기능 변경에서 README와 AGENTS까지 기계적으로 수정하지 않습니다.
 
-- `README.md`: 사용자가 알아야 할 현재 구조, 시작점과 운영 경계
-- 이 `AGENTS.md`: 반복 작업 규칙과 검증 계약
-- `docs/*`: core2026 내부 구현·운영 상세
-- `../docs/ref-core2026-mapping.md`: ref↔core 근거와 상태
-- `../report/YYYY-MM-DD-간결한-작업명.md`: 재현 가능한 인수인계
-
-보고서에는 목적/범위, 조사한 ref, 변경 파일, 보존 계약, 명령과 결과,
-skip/미검증, 알려진 차이, 후속 작업과 저장소별 commit을 포함합니다. commit
-전이면 `커밋 전`으로 기록하고 서로 다른 저장소의 hash를 명확히 구분해 주세요.
+보고서의 필수 내용과 저장소별 commit 기록은
+[상위 보고서 규칙](../AGENTS.md#보고서와-commit)을 따릅니다.
 
 ## Git, worktree와 commit
 
-- 중·장기 작업은 전용 branch/worktree와 고유 DB/Redis instance에서 합니다.
-- 최신 `main`을 통합하고 회귀를 확인한 뒤 요청된 범위에 따라 local `main`에
-  병합해 주세요. 원격 push는 별도 요청 없이는 하지 말아 주세요.
-- 관련 없는 사용자 변경을 stage/commit/revert하지 말아 주세요.
-- ref 비교 변경과 core 제품 변경, 상위 mapping/report 변경은 각 Git
-  저장소에서 별도 commit해 주세요.
-- 생성물, `.env`, DB volume, log, coverage, screenshot, test-results와
-  secret을 commit하지 말아 주세요.
-- worktree 정리는 clean status와
-  `git merge-base --is-ancestor HEAD <baseline>`을 모두 확인한 뒤 non-force
-  제거해 주세요. 이름, 나이 또는 uncommitted 여부만으로 삭제하지 말아 주세요.
-- 사용자가 commit을 요청하지 않은 일반 작업은 diff와 권장 commit 경계를
-  준비하되 임의로 commit하지 말아 주세요.
+[상위 Git 규칙](../AGENTS.md#저장소와-git-경계)과
+[기본 commit 정책](../AGENTS.md#보고서와-commit)을 따릅니다. 일반 작업은
+충돌 없는 현재 checkout에서 수행하고, 완료한 관련 변경은 사용자가 금지하지
+않았다면 한국어 설명으로 commit합니다. push·merge·배포는 요청된 범위에 한합니다.
+
+Core 제품, Ref 계측, 상위 문서는 각 저장소에서 별도 commit합니다. 생성물,
+환경·secret, DB volume, log, coverage, screenshot과 test-results는 제외합니다.
+worktree 정리가 요청 범위라면 clean status와
+`git merge-base --is-ancestor HEAD <baseline>`을 확인한 뒤 non-force로 제거합니다.
+이름·나이·uncommitted 여부만으로 삭제하지 않습니다.
 
 ## Qwen 보조 분석
 
-Qwen은 대규모 파일 목록, diff·로그 분류, 반복 추출과 누락 후보 재검색에만
-사용해 주세요. 필요한 최소 발췌만 전달하고 secret, 개인정보와 환경 파일 값을
-보내지 말아 주세요.
-
-- 아키텍처·보안·DB mutation·전투/RNG 판단과 최종 검증을 위임하지 말아 주세요.
-- 결과는 파일, Git, test 또는 실제 trace로 독립 검증해 주세요.
-- 응답 budget은 128–4096 token 범위로 제한해 주세요.
-- 실패하면 health 확인 후 일시 오류일 때 한 번만 재시도하고, 선택적 작업이면
-  로컬 분석을 계속해 주세요.
+사용 범위, 응답 budget과 실패 처리는 [상위 Qwen 지침](../AGENTS.md#qwen-보조-분석)을
+따릅니다. Core에서 별도 budget이나 위임 정책을 두지 않습니다.

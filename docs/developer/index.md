@@ -30,5 +30,8 @@
 - Redis와 SSE는 session·worker·fan-out 경로이며 world commit의 대체 저장소가
   아닙니다.
 
-기능을 변경하면 상위 `../docs/ref-core2026-mapping.md`의 ref entry point,
-호출 순서, 인증, DB mutation, RNG와 오류 경로를 함께 갱신해 주세요.
+기능의 대응이 바뀌면 작업공간 루트 기준
+`docs/ref-core2026-mapping.md`에 entry point,
+호출 순서, 인증, DB mutation, RNG와 오류 경로를 갱신해 주세요.
+공통 작업 규칙과 계약 분류는 제품 저장소 루트의 `AGENTS.md`를 따릅니다.
+이 파일들은 핸드북 사이트 밖의 저장소 문서입니다.

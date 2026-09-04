@@ -10,6 +10,10 @@
 - UI는 실제 Chromium에서 geometry, computed style과 interaction을 비교합니다.
 - skip, baseline failure와 환경 미검증을 pass와 분리합니다.
 
+Ref 비교는 작업공간 루트 `AGENTS.md`의 공통 호환성 계약에 따라 분류합니다.
+계승 영역은 Ref 결과와 비교하고, 의도적 제품 차이·Core 전용 기능은 문서화한
+Core 기대값과 불변조건으로 검증합니다. 아래 Ref 차등 요구도 이 범위로 해석합니다.
+
 ## 기본 검증
 
 ```sh

@@ -1,8 +1,9 @@
 # 삼국지 모의전투 HiDCHe core2026
 
-`core2026`은 `../ref/sam`의 PHP 서비스를 TypeScript로 호환 이관하는 pnpm
-모노레포입니다. 전투·턴·권한·저장 상태·API·화면 동작은 ref 구현과 실제 실행
-결과를 기준으로 검증합니다.
+`core2026`은 PHP 기준 구현 `../ref/sam`에서 출발해 0.1.0 이후 독립적으로
+발전하는 TypeScript pnpm 모노레포입니다. 계승 영역은 Ref의 동작·상태·권한과
+비교하고, 명시적인 신규 기능·밸런스·UX는 Core 계약으로 검증합니다.
+작업 규칙과 분야별 지침의 시작점은 [AGENTS.md](AGENTS.md)입니다.
 
 ## 저장소 구성
 
@@ -252,9 +253,11 @@ Game과 gateway가 같은 database/schema를 쓰므로 deploy 순서는
 `game → gateway`입니다. 양쪽 migration directory 이름은 공유
 `_prisma_migrations`에서 충돌하지 않도록 전역적으로 고유해야 합니다.
 
-활성 외부 prefix는 `/gateway/`, `/che/`, `/hwe/`입니다. 앱은 필요한
-listener를 `0.0.0.0`에 bind하고 prefix를 보존한 frontend, tRPC, SSE,
-direct-navigation URL을 사용합니다. `/image/*`는 외부 Caddy가 소유합니다.
+활성 prefix는 배포 환경별로 다릅니다. 로컬 E2E의 `/gateway/`, `/che/`,
+`/hwe/`를 운영 전체의 목록으로 해석하지 않습니다. 대상 host·stack은
+[환경 라우팅](../docs/docker-environment-routing.md), 앱의 listener·frontend·
+tRPC·SSE·direct-navigation 설정은 [Caddy 계약](docs/e2e-caddy-routing.md)을
+따릅니다. 이미지 제공은 외부 서비스의 소유 경계입니다.
 
 `build:server`는 profile resource를 `dist/<profile>`에 복사하는 도구입니다.
 완전한 API·daemon·frontend 배포 bundle은 gateway orchestrator의
