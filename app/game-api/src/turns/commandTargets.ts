@@ -64,7 +64,7 @@ export const buildRefGeneralTargetOptions = (options: {
         const isTroopExit = action === 'che_부대탈퇴지시';
         const availableNow = isTroopExit ? isTroopMember && entry.id !== options.actorId : undefined;
         const label = (() => {
-            if (action === 'che_발령') return `${entry.name} (${troopLabel} · ${cityName})`;
+            if (action === 'che_발령') return `${entry.name} (${cityName})`;
             if (action === 'che_포상' || action === 'che_몰수') return `${entry.name} (${cityName})`;
             return `${entry.name} (${options.nationNames.get(entry.nationId) ?? '무소속'} · ${cityName})`;
         })();

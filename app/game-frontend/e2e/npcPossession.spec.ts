@@ -17,7 +17,7 @@ type FixtureState = {
 
 const candidates = Array.from({ length: 5 }, (_, index) => ({
     id: index + 1,
-    name: `빙의후보${index + 1}`,
+    name: index === 0 ? '아주긴빙의후보장수이름' : `빙의후보${index + 1}`,
     nation: { id: 0, name: '재야', color: '#aaaaaa' },
     stats: {
         leadership: 40 + index,
@@ -336,15 +336,23 @@ test('renders Ref-shaped token cards, preserves keep cooldown and retries posses
         return {
             sectionWidth: sectionRect.width,
             cardWidths: cards.map((card) => card.getBoundingClientRect().width),
+            nameHeights: cards.map(
+                (card) => card.querySelector<HTMLElement>('.npc-card-name')!.getBoundingClientRect().height
+            ),
+            nameWhiteSpace: getComputedStyle(cards[0]!.querySelector<HTMLElement>('.npc-card-name')!).whiteSpace,
+            longNameFontSize: getComputedStyle(cards[0]!.querySelector<HTMLElement>('.npc-card-name')!).fontSize,
             imageWidth: image?.getBoundingClientRect().width,
             imageHeight: image?.getBoundingClientRect().height,
             imageNaturalWidth: image?.naturalWidth,
             imageNaturalHeight: image?.naturalHeight,
         };
     });
-    expect(geometry).toEqual({
+    expect(geometry).toMatchObject({
         sectionWidth: 1000,
         cardWidths: [125, 125, 125, 125, 125],
+        nameHeights: [25, 25, 25, 25, 25],
+        nameWhiteSpace: 'nowrap',
+        longNameFontSize: '12px',
         imageWidth: 64,
         imageHeight: 64,
         imageNaturalWidth: 64,

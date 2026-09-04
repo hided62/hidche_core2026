@@ -177,12 +177,12 @@ describe('messages router missing-flow compatibility', () => {
         expect(recent.permission).toBe(2);
         expect(recent.diplomacy[0]).toMatchObject({
             text: '조회 권한이 없는 외교 메시지입니다.',
-            option: { action: 'noAggression' },
+            option: { action: 'noAggression', permissionRedacted: true },
         });
         expect(recent.diplomacy[0]?.option).not.toHaveProperty('invalid');
         expect(old.diplomacy[0]).toMatchObject({
             text: '조회 권한이 없는 외교 메시지입니다.',
-            option: { action: 'noAggression' },
+            option: { action: 'noAggression', permissionRedacted: true },
         });
         expect(old.diplomacy[0]?.option).not.toHaveProperty('invalid');
     });

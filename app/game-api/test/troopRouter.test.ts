@@ -282,6 +282,18 @@ describe('troop router permissions and mutations', () => {
         });
     });
 
+    it('shows all five visible turns as assembly for a managed NPC troop leader', async () => {
+        const fixture = buildContext({
+            me: buildGeneral({ troopId: 1, npcState: 5, meta: { killturn: 70 } }),
+            turns: [{ generalId: 1, turnIdx: 0, actionCode: '휴식' }],
+            result: null,
+        });
+
+        const result = await appRouter.createCaller(fixture.context).troop.getList();
+
+        expect(result.troops[0]?.reservedCommands).toEqual(['집합', '집합', '집합', '집합', '집합']);
+    });
+
     it('creates a troop only for the general owned by the authenticated user', async () => {
         const { context, requestCommand } = buildContext({
             result: { type: 'troopCreate', ok: true, generalId: 1, troopId: 1, troopName: '백마대' },

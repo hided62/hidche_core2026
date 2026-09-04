@@ -55,6 +55,7 @@ const destination = computed<MessageTarget>(
 );
 
 const invalid = computed(() => props.message.option?.invalid === true);
+const permissionRedacted = computed(() => props.message.option?.permissionRedacted === true);
 const hasAction = computed(() => typeof props.message.option?.action === 'string');
 const nationDirection = computed(() => {
     if (props.message.src.nationId === destination.value.nationId) {
@@ -134,7 +135,12 @@ onBeforeUnmount(() => {
 <template>
     <article
         :id="`msg_${message.id}`"
-        :class="['msg-plate', `msg-plate-${message.msgType}`, `msg-plate-${nationDirection}`]"
+        :class="[
+            'msg-plate',
+            `msg-plate-${message.msgType}`,
+            `msg-plate-${nationDirection}`,
+            { 'msg-plate-permission-redacted': permissionRedacted },
+        ]"
         :data-id="message.id"
     >
         <div class="msg-icon">
@@ -262,7 +268,13 @@ onBeforeUnmount(() => {
                 <span class="msg-time">&lt;{{ message.time }}&gt;</span>
             </div>
 
-            <div :class="['msg-content', invalid ? 'msg-invalid' : 'msg-valid']">
+            <div
+                :class="[
+                    'msg-content',
+                    invalid ? 'msg-invalid' : permissionRedacted ? 'msg-permission-redacted' : 'msg-valid',
+                ]"
+            >
+                <strong v-if="permissionRedacted" class="permission-redacted-label">권한 제한</strong>
                 {{ invalid ? '삭제된 메시지입니다' : message.text }}
             </div>
 
@@ -409,6 +421,30 @@ button.msg-target {
 
 .msg-invalid {
     color: rgba(255, 255, 255, 0.5);
+}
+
+.msg-plate-permission-redacted {
+    outline: 1px dashed #d7b86c;
+    background: #3b3427;
+}
+
+.msg-plate-permission-redacted .general-icon {
+    filter: grayscale(1);
+    opacity: 0.55;
+}
+
+.msg-permission-redacted {
+    color: rgba(255, 244, 214, 0.72);
+    font-style: italic;
+}
+
+.permission-redacted-label {
+    display: inline-block;
+    margin-right: 6px;
+    border: 1px solid #d7b86c;
+    padding: 1px 4px;
+    color: #ffe0a0;
+    font-style: normal;
 }
 
 .message-response {

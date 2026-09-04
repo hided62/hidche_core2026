@@ -88,9 +88,9 @@ describe('Ref command general targets', () => {
             description: expect.stringContaining('탑승 부대 청룡대'),
         });
         expect(detailed.generalTargets.che_발령?.map((entry) => entry.label)).toEqual([
-            '본인 (부대 없음 · 업)',
-            '부대원 (청룡대 · 업)',
-            '부대장 (청룡대 (부대장) · 업)',
+            '본인 (업)',
+            '부대원 (업)',
+            '부대장 (업)',
         ]);
         expect(detailed.generalTargets.che_발령?.[1]?.description).not.toContain('탑승 부대');
         expect(detailed.generalTargets.che_포상?.map((entry) => entry.label)).toEqual([

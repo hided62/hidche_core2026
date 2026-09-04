@@ -42,7 +42,9 @@ export const FOUNDING_ARGS_SCHEMA = z.object({
     nationName: z
         .string()
         .min(1)
-        .refine((value) => getLegacyStringWidth(value) <= 18),
+        .refine((value) => getLegacyStringWidth(value) <= 18, {
+            message: '국가명은 전각 9자 또는 반각 18자 이하여야 합니다.',
+        }),
     nationType: z.string().refine(isAvailableNationTraitKey),
     colorType: z
         .number()

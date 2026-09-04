@@ -8,7 +8,7 @@ import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import MapViewer from '../components/main/MapViewer.vue';
 import CommandListPanel from '../components/main/CommandListPanel.vue';
-import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
+import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import CityBasicCard from '../components/main/CityBasicCard.vue';
 import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
@@ -100,6 +100,43 @@ const nationAccess = computed(() => ({
     nationLevel: nation.value?.level ?? 0,
 }));
 const nationColor = computed(() => nation.value?.color ?? '#000000');
+const generalPanel = computed(() => {
+    const current = general.value;
+    if (!current) return null;
+    return {
+        ...current,
+        progression: {
+            experienceLevel: current.progression?.experienceLevel ?? 0,
+            dedicationLevel: current.progression?.dedicationLevel ?? 0,
+            dedicationText: current.progression?.dedicationText ?? '-',
+            statExperience: current.progression?.statExperience ?? {
+                leadership: 0,
+                strength: 0,
+                intelligence: 0,
+            },
+            statUpgradeLimit: current.progression?.statUpgradeLimit ?? 30,
+            dex: current.progression?.dex ?? [0, 0, 0, 0, 0],
+        },
+    };
+});
+const generalSummary = computed(() =>
+    general.value
+        ? {
+              available: true,
+              experience: general.value.experience,
+              dedicationText: general.value.progression?.dedicationText,
+              bill: general.value.bill,
+              warnum: general.value.records?.battles,
+              wins: general.value.records?.wins,
+              losses: general.value.records?.losses,
+              strategies: general.value.records?.strategies,
+              serviceYears: general.value.records?.serviceYears,
+              killCrew: general.value.records?.killedCrew,
+              deathCrew: general.value.records?.lostCrew,
+              recentWar: general.value.recentWar,
+          }
+        : null
+);
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
 const profileLabels: Record<string, string> = {
     che: '체',
@@ -183,10 +220,7 @@ const shiftGeneralTurns = (amount: number) => {
     void dashboard.shiftGeneralTurns(amount);
 };
 
-const reserveGeneralTurns = async (
-    entries: CommandPatternEntry[],
-    complete?: (success: boolean) => void
-) => {
+const reserveGeneralTurns = async (entries: CommandPatternEntry[], complete?: (success: boolean) => void) => {
     const success = await dashboard.setGeneralTurns(entries);
     complete?.(success);
 };
@@ -322,7 +356,7 @@ watch(
                             :command-table="commandTable"
                             :loading="loading"
                             :reserved-general-turns="reservedGeneralTurns"
-                            :general="general"
+                            :general="generalPanel"
                             :current-year="lobbyInfo?.year"
                             :current-month="lobbyInfo?.month"
                             :turn-term-minutes="lobbyInfo?.turnTerm"
@@ -371,7 +405,12 @@ watch(
                     data-mobile-panel-id="general"
                 >
                     <PanelCard title="장수 스탯" hide-header aria-label="장수 정보" data-main-target="general">
-                        <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
+                        <GeneralInformationPanel
+                            :general="generalPanel"
+                            :summary="generalSummary"
+                            :loading="loading"
+                            :nation-color="nation?.color"
+                        />
                     </PanelCard>
                 </div>
 
@@ -498,7 +537,7 @@ watch(
                     :command-table="commandTable"
                     :loading="loading"
                     :reserved-general-turns="reservedGeneralTurns"
-                    :general="general"
+                    :general="generalPanel"
                     :current-year="lobbyInfo?.year"
                     :current-month="lobbyInfo?.month"
                     :turn-term-minutes="lobbyInfo?.turnTerm"
@@ -528,7 +567,12 @@ watch(
                 <NationBasicCard :nation="nation" :loading="loading" />
             </PanelCard>
             <PanelCard title="장수 스탯" hide-header aria-label="장수 정보" data-main-target="general">
-                <GeneralBasicCard :general="general" :loading="loading" :nation-color="nation?.color" />
+                <GeneralInformationPanel
+                    :general="generalPanel"
+                    :summary="generalSummary"
+                    :loading="loading"
+                    :nation-color="nation?.color"
+                />
             </PanelCard>
             <MainNationMenu
                 class="nation-menu-middle"

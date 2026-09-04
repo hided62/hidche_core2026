@@ -1052,7 +1052,13 @@ onUnmounted(() => {
                     </div>
                     <form class="npc-card-holder" @submit.prevent>
                         <div v-for="npc in npcCandidates" :key="npc.id" class="npc-card">
-                            <h4 class="npc-card-name">{{ npc.name }}</h4>
+                            <h4
+                                class="npc-card-name"
+                                :class="{ 'npc-card-name--long': npc.name.length >= 9 }"
+                                :title="npc.name"
+                            >
+                                {{ npc.name }}
+                            </h4>
                             <h4>
                                 <img
                                     class="npc-card-image"
@@ -1723,10 +1729,18 @@ onUnmounted(() => {
 }
 
 .npc-card-name {
-    min-height: 25px;
+    box-sizing: border-box;
+    height: 25px;
+    overflow: hidden;
     border: 1px solid rgba(201, 164, 90, 0.3);
     font-size: 1rem;
     line-height: 23px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.npc-card-name--long {
+    font-size: 0.75rem;
 }
 
 .npc-card-image {

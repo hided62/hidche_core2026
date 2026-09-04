@@ -89,6 +89,11 @@ export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) 
             name: general.name,
             npcState: general.npcState,
             injury: general.injury,
+            baseStats: {
+                leadership: general.leadership,
+                strength: general.strength,
+                intelligence: general.intel,
+            },
             stats: {
                 leadership: woundedStat(general.leadership, general.injury),
                 strength: woundedStat(general.strength, general.injury),

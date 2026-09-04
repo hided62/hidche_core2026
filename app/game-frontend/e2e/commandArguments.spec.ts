@@ -1112,7 +1112,15 @@ test('defaults founding to a Ref-selectable nation trait and opens colored optio
                         possible: true,
                         status: 'needsInput',
                         inputFields: [
-                            { key: 'nationName', label: '국가명', kind: 'text', required: true, min: 1, max: 18 },
+                            {
+                                key: 'nationName',
+                                label: '국가명',
+                                kind: 'text',
+                                required: true,
+                                min: 1,
+                                max: 18,
+                                legacyWidthMax: 18,
+                            },
                             {
                                 key: 'nationType',
                                 label: '국가 성향',
@@ -1182,6 +1190,9 @@ test('defaults founding to a Ref-selectable nation trait and opens colored optio
     const mobilePicker = page.getByTestId('command-picker');
     await mobilePicker.getByRole('button', { name: '국가', exact: true }).click();
     await mobilePicker.getByRole('button', { name: '건국', exact: true }).click();
+    await mobilePicker.getByLabel('국가명').fill('가나다라마바사아자차');
+    await expect(mobilePicker.getByText('국가명은 전각 9자 또는 반각 18자 이하여야 합니다.')).toBeVisible();
+    await expect(mobilePicker.getByRole('button', { name: '입력', exact: true })).toBeDisabled();
     await mobilePicker.getByLabel('국가명').fill('신국');
     const mobileColorType = mobilePicker.getByLabel('국기 색상');
     await mobileColorType.click();
@@ -1814,9 +1825,9 @@ test('enters general and nation command arguments and sends exact values', async
     await chiefForm.locator('input[type=number]').fill('300');
     const chiefTarget = chiefForm.locator('#command-arg-destGeneralId');
     await expect(chiefTarget.locator('option')).toHaveText([
-        '장수 (아국 · 업)',
-        '여포NPC (아국 · 업)',
-        '관우 (아국 · 업)',
+        '장수 (업)',
+        '관우 (업)',
+        '여포NPC (업)',
     ]);
     await chiefTarget.selectOption('3');
     const geometry = await chiefForm.evaluate((element) => {
@@ -1905,9 +1916,9 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await expect(form).toContainText('가격');
     await expect(form).toContainText('군량');
     await expect(form).toContainText('표준적인 보병입니다.');
-    await expect(form.getByRole('button', { name: '정예병 선택 불가', exact: true })).toHaveCount(0);
+    await expect(form.getByRole('button', { name: '정예병 현재 실행 불가, 예약 가능', exact: true })).toHaveCount(0);
     await form.getByRole('button', { name: '선택 할 수 없는 병종도 보기', exact: true }).click();
-    const unavailable = form.getByRole('button', { name: '정예병 선택 불가', exact: true });
+    const unavailable = form.getByRole('button', { name: '정예병 현재 실행 불가, 예약 가능', exact: true });
     await expect(unavailable).toBeVisible();
     await expect(unavailable.locator('.crew-name')).toHaveCSS('background-color', 'rgb(201, 0, 0)');
     await expect(unavailable.locator('.crew-info')).toHaveText(
@@ -2069,7 +2080,19 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     const mercenaryForm = picker.getByTestId('recruitment-command-form');
     await expect(mercenaryForm).toContainText('모병은 가격 2배의 자금이 소요됩니다.');
     await expect(mercenaryForm.locator('.mobile-selected-panel output')).toHaveText('1,346금');
-    await page.keyboard.press('Escape');
+    await mercenaryForm.getByRole('button', { name: '선택 할 수 없는 병종도 보기', exact: true }).click();
+    const unavailableMercenary = mercenaryForm.getByRole('button', {
+        name: '정예병 현재 실행 불가, 예약 가능',
+        exact: true,
+    });
+    await unavailableMercenary.click();
+    await mercenaryForm.locator('.mobile-selected-panel input[type=number]').fill('25');
+    await expect(mercenaryForm.locator('.mobile-selected-panel .submit-recruit')).toBeEnabled();
+    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await expect(page.locator('[data-command-scope="general"] .action-column > div').nth(1)).toHaveText(
+        '【정예병】 2500명 모병'
+    );
+    expect(JSON.stringify(requests)).toContain('"crewType":1101');
     await expect(picker).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe('hidden');
 });

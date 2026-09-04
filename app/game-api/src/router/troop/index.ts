@@ -224,7 +224,10 @@ export const troopRouter = router({
                     name: troop.name,
                     nationId: troop.nationId,
                     turnTime: leader?.turnTime.toISOString() ?? null,
-                    reservedCommands: reservedByLeader.get(troop.troopLeaderId) ?? [],
+                    reservedCommands:
+                        leader?.npcState === 5
+                            ? ['집합', '집합', '집합', '집합', '집합']
+                            : (reservedByLeader.get(troop.troopLeaderId) ?? []),
                     leader: leader
                         ? {
                               id: leader.id,

@@ -112,10 +112,20 @@ describe('turn command argument input', () => {
         ).toThrow('턴이 입력되지 않았습니다.');
         expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ month: '12', year: 0 })).not.toThrow();
         expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ nationName: '0' })).not.toThrow();
+        expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ nationName: '가나다라마바사아자차' })).toThrow(
+            '국가명은 전각 9자 또는 반각 18자 이하여야 합니다.'
+        );
         expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ year: '0x10' })).toThrow(
             '턴이 입력되지 않았습니다.'
         );
         await expect(parseReservedTurnArgs('nation', 'che_국호변경', { nationName: '0' })).rejects.toBeDefined();
+    });
+
+    it('exposes the Ref fullwidth nation-name limit to command input clients', async () => {
+        const specs = await loadGeneralTurnCommandSpecs(['che_건국']);
+        expect(buildTurnCommandInputFields(specs[0]!)).toContainEqual(
+            expect.objectContaining({ key: 'nationName', legacyWidthMax: 18 })
+        );
     });
 
     it('recursively sanitizes reserved command strings like Ref before command parsing', async () => {

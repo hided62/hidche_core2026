@@ -109,11 +109,17 @@ const resolveScenarioStat = (config: Record<string, unknown>): { max: number; np
 };
 
 const resolveCommandEnv = (
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    worldMeta: Record<string, unknown>
 ): { develCost: number; defaultCrewTypeId: number; maxTechLevel: number } => {
     const constValues = asRecord(config.const ?? config.consts);
+    const configuredDevelCost = resolveNumberFromKeys(constValues, ['develCost', 'develcost', 'develrate'], 0);
     return {
-        develCost: resolveNumberFromKeys(constValues, ['develCost', 'develcost', 'develrate'], 0),
+        develCost: resolveNumberFromKeys(
+            worldMeta,
+            ['develcost', 'develCost', 'develrate'],
+            configuredDevelCost
+        ),
         defaultCrewTypeId: resolveNumberFromKeys(constValues, ['defaultCrewTypeId'], 0),
         maxTechLevel: resolveNumberFromKeys(constValues, ['maxTechLevel'], 12),
     };
@@ -409,7 +415,7 @@ export const npcRouter = router({
 
         const config = asRecord(worldState.config);
         const stat = resolveScenarioStat(config);
-        const env = resolveCommandEnv(config);
+        const env = resolveCommandEnv(config, worldMeta);
         const unitSetName = resolveUnitSetName(config, 'che');
         const nationTech = readNumber(nation.tech, 0);
 

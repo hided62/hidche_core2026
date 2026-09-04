@@ -53,6 +53,7 @@ export type CommandInputField = {
     required: boolean;
     min?: number;
     max?: number;
+    legacyWidthMax?: number;
     step?: number;
     defaultValue?: string | number | boolean;
     constValue?: string | number;

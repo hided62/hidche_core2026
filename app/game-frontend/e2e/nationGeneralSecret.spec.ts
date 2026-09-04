@@ -134,6 +134,7 @@ const npcColorSecretGenerals = npcColorStates.map((npcState) => ({
     name: `색상장수${npcState}`,
     npcState,
     injury: 0,
+    baseStats: { leadership: 70, strength: 60, intelligence: 50 },
     stats: { leadership: 70, strength: 60, intelligence: 50 },
     leadershipBonus: 0,
     experienceLevel: 9,
@@ -205,8 +206,9 @@ const install = async (page: Page, secretAllowed = true, npcColorFixture = false
                                   id: 1,
                                   name: '테스트장수',
                                   npcState: 0,
-                                  injury: 0,
-                                  stats: { leadership: 70, strength: 60, intelligence: 50 },
+                                  injury: 30,
+                                  baseStats: { leadership: 100, strength: 80, intelligence: 60 },
+                                  stats: { leadership: 70, strength: 56, intelligence: 42 },
                                   leadershipBonus: 0,
                                   experienceLevel: 9,
                                   troopId: 0,
@@ -236,6 +238,7 @@ const install = async (page: Page, secretAllowed = true, npcColorFixture = false
                                   name: '부유장수',
                                   npcState: 0,
                                   injury: 0,
+                                  baseStats: { leadership: 60, strength: 50, intelligence: 40 },
                                   stats: { leadership: 60, strength: 50, intelligence: 40 },
                                   leadershipBonus: 0,
                                   experienceLevel: 8,
@@ -644,6 +647,12 @@ test('secret office renders five Ref-style command briefs and the forbidden erro
         '5 : 휴식',
     ]);
     await expect(commandRows.nth(2)).toHaveAttribute('title', '【다른장수】에게 쌀 200을 증여');
+    const woundedName = page.locator('[data-directory-tooltip="secret-injury-name-1"]');
+    const woundedLeadership = page.locator('[data-directory-tooltip="secret-injury-leadership-1"]');
+    await expect(woundedName.locator('[data-general-name]')).toHaveCSS('color', 'rgb(255, 165, 0)');
+    await expect(woundedLeadership.locator('span').first()).toHaveCSS('color', 'rgb(255, 165, 0)');
+    await woundedLeadership.hover();
+    await expect(woundedLeadership.getByRole('tooltip')).toContainText('부상 30% · 중상 · 원래 통솔 100 → 적용 70');
     const geometry = await page
         .locator('#secret-general-list .turns')
         .first()

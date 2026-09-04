@@ -1149,6 +1149,8 @@ export class GeneralAI {
         const effectiveOfficerLevel = new Map(generals.map((candidate) => [candidate.id, candidate.officerLevel]));
 
         let userChiefCount = 0;
+        let ambassadorCount = 0;
+        const assignedAmbassadorIds = new Set<number>();
         const worldKillturn = readMetaNumber(asRecord(this.world.meta), 'killturn', 0);
         const minUserKillturn = worldKillturn - Math.trunc(240 / this.turnTermMinutes);
         const minNpcKillturn = 36;
@@ -1162,13 +1164,25 @@ export class GeneralAI {
             const killturn = readRequiredMetaNumber(asRecord(chief.meta), 'killturn', `generalId=${chief.id}`);
             if (chief.npcState < 2 && killturn >= minUserKillturn && penalty.noAmbassador !== true) {
                 userChiefCount += 1;
-                chief.meta = { ...chief.meta, permission: 'ambassador' };
-                this.promotionPatches.push({
-                    generalId: chief.id,
-                    officerLevel: chief.officerLevel,
-                    officerCity: readMetaNumber(asRecord(chief.meta), 'officer_city', 0),
-                    permission: 'ambassador',
-                });
+                if (ambassadorCount < 2) {
+                    ambassadorCount += 1;
+                    assignedAmbassadorIds.add(chief.id);
+                    chief.meta = { ...chief.meta, permission: 'ambassador' };
+                    this.promotionPatches.push({
+                        generalId: chief.id,
+                        officerLevel: chief.officerLevel,
+                        officerCity: readMetaNumber(asRecord(chief.meta), 'officer_city', 0),
+                        permission: 'ambassador',
+                    });
+                } else if (asRecord(chief.meta).permission === 'ambassador') {
+                    chief.meta = { ...chief.meta, permission: 'normal' };
+                    this.promotionPatches.push({
+                        generalId: chief.id,
+                        officerLevel: chief.officerLevel,
+                        officerCity: readMetaNumber(asRecord(chief.meta), 'officer_city', 0),
+                        permission: 'normal',
+                    });
+                }
             }
         }
 
@@ -1222,7 +1236,7 @@ export class GeneralAI {
                     this.promotionPatches.push({ generalId: oldChief.id, officerLevel: 1, officerCity: 0 });
                     effectiveOfficerLevel.set(oldChief.id, 1);
                 }
-                const permission = penalty.noAmbassador === true ? undefined : 'ambassador';
+                const permission = penalty.noAmbassador !== true && ambassadorCount < 2 ? 'ambassador' : undefined;
                 candidate.officerLevel = 11;
                 candidate.meta = {
                     ...candidate.meta,
@@ -1238,6 +1252,10 @@ export class GeneralAI {
                 effectiveOfficerLevel.set(candidate.id, 11);
                 chiefSet |= 1 << 11;
                 userChiefCount += 1;
+                if (permission) {
+                    ambassadorCount += 1;
+                    assignedAmbassadorIds.add(candidate.id);
+                }
                 break;
             }
         }
@@ -1307,9 +1325,15 @@ export class GeneralAI {
                 this.promotionPatches.push({ generalId: oldChief.id, officerLevel: 1, officerCity: 0 });
             }
             const permission =
-                nextChief.npcState < 2 && asRecord(nextChief.penalty).noAmbassador !== true ? 'ambassador' : undefined;
+                nextChief.npcState < 2 && asRecord(nextChief.penalty).noAmbassador !== true && ambassadorCount < 2
+                    ? 'ambassador'
+                    : undefined;
             if (nextChief.npcState < 2) {
                 userChiefCount += 1;
+            }
+            if (permission) {
+                ambassadorCount += 1;
+                assignedAmbassadorIds.add(nextChief.id);
             }
             this.promotionPatches.push({
                 generalId: nextChief.id,
@@ -1329,6 +1353,25 @@ export class GeneralAI {
             };
             effectiveOfficerLevel.set(nextChief.id, chiefLevel);
             chiefSet |= 1 << chiefLevel;
+        }
+
+        for (const candidate of generals) {
+            if (
+                asRecord(candidate.meta).permission !== 'ambassador' ||
+                assignedAmbassadorIds.has(candidate.id) ||
+                this.promotionPatches.some(
+                    (patch) => patch.generalId === candidate.id && patch.permission === 'normal'
+                )
+            ) {
+                continue;
+            }
+            candidate.meta = { ...candidate.meta, permission: 'normal' };
+            this.promotionPatches.push({
+                generalId: candidate.id,
+                officerLevel: effectiveOfficerLevel.get(candidate.id) ?? candidate.officerLevel,
+                officerCity: readMetaNumber(asRecord(candidate.meta), 'officer_city', 0),
+                permission: 'normal',
+            });
         }
 
         if (chiefSet !== initialChiefSet) {

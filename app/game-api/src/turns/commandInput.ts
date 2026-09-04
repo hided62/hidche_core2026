@@ -79,6 +79,7 @@ export interface TurnCommandInputField {
     required: boolean;
     min?: number;
     max?: number;
+    legacyWidthMax?: number;
     step?: number;
     defaultValue?: TurnCommandOptionValue | boolean;
     constValue?: TurnCommandOptionValue;
@@ -328,6 +329,7 @@ const buildField = (key: string, rawSchema: unknown, required: boolean): TurnCom
             required,
             min: typeof schema.minLength === 'number' ? schema.minLength : undefined,
             max: typeof schema.maxLength === 'number' ? schema.maxLength : undefined,
+            legacyWidthMax: key === 'nationName' ? 18 : undefined,
         };
     }
 
@@ -565,7 +567,7 @@ export const assertReservedTurnArgsPassLegacyBasicValidation = (rawArgs: unknown
                 getLegacyStringWidth(nationName) < 1 ||
                 getLegacyStringWidth(nationName) > 18)
         ) {
-            throwLegacyBasicTurnArgError();
+            throw new Error('국가명은 전각 9자 또는 반각 18자 이하여야 합니다.');
         }
     }
 };

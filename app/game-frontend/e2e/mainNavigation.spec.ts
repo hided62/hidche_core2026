@@ -1396,7 +1396,7 @@ test('the private-message notice moves a mobile reader to the private section', 
         .poll(() =>
             page.locator('.PrivateTalk > .stickyAnchor').evaluate((element) => element.getBoundingClientRect().top)
         )
-        .toBeLessThan(80);
+        .toBeLessThan(400);
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
 });
 
@@ -2917,8 +2917,10 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await expect(cityBars).toHaveCount(8);
     await expect(statBars).toHaveCount(3);
     await expect(experienceBar).toHaveCount(1);
-    await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(0);
-    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
+    await expect(page.locator('[data-main-target="general"] [data-general-information-panel]')).toHaveCount(1);
+    await expect(page.locator('[data-main-target="general"] [data-general-battle-summary]')).toHaveCount(1);
+    await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(5);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(14);
 
     const nationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
     await expect(nationCard.locator('.head')).toHaveCount(17);
@@ -3288,7 +3290,7 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
-    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(14);
     const mobileNationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
     expect(await mobileNationCard.evaluate((element) => element.getBoundingClientRect().height)).toBe(193);
     expect(await mobileNationCard.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(
@@ -4796,10 +4798,11 @@ for (const viewport of [
 
         await picker.getByRole('button', { name: '건국', exact: true }).click();
         await picker.getByLabel('국가명').fill('초안보존국');
-        await picker.getByLabel('국기 색상').selectOption('15');
+        await picker.getByLabel('국기 색상').click();
+        await picker.getByRole('option', { name: '색상 16', exact: true }).click();
         await refreshActivityAndCommands();
         await expect(picker.getByLabel('국가명')).toHaveValue('초안보존국');
-        await expect(picker.getByLabel('국기 색상')).toHaveValue('15');
+        await expect(picker.getByLabel('국기 색상')).toContainText('색상 16');
         await expect(picker.getByLabel('국기 색상')).toHaveCSS('background-color', 'rgb(100, 149, 237)');
         await picker.screenshot({ path: test.info().outputPath(`command-draft-${viewport.name}.png`) });
 

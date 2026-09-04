@@ -711,7 +711,7 @@ describe('legacy NPC user-chief promotion parity', () => {
         expect(ai.consumePromotionPatches()).toEqual({ generals: [], nationMeta: null });
     });
 
-    it('does not appoint a fourth user chief in the ordinary NPC-ruler fill pass', () => {
+    it('keeps NPC-assigned diplomatic authority at two even when three user chiefs exist', () => {
         const ruler = makePromotionGeneral({
             id: 1,
             officerLevel: 12,
@@ -745,11 +745,11 @@ describe('legacy NPC user-chief promotion parity', () => {
         const promotion = ai.consumePromotionPatches();
         const result = promotion.generals;
         expect(result.filter((entry) => entry.generalId === candidate.id)).toEqual([]);
-        expect(result).toHaveLength(3);
+        expect(result).toHaveLength(2);
         expect(promotion.nationMeta).toBeNull();
         expect(result).toEqual(
             expect.arrayContaining(
-                existingChiefs.map((chief) => ({
+                existingChiefs.slice(1).map((chief) => ({
                     generalId: chief.id,
                     officerLevel: chief.officerLevel,
                     officerCity: 0,
@@ -757,6 +757,52 @@ describe('legacy NPC user-chief promotion parity', () => {
                 }))
             )
         );
+    });
+
+    it('repairs a third diplomatic authority left by an earlier NPC promotion pass', () => {
+        const ruler = makePromotionGeneral({
+            id: 1,
+            officerLevel: 12,
+            npcState: 2,
+            meta: { killturn: 100, belong: 4 },
+        });
+        const existingChiefs = [11, 10, 9].map((officerLevel, index) =>
+            makePromotionGeneral({
+                id: index + 2,
+                npcState: 0,
+                officerLevel,
+                meta: { killturn: 100, belong: 4, officer_city: 0, permission: 'ambassador' },
+            })
+        );
+        const formerChief = makePromotionGeneral({
+            id: 5,
+            npcState: 0,
+            officerLevel: 1,
+            meta: { killturn: 100, belong: 4, officer_city: 0, permission: 'ambassador' },
+        });
+        const ai = makePromotionAi({
+            ruler,
+            generals: [ruler, ...existingChiefs, formerChief],
+            nation: { level: 6 },
+            userGenerals: [...existingChiefs, formerChief],
+            chiefGenerals: [ruler, ...existingChiefs],
+        });
+
+        chooseNpcPromotion(ai);
+
+        const promotion = ai.consumePromotionPatches();
+        expect(promotion.generals).toContainEqual({
+            generalId: existingChiefs[0]!.id,
+            officerLevel: 11,
+            officerCity: 0,
+            permission: 'normal',
+        });
+        expect(promotion.generals).toContainEqual({
+            generalId: formerChief.id,
+            officerLevel: 1,
+            officerCity: 0,
+            permission: 'normal',
+        });
     });
 
     it('lets an NPC non-ruler fill an open seat with a user immediately when no NPC pool exists', () => {
@@ -1561,6 +1607,7 @@ describe('legacy NPC AI final-decision parity', () => {
         });
         expect(do집합(ai)?.action).toBe('che_집합');
         expect(ai.general.meta.killturn).toBe(72);
+        expect(ai.general.meta.killturn).toBeGreaterThanOrEqual(70);
     });
 
     it('does not warp to the rear when recruitment is disabled', () => {

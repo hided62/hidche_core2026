@@ -4,7 +4,9 @@ import { computed, onMounted, ref } from 'vue';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
+import DirectoryTooltip from '../components/directory/DirectoryTooltip.vue';
 import { getNpcColor } from '../utils/npcColor';
+import { generalInjuryPresentation } from '../utils/generalInjury';
 import { trpc } from '../utils/trpc';
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
 type ReservedCommand = Result['generals'][number]['reservedCommands'][number];
@@ -48,6 +50,18 @@ const generals = computed(() =>
 const closeWindow = () => window.close();
 const displayName = (general: { name: string; npcState: number }) =>
     general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+const injuryInfo = (injury: number) => generalInjuryPresentation(injury);
+const injuryDescription = (general: Result['generals'][number]): string =>
+    general.injury > 0 ? `부상 ${general.injury}% · ${injuryInfo(general.injury).text}` : '';
+const statInjuryDescription = (
+    general: Result['generals'][number],
+    label: string,
+    original: number,
+    effective: number
+): string =>
+    general.injury > 0
+        ? `부상 ${general.injury}% · ${injuryInfo(general.injury).text} · 원래 ${label} ${original} → 적용 ${effective}`
+        : '';
 const commandBrief = (command: ReservedCommand): string =>
     formatReservedCommandBrief('general', command.action, command.args, commandTable.value);
 const updateSelectedSort = (value: number): void => {
@@ -229,15 +243,72 @@ onMounted(load);
                         :data-npc-state="general.npcState"
                     >
                         <td>
-                            <span data-general-name :style="{ color: getNpcColor(general.npcState) }">{{
-                                displayName(general)
-                            }}</span
+                            <DirectoryTooltip
+                                :title="`부상 · ${injuryInfo(general.injury).text}`"
+                                :description="injuryDescription(general)"
+                                :test-id="`secret-injury-name-${general.id}`"
+                            >
+                                <span
+                                    data-general-name
+                                    :style="{
+                                        color:
+                                            general.injury > 0
+                                                ? injuryInfo(general.injury).color
+                                                : getNpcColor(general.npcState),
+                                    }"
+                                    >{{ displayName(general) }}</span
+                                > </DirectoryTooltip
                             ><br />Lv {{ general.experienceLevel }}
                         </td>
                         <td>
-                            {{ general.stats.leadership
-                            }}<span v-if="general.leadershipBonus" class="bonus">+{{ general.leadershipBonus }}</span
-                            >∥{{ general.stats.strength }}∥{{ general.stats.intelligence }}
+                            <DirectoryTooltip
+                                title="통솔 부상"
+                                :description="
+                                    statInjuryDescription(
+                                        general,
+                                        '통솔',
+                                        general.baseStats.leadership,
+                                        general.stats.leadership
+                                    )
+                                "
+                                :test-id="`secret-injury-leadership-${general.id}`"
+                            >
+                                <span :style="{ color: injuryInfo(general.injury).color }">{{
+                                    general.stats.leadership
+                                }}</span
+                                ><span v-if="general.leadershipBonus" class="bonus"
+                                    >+{{ general.leadershipBonus }}</span
+                                >
+                            </DirectoryTooltip>
+                            ∥<DirectoryTooltip
+                                title="무력 부상"
+                                :description="
+                                    statInjuryDescription(
+                                        general,
+                                        '무력',
+                                        general.baseStats.strength,
+                                        general.stats.strength
+                                    )
+                                "
+                                :test-id="`secret-injury-strength-${general.id}`"
+                                ><span :style="{ color: injuryInfo(general.injury).color }">{{
+                                    general.stats.strength
+                                }}</span></DirectoryTooltip
+                            >∥<DirectoryTooltip
+                                title="지력 부상"
+                                :description="
+                                    statInjuryDescription(
+                                        general,
+                                        '지력',
+                                        general.baseStats.intelligence,
+                                        general.stats.intelligence
+                                    )
+                                "
+                                :test-id="`secret-injury-intelligence-${general.id}`"
+                                ><span :style="{ color: injuryInfo(general.injury).color }">{{
+                                    general.stats.intelligence
+                                }}</span></DirectoryTooltip
+                            >
                         </td>
                         <td>{{ general.troopName ?? '-' }}</td>
                         <td>{{ general.gold }}</td>

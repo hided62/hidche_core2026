@@ -49,6 +49,7 @@ const redactDiplomacyMessages = (messages: MessageView[], permission: number): M
         return {
             ...message,
             text: '조회 권한이 없는 외교 메시지입니다.',
+            option: { ...(message.option ?? {}), permissionRedacted: true },
         };
     });
 };

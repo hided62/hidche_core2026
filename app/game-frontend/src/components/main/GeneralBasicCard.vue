@@ -9,6 +9,7 @@ import { legacyExperiencePercent, ratioPercent } from '../../utils/legacyProgres
 import { DEFAULT_GENERAL_ICON_URL, resolveGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
 import { configuredGameAssetUrl } from '../../utils/imageAssets';
 import { legacyLuminanceTextColor } from '../../utils/legacyNationColor';
+import { generalInjuryPresentation } from '../../utils/generalInjury';
 
 interface GeneralStats {
     leadership: number;
@@ -175,14 +176,7 @@ const crewTypeIconBackground = computed(() => {
     return `url(${JSON.stringify(crewTypeUrl)}), url(${JSON.stringify(DEFAULT_GENERAL_ICON_URL)})`;
 });
 
-const injuryInfo = computed(() => {
-    const injury = props.general?.injury ?? 0;
-    if (injury > 60) return { text: '위독', color: '#ff0000' };
-    if (injury > 40) return { text: '심각', color: '#ff00ff' };
-    if (injury > 20) return { text: '중상', color: '#ffa500' };
-    if (injury > 0) return { text: '경상', color: '#ffff00' };
-    return { text: '건강', color: '#ffffff' };
-});
+const injuryInfo = computed(() => generalInjuryPresentation(props.general?.injury ?? 0));
 
 const titleStyle = computed(() => {
     const backgroundColor = props.nationColor || '#173d27';

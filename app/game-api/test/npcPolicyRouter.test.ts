@@ -161,6 +161,20 @@ describe('NPC policy router', () => {
         });
     });
 
+    it('uses the live world development cost instead of the scenario snapshot', async () => {
+        const fixture = createContext({
+            world: {
+                ...baseWorld,
+                config: { ...baseWorld.config, const: { develCost: 100 } },
+                meta: { ...baseWorld.meta, develcost: 42 } as typeof baseWorld.meta & { develcost: number },
+            },
+        });
+
+        const result = await appRouter.createCaller(fixture.context).npc.getPolicy();
+
+        expect(result.zeroPolicy.reqNPCDevelGold).toBe(1_260);
+    });
+
     it('lets a secret-level reader load the page while mapping authoritative ENGINE rejection', async () => {
         const reader = { ...baseGeneral, officerLevel: 2 };
         const requestCommand = vi.fn(async () => ({

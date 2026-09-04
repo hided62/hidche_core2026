@@ -24,9 +24,9 @@ const crewTypes = computed(() => props.info.groups.flatMap((group) => group.valu
 const selectedCrewType = computed(
     () => crewTypes.value.find((crewType) => crewType.id === selectedCrewTypeId.value) ?? crewTypes.value[0] ?? null
 );
-const valid = computed(
-    () => Boolean(selectedCrewType.value?.available) && Number.isFinite(amount.value) && amount.value >= 1
-);
+// 예약 시점에는 아직 조건을 충족하지 않는 병종도 선택할 수 있어야 한다.
+// 실제 실행 가능 여부는 턴 실행 시점의 기술/국가/장수 상태로 다시 판정한다.
+const valid = computed(() => Boolean(selectedCrewType.value) && Number.isFinite(amount.value) && amount.value >= 1);
 const estimatedGold = computed(() =>
     selectedCrewType.value ? Math.ceil(amount.value * selectedCrewType.value.baseCost * goldCoefficient.value) : 0
 );
@@ -135,7 +135,7 @@ watch(
                     type="button"
                     class="crew-name"
                     :class="availabilityClass(selectedCrewType)"
-                    :title="selectedCrewType.available ? '현재 선택 가능' : '현재 선택 불가'"
+                    :title="selectedCrewType.available ? '현재 실행 가능' : '현재 실행 불가 · 예약 가능'"
                 >
                     {{ selectedCrewType.name }}<small>{{ selectedCrewType.available ? '가능' : '불가' }}</small>
                 </button>
@@ -189,7 +189,7 @@ watch(
                     :class="{ selected: crewType.id === selectedCrewTypeId }"
                     role="button"
                     tabindex="0"
-                    :aria-label="`${crewType.name} ${crewType.available ? '선택 가능' : '선택 불가'}`"
+                    :aria-label="`${crewType.name} ${crewType.available ? '선택 가능' : '현재 실행 불가, 예약 가능'}`"
                     @click="selectCrewType(crewType)"
                     @keydown.enter="selectCrewType(crewType)"
                 >
@@ -256,7 +256,7 @@ watch(
                         </label>
                     </span>
                     <span class="crew-action" @click.stop>
-                        <button type="button" :disabled="!crewType.available" @click="submit(crewType)">
+                        <button type="button" @click="submit(crewType)">
                             {{ commandName }}
                         </button>
                     </span>

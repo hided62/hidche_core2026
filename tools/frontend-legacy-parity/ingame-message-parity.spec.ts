@@ -154,7 +154,7 @@ const buildMessages = (permission: number, tombstonedMessageIds: ReadonlySet<num
             option:
                 permission >= 3
                     ? { action: 'noAggression', deletable: false }
-                    : { action: 'noAggression', deletable: false },
+                    : { action: 'noAggression', deletable: false, permissionRedacted: true },
             time: messageTime,
         },
     ],
@@ -516,6 +516,11 @@ test('redacts diplomacy for a low-permission general and preserves the failed-se
     await expect(page.locator('.DiplomacyTalk')).toContainText('조회 권한이 없는 외교 메시지입니다.');
     await expect(page.locator('.DiplomacyTalk')).not.toContainText('삭제된 메시지입니다');
     await expect(page.locator('.DiplomacyTalk')).not.toContainText('외교 메시지 본문');
+    const redactedPlate = page.locator('.DiplomacyTalk .msg-plate-permission-redacted');
+    await expect(redactedPlate).toBeVisible();
+    await expect(redactedPlate).toContainText('권한 제한');
+    await expect(redactedPlate).toHaveCSS('outline-style', 'dashed');
+    await expect(redactedPlate.locator('.general-icon')).toHaveCSS('filter', 'grayscale(1)');
     await expect(page.locator('.DiplomacyTalk .message-response button').first()).toBeDisabled();
     if (artifactRoot) {
         await mkdir(artifactRoot, { recursive: true });

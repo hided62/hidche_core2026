@@ -12,6 +12,7 @@ import {
 } from '../command/commandArgumentDraft';
 import { legacyNationTextColor } from '../../utils/legacyNationColor';
 import { getNpcColor } from '../../utils/npcColor';
+import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 import type {
     CommandInputContext,
     CommandInputField,
@@ -309,6 +310,14 @@ const setNumberPreset = (field: CommandInputField, rawValue: string, tupleIndex?
 const effectiveMin = (field: CommandInputField): number | undefined => amountPreset.value?.min ?? field.min;
 const effectiveMax = (field: CommandInputField): number | undefined => amountPreset.value?.max ?? field.max;
 const effectiveStep = (field: CommandInputField): number | undefined => amountPreset.value?.step ?? field.step;
+const textFieldError = (field: CommandInputField): string => {
+    const value = values[field.key];
+    if (field.kind !== 'text' || typeof value !== 'string') return '';
+    if (field.legacyWidthMax !== undefined && getLegacyStringWidth(value.trim()) > field.legacyWidthMax) {
+        return `${field.label}은 전각 ${Math.floor(field.legacyWidthMax / 2)}자 또는 반각 ${field.legacyWidthMax}자 이하여야 합니다.`;
+    }
+    return '';
+};
 
 const OPTION_CARD_COMMANDS = new Set([
     'che_물자원조',
@@ -334,7 +343,8 @@ const isValid = computed(() =>
             return (
                 (!field.required || length > 0) &&
                 (field.min === undefined || length >= field.min) &&
-                (field.max === undefined || length <= field.max)
+                (field.max === undefined || length <= field.max) &&
+                !textFieldError(field)
             );
         }
         if (field.kind === 'number') {
@@ -429,8 +439,18 @@ watch(
                 :value="String(values[field.key] ?? '')"
                 :minlength="field.min"
                 :maxlength="field.max"
+                :aria-invalid="Boolean(textFieldError(field))"
+                :aria-describedby="textFieldError(field) ? `command-arg-${field.key}-error` : undefined"
                 @input="values[field.key] = ($event.target as HTMLInputElement).value"
             />
+            <small
+                v-if="field.kind === 'text' && textFieldError(field)"
+                :id="`command-arg-${field.key}-error`"
+                class="argument-error"
+                role="alert"
+            >
+                {{ textFieldError(field) }}
+            </small>
             <div v-else-if="field.kind === 'number'" class="number-options">
                 <input
                     :id="`command-arg-${field.key}`"
@@ -645,6 +665,12 @@ watch(
     grid-template-columns: minmax(76px, 0.36fr) 1fr;
     min-height: 34px;
     align-items: center;
+}
+
+.argument-error {
+    grid-column: 2;
+    margin: -2px 6px 5px 0;
+    color: #ff9a9a;
 }
 
 .option-detail {

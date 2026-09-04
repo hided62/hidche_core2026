@@ -154,6 +154,7 @@ describe('nation general and secret office permissions', () => {
         const ally = general({
             id: 3,
             userId: 'u3',
+            injury: 25,
             gold: 3000,
             crew: 200,
             train: 80,
@@ -166,6 +167,10 @@ describe('nation general and secret office permissions', () => {
         expect(result.viewer).toEqual({ generalId: 2, permission: 2 });
         expect(result.generals.map((g) => g.id)).toEqual([1, 2, 3]);
         expect(result.generals.find((entry) => entry.id === 3)?.experienceLevel).toBe(200);
+        expect(result.generals.find((entry) => entry.id === 3)).toMatchObject({
+            baseStats: { leadership: 70, strength: 60, intelligence: 50 },
+            stats: { leadership: 52, strength: 45, intelligence: 37 },
+        });
         expect(result.summary).toMatchObject({ gold: 5000, crew: 800, generalCount: 3 });
         expect(result.generals[0]?.reservedCommands).toEqual([
             { action: 'che_징병', args: { crewType: 1, amount: 300 } },

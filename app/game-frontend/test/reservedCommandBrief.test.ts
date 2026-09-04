@@ -100,7 +100,37 @@ const table: CommandTable = {
                 { value: 'che_명마_01_노기', label: '노기(+1)' },
             ],
         },
-        recruitment: null,
+        recruitment: {
+            techLevel: 1,
+            leadership: 70,
+            fullLeadership: 70,
+            currentCrewTypeId: 1100,
+            currentCrewTypeName: '보병',
+            crew: 0,
+            gold: 1000,
+            groups: [
+                {
+                    armType: 0,
+                    armName: '보병',
+                    values: [
+                        {
+                            id: 1200,
+                            armType: 0,
+                            name: '정예병',
+                            available: false,
+                            special: true,
+                            attack: 10,
+                            defence: 10,
+                            speed: 10,
+                            avoid: 10,
+                            baseCost: 10,
+                            baseRice: 10,
+                            info: [],
+                        },
+                    ],
+                },
+            ],
+        },
     },
 };
 
@@ -111,6 +141,10 @@ void test('Ref getBrief를 상속하는 출병·계략·모병까지 실제 인�
     assert.equal(
         formatReservedCommandBrief('general', 'che_모병', { crewType: 1100, amount: 2400 }, table),
         '【보병】 2400명 모병'
+    );
+    assert.equal(
+        formatReservedCommandBrief('general', 'che_모병', { crewType: 1200, amount: 2500 }, table),
+        '【정예병】 2500명 모병'
     );
 });
 
@@ -131,7 +165,7 @@ void test('개인·인사·국가 명령의 Ref brief 변형을 보존한다', (
         ['che_증여', { destGeneralId: 8, amount: 200, isGold: true }, '【손권】에게 금 200을 증여'],
         ['che_징병', { crewType: 1100, amount: 3200 }, '【보병】 3200명 징병'],
         ['che_숙련전환', { srcArmType: 0, destArmType: 1 }, '【보병】숙련을 【궁병】숙련으로 전환'],
-        ['che_장비매매', { itemType: 'horse', itemCode: 'None' }, '명마를 판매'],
+        ['che_장비매매', { itemType: 'horse', itemCode: 'None' }, '【명마】를 판매.'],
         ['che_장비매매', { itemType: 'horse', itemCode: 'che_명마_01_노기' }, '【노기(+1)】를 구입'],
     ];
     for (const [action, args, expected] of cases) {

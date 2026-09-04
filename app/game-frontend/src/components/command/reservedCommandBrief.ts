@@ -59,7 +59,6 @@ const numberText = (value: unknown, grouped = false): string => {
 };
 
 const wrap = (value: string): string => `【${value}】`;
-const withParticle = (value: string, particle: '을' | '으로'): string => `${value}${JosaUtil.pick(value, particle)}`;
 const wrappedWithParticle = (value: string, particle: '을' | '으로'): string =>
     `${wrap(value)}${JosaUtil.pick(value, particle)}`;
 
@@ -134,7 +133,11 @@ export const formatReservedCommandBrief = (
         return `${wrap(generalName)}에게 ${args.isGold ? '금' : '쌀'} ${numberText(args.amount)}을 ${commandName}`;
     }
     if (action === 'che_징병' || action === 'che_모병') {
-        const crewType = optionLabel(input?.crewTypes ?? [], args.crewType);
+        const crewType =
+            optionLabel(input?.crewTypes ?? [], args.crewType) ??
+            input?.recruitment?.groups
+                .flatMap((group) => group.values)
+                .find((entry) => entry.id === args.crewType)?.name;
         if (crewType) return `${wrap(crewType)} ${numberText(args.amount)}명 ${commandName}`;
     }
     if (action === 'che_숙련전환') {
@@ -146,7 +149,7 @@ export const formatReservedCommandBrief = (
         const itemType = typeof args.itemType === 'string' ? args.itemType : '';
         if (args.itemCode === 'None') {
             const itemTypeName = ITEM_TYPE_NAMES[itemType];
-            if (itemTypeName) return `${withParticle(itemTypeName, '을')} 판매`;
+            if (itemTypeName) return `${wrap(itemTypeName)}${JosaUtil.pick(itemTypeName, '을')} 판매.`;
         }
         const itemName = optionLabel(input?.items[itemType] ?? [], args.itemCode);
         if (itemName) {
