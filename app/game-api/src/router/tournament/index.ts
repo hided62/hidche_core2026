@@ -103,6 +103,9 @@ const withTournamentBetClockMutation = async <T>(
 const tournamentBetCommandRequestId = (requestId: string | undefined, step: string): string | undefined =>
     requestId ? `${requestId}:tournamentBet:${step}` : undefined;
 
+const tournamentJoinCommandRequestId = (requestId: string | undefined, step: string): string | undefined =>
+    requestId ? `${requestId}:tournamentJoin:${step}` : undefined;
+
 const zTournamentState = z.object({
     stage: z.number().int().min(0),
     phase: z.number().int().min(0),
@@ -453,7 +456,9 @@ export const tournamentRouter = router({
 
         return { state, totals, myTotals, totalAmount, myAmount };
     }),
-    join: authedProcedure.mutation(async ({ ctx }) => {
+    // 참가비는 ENGINE transaction이 차감한다. API input-event transaction으로
+    // 감싸면 clock advisory lock을 쥔 채 child ENGINE event를 기다리게 된다.
+    join: engineAuthedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         return withTournamentClockMutation(ctx, store, async () => {
@@ -476,6 +481,7 @@ export const tournamentRouter = router({
             const develCost = resolveCurrentDevelCost(worldState);
             const feeResult = await ctx.turnDaemon.requestCommand({
                 type: 'adjustGeneralResources',
+                requestId: tournamentJoinCommandRequestId(ctx.requestId, 'resources'),
                 reason: 'tournamentJoin',
                 adjustments: [{ generalId: general.id, goldDelta: -develCost, minGoldAfter: 0 }],
             });
@@ -511,6 +517,7 @@ export const tournamentRouter = router({
             } catch (error) {
                 await ctx.turnDaemon.requestCommand({
                     type: 'adjustGeneralResources',
+                    requestId: tournamentJoinCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
                     reason: 'tournamentJoinRollback',
                     adjustments: [{ generalId: general.id, goldDelta: develCost }],
                 });

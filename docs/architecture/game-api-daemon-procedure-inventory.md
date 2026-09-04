@@ -17,7 +17,8 @@ transaction을 만든다. `engineAuthedProcedure`, `accessEngineAuthedProcedure`
 - **ENGINE 전환**: API는 actor/입력과 조기 오류를 읽을 뿐 durable DB 변경은 ENGINE
   transaction이 소유하고, ENGINE handler가 mutation 직전 mutable state를 다시 검증한다.
 - **혼합/saga 필요**: API DB write, Redis 원본 상태, 보상 명령 또는 API snapshot에서만
-  수행하는 권한/값 합성이 ENGINE 변경과 결합한다. procedure만 바꾸지 않는다.
+  수행하는 권한/값 합성이 ENGINE 변경과 결합한다. durable saga 없이는 단일 transaction으로
+  오인하지 않으며, ENGINE 완료를 기다리는 route는 API outer transaction을 열지 않는다.
 - **기존 ENGINE**: 이 inventory의 기존 기준선에서 이미 ENGINE procedure였고 API
   outer input event가 없었다.
 - **ENGINE 소유 + 불필요한 API outer**: gameplay durable mutation은 ENGINE이 전부
@@ -55,7 +56,7 @@ selection-pool create/reselect는 client request ID가 있을 때
 | route | 현재 procedure / outer transaction | 보류 근거 |
 | --- | --- | --- |
 | `messages.respond` | `authedProcedure`, action별 분기 (`app/game-api/src/router/messages/index.ts:318-372`) | `scout`/`raiseInvader`는 `messageRespond` ENGINE command가 처리하지만 `noAggression`/`cancelNA`/`stopWar`는 API transaction의 `respondToDiplomaticMessage` 경로가 처리한다. route 전체를 ENGINE-owned로 보지 않는다. |
-| `tournament.join`, `tournament.placeBet` | `authedProcedure`, outer 있음 (`app/game-api/src/router/tournament/index.ts:393-458`, `:515-620`) | PostgreSQL ENGINE resource/meta 명령과 Redis-owned participants/bets를 결합하고 실패 시 보상 ENGINE 명령을 보낸다. 하나의 DB transaction이 아니며 durable saga/Redis atomic revision이 필요하다. |
+| `tournament.join`, `tournament.placeBet` | `engineAuthedProcedure`, API outer 없음 (`app/game-api/src/router/tournament/index.ts`) | PostgreSQL ENGINE resource/meta 명령과 Redis-owned participants/bets를 결합하고 실패 시 보상 ENGINE 명령을 보낸다. API clock advisory lock을 잡은 채 child ENGINE transaction을 기다리지 않으며, command에는 HTTP request-scoped step ID를 전달한다. 여전히 하나의 DB transaction이 아니므로 durable saga/reconciliation이 필요하다. |
 
 합계 **3개 route**다.
 
@@ -93,6 +94,8 @@ selection-pool create/reselect는 client request ID가 있을 때
 - `app/game-api/test/troopRouter.test.ts`: troop mutation의 동일 계약을 검증한다.
 - `app/game-api/test/auctionRouter.test.ts`: auction mutation이 API transaction 없이
   daemon command와 Redis timer projection을 완료하는 계약을 검증한다.
+- `app/game-api/test/tournamentRouter.test.ts`: 참가·베팅이 API transaction을 열지 않고
+  request-scoped ENGINE command ID와 Redis mutation lock을 사용하는지 검증한다.
 - `app/game-api/test/inheritRouter.test.ts`,
   `app/game-engine/test/inheritanceActionPersistence.integration.test.ts`: 인증 actor, point/log,
   general/message 변경이 `inheritanceAction` ENGINE transaction에 함께 있는지 검증한다.

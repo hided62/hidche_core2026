@@ -277,15 +277,33 @@ describe('tournament router permissions and mutations', () => {
             nextAt: '2026-07-26T01:00:00.000Z',
         });
         await redis.set('sammo:che:default:tournament:participants', '[]');
-        const caller = appRouter.createCaller(
-            buildContext({ redis, transport, generals: [general], userId: 'user-1', develCost: 200 })
-        );
+        const context = buildContext({
+            redis,
+            transport,
+            generals: [general],
+            userId: 'user-1',
+            develCost: 200,
+            requestId: 'http:tournament-join',
+        });
+        const outerApiTransaction = vi.fn(async () => {
+            throw new Error('tournament join must not hold an API transaction while waiting for the daemon');
+        });
+        Object.assign(context.db, { $transaction: outerApiTransaction });
+        const caller = appRouter.createCaller(context);
 
         await expect(caller.tournament.join()).resolves.toEqual({ ok: true, count: 1 });
         await expect(caller.tournament.join()).resolves.toEqual({ ok: true, count: 1 });
 
         expect(transport.gold.get(general.id)).toBe(1_800);
         expect(transport.commands.filter((command) => command.type === 'adjustGeneralResources')).toHaveLength(1);
+        expect(transport.commands).toContainEqual(
+            expect.objectContaining({
+                type: 'adjustGeneralResources',
+                requestId: 'http:tournament-join:tournamentJoin:resources',
+                reason: 'tournamentJoin',
+            })
+        );
+        expect(outerApiTransaction).not.toHaveBeenCalled();
         expect(transport.commands.filter((command) => command.type === 'setMySetting')).toHaveLength(0);
         const snapshot = await caller.tournament.getSnapshot();
         expect(snapshot.participants).toHaveLength(1);
