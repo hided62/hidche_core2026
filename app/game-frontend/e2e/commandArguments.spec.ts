@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { buildRefGeneralTargetOptions } from '../../game-api/src/turns/commandTargets.js';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gamePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -183,29 +184,67 @@ const inputOptions = {
                 description: '금 3,000 · 쌀 500 · 병력 1,500',
             },
         ],
-        che_발령: [
-            {
-                value: 1,
-                label: '장수 (부대 없음 · 업)',
-                crew: 500,
-                description: '금 5,000 · 쌀 400 · 병력 500',
-            },
-            {
-                value: 2,
-                label: '관우 (청룡대 (부대장) · 업)',
-                crew: 1200,
-                troopId: 2,
-                description: '금 100 · 쌀 4,000 · 병력 1,200',
-            },
-            {
-                value: 3,
-                label: '여포NPC (청룡대 · 업)',
-                npcState: 2,
-                crew: 1500,
-                troopId: 2,
-                description: '금 3,000 · 쌀 500 · 병력 1,500',
-            },
-        ],
+        che_발령:
+            buildRefGeneralTargetOptions({
+                actorId: 1,
+                actorNationId: 1,
+                generals: [
+                    {
+                        id: 1,
+                        name: '장수',
+                        nationId: 1,
+                        cityId: 1,
+                        npcState: 0,
+                        officerLevel: 12,
+                        leadership: 70,
+                        strength: 80,
+                        intel: 90,
+                        crew: 500,
+                        train: 0,
+                        atmos: 0,
+                        gold: 5000,
+                        rice: 400,
+                        troopId: 0,
+                    },
+                    {
+                        id: 2,
+                        name: '관우',
+                        nationId: 1,
+                        cityId: 1,
+                        npcState: 0,
+                        officerLevel: 5,
+                        leadership: 100,
+                        strength: 95,
+                        intel: 70,
+                        crew: 1200,
+                        train: 80,
+                        atmos: 70,
+                        gold: 100,
+                        rice: 4000,
+                        troopId: 2,
+                    },
+                    {
+                        id: 3,
+                        name: '여포NPC',
+                        nationId: 1,
+                        cityId: 1,
+                        npcState: 2,
+                        officerLevel: 0,
+                        leadership: 90,
+                        strength: 100,
+                        intel: 0,
+                        crew: 1500,
+                        train: 100,
+                        atmos: 100,
+                        gold: 3000,
+                        rice: 500,
+                        troopId: 2,
+                    },
+                ],
+                nationNames: new Map([[1, '아국']]),
+                cityNames: new Map([[1, '업']]),
+                troopNames: new Map([[2, '청룡대']]),
+            }).generalTargets.che_발령 ?? [],
         che_부대탈퇴지시: [
             {
                 value: 3,
@@ -1824,11 +1863,7 @@ test('enters general and nation command arguments and sends exact values', async
     await chiefForm.getByRole('button', { name: '쌀', exact: true }).click();
     await chiefForm.locator('input[type=number]').fill('300');
     const chiefTarget = chiefForm.locator('#command-arg-destGeneralId');
-    await expect(chiefTarget.locator('option')).toHaveText([
-        '장수 (업)',
-        '관우 (업)',
-        '여포NPC (업)',
-    ]);
+    await expect(chiefTarget.locator('option')).toHaveText(['장수 (업)', '관우 (업)', '여포NPC (업)']);
     await chiefTarget.selectOption('3');
     const geometry = await chiefForm.evaluate((element) => {
         const row = element.querySelector('.argument-row');
@@ -2588,17 +2623,14 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     form = picker.getByTestId('command-argument-form');
     generalList = form.getByTestId('general-target-list');
     await expect(form.locator('#command-arg-destGeneralId option')).toHaveText([
-        '장수 (부대 없음 · 업)',
-        '관우 (청룡대 (부대장) · 업)',
-        '여포NPC (청룡대 · 업)',
+        '장수 (업)',
+        '관우 (업)',
+        '여포NPC (업)',
     ]);
-    await expect(generalList.locator('.target-option strong')).toHaveText([
-        '장수 (부대 없음 · 업)',
-        '관우 (청룡대 (부대장) · 업)',
-        '여포NPC (청룡대 · 업)',
-    ]);
+    await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '관우 (업)', '여포NPC (업)']);
     await expect(generalList).not.toContainText('아국');
-    await expect(generalList).not.toContainText('탑승 부대');
+    await expect(generalList).toContainText('탑승 부대 청룡대 (부대장)');
+    await expect(generalList).toContainText('통솔 100 · 무력 95 · 지력 70');
     await picker.screenshot({ path: test.info().outputPath('chief-assignment-option-format-desktop.png') });
 
     await page.goto('/che/chief-center');
@@ -2646,7 +2678,7 @@ test('offers Ref amount presets and rich, command-specific general lists', async
         {
             turn: 7,
             command: '발령',
-            labels: ['장수 (부대 없음 · 업)', '관우 (청룡대 (부대장) · 업)', '여포NPC (청룡대 · 업)'],
+            labels: ['장수 (업)', '관우 (업)', '여포NPC (업)'],
         },
     ];
     for (const entry of mobilePersonnelCases) {
@@ -2667,6 +2699,120 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     expect(mobileGeometry).toEqual({ pickerWidth: 500, pickerOverflow: 0, documentOverflow: 0 });
     await page.screenshot({ path: test.info().outputPath('chief-personnel-option-format-mobile.png'), fullPage: true });
 });
+
+for (const width of [1200, 500]) {
+    test(`shows complete assignment candidate details with wrapping at ${width}px`, async ({ page }, testInfo) => {
+        const longName = '아주긴이름의발령후보장수';
+        const longTroop = '먼도시로함께이동하는아주긴이름의원정부대'.repeat(3);
+        const assignmentOptions = inputOptions.generalTargets.che_발령.map((option) =>
+            option.value === 3
+                ? {
+                      ...option,
+                      label: `${longName} (업)`,
+                      description: option.description?.replace('청룡대', longTroop),
+                  }
+                : option
+        );
+        const table = {
+            ...commandTable,
+            inputOptions: {
+                ...inputOptions,
+                generalTargets: { ...inputOptions.generalTargets, che_발령: assignmentOptions },
+            },
+        };
+        const requests = await install(page, false, table);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(gamePath('chief-center'));
+        await page.reload();
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+        await picker.getByRole('button', { name: /발령/ }).click();
+        const form = picker.getByTestId('command-argument-form');
+        const list = form.getByTestId('general-target-list');
+        const cards = list.locator('.target-option');
+        await expect(cards).toHaveCount(3);
+        await expect(cards.nth(0)).toContainText('탑승 부대 없음');
+        await expect(cards.nth(0)).toContainText('훈련 0 · 사기 0');
+        await expect(cards.nth(1)).toContainText('탑승 부대 청룡대 (부대장)');
+        await expect(cards.nth(1)).toContainText('통솔 100 · 무력 95 · 지력 70');
+        await expect(cards.nth(1)).toContainText('병력 1,200 · 훈련 80 · 사기 70');
+        await expect(cards.nth(1)).toContainText('금 100 · 쌀 4,000');
+        await expect(list).not.toContainText('아국');
+        await form.locator('#command-arg-destGeneralId').selectOption('2');
+        await expect(cards.nth(1)).toHaveAttribute('aria-pressed', 'true');
+        await cards.nth(2).hover();
+        await cards.nth(2).focus();
+        await page.keyboard.press('Enter');
+        await expect(cards.nth(2)).toHaveAttribute('aria-pressed', 'true');
+        await expect(form.locator('#command-arg-destGeneralId')).toHaveValue('3');
+        await expect(form.locator('.assignment-detail')).toContainText(longTroop);
+        await expect(cards.nth(2).locator('strong')).toHaveCSS('color', 'rgb(0, 255, 255)');
+        await cards.nth(1).click();
+        await expect(form.locator('#command-arg-destGeneralId')).toHaveValue('2');
+        await cards.nth(2).click();
+        await form.locator('#command-arg-destCityId').selectOption('2');
+        await page.evaluate(async () => {
+            await document.fonts.ready;
+        });
+        const geometry = await picker.evaluate((element) => {
+            const measure = (node: Element) => {
+                const html = node as HTMLElement;
+                const style = getComputedStyle(node);
+                return {
+                    text: html.innerText,
+                    rect: node.getBoundingClientRect().toJSON(),
+                    overflow: html.scrollWidth - html.clientWidth,
+                    whiteSpace: style.whiteSpace,
+                    overflowWrap: style.overflowWrap,
+                    color: style.color,
+                    background: style.backgroundColor,
+                    font: style.font,
+                    lineHeight: style.lineHeight,
+                };
+            };
+            return {
+                url: location.href,
+                dpr: devicePixelRatio,
+                viewport: innerWidth,
+                documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                picker: measure(element),
+                cards: [...element.querySelectorAll('.assignment-target-list .target-option')].map(measure),
+                details: [...element.querySelectorAll('.assignment-target-list small')].map(measure),
+                images: [...element.querySelectorAll('img')].map((img) => ({
+                    src: img.getAttribute('src'),
+                    complete: img.complete,
+                    naturalWidth: img.naturalWidth,
+                    naturalHeight: img.naturalHeight,
+                    objectFit: getComputedStyle(img).objectFit,
+                })),
+            };
+        });
+        expect(geometry.documentOverflow).toBe(0);
+        expect(geometry.picker.overflow).toBe(0);
+        for (const card of geometry.cards) expect(card.overflow).toBe(0);
+        for (const detail of geometry.details) {
+            expect(detail.overflow).toBe(0);
+            expect(detail.whiteSpace).toBe('pre-line');
+            expect(detail.rect.height).toBeGreaterThanOrEqual(parseFloat(detail.lineHeight) * 4 - 1);
+        }
+        await writeFile(testInfo.outputPath('assignment-geometry.json'), JSON.stringify(geometry, null, 2));
+        await writeFile(
+            testInfo.outputPath('assignment-dom.html'),
+            await picker.evaluate((element) => element.outerHTML)
+        );
+        await picker.screenshot({ path: testInfo.outputPath('assignment-details.png') });
+        const saved = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
+        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        await saved;
+        expect(JSON.stringify(requests)).toContain('"destGeneralId":3');
+        expect(JSON.stringify(requests)).toContain('"destCityId":2');
+        expect(JSON.stringify(requests)).not.toContain('description');
+        await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toContainText(
+            `【${longName}】【허창】으로 발령`
+        );
+    });
+}
 
 test('fits the city map option window inside the Ref-compatible 500px mobile page', async ({ page }) => {
     await install(page);

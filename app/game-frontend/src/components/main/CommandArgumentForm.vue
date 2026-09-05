@@ -544,6 +544,7 @@ watch(
                     (selectedOptionFor(field)?.description || selectedOptionFor(field)?.color)
                 "
                 class="option-detail"
+                :class="{ 'assignment-detail': commandKey === 'che_발령' && field.optionSource === 'generals' }"
             >
                 <span
                     v-if="selectedOptionFor(field)?.color"
@@ -556,6 +557,7 @@ watch(
             <div
                 v-if="showOptionCards(field)"
                 class="target-option-list"
+                :class="{ 'assignment-target-list': commandKey === 'che_발령' && field.optionSource === 'generals' }"
                 :data-testid="field.optionSource === 'nations' ? 'nation-target-list' : 'general-target-list'"
             >
                 <button
@@ -567,6 +569,7 @@ watch(
                         selected: option.value === values[field.key],
                         unavailable: option.availableNow === false,
                     }"
+                    :aria-pressed="option.value === values[field.key]"
                     @click="setSelectValue(field, String(option.value))"
                 >
                     <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
@@ -749,6 +752,42 @@ watch(
     grid-column: 1 / -1;
     color: inherit;
     line-height: 1.35;
+}
+
+.assignment-target-list {
+    max-height: 320px;
+}
+
+.assignment-target-list .target-option {
+    grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.assignment-target-list .target-state {
+    grid-column: 2;
+}
+
+.assignment-target-list .target-option small {
+    font-size: inherit;
+    line-height: 1.45;
+}
+
+.assignment-detail,
+.assignment-target-list .target-option {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.assignment-detail > span,
+.assignment-target-list .target-option small {
+    min-width: 0;
+    white-space: pre-line;
+}
+
+.assignment-target-list .target-option > strong {
+    grid-column: 1;
+    min-width: 0;
+    white-space: normal;
 }
 
 .option-color {

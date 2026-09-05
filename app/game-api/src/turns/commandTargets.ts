@@ -11,6 +11,9 @@ export interface GeneralTargetSource {
     officerLevel: number;
     gold?: number;
     rice?: number;
+    leadership?: number;
+    strength?: number;
+    intel?: number;
     crew?: number;
     train?: number;
     atmos?: number;
@@ -80,13 +83,43 @@ export const buildRefGeneralTargetOptions = (options: {
                   ? `탑승 부대 ${troopLabel}`
                   : '탑승 부대 없음',
         ].filter((value): value is string => Boolean(value));
+        // 발령 후보는 Ref처럼 능력치와 병력 준비 상태를 함께 비교한다.
+        // 예약 요약에 쓰는 label은 그대로 두고, 같은 국가 후보의 상세 정보만 보강한다.
+        const assignmentDetails =
+            action === 'che_발령'
+                ? [
+                      entry.troopId ? `탑승 부대 ${troopLabel}` : '탑승 부대 없음',
+                      [
+                          entry.leadership === undefined ? null : `통솔 ${entry.leadership.toLocaleString()}`,
+                          entry.strength === undefined ? null : `무력 ${entry.strength.toLocaleString()}`,
+                          entry.intel === undefined ? null : `지력 ${entry.intel.toLocaleString()}`,
+                      ]
+                          .filter(Boolean)
+                          .join(' · '),
+                      [
+                          entry.crew === undefined ? null : `병력 ${entry.crew.toLocaleString()}`,
+                          entry.train === undefined ? null : `훈련 ${entry.train.toLocaleString()}`,
+                          entry.atmos === undefined ? null : `사기 ${entry.atmos.toLocaleString()}`,
+                      ]
+                          .filter(Boolean)
+                          .join(' · '),
+                      [
+                          entry.gold === undefined ? null : `금 ${entry.gold.toLocaleString()}`,
+                          entry.rice === undefined ? null : `쌀 ${entry.rice.toLocaleString()}`,
+                      ]
+                          .filter(Boolean)
+                          .join(' · '),
+                  ]
+                      .filter(Boolean)
+                      .join('\n')
+                : undefined;
         if (isTroopExit) {
             details.unshift(availableNow ? '현재 탈퇴 지시 가능' : '현재 탈퇴 지시 불가');
         }
         return {
             value: entry.id,
             label,
-            description: details.join(' · '),
+            description: assignmentDetails ?? details.join(' · '),
             ...(availableNow === undefined ? {} : { availableNow }),
             ...(entry.gold === undefined ? {} : { gold: entry.gold }),
             ...(entry.rice === undefined ? {} : { rice: entry.rice }),

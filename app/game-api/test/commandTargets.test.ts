@@ -67,6 +67,9 @@ describe('Ref command general targets', () => {
                     gold: 100,
                     rice: 200,
                     crew: 900,
+                    leadership: 100,
+                    strength: 95,
+                    intel: 0,
                     train: 80,
                     atmos: 70,
                     troopId: 3,
@@ -92,7 +95,14 @@ describe('Ref command general targets', () => {
             '부대원 (업)',
             '부대장 (업)',
         ]);
-        expect(detailed.generalTargets.che_발령?.[1]?.description).not.toContain('탑승 부대');
+        expect(detailed.generalTargets.che_발령?.[1]?.description).toBe(
+            '탑승 부대 청룡대\n통솔 100 · 무력 95 · 지력 0\n병력 900 · 훈련 80 · 사기 70\n금 100 · 쌀 200'
+        );
+        expect(detailed.generalTargets.che_발령?.[0]?.description).toBe(
+            '탑승 부대 없음\n병력 1,000\n금 5,000 · 쌀 4,000'
+        );
+        expect(detailed.generalTargets.che_발령?.[2]?.description).toContain('청룡대 (부대장)');
+        expect(detailed.generalTargets.che_증여?.[1]?.description).not.toContain('통솔');
         expect(detailed.generalTargets.che_포상?.map((entry) => entry.label)).toEqual([
             '본인 (업)',
             '부대원 (업)',
