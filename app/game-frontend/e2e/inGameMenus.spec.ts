@@ -38,6 +38,7 @@ const readGeneralPanelImages = async (panel: Locator) =>
                 label: image.getAttribute('aria-label'),
                 width: rect.width,
                 height: rect.height,
+                src: image instanceof HTMLImageElement ? image.src : null,
                 backgroundImage: style.backgroundImage,
                 backgroundSize: style.backgroundSize,
                 pointerEvents: style.pointerEvents,
@@ -1358,7 +1359,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
         { width: 64, height: 64 },
         { width: 64, height: 64 },
     ]);
-    expect(myPageImages[0]?.backgroundImage).toContain('/icons/default.jpg');
+    expect(myPageImages[0]?.src).toContain('/icons/default.jpg');
     expect(myPageImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
     await expect(page.locator('.general-table')).toContainText('병종보병');
     await expect(page.locator('.general-table')).toContainText('삭턴6 턴');
@@ -2370,7 +2371,7 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     ]);
     const battleImages = await readGeneralPanelImages(page.locator('.battle-general-card'));
     expect(battleImages).toHaveLength(2);
-    expect(battleImages[0]?.backgroundImage).toContain('/icons/default.jpg');
+    expect(battleImages[0]?.src).toContain('/icons/default.jpg');
     expect(battleImages[1]?.backgroundImage).toContain('/game/crewtype1.png');
     await expect(page.locator('.battle-general-card [role="progressbar"]')).toHaveCount(14);
     await expect(page.locator('.battle-general-card [aria-label*="1,275,975 (EX+)"]')).toHaveCount(5);

@@ -408,6 +408,7 @@ watch(
                         <GeneralInformationPanel
                             :general="generalPanel"
                             :summary="generalSummary"
+                            :show-details="false"
                             :loading="loading"
                             :nation-color="nation?.color"
                         />
@@ -570,6 +571,7 @@ watch(
                 <GeneralInformationPanel
                     :general="generalPanel"
                     :summary="generalSummary"
+                    :show-details="false"
                     :loading="loading"
                     :nation-color="nation?.color"
                 />

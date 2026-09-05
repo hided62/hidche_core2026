@@ -2918,9 +2918,11 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await expect(statBars).toHaveCount(3);
     await expect(experienceBar).toHaveCount(1);
     await expect(page.locator('[data-main-target="general"] [data-general-information-panel]')).toHaveCount(1);
-    await expect(page.locator('[data-main-target="general"] [data-general-battle-summary]')).toHaveCount(1);
-    await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(5);
-    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(14);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
+    await expect(page.locator('[data-main-target="general"] .troop-label')).toHaveText('부대');
+    await expect(page.locator('[data-main-target="general"] .penalty-label')).toHaveText('벌점');
+    await expect(page.locator('[data-main-target="general"] [data-general-battle-summary]')).toHaveCount(0);
+    await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(0);
 
     const nationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
     await expect(nationCard.locator('.head')).toHaveCount(17);
@@ -3290,7 +3292,11 @@ test('main cards and command input stay inside their Ref-sized grid slots', asyn
     await page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '펼치기' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await expect(page.locator('[data-main-target="city"] [role="progressbar"]')).toHaveCount(8);
-    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(14);
+    await expect(page.locator('[data-main-target="general"] [role="progressbar"]')).toHaveCount(4);
+    await expect(page.locator('[data-main-target="general"] .troop-label')).toHaveText('부대');
+    await expect(page.locator('[data-main-target="general"] .penalty-label')).toHaveText('벌점');
+    await expect(page.locator('[data-main-target="general"] [data-general-battle-summary]')).toHaveCount(0);
+    await expect(page.locator('[data-main-target="general"] [data-dex-progress]')).toHaveCount(0);
     const mobileNationCard = page.locator('[data-main-target="nation"] [data-nation-basic-card]');
     expect(await mobileNationCard.evaluate((element) => element.getBoundingClientRect().height)).toBe(193);
     expect(await mobileNationCard.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(

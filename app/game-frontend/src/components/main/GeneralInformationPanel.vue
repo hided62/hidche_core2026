@@ -18,6 +18,7 @@ const props = withDefaults(
         general: GeneralInformationPanelData | null;
         summary: GeneralBattleSummaryData | null;
         loading: boolean;
+        showDetails?: boolean;
         nationColor?: string | null;
         defenceText?: string | null;
         killTurn?: number | null;
@@ -26,6 +27,7 @@ const props = withDefaults(
         penaltyText?: string | number | null;
     }>(),
     {
+        showDetails: true,
         nationColor: '#173d27',
         defenceText: null,
         killTurn: null,
@@ -48,7 +50,7 @@ const props = withDefaults(
         :troop-text="props.troopText"
         :penalty-text="props.penaltyText"
     >
-        <template v-if="props.general" #details>
+        <template v-if="props.general && props.showDetails" #details>
             <GeneralBattleSummary v-if="props.summary" :summary="props.summary" show-win-rate />
             <LegacyGeneralProgress :general="props.general" :show-primary="false" />
         </template>
