@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { trpc } from '../utils/trpc';
+import { formatSeoulDateTime } from '../utils/legacyDateTime';
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import SortableStringList from '../components/ui/SortableStringList';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { applyCustomCss, CUSTOM_CSS_KEY } from '../utils/customCss';
@@ -18,7 +21,52 @@ import {
     type ScreenMode,
 } from '../utils/screenModeViewport';
 
-const { success: showSuccessToast } = useGameFeedback();
+const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
+type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
+const data = ref<MyGeneralResponse | null>(null);
+const selectedIconId = ref('');
+const iconLoading = ref(false);
+const iconSaving = ref(false);
+const iconError = ref<string | null>(null);
+const iconChoices = computed(() => data.value?.iconChoices ?? []);
+const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
+const errorText = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+const loadIcons = async () => {
+    iconLoading.value = true;
+    iconError.value = null;
+    try {
+        const general = await trpc.general.me.query();
+        data.value = general;
+        selectedIconId.value =
+            iconChoices.value.find((icon) => icon.picture === general?.general.picture)?.id ??
+            iconChoices.value[0]?.id ??
+            '';
+    } catch (cause) {
+        iconError.value = errorText(cause);
+    } finally {
+        iconLoading.value = false;
+    }
+};
+
+const changeGeneralIcon = async () => {
+    if (!selectedIconId.value || iconSaving.value) return;
+    if (!confirm('선택한 전용 아이콘으로 바꿀까요? 변경 후 24시간 동안 다시 바꿀 수 없습니다.')) return;
+    iconSaving.value = true;
+    try {
+        await trpc.general.adjustIcon.mutate({
+            iconId: selectedIconId.value,
+            clientRequestId: crypto.randomUUID(),
+        });
+        showSuccessToast('전용 아이콘을 변경했습니다.');
+        await loadIcons();
+    } catch (cause) {
+        showErrorToast(`전용 아이콘 변경에 실패했습니다: ${errorText(cause)}`);
+    } finally {
+        iconSaving.value = false;
+    }
+};
+
 const screenMode = ref<ScreenMode>('auto');
 const customCss = ref('');
 const cssSaving = ref(false);
@@ -67,6 +115,7 @@ watch(customCss, (text) => {
 });
 
 onMounted(() => {
+    void loadIcons();
     screenMode.value = normalizeScreenMode(window.localStorage.getItem(SCREEN_MODE_KEY));
     customCss.value = window.localStorage.getItem(CUSTOM_CSS_KEY) ?? '';
 });
@@ -82,7 +131,7 @@ onBeforeUnmount(() => {
 <template>
     <main id="interface-settings" class="legacy-page bg0 interface-settings-page">
         <div class="title-row">
-            <span>화 면 설 정</span>
+            <span>환 경 설 정</span>
             <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
         </div>
 
@@ -123,6 +172,55 @@ onBeforeUnmount(() => {
                         <textarea id="custom_css" v-model="customCss" aria-label="개인용 CSS" />
                     </label>
                     <p class="css-hint">변경 사항은 이 기기에 자동 저장됩니다.</p>
+                </div>
+            </article>
+            <article
+                v-if="iconLoading || iconError || (data?.canChangeIcon && iconChoices.length)"
+                class="settings-column"
+            >
+                <h2 class="section-title">전용 아이콘</h2>
+                <p v-if="iconLoading" class="settings-content" role="status">아이콘 목록을 불러오는 중입니다.</p>
+                <div v-else-if="iconError" class="settings-content" role="alert">
+                    <p>{{ iconError }}</p>
+                    <button class="legacy-button legacy-button--secondary" type="button" @click="loadIcons">
+                        다시 불러오기
+                    </button>
+                </div>
+                <div v-else-if="data?.canChangeIcon && iconChoices.length" class="settings-content general-icon-action">
+                    전용 아이콘 변경 (24시간에 1회)<br />
+                    <span v-if="data.iconChangeAvailableAt" class="css-hint">
+                        다음 변경 가능: {{ formatSeoulDateTime(data.iconChangeAvailableAt) }}
+                    </span>
+                    <div v-if="selectedIcon" class="selected-general-icon" aria-live="polite">
+                        <img
+                            :src="resolveGeneralIconUrl(selectedIcon)"
+                            width="64"
+                            height="64"
+                            alt=""
+                            @error="useDefaultGeneralIcon"
+                        />
+                        <strong>{{ data.general.name }}</strong>
+                    </div>
+                    <div class="general-icon-list" role="radiogroup" aria-label="장수 전용 아이콘 선택">
+                        <label v-for="icon in iconChoices" :key="icon.id" class="general-icon-choice">
+                            <input v-model="selectedIconId" type="radio" :value="icon.id" />
+                            <img
+                                :src="resolveGeneralIconUrl(icon)"
+                                width="64"
+                                height="64"
+                                alt=""
+                                @error="useDefaultGeneralIcon"
+                            />
+                        </label>
+                    </div>
+                    <button
+                        class="legacy-button legacy-button--primary"
+                        type="button"
+                        :disabled="iconSaving || iconLoading"
+                        @click="changeGeneralIcon"
+                    >
+                        아이콘 변경
+                    </button>
                 </div>
             </article>
         </section>
@@ -412,6 +510,38 @@ onBeforeUnmount(() => {
 }
 .mobile-layout-dialog__actions .mobile-layout-apply {
     font-weight: 700;
+}
+.general-icon-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin: 6px 0;
+}
+.selected-general-icon {
+    display: flex;
+    max-width: 260px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 8px auto;
+    padding: 6px 10px;
+    border: 1px solid #666;
+    background: rgb(23 42 82 / 70%);
+}
+.selected-general-icon img {
+    flex: 0 0 var(--sammo-general-icon-size);
+    width: var(--sammo-general-icon-size);
+    height: var(--sammo-general-icon-size);
+    object-fit: cover;
+}
+.general-icon-choice {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.general-icon-action {
+    text-align: center;
 }
 @media (max-width: 939.98px) {
     .settings-grid {

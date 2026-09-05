@@ -75,6 +75,8 @@ type FixtureState = {
     dieOnPrestartAttempts?: number;
     dieOnPrestartInputs?: Array<Record<string, unknown>>;
     generalMeQueries?: number;
+    generalMeFailure?: boolean;
+    canChangeIcon?: boolean;
     generalLogQueries?: number;
     ensurePrestartQueries?: number;
     ensurePrestartFailure?: 'TIMEOUT' | 'INTERNAL_SERVER_ERROR';
@@ -285,7 +287,7 @@ const myGeneral = (state: FixtureState) => ({
     },
     penalties: {},
     iconChoices: state.iconChoices ?? [],
-    canChangeIcon: true,
+    canChangeIcon: state.canChangeIcon ?? true,
     iconChangeAvailableAt: null,
 });
 
@@ -467,6 +469,15 @@ const install = async (page: Page, state: FixtureState) => {
             }
             if (operation === 'general.me') {
                 state.generalMeQueries = (state.generalMeQueries ?? 0) + 1;
+                if (state.generalMeFailure) {
+                    return {
+                        error: {
+                            message: '아이콘 조회 실패',
+                            code: -32603,
+                            data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500, path: operation },
+                        },
+                    };
+                }
                 return response(myGeneral(state));
             }
             if (operation === 'general.ensureDieOnPrestartStatus') {
@@ -518,9 +529,7 @@ const install = async (page: Page, state: FixtureState) => {
                     },
                     meta: {
                         turntime: '2026-01-01T00:00:00.000Z',
-                        lastTurnTime: state.gameStarted
-                            ? '2026-03-01T00:00:00.000Z'
-                            : '2026-01-01T00:00:00.000Z',
+                        lastTurnTime: state.gameStarted ? '2026-03-01T00:00:00.000Z' : '2026-01-01T00:00:00.000Z',
                         opentime: state.buildNationCandidateEnabled
                             ? '2026-02-01T00:00:00.000Z'
                             : '2025-12-01T00:00:00.000Z',
@@ -1126,9 +1135,7 @@ test('커맨드 실행 결과의 성공·실패·일반 색상을 메인 기록�
     ]) {
         await page.setViewportSize(viewport);
         await page.goto('');
-        const colors = await inspectResultColors(
-            `${viewport.selector} [data-record-bucket="general"] .record-line`
-        );
+        const colors = await inspectResultColors(`${viewport.selector} [data-record-bucket="general"] .record-line`);
         await persistParityArtifact(page, `core-main-command-result-colors-${viewport.name}`, colors);
     }
 });
@@ -1408,12 +1415,7 @@ test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-ide
     const promotionAutomation = page.getByRole('checkbox', { name: '자동 수뇌 임명' });
     const financeAutomation = page.getByRole('checkbox', { name: '자동 세율·지급률 조정' });
     const capitalAutomation = page.getByRole('checkbox', { name: '자동 천도' });
-    for (const checkbox of [
-        warAutomation,
-        promotionAutomation,
-        financeAutomation,
-        capitalAutomation,
-    ]) {
+    for (const checkbox of [warAutomation, promotionAutomation, financeAutomation, capitalAutomation]) {
         await expect(checkbox).not.toBeChecked();
         await checkbox.check();
     }
@@ -1719,14 +1721,14 @@ test('내 정보&설정의 지난 플레이는 기본 탐색과 분리되어 오
     }
 });
 
-test('화면 설정에서 화면 폭과 개인 CSS를 저장하고 게임 설정 API는 호출하지 않는다', async ({ page }, testInfo) => {
+test('환경 설정에서 화면 폭과 개인 CSS를 저장하고 게임 설정 API는 호출하지 않는다', async ({ page }, testInfo) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('my-settings');
     await waitForVisualAssets(page);
 
-    await expect(page.locator('.title-row')).toContainText('화 면 설 정');
+    await expect(page.locator('.title-row')).toContainText('환 경 설 정');
     await expect(
         page.getByText('이 설정은 이 기기의 화면 표시만 바꾸며 게임 상태에는 영향을 주지 않습니다.')
     ).toHaveCount(0);
@@ -1773,7 +1775,7 @@ test('화면 설정에서 화면 폭과 개인 CSS를 저장하고 게임 설정
     await persistParityArtifact(page, 'core-interface-settings-desktop', desktop);
 });
 
-test('화면 설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 기본 순서로 복원한다', async ({
+test('환경 설정에서 모바일 메인 패널을 드래그하거나 버튼으로 재정렬하고 기본 순서로 복원한다', async ({
     page,
 }, testInfo) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
@@ -1848,7 +1850,7 @@ test('화면 설정에서 모바일 메인 패널을 드래그하거나 버튼�
         .toEqual(defaultOrder);
 });
 
-test('화면 설정에서 실제 모바일 터치로 메인 패널 순서를 재정렬한다', async ({ browser }, testInfo) => {
+test('환경 설정에서 실제 모바일 터치로 메인 패널 순서를 재정렬한다', async ({ browser }, testInfo) => {
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new Error('Playwright baseURL is required for the mobile touch contract');
@@ -1944,36 +1946,121 @@ for (const [label, failure] of [
     });
 }
 
-test('내 정보에서 사람 장수의 등록 전콘을 골라 변경한다', async ({ page }) => {
-    const iconId = '3f804277-584f-4f44-b39c-9ecf40d1ed31';
+for (const viewport of [
+    { name: 'desktop', width: 1000, height: 900 },
+    { name: 'mobile', width: 390, height: 844 },
+]) {
+    test(`환경 설정에서 사람 장수의 등록 전콘을 골라 변경한다 ${viewport.name}`, async ({ page }) => {
+        await page.setViewportSize(viewport);
+        const iconId = '3f804277-584f-4f44-b39c-9ecf40d1ed31';
+        const state: FixtureState = {
+            permission: 'member',
+            myset: 1,
+            settingMutations: [],
+            accessPages: [],
+            iconChoices: [
+                {
+                    id: iconId,
+                    picture: 'mine.png',
+                    imageServer: 1,
+                    createdAt: '2026-08-01T00:00:00.000Z',
+                },
+            ],
+            adjustIconInputs: [],
+        };
+        await install(page, state);
+        await page.goto('my-page');
+        await expect(page.locator('#set_my_setting')).toBeVisible();
+        await expect(page.locator('.general-icon-action')).toHaveCount(0);
+        const prestartQueries = state.ensurePrestartQueries;
+        await page.route('**/mine.png', async (route) =>
+            route.fulfill({
+                contentType: 'image/svg+xml',
+                body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#306090"/></svg>',
+            })
+        );
+        await page.goto('my-settings');
+        await expect(page.getByText('전용 아이콘 변경 (24시간에 1회)')).toBeVisible();
+        await expect(page.locator('.selected-general-icon img')).toHaveCSS('width', '64px');
+        await expect(page.locator('.selected-general-icon img')).toHaveCSS('height', '64px');
+        await page.locator('.general-icon-choice input').check();
+        await expect(page.locator('.general-icon-choice input')).toBeChecked();
+        await page.getByRole('button', { name: '아이콘 변경' }).focus();
+        await expect(page.getByRole('button', { name: '아이콘 변경' })).toBeFocused();
+        await page.getByRole('button', { name: '아이콘 변경' }).hover();
+        await waitForVisualAssets(page);
+        const geometry = await page.locator('#interface-settings').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const icon = element.querySelector<HTMLImageElement>('.selected-general-icon img')!;
+            return {
+                url: location.href,
+                width: rect.width,
+                scrollWidth: document.documentElement.scrollWidth,
+                icon: {
+                    width: icon.width,
+                    height: icon.height,
+                    naturalWidth: icon.naturalWidth,
+                    naturalHeight: icon.naturalHeight,
+                    objectFit: getComputedStyle(icon).objectFit,
+                },
+                columns: getComputedStyle(element.querySelector('.settings-grid')!).gridTemplateColumns,
+                html: element.outerHTML,
+            };
+        });
+        expect(geometry.width).toBe(viewport.width);
+        expect(geometry.scrollWidth).toBe(viewport.width);
+        expect(geometry.icon).toMatchObject({ width: 64, height: 64, objectFit: 'cover' });
+        expect(geometry.icon.naturalWidth).toBeGreaterThan(0);
+        await persistParityArtifact(page, `core-preferences-icon-${viewport.name}`, geometry);
+        page.once('dialog', async (dialog) => dialog.dismiss());
+        await page.getByRole('button', { name: '아이콘 변경' }).click();
+        expect(state.adjustIconInputs).toHaveLength(0);
+        page.once('dialog', async (dialog) => dialog.accept());
+        await page.getByRole('button', { name: '아이콘 변경' }).click();
+        await expect.poll(() => state.adjustIconInputs?.length ?? 0).toBe(1);
+        expect(state.adjustIconInputs?.[0]).toMatchObject({ iconId });
+        await expect.poll(() => state.generalMeQueries).toBe(3);
+        expect(state.ensurePrestartQueries).toBe(prestartQueries);
+        expect(state.settingMutations).toHaveLength(0);
+        await page.reload();
+        await expect(page.locator('.general-icon-action')).toBeVisible();
+        expect(state.adjustIconInputs?.[0]?.clientRequestId).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        );
+    });
+}
+
+test('환경 설정의 아이콘 조회 오류는 화면 설정을 막지 않고 재시도할 수 있다', async ({ page }) => {
     const state: FixtureState = {
         permission: 'member',
         myset: 1,
         settingMutations: [],
         accessPages: [],
+        generalMeFailure: true,
         iconChoices: [
             {
-                id: iconId,
+                id: '3f804277-584f-4f44-b39c-9ecf40d1ed31',
                 picture: 'mine.png',
                 imageServer: 1,
                 createdAt: '2026-08-01T00:00:00.000Z',
             },
         ],
-        adjustIconInputs: [],
     };
     await install(page, state);
-    await page.goto('my-page');
-    await expect(page.getByText('전용 아이콘 변경 (24시간에 1회)')).toBeVisible();
-    await expect(page.locator('.selected-general-icon img')).toHaveCSS('width', '64px');
-    await expect(page.locator('.selected-general-icon img')).toHaveCSS('height', '64px');
-    await page.locator('.general-icon-choice input').check();
-    page.once('dialog', async (dialog) => dialog.accept());
-    await page.getByRole('button', { name: '아이콘 변경' }).click();
-    await expect.poll(() => state.adjustIconInputs?.length ?? 0).toBe(1);
-    expect(state.adjustIconInputs?.[0]).toMatchObject({ iconId });
-    expect(state.adjustIconInputs?.[0]?.clientRequestId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    );
+    await page.goto('my-settings');
+    await expect(page.getByRole('alert')).toContainText('아이콘 조회 실패');
+    await page.getByRole('radio', { name: '500px' }).check();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('sam.screenMode'))).toBe('500px');
+    state.generalMeFailure = false;
+    await page.getByRole('button', { name: '다시 불러오기' }).click();
+    await expect(page.locator('.general-icon-action')).toBeVisible();
+    state.canChangeIcon = false;
+    await page.reload();
+    await expect.poll(() => state.generalMeQueries).toBe(3);
+    await expect(page.locator('.general-icon-action')).toHaveCount(0);
+    await expect(page.locator('#custom_css')).toBeVisible();
+    expect(state.ensurePrestartQueries ?? 0).toBe(0);
+    expect(state.settingMutations).toHaveLength(0);
 });
 
 test('내 정보 아이템 파기 확인은 이름의 받침에 맞는 조사를 쓴다', async ({ page }) => {

@@ -243,7 +243,7 @@ export const nationNavigation: MainNavigationEntry[] = [
             },
         ],
     },
-    { kind: 'link', id: 'my-settings', label: '화면 설정', to: '/my-settings', access: 'always' },
+    { kind: 'link', id: 'my-settings', label: '환경 설정', to: '/my-settings', access: 'always' },
 ];
 
 export const buildNationNavigation = (

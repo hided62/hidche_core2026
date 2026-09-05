@@ -6,7 +6,6 @@ import { formatLog } from '../utils/formatLog';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic/scenario/scenarioEffect.js';
 import { useSessionStore } from '../stores/session';
-import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
@@ -46,7 +45,6 @@ const dieOnPrestartStatusLoading = ref(false);
 const dieOnPrestartStatusError = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const selectedIconId = ref('');
 const session = useSessionStore();
 const readPendingDieOnPrestartId = (): string => {
     const stored = window.sessionStorage.getItem(PENDING_DIE_ON_PRESTART_KEY);
@@ -169,8 +167,6 @@ const items = computed<Array<{ key: ItemSlotKey; slotName: string; displayName: 
         },
     ]
 );
-const iconChoices = computed(() => data.value?.iconChoices ?? []);
-const selectedIcon = computed(() => iconChoices.value.find((icon) => icon.id === selectedIconId.value) ?? null);
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => asRecord(autorunUser.value.options).chief !== false);
 const showUserRulerAutomation = computed(() => showAutoNationTurn.value && (data.value?.general.npcState ?? 2) < 2);
@@ -259,10 +255,6 @@ const loadPage = async (resetImmediateActionIds = true) => {
                 use_auto_nation_finance: general.settings.use_auto_nation_finance,
                 use_auto_nation_capital: general.settings.use_auto_nation_capital,
             });
-            selectedIconId.value =
-                iconChoices.value.find((icon) => icon.picture === general.general.picture)?.id ??
-                iconChoices.value[0]?.id ??
-                '';
         }
         await Promise.all(logTypes.map((type) => loadLog(type)));
         if (resetImmediateActionIds) {
@@ -272,20 +264,6 @@ const loadPage = async (resetImmediateActionIds = true) => {
         error.value = errorText(cause);
     } finally {
         loading.value = false;
-    }
-};
-
-const changeGeneralIcon = async () => {
-    if (!selectedIconId.value) return;
-    if (!confirm('선택한 전용 아이콘으로 바꿀까요? 변경 후 24시간 동안 다시 바꿀 수 없습니다.')) return;
-    try {
-        await trpc.general.adjustIcon.mutate({
-            iconId: selectedIconId.value,
-            clientRequestId: crypto.randomUUID(),
-        });
-        await loadPage();
-    } catch (cause) {
-        showErrorToast(`전용 아이콘 변경에 실패했습니다: ${errorText(cause)}`);
     }
 };
 
@@ -447,12 +425,7 @@ onMounted(() => {
                 >
                     <legend>사용자 군주 자동 업무</legend>
                     <label>
-                        <input
-                            v-model="form.use_auto_nation_war"
-                            type="checkbox"
-                            :true-value="1"
-                            :false-value="0"
-                        />
+                        <input v-model="form.use_auto_nation_war" type="checkbox" :true-value="1" :false-value="0" />
                         자동 선전포고
                     </label>
                     <label>
@@ -524,41 +497,6 @@ onMounted(() => {
                         @click="confirmMutation('휴가 기능을 신청할까요?', () => trpc.general.vacation.mutate())"
                     >
                         휴가 신청
-                    </button>
-                </div>
-                <div v-if="data?.canChangeIcon && iconChoices.length" class="action-line general-icon-action">
-                    전용 아이콘 변경 (24시간에 1회)<br />
-                    <span v-if="data.iconChangeAvailableAt" class="hint">
-                        다음 변경 가능: {{ formatSeoulDateTime(data.iconChangeAvailableAt) }}
-                    </span>
-                    <div v-if="selectedIcon" class="selected-general-icon" aria-live="polite">
-                        <img
-                            :src="resolveGeneralIconUrl(selectedIcon)"
-                            width="64"
-                            height="64"
-                            alt=""
-                            @error="useDefaultGeneralIcon"
-                        />
-                        <strong>{{ data.general.name }}</strong>
-                    </div>
-                    <div class="general-icon-list" role="radiogroup" aria-label="장수 전용 아이콘 선택">
-                        <label v-for="icon in iconChoices" :key="icon.id" class="general-icon-choice">
-                            <input v-model="selectedIconId" type="radio" :value="icon.id" />
-                            <img
-                                :src="resolveGeneralIconUrl(icon)"
-                                width="64"
-                                height="64"
-                                alt=""
-                                @error="useDefaultGeneralIcon"
-                            />
-                        </label>
-                    </div>
-                    <button
-                        class="legacy-button legacy-button--lumen legacy-button--fixed-height action-button"
-                        type="button"
-                        @click="changeGeneralIcon"
-                    >
-                        아이콘 변경
                     </button>
                 </div>
                 <div v-if="actionAvailability.dieOnPrestart" class="action-line">
@@ -876,35 +814,6 @@ button:disabled {
     width: 100%;
     min-height: 32px;
     margin-top: 8px;
-}
-.general-icon-list {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 6px;
-    margin: 6px 0;
-}
-.selected-general-icon {
-    display: flex;
-    max-width: 260px;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin: 8px auto;
-    padding: 6px 10px;
-    border: 1px solid #666;
-    background: rgb(23 42 82 / 70%);
-}
-.selected-general-icon img {
-    flex: 0 0 var(--sammo-general-icon-size);
-    width: var(--sammo-general-icon-size);
-    height: var(--sammo-general-icon-size);
-    object-fit: cover;
-}
-.general-icon-choice {
-    display: flex;
-    align-items: center;
-    gap: 2px;
 }
 @media (max-width: 991px) {
     .legacy-page {
