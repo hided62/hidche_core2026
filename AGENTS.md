@@ -239,8 +239,3 @@ Core 제품, Ref 계측, 상위 문서는 각 저장소에서 별도 commit합�
 worktree 정리가 요청 범위라면 clean status와
 `git merge-base --is-ancestor HEAD <baseline>`을 확인한 뒤 non-force로 제거합니다.
 이름·나이·uncommitted 여부만으로 삭제하지 않습니다.
-
-## Qwen 보조 분석
-
-사용 범위, 응답 budget과 실패 처리는 [상위 Qwen 지침](../AGENTS.md#qwen-보조-분석)을
-따릅니다. Core에서 별도 budget이나 위임 정책을 두지 않습니다.
