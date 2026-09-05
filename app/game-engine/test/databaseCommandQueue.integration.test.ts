@@ -121,6 +121,31 @@ integration('database command queue', () => {
         });
     });
 
+    it('leaves pending work immediately claimable by a replacement daemon when shutting down', async () => {
+        const requestId = 'integration:engine:shutdown-pending';
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'ENGINE',
+                eventType: 'dieOnPrestart',
+                actorUserId: 'user-7',
+                payload: { type: 'dieOnPrestart', requestId, userId: 'user-7', generalId: 7 },
+            },
+        });
+        const queue = new DatabaseTurnDaemonCommandQueue(db);
+        queue.enqueue({ type: 'shutdown', reason: 'replacement' });
+        expect(await queue.drain()).toEqual([{ type: 'shutdown', reason: 'replacement' }]);
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: 'PENDING',
+            attempts: 0,
+            lockedBy: null,
+            leaseUntil: null,
+        });
+        expect(await new DatabaseTurnDaemonCommandQueue(db).drain()).toMatchObject([
+            { type: 'dieOnPrestart', requestId },
+        ]);
+    });
+
     it('recovers only an expired processing lease', async () => {
         const expiredId = 'integration:engine:expired';
         const activeId = 'integration:engine:active';
@@ -312,6 +337,55 @@ integration('database command queue', () => {
         expect(handle).toHaveBeenCalledOnce();
         expect(mutation).not.toHaveBeenCalled();
     });
+
+    it.each(['PREOPEN', 'RUNNING', 'MANUAL', 'SUSPENDED', 'RECONCILING', 'COMPLETED'])(
+        'handles pre-opening user commands in %s without treating them as scheduled turns',
+        async (phase) => {
+            await db.worldState.updateMany({
+                data: {
+                    clockPhase: phase,
+                    clockMode: 'realtime',
+                    clockTick: 0n,
+                    lastTurnTick: 0n,
+                    clockWallAnchor: new Date(Date.now() + 3_600_000),
+                },
+            });
+            const types = ['ensureDieOnPrestartStatus', 'dieOnPrestart', 'buildNationCandidate'] as const;
+            await db.inputEvent.createMany({
+                data: types.map((type) => {
+                    const requestId = `integration:engine:preopen:${type}`;
+                    return {
+                        requestId,
+                        target: 'ENGINE' as const,
+                        eventType: type,
+                        actorUserId: 'user-7',
+                        payload: { type, requestId, userId: 'user-7', generalId: 7 },
+                    };
+                }),
+            });
+            const commands = await new DatabaseTurnDaemonCommandQueue(db).drain();
+            const allowed = ['PREOPEN', 'RUNNING', 'MANUAL'].includes(phase);
+            expect(commands.map((command) => command.type)).toEqual(allowed ? types : []);
+            const events = await db.inputEvent.findMany({
+                where: { requestId: { startsWith: 'integration:engine:preopen:' } },
+            });
+            expect(events).toHaveLength(3);
+            for (const event of events) {
+                expect(event.status).toBe(allowed ? 'PROCESSING' : 'PENDING');
+                expect(event.attempts).toBe(allowed ? 1 : 0);
+                expect(event.processingClockRevision).toBe(allowed ? 1n : null);
+                expect(event.processingDeadlineGeneration).toBe(allowed ? 1n : null);
+                if (phase === 'PREOPEN') {
+                    expect(event.processingGameTick).toBeLessThan(0n);
+                }
+            }
+            expect(await db.worldState.findFirst()).toMatchObject({
+                clockPhase: phase,
+                clockTick: 0n,
+                lastTurnTick: 0n,
+            });
+        }
+    );
 
     it('dequeues gameplay only in an executable phase and records the processing clock generation', async () => {
         const existingWorld = await db.worldState.findFirst({ orderBy: { id: 'asc' } });

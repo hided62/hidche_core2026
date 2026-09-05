@@ -316,7 +316,13 @@ export const createGatewayReleaseRepository = (prisma: GatewayPrismaClient): Gat
                 where:
                     candidate.status === 'QUEUED'
                         ? { id: candidate.id, status: 'QUEUED' }
-                        : { id: candidate.id, status: 'RUNNING', leaseUntil: candidate.leaseUntil },
+                        : {
+                              id: candidate.id,
+                              status: 'RUNNING',
+                              // 마이크로초 lease를 Date로 왕복한 값과 equality CAS하면
+                              // 만료된 행도 선점하지 못한다. 갱신 race는 만료 조건으로 막는다.
+                              leaseUntil: candidate.leaseUntil ? { lt: now } : null,
+                          },
                 data: {
                     status: 'RUNNING',
                     startedAt: candidate.startedAt ?? now,

@@ -379,7 +379,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
             attempts: 1,
             actorUserId: userId,
         });
-        expect(access.lastRefresh?.getTime()).toBe(runtime!.world.getGameNow(event.createdAt).getTime());
+        expect(access.lastRefresh?.getTime()).toBe(event.createdAt.getTime());
         const logs = await db.logEntry.findMany({
             where: {
                 OR: [
@@ -671,7 +671,7 @@ integration('mode 1 NPC possession through token reservation and the durable dae
 
         await db.npcSelectionToken.update({
             where: { ownerUserId: rejectedUserId },
-            data: { validUntil: new Date('2000-01-01T00:00:00.000Z') },
+            data: { validUntilTick: -1n },
         });
         await expect(
             appRouter.createCaller(buildContext('npc-possession-reject-expired', rejectedAuth)).join.possessGeneral({

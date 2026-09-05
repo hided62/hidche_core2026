@@ -4,7 +4,11 @@ import type { GamePrisma } from '@sammo-ts/infra';
 import type { TurnSchedule } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { buildPrestartDeleteAfter, formatPrestartDeleteAfter } from '../src/turn/prestartDeletion.js';
+import {
+    buildPrestartDeleteAfter,
+    formatPrestartDeleteAfter,
+    hasStartedForPrestartActions,
+} from '../src/turn/prestartDeletion.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
 
@@ -59,6 +63,8 @@ const buildFixture = (options: {
         currentMonth: 1,
         tickSeconds: 600,
         lastTurnTime: options.lastTurnTime ?? new Date('2026-07-30T00:00:00.000Z'),
+        lastTurnTick:
+            options.lastTurnTime && options.lastTurnTime > new Date('2026-08-01T00:00:00.000Z') ? 36_000_000 : 0,
         meta: { opentime: '2026-08-01T00:00:00.000Z' },
     };
     const snapshot: TurnWorldSnapshot = {
@@ -118,6 +124,21 @@ const buildFixture = (options: {
 };
 
 describe('pre-start general deletion', () => {
+    it('uses the opening phase and executed tick despite shifted or ancient display projections', () => {
+        const state = { lastTurnTime: new Date('2099-01-01T00:00:00Z'), meta: { opentime: '2026-01-01T00:00:00Z' } };
+        expect(hasStartedForPrestartActions({ ...state, clockPhase: 'PREOPEN', lastTurnTick: 0 })).toBe(false);
+        expect(hasStartedForPrestartActions({ ...state, clockPhase: 'RUNNING', lastTurnTick: 0 })).toBe(false);
+        expect(
+            hasStartedForPrestartActions({
+                ...state,
+                lastTurnTime: new Date('0180-01-01T00:00:00Z'),
+                clockPhase: 'RUNNING',
+                lastTurnTick: 1,
+            })
+        ).toBe(true);
+        expect(hasStartedForPrestartActions({ ...state, clockPhase: 'COMPLETED', lastTurnTick: 0 })).toBe(true);
+    });
+
     it('uses the default two turns, scenario override, and Ref Seoul error timestamp', () => {
         expect(buildPrestartDeleteAfter(acceptedAt, 600, { const: {} }).toISOString()).toBe('2026-07-31T00:20:00.000Z');
         expect(

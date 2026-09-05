@@ -20,6 +20,17 @@ explicitly calls them game projections.
 
 ## Game database inventory
 
+PREOPEN user commands are executable even though scheduled turns are stopped.
+Their authoritative processing coordinate remains signed GAME_TIME. Direct and
+selection-pool creation clamp only the first runnable schedule to opening tick
+zero; receipt audit, account sanctions, and pre-opening deletion use WALL_TIME.
+
+| Pre-opening/account rule                                                 | Domain and authority                                                                                                                                                     | Reconciliation                                                                          |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `general.meta.prestart_delete_after`                                     | WALL deadline from the creation `InputEvent.createdAt` plus the configured minimum-turn wall duration; legacy missing cutoffs use `general_access_log.last_refresh` once | excluded; never shift with GAME projections                                             |
+| account `legacyPenalty.*.*.expire` copied at general creation/possession | WALL Unix seconds compared with the durable request receipt                                                                                                              | excluded; an expired account sanction must not reappear when GAME dates are in the past |
+| pre-opening action availability                                          | `clock_phase`, then executed `last_turn_tick` (zero equality retained); uninitialized legacy readers may compare old date fields                                         | phase/cursor authority, not `meta.opentime` display text                                |
+
 `Pause` means whether the rule continues to age during `SUSPENDED` or
 `RECONCILING`. `Projection` means a non-authoritative compatibility/display
 representation.
@@ -173,3 +184,12 @@ Migration `20260903201500_complete_invader_game_clock` moves historical
 unchosen invader actions at `max(created_game_tick, world_state.clock_tick)`.
 Neither migration shifts a WALL occurrence or turns one rule into a clock
 fallback.
+
+## WALL lease precision and query parameters
+
+Gateway operation/release lease recovery rechecks expiration in the database
+under the existing claim lock. It does not compare a JavaScript Date to the
+original `timestamptz(6)` value: that round trip loses microseconds and can prevent
+expired jobs from being reclaimed. Owner fences and renewal checks remain active.
+Read-model outbox dispatch casts an injected WALL timestamp explicitly before
+subtracting a retry interval; production still defaults to the database WALL clock.

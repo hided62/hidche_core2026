@@ -96,7 +96,7 @@ export const normalizeJoinSpecialityCode = (value: unknown): string | null =>
 export const resolveLegacyPenalty = (
     rawPenalty: Record<string, unknown> | undefined,
     profileId: string,
-    acceptedAt: Date
+    requestedAtWall: Date
 ): Record<string, unknown> => {
     if (!rawPenalty) {
         return {};
@@ -105,7 +105,7 @@ export const resolveLegacyPenalty = (
         ...asRecord(rawPenalty.any),
         ...asRecord(rawPenalty[profileId]),
     };
-    const acceptedAtSeconds = acceptedAt.getTime() / 1000;
+    const acceptedAtSeconds = requestedAtWall.getTime() / 1000;
     const result: Record<string, unknown> = {};
     for (const [key, rawEntry] of Object.entries(merged)) {
         const entry = asRecord(rawEntry);
@@ -654,12 +654,7 @@ export const createGeneralFromJoin = async (options: {
     const generalId = world.getNextGeneralId();
     const rng = new RandUtil(
         new LiteHashDRBG(
-            buildJoinCreateGeneralSeed(
-                hiddenSeed,
-                input.seedOwnerIdentity,
-                world.dateToGameTick(acceptedAt),
-                generalId
-            )
+            buildJoinCreateGeneralSeed(hiddenSeed, input.seedOwnerIdentity, world.dateToGameTick(acceptedAt), generalId)
         )
     );
     const geniusRequested = input.inheritSpecial !== undefined || rng.nextBool(0.01);
@@ -805,7 +800,9 @@ export const createGeneralFromJoin = async (options: {
             meta: {},
         },
         lastTurn: { command: DEFAULT_TURN_ACTION },
-        penalty: resolveLegacyPenalty(input.ownerLegacyPenalty, input.profileId, acceptedAt),
+        // 계정 제재 expire는 Ref member의 Unix wall timestamp다. 가오픈의
+        // 음수 GAME 좌표로 비교하면 현실에서 만료된 제재가 다시 적용된다.
+        penalty: resolveLegacyPenalty(input.ownerLegacyPenalty, input.profileId, operationalAcceptedAt),
         inheritancePoints: {
             previous: finalInheritancePoint,
         },

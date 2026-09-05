@@ -1,4 +1,5 @@
 # Environment variable	Execution mode
+CLOCK_RECONCILIATION_DATABASE_URL	core
 CREATE_GENERAL_DATABASE_URL	create_general
 CURRENT_SEASON_FIXTURE_DATABASE_URL	external_fixture
 GATEWAY_RUNTIME_ACTION_DATABASE_URL	gateway_runtime

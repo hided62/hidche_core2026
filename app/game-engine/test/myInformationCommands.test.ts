@@ -169,6 +169,7 @@ const buildImmediateActionWorld = (options: {
         currentMonth: 1,
         tickSeconds: 600,
         lastTurnTime: options.lastTurnTime ?? new Date('0180-01-01T00:00:00Z'),
+        lastTurnTick: options.lastTurnTime && options.lastTurnTime > new Date('0180-02-01T00:00:00Z') ? 36_000_000 : 0,
         meta: {
             hiddenSeed: 'immediate-action-test',
             killturn: 24,

@@ -158,6 +158,20 @@ export class TurnDaemonLifecycle {
                 continue;
             }
 
+            const nowMs = this.clock.nowMs();
+            const wallNow = new Date(nowMs);
+            let gameClock = await this.stateStore.loadGameClock?.(wallNow);
+            if (gameClock?.phase === 'PREOPEN' && this.stateStore.promotePreopenAtOpening) {
+                await this.stateStore.promotePreopenAtOpening(wallNow);
+                gameClock = await this.stateStore.loadGameClock?.(wallNow);
+            }
+            if (gameClock?.phase && gameClock.phase !== 'RUNNING' && gameClock.phase !== 'MANUAL') {
+                this.status.nextTurnTime = undefined;
+                await this.clock.sleepMs(500);
+                continue;
+            }
+            // 수동 실행 요청도 가오픈·정지·재조정의 턴 실행 gate를 통과해야 한다.
+            // 사용자 명령 처리는 루프 시작에서 계속하되 시간 진행은 여기서 분리한다.
             if (this.pendingRun) {
                 await this.runOnce(this.pendingRun);
                 this.pendingRun = null;
@@ -167,23 +181,6 @@ export class TurnDaemonLifecycle {
             const nextRunTime = await this.resolveNextRunTime();
             if (!nextRunTime) {
                 await this.clock.sleepMs(200);
-                continue;
-            }
-
-            const nowMs = this.clock.nowMs();
-            const wallNow = new Date(nowMs);
-            let gameClock = await this.stateStore.loadGameClock?.(wallNow);
-            if (gameClock?.phase === 'PREOPEN' && this.stateStore.promotePreopenAtOpening) {
-                await this.stateStore.promotePreopenAtOpening(wallNow);
-                gameClock = await this.stateStore.loadGameClock?.(wallNow);
-            }
-            if (
-                gameClock?.phase &&
-                gameClock.phase !== 'RUNNING' &&
-                gameClock.phase !== 'MANUAL'
-            ) {
-                this.status.nextTurnTime = undefined;
-                await this.clock.sleepMs(500);
                 continue;
             }
             if (gameClock?.mode === 'manual') {

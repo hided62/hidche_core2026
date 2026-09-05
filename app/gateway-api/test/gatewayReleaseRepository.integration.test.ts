@@ -108,7 +108,8 @@ describeDatabase('gateway release operation persistence', () => {
 
         await connector.prisma.$executeRaw`
             UPDATE "gateway_release_operation"
-            SET "lease_until" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            SET "lease_until" = date_trunc('milliseconds', CURRENT_TIMESTAMP)
+                - INTERVAL '1 second' + INTERVAL '123 microseconds'
             WHERE "id" = ${operation.id}
         `;
         await expect(

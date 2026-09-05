@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SystemClock } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
@@ -97,6 +97,14 @@ const state: TurnWorldState = {
     currentMonth: 1,
     tickSeconds: 600,
     lastTurnTime: new Date('2026-07-31T00:00:00.000Z'),
+    clockBaseTime: new Date('2026-07-31T00:00:00.000Z'),
+    clockTick: 0,
+    lastTurnTick: 0,
+    clockMode: 'realtime',
+    clockPhase: 'PREOPEN',
+    clockWallAnchor: new Date(Date.now() + 86_400_000),
+    clockRevision: 1,
+    deadlineGeneration: 1,
     meta: {
         hiddenSeed: 'immediate-action-integration',
         killturn: 24,
@@ -155,8 +163,10 @@ integration('immediate general action persistence', () => {
         await connector.connect();
         db = connector.prisma;
         disconnect = () => connector.disconnect();
+    });
 
-        await db.inputEvent.deleteMany({ where: { requestId } });
+    beforeEach(async () => {
+        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: requestId } } });
         await db.auction.deleteMany({ where: { targetCode: occupiedUniqueItem } });
         await db.logEntry.deleteMany({
             where: {
@@ -181,6 +191,14 @@ integration('immediate general action persistence', () => {
                 currentYear: state.currentYear,
                 currentMonth: state.currentMonth,
                 tickSeconds: state.tickSeconds,
+                clockBaseTime: state.clockBaseTime,
+                clockTick: 0n,
+                lastTurnTick: 0n,
+                clockMode: state.clockMode,
+                clockPhase: state.clockPhase,
+                clockWallAnchor: state.clockWallAnchor,
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
                 config: JSON.parse(JSON.stringify(scenarioConfig)) as GamePrisma.InputJsonValue,
                 meta: state.meta as GamePrisma.InputJsonValue,
             },
@@ -257,7 +275,7 @@ integration('immediate general action persistence', () => {
             await disconnect?.();
             return;
         }
-        await db.inputEvent.deleteMany({ where: { requestId } });
+        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: requestId } } });
         await db.auction.deleteMany({ where: { targetCode: occupiedUniqueItem } });
         await db.logEntry.deleteMany({
             where: {
@@ -277,7 +295,7 @@ integration('immediate general action persistence', () => {
         await disconnect?.();
     });
 
-    it('flushes and reloads the nation, diplomacy, officer turns, logs, and general state together', async () => {
+    it('commits pre-opening uprising with rollback/retry while scheduled turns remain stopped', async () => {
         const snapshot: TurnWorldSnapshot = {
             generals: [general],
             cities: [
@@ -376,10 +394,15 @@ integration('immediate general action persistence', () => {
         });
         const stateStore = {
             loadLastTurnTime: async () => new Date(state.lastTurnTime),
-            loadNextGeneralTurnTime: async () => null,
+            loadNextGeneralTurnTime: async () => general.turnTime,
             saveLastTurnTime: async () => {},
             loadCheckpoint: async () => undefined,
             saveCheckpoint: async () => {},
+            loadGameClock: async () => ({
+                mode: 'realtime' as const,
+                phase: 'PREOPEN' as const,
+                now: world.getGameNow(new Date()),
+            }),
         };
         const processor = {
             run: async () => {
@@ -597,5 +620,108 @@ integration('immediate general action persistence', () => {
             chiefGeneralId: generalId,
             rice: 2_000,
         });
+        expect(reloaded.state).toMatchObject({ clockPhase: 'PREOPEN', clockTick: 0, lastTurnTick: 0 });
+    });
+
+    it('deletes a neutral general after the wall deadline in PREOPEN and commits its durable result once', async () => {
+        const cutoff = new Date('2026-07-31T00:20:00.000Z');
+        await db.general.update({
+            where: { id: generalId },
+            data: { meta: { ...general.meta, prestart_delete_after: cutoff.toISOString() } },
+        });
+        const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
+        const world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, { schedule });
+        const handler = createTurnDaemonCommandHandler({ world });
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        const stateManager = new EngineStateManager();
+        stateManager.register('world', {
+            capture: () => world.captureState(),
+            restore: (value) => world.restoreState(value),
+        });
+        const queue = new DatabaseTurnDaemonCommandQueue(db);
+        const processor = {
+            run: vi.fn(async () => {
+                throw new Error('PREOPEN must not execute scheduled turns');
+            }),
+        };
+        const ids = [':status', ':early', ':delete'].map((suffix) => requestId + suffix);
+        const types = ['ensureDieOnPrestartStatus', 'dieOnPrestart', 'dieOnPrestart'];
+        await db.inputEvent.createMany({
+            data: ids.map((id, index) => ({
+                requestId: id,
+                target: 'ENGINE',
+                eventType: types[index]!,
+                actorUserId: general.userId,
+                createdAt: new Date(cutoff.getTime() + (index === 2 ? 0 : -1)),
+                payload: { type: types[index], requestId: id, userId: general.userId, generalId },
+            })),
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new SystemClock(),
+                controlQueue: queue,
+                commandResponder: queue,
+                commandHandler: handler,
+                hooks: hooks.hooks,
+                stateManager,
+                processor,
+                getNextTickTime: () => general.turnTime,
+                stateStore: {
+                    loadLastTurnTime: async () => state.lastTurnTime,
+                    loadNextGeneralTurnTime: async () => general.turnTime,
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => ({
+                        mode: 'realtime',
+                        phase: 'PREOPEN',
+                        now: world.getGameNow(new Date()),
+                    }),
+                },
+            },
+            {
+                profile: 'immediate-action-integration',
+                defaultBudget: { budgetMs: 100, maxGenerals: 1, catchUpCap: 1 },
+            }
+        );
+        const loop = lifecycle.start();
+        try {
+            await vi.waitFor(
+                async () => {
+                    const events = await db.inputEvent.findMany({
+                        where: { requestId: { in: ids } },
+                        orderBy: { sequence: 'asc' },
+                    });
+                    expect(events.map((event) => event.status)).toEqual(['SUCCEEDED', 'SUCCEEDED', 'SUCCEEDED']);
+                    expect(events[0]?.result).toMatchObject({
+                        show: true,
+                        available: false,
+                        availableAt: cutoff.toISOString(),
+                    });
+                    expect(events[1]?.result).toMatchObject({
+                        ok: false,
+                        reason: expect.stringContaining('아직 삭제할 수 없습니다'),
+                    });
+                    expect(events[2]?.result).toMatchObject({ ok: true, generalId });
+                    expect(
+                        events.every((event) => event.processingGameTick !== null && event.processingGameTick < 0n)
+                    ).toBe(true);
+                    expect(events.every((event) => event.attempts === 1)).toBe(true);
+                },
+                { timeout: 5_000 }
+            );
+        } finally {
+            await lifecycle.stop('pre-opening deletion checked');
+            await loop;
+            await hooks.close();
+        }
+        expect(processor.run).not.toHaveBeenCalled();
+        expect(await queue.drain()).toEqual([]);
+        expect(await db.general.findUnique({ where: { id: generalId } })).toBeNull();
+        const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        expect(reloaded.snapshot.generals.find((entry) => entry.id === generalId)).toBeUndefined();
+        expect(reloaded.state).toMatchObject({ clockPhase: 'PREOPEN', clockTick: 0, lastTurnTick: 0 });
+        expect(await db.logEntry.count({ where: { scope: 'SYSTEM', text: { contains: '홀연히 모습을' } } })).toBe(1);
     });
 });

@@ -417,7 +417,8 @@ describeDatabase('gateway operation lease and profile serialization', () => {
         ).resolves.toBeNull();
         await connector.prisma.$executeRaw`
             UPDATE "gateway_operation"
-            SET "lease_until" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            SET "lease_until" = date_trunc('milliseconds', CURRENT_TIMESTAMP)
+                - INTERVAL '1 second' + INTERVAL '123 microseconds'
             WHERE "id" = ${operation.id}
         `;
         const reclaimed = await repository.claimNextOperation(new Date(startedAt.getTime() + 1_001), {

@@ -1,6 +1,21 @@
 import { asNumber, asRecord } from '@sammo-ts/common';
+import type { TurnWorldState } from './types.js';
 
 const DEFAULT_MIN_TURNS = 2;
+
+/** 표시용 opentime과 재투영된 lastTurnTime 대신 오픈 phase와 실행 cursor로 판정한다. */
+export const hasStartedForPrestartActions = (
+    state: Pick<TurnWorldState, 'clockPhase' | 'lastTurnTick' | 'lastTurnTime' | 'meta'>
+): boolean => {
+    if (state.clockPhase === 'PREOPEN') return false;
+    if (state.clockPhase === 'COMPLETED' || state.clockPhase === 'SUSPENDED' || state.clockPhase === 'RECONCILING') {
+        return true;
+    }
+    // Ref의 turntime == opentime 경계는 아직 허용하고 최초 월 진행 이후 닫는다.
+    if (state.lastTurnTick !== undefined) return state.lastTurnTick > 0;
+    const opentime = typeof state.meta.opentime === 'string' ? new Date(state.meta.opentime) : null;
+    return opentime !== null && state.lastTurnTime.getTime() > opentime.getTime();
+};
 
 export const readPrestartDeleteAfter = (meta: Record<string, unknown>): Date | null => {
     const value = meta.prestart_delete_after;

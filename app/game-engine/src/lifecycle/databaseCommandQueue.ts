@@ -33,6 +33,11 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
 
     async drain(): Promise<TurnDaemonCommand[]> {
         const local = this.localQueue.splice(0, this.localQueue.length);
+        // 종료 직후 실행하지 않을 명령을 PROCESSING으로 선점하면 새 daemon은
+        // lease 만료까지 기다려야 한다. 종료 batch에서는 DB 명령을 가져오지 않는다.
+        if (local.some((command) => command.type === 'shutdown')) {
+            return local;
+        }
         const remote = await this.claimPending();
         return local.concat(remote);
     }
@@ -116,7 +121,13 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                 orderBy: { id: 'asc' },
                 select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true },
             });
-            const gameplayAllowed = !world || world.clockPhase === 'RUNNING' || world.clockPhase === 'MANUAL';
+            // 가오픈도 장수 생성·삭제·거병·예약 등 사용자 명령은 처리한다.
+            // 자동 턴의 RUNNING/MANUAL gate는 TurnDaemonLifecycle이 별도로 지킨다.
+            const gameplayAllowed =
+                !world ||
+                world.clockPhase === 'PREOPEN' ||
+                world.clockPhase === 'RUNNING' ||
+                world.clockPhase === 'MANUAL';
             const suspendedTournamentBetCommand = world?.clockPhase === 'SUSPENDED';
             const currentRevision = world?.clockRevision ?? null;
             const maintenanceSuspended =

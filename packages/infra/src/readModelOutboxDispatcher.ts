@@ -33,8 +33,7 @@ export interface ReadModelOutboxDispatchResult {
     failed: number;
 }
 
-const normalizeLimit = (value: number | undefined): number =>
-    Math.min(500, Math.max(1, Math.floor(value ?? 50)));
+const normalizeLimit = (value: number | undefined): number => Math.min(500, Math.max(1, Math.floor(value ?? 50)));
 
 const normalizeDuration = (value: number | undefined, fallback: number): number =>
     Math.max(1, Math.floor(value ?? fallback));
@@ -59,7 +58,9 @@ export const claimReadModelOutboxBatch = async (
     const limit = normalizeLimit(options.limit);
     const leaseMs = normalizeDuration(options.leaseMs, 30_000);
     const nowSql = options.now
-        ? GamePrisma.sql`${options.now}`
+        ? // Date bind는 interval 뺄셈에서 interval로 추론될 수 있으므로
+          // 저장 column과 같은 UTC wall timestamp 타입을 명시한다.
+          GamePrisma.sql`${options.now}::timestamp`
         : GamePrisma.sql`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
     const rows = await db.$queryRaw<ClaimedRow[]>(GamePrisma.sql`
         WITH candidates AS (
@@ -170,7 +171,11 @@ export const dispatchReadModelOutboxBatch = async (
                 owner: options.owner,
                 error,
                 ...(testNow
-                    ? { availableAt: new Date(testNow().getTime() + retryDelayMs(item.attempts, retryBaseMs, retryMaxMs)) }
+                    ? {
+                          availableAt: new Date(
+                              testNow().getTime() + retryDelayMs(item.attempts, retryBaseMs, retryMaxMs)
+                          ),
+                      }
                     : { availableAfterMs: retryDelayMs(item.attempts, retryBaseMs, retryMaxMs) }),
             });
         }

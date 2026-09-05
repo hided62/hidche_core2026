@@ -70,7 +70,12 @@ import {
 } from './selectPoolService.js';
 import { createGeneralFromJoin, JoinCreateGeneralError } from './joinCreateGeneralService.js';
 import { NpcPossessionError, possessNpcGeneral } from './npcPossessionService.js';
-import { buildPrestartDeleteAfter, formatPrestartDeleteAfter, readPrestartDeleteAfter } from './prestartDeletion.js';
+import {
+    buildPrestartDeleteAfter,
+    formatPrestartDeleteAfter,
+    readPrestartDeleteAfter,
+    hasStartedForPrestartActions,
+} from './prestartDeletion.js';
 import { respondToActionableMessage } from './actionableMessageResponse.js';
 import { executeInheritanceAction } from './inheritanceActionService.js';
 import { applyNpcPolicyMutation } from './npcPolicyMutation.js';
@@ -344,8 +349,14 @@ async function handleJoinCreateGeneral(
         throw new Error('Join world state is missing.');
     }
     const operationalAcceptedAt = await resolveCommandAcceptedAt(db, command);
-    const acceptedAt = ctx.world.getGameNow(operationalAcceptedAt);
-    const turnScheduleAt = ctx.world.getRunnableGameNow(operationalAcceptedAt);
+    const processingGameTick = Reflect.get(command, 'processingGameTick');
+    if (typeof processingGameTick !== 'number' || !Number.isSafeInteger(processingGameTick)) {
+        throw new Error('joinCreateGeneral requires an authoritative daemon processing game tick.');
+    }
+    const acceptedAt = ctx.world.gameTickToDate(processingGameTick);
+    const turnScheduleAt = ctx.world.gameTickToDate(
+        ctx.world.getGameClockState().phase === 'PREOPEN' ? Math.max(0, processingGameTick) : processingGameTick
+    );
     try {
         return {
             type: 'joinCreateGeneral',
@@ -463,7 +474,10 @@ async function handleSelectPoolCreate(
         throw new Error('selectPoolCreate requires an authoritative daemon processing game tick.');
     }
     const acceptedAt = ctx.world.gameTickToDate(processingGameTick);
-    const turnScheduleAt = acceptedAt;
+    // 선택 생성도 접수/RNG의 음수 tick과 실제 최초 턴의 오픈 하한을 분리한다.
+    const turnScheduleAt = ctx.world.gameTickToDate(
+        ctx.world.getGameClockState().phase === 'PREOPEN' ? Math.max(0, processingGameTick) : processingGameTick
+    );
     try {
         return {
             type: 'selectPoolCreate',
@@ -1607,8 +1621,7 @@ async function handleEnsureDieOnPrestartStatus(
     const db = requireCommandDatabase(ctx);
     const acceptedAt = await resolveCommandAcceptedAt(db, command);
     const worldState = ctx.world.getState();
-    const opentime = typeof worldState.meta.opentime === 'string' ? worldState.meta.opentime : null;
-    if ((opentime && worldState.lastTurnTime.getTime() > new Date(opentime).getTime()) || general.nationId !== 0) {
+    if (hasStartedForPrestartActions(worldState) || general.nationId !== 0) {
         return {
             type: 'ensureDieOnPrestartStatus',
             generalId: command.generalId,
@@ -1643,8 +1656,7 @@ async function handleDieOnPrestart(
     }
     const acceptedAt = await resolveCommandAcceptedAt(db, command);
     const worldState = world.getState();
-    const opentime = worldState.meta.opentime as string | undefined;
-    if (opentime && new Date(worldState.lastTurnTime) > new Date(opentime)) {
+    if (hasStartedForPrestartActions(worldState)) {
         return {
             type: 'dieOnPrestart',
             ok: false,
@@ -1709,8 +1721,7 @@ async function handleBuildNationCandidate(
     await assertImmediateGeneralActionActor(ctx, command, general);
 
     const worldState = world.getState();
-    const opentime = worldState.meta.opentime as string | undefined;
-    if (opentime && new Date(worldState.lastTurnTime) > new Date(opentime)) {
+    if (hasStartedForPrestartActions(worldState)) {
         return {
             type: 'buildNationCandidate',
             ok: false,

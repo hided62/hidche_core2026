@@ -142,8 +142,9 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             await seedScenarioToDatabase({
                 scenarioId: 903,
                 databaseUrl: databaseUrl!,
-                now: new Date('2099-07-30T12:00:00.000Z'),
+                now: new Date('2026-07-30T12:00:00.000Z'),
                 installOptions: {
+                    openAt: new Date(Date.now() + 86_400_000),
                     turnTermMinutes: 5,
                     npcMode: 2,
                     showImgLevel: 3,
@@ -274,6 +275,9 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             status: 'SUCCEEDED',
             result: { type: 'selectPoolCreate', ok: true, generalId: initial.id },
         });
+        expect(acceptedEvent.processingGameTick).toBeLessThan(0n);
+        expect(initial.turnTick).toBeGreaterThanOrEqual(0n);
+        expect(await db.worldState.findFirst()).toMatchObject({ clockPhase: 'PREOPEN', clockTick: 0n });
         if (!initialAccess.lastRefresh) {
             throw new Error('selected general must have an initial access timestamp');
         }

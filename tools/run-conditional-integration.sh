@@ -596,6 +596,7 @@ database_url=$(build_database_url "$integration_schema")
 export POSTGRES_SCHEMA=$integration_schema
 export DATABASE_URL=$database_url
 export INPUT_EVENT_DATABASE_URL=$database_url
+export CLOCK_RECONCILIATION_DATABASE_URL=$database_url
 export GENERAL_LIFECYCLE_DATABASE_URL=$database_url
 export TURN_DAEMON_LEASE_DATABASE_URL=$database_url
 export TURN_DIFFERENTIAL_DATABASE_URL=$database_url

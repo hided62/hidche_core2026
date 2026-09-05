@@ -14,6 +14,41 @@ import {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
+    it.each(['PREOPEN', 'SUSPENDED', 'RECONCILING', 'COMPLETED'] as const)(
+        'does not dispatch an explicit run while the clock phase is %s',
+        async (phase) => {
+            const now = new Date('2026-09-05T00:00:00.000Z');
+            const controlQueue = new InMemoryControlQueue();
+            controlQueue.enqueue({ type: 'run', reason: 'manual' });
+            const processor = { run: vi.fn() };
+            const lifecycle = new TurnDaemonLifecycle(
+                {
+                    clock: new ManualClock(now.getTime()),
+                    controlQueue,
+                    processor,
+                    getNextTickTime: (value) => addMinutes(value, 5),
+                    stateStore: {
+                        loadLastTurnTime: async () => now,
+                        loadNextGeneralTurnTime: async () => now,
+                        saveLastTurnTime: async () => {},
+                        loadCheckpoint: async () => undefined,
+                        saveCheckpoint: async () => {},
+                        loadGameClock: async () => {
+                            controlQueue.enqueue({ type: 'shutdown' });
+                            return { mode: 'realtime', phase, now };
+                        },
+                    },
+                },
+                {
+                    profile: 'clock-phase-run-gate',
+                    defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 },
+                }
+            );
+            await lifecycle.start();
+            expect(processor.run).not.toHaveBeenCalled();
+        }
+    );
+
     it('durably rebases a long realtime backlog before executing another turn', async () => {
         const wallNow = new Date('2026-08-23T01:35:00.000Z');
         const clock = new ManualClock(wallNow.getTime());

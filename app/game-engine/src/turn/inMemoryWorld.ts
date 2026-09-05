@@ -1711,7 +1711,11 @@ export class InMemoryTurnWorld {
             // Rebasing is also the explicit resume checkpoint. Realtime mode
             // must not replay the operational downtime after an administrator
             // deliberately delays or accelerates the game schedule.
-            clockWallAnchor: new Date(wallNow.getTime()),
+            // 가오픈의 anchor는 별도 예약된 정식 오픈이다. 표시 좌표를 옮기는
+            // 작업이 그 미래 경계를 현재 시각으로 당겨 게임을 시작시키면 안 된다.
+            clockWallAnchor: new Date(
+                previousClock.phase === 'PREOPEN' ? previousClock.wallAnchor.getTime() : wallNow.getTime()
+            ),
             lastTurnTime: nextLastTurnTime,
             meta: nextMeta,
         };

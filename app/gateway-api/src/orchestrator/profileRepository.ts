@@ -802,7 +802,13 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
                 where:
                     candidate.status === 'QUEUED'
                         ? { id: candidate.id, status: 'QUEUED' }
-                        : { id: candidate.id, status: 'RUNNING', leaseUntil: candidate.leaseUntil },
+                        : {
+                              id: candidate.id,
+                              status: 'RUNNING',
+                              // DB microseconds는 JS Date로 읽을 때 잘린다. timestamp
+                              // 동등 비교 대신 갱신되지 않은 만료 lease인지 DB에서 재검사한다.
+                              leaseUntil: candidate.leaseUntil ? { lt: now } : null,
+                          },
                 data: {
                     status: 'RUNNING',
                     startedAt: candidate.startedAt ?? now,

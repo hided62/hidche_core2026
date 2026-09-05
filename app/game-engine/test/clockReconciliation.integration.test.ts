@@ -14,10 +14,8 @@ import {
 import { reconcileClockSuspension, startClockSuspension } from '../src/turn/clockReconciliation.js';
 import { applyNextClockProjection } from '../src/turn/clockProjectionOutbox.js';
 
-const enabled =
-    process.env.CLOCK_RECONCILIATION_INTEGRATION === '1' &&
-    Boolean(process.env.DATABASE_URL) &&
-    Boolean(process.env.REDIS_URL);
+const databaseUrl = process.env.CLOCK_RECONCILIATION_DATABASE_URL;
+const enabled = Boolean(databaseUrl) && Boolean(process.env.REDIS_URL);
 const describeIntegration = enabled ? describe : describe.skip;
 
 describeIntegration('durable clock reconciliation', () => {
@@ -47,7 +45,7 @@ describeIntegration('durable clock reconciliation', () => {
     };
 
     beforeAll(async () => {
-        const connector = createGamePostgresConnector({ url: process.env.DATABASE_URL! });
+        const connector = createGamePostgresConnector({ url: databaseUrl! });
         db = connector.prisma;
         disconnect = connector.disconnect;
         redis = createRedisConnector({ url: process.env.REDIS_URL! });
@@ -225,16 +223,16 @@ describeIntegration('durable clock reconciliation', () => {
 
         const [afterWorld, generals, auction, message, messageAction, vote, pool, token, ledger, outboxes] =
             await Promise.all([
-            db.worldState.findUniqueOrThrow({ where: { id: world.id } }),
-            db.general.findMany({ orderBy: { id: 'asc' } }),
-            db.auction.findFirstOrThrow(),
-            db.message.findFirstOrThrow(),
-            db.messageAction.findFirstOrThrow(),
-            db.votePoll.findFirstOrThrow(),
-            db.selectPoolEntry.findFirstOrThrow(),
-            db.npcSelectionToken.findFirstOrThrow(),
-            db.clockSuspension.findUniqueOrThrow({ where: { id: suspended.suspensionId } }),
-            db.clockProjectionOutbox.findMany(),
+                db.worldState.findUniqueOrThrow({ where: { id: world.id } }),
+                db.general.findMany({ orderBy: { id: 'asc' } }),
+                db.auction.findFirstOrThrow(),
+                db.message.findFirstOrThrow(),
+                db.messageAction.findFirstOrThrow(),
+                db.votePoll.findFirstOrThrow(),
+                db.selectPoolEntry.findFirstOrThrow(),
+                db.npcSelectionToken.findFirstOrThrow(),
+                db.clockSuspension.findUniqueOrThrow({ where: { id: suspended.suspensionId } }),
+                db.clockProjectionOutbox.findMany(),
             ]);
         const alignedTick = BigInt(reconciled.alignedTick);
         expect(afterWorld).toMatchObject({

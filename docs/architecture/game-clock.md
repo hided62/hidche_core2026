@@ -20,6 +20,21 @@ Redis 투영은 DB commit 뒤 action ID로 멱등 적용됩니다.
 
 ## 실행 모드
 
+`PREOPEN`은 사용자 명령을 처리하는 가오픈 상태입니다. 장수 생성·선택·빙의,
+사전 거병·삭제·예약과 설정은 durable ENGINE 명령으로 처리하지만, 자동 턴과
+명시적 `run` 요청의 시간 진행은 `RUNNING`/`MANUAL`에서만 실행합니다.
+`SUSPENDED`/`RECONCILING`/`COMPLETED`를 가오픈과 같은 상태로 취급하지 않습니다.
+
+가오픈 삭제 대기는 생성 접수의 DB WALL_TIME에 설정한 턴 간격 배수를 더한
+`prestart_delete_after`로 판정합니다. 음수 GAME tick이나 화면의 게임 날짜를
+그 현실 기한과 비교하지 않습니다. 사전 거병·삭제의 개시 판정은 PREOPEN phase와
+`last_turn_tick`을 사용하며, Ref의 개시 cursor 동등 경계는 유지합니다.
+`opentime` 표시 문자열은 일정 재투영 뒤에도 이 판정의 권위가 아닙니다.
+
+일반·선택 장수 생성의 GAME 효과와 RNG에는 daemon의 `processing_game_tick`을
+사용하고, 최초 실행 턴은 PREOPEN에서 tick 0보다 앞에 놓지 않습니다. 계정에서
+가져오는 제재의 Unix `expire`는 접수 DB WALL_TIME과 비교합니다.
+
 - `GAME_CLOCK_MODE=realtime`: `clock_wall_anchor` 이후의 실제 경과시간을
   game tick으로 환산합니다. 벽시계가 뒤로 보정되어도 game tick은 감소하지
   않습니다.
@@ -66,6 +81,9 @@ realtime daemon은 재개할 때 Ref `checkDelay()`와 같은 한도를 적용�
 장수 턴 tick은 바꾸지 않습니다. 동시에 `clock_wall_anchor`를 작업 실행
 시각으로 다시 고정합니다.
 
+PREOPEN에서 이 투영 조정을 수행할 때는 예정된 `clock_wall_anchor`를 유지합니다.
+GAME 표시 좌표를 옮기는 명령이 별도로 예약된 정식 WALL 오픈을 앞당기지 않습니다.
+
 통일 후 이민족 선택을 기다리는 `UNIFICATION_WAIT`는 일반 maintenance 재개와
 다릅니다. 운영상 STOP된 profile을 RESUME하면 Gateway는 프로세스만 다시 띄우고
 게임 clock은 `SUSPENDED`로 유지합니다. daemon이 수신자 소유권과 command fence를
@@ -89,6 +107,10 @@ game tick을 미리 고정하지 않으며, daemon이 clock lock/fence 아래서
 적용하지 않습니다. worker history retention·lease·retry는 DB WALL_TIME,
 프로세스 대기 budget은 monotonic time입니다.
 
+daemon 종료가 이미 local queue에 있으면 새 DB 명령을 선점하지 않습니다.
+실행하지 않을 명령을 `PROCESSING`으로 남겨 교체 daemon이 lease 만료를 기다리게
+하지 않고, 기존 PENDING 명령은 즉시 다음 daemon이 claim할 수 있게 유지합니다.
+
 경매 입찰은 `requested_at_wall`로 현실 요청을, `occurred_game_tick`으로 GAME
 사건을 별도 기록합니다. bid 표시 투영은 같은 game time을 보존하고,
 optimistic 경합 판정은 임의 UUID의
@@ -97,3 +119,9 @@ optimistic 경합 판정은 임의 UUID의
 `FINALIZING`은 현재 tick에 seed하여 durable finalization event 복구를 즉시
 재시도합니다. Redis history의 score는 보존 기간 계산을 위해 운영 벽시계를
 사용합니다.
+
+## 통합 검증
+
+`CLOCK_RECONCILIATION_DATABASE_URL`과 `REDIS_URL`을 사용하는 실제 reconciliation
+검증은 conditional integration registry의 core group에 포함합니다. 일반 단위
+테스트의 조건부 skip을 실제 PostgreSQL/Redis 검증 통과로 간주하지 않습니다.

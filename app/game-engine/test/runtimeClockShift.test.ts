@@ -212,6 +212,24 @@ describe('runtime clock shift', () => {
         expect(world.getGameClockState()).toMatchObject({ phase: 'RUNNING', tick: 0 });
     });
 
+    it('preserves the formal wall opening when PREOPEN game display dates are shifted', () => {
+        const openAt = new Date('2026-09-06T00:00:00.000Z');
+        const now = new Date('2026-09-05T00:00:00.000Z');
+        const world = buildWorld({
+            clockBaseTime: new Date('2026-07-30T10:00:00.000Z'),
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockWallAnchor: openAt,
+            lastTurnTick: 0,
+            clockPhase: 'PREOPEN',
+        });
+        world.shiftSchedule(15, now);
+        expect(world.getGameClockState()).toMatchObject({ phase: 'PREOPEN', tick: 0, wallAnchor: openAt });
+        expect(world.promotePreopenAtOpening(now)).toBe(false);
+        expect(world.getRunnableGameNow(now)).toEqual(new Date('2026-07-30T10:15:00.000Z'));
+        expect(world.promotePreopenAtOpening(openAt)).toBe(true);
+    });
+
     it('rejects gameplay commits while the durable clock is suspended', async () => {
         const world = buildWorld({ clockPhase: 'SUSPENDED', clockMode: 'realtime' });
 

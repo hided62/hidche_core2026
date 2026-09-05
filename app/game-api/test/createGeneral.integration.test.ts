@@ -67,6 +67,7 @@ const buildAuth = (id: string, displayName: string, legacyMemberNo: number): Gam
             any: {
                 ban: { expire: 4_102_444_800, value: 1 },
                 expired: { expire: 1, value: 9 },
+                expiredWall: { expire: Date.parse('2026-08-01T00:00:00.000Z') / 1000, value: 9 },
             },
             hwe: {
                 ban: { expire: 4_102_444_800, value: 2 },
@@ -149,8 +150,9 @@ integration('generic general creation through the durable turn daemon', () => {
             await seedScenarioToDatabase({
                 scenarioId: 2,
                 databaseUrl: databaseUrl!,
-                now: new Date('2099-07-30T12:00:00.000Z'),
+                now: new Date('2026-07-30T12:00:00.000Z'),
                 installOptions: {
+                    openAt: new Date(Date.now() + 86_400_000),
                     turnTermMinutes: 5,
                     npcMode: 0,
                     showImgLevel: 3,
@@ -289,6 +291,7 @@ integration('generic general creation through the durable turn daemon', () => {
             },
         });
         expect(created.affinity).toBeGreaterThanOrEqual(1);
+        expect(created.penalty).toEqual({ ban: 2, chat: 3 });
         expect(created.affinity).toBeLessThanOrEqual(150);
         expect(created.meta).toMatchObject({
             createdBy: 'join',
@@ -305,6 +308,9 @@ integration('generic general creation through the durable turn daemon', () => {
             throw new Error('created general must have an initial access timestamp');
         }
         expect(createdAccess.lastRefresh).toEqual(acceptedEvent.createdAt);
+        expect(acceptedEvent.processingGameTick).toBeLessThan(0n);
+        expect(created.turnTick).toBeGreaterThanOrEqual(0n);
+        expect(await db.worldState.findFirst()).toMatchObject({ clockPhase: 'PREOPEN', clockTick: 0n });
         expect(
             new Date((created.meta as Record<string, unknown>).prestart_delete_after as string).getTime() -
                 acceptedEvent.createdAt.getTime()
