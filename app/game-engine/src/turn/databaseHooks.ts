@@ -464,6 +464,11 @@ export const createReadModelChangeJournal = (
     if (commandResult?.type === 'voteReward' && commandResult.ok) {
         journal.mark('front.general', commandResult.generalId);
     }
+    // 과거 멸망국 등용장의 거부 응답도 action을 만료시킬 수 있다.
+    // 개인 메시지 응답 뒤에는 성공 여부와 관계없이 해당 수신함을 다시 읽는다.
+    if (commandResult?.type === 'messageRespond' && commandResult.action === 'scout') {
+        journal.mark('messages.mailbox', commandResult.generalId);
+    }
     markIds(journal, 'general.content', changes.generalIds);
     markIds(journal, 'city.content', changes.cityIds);
     markIds(journal, 'nation.content', changes.nationIds);
@@ -1909,6 +1914,37 @@ export const createDatabaseTurnHooks = async (
                     message,
                     { sendDestOnly: message.sendDestOnly }
                 );
+            }
+            if (deletedNations.length > 0) {
+                // 발신자 하야/이적은 등용장을 바꾸지 않는다. 발송 당시 국가가
+                // 멸망할 때만 같은 transaction에서 action과 구버전 만료 투영을 닫는다.
+                // 이번 flush에 생성된 편지도 포함하도록 message 저장 뒤에 처리한다.
+                const letters = await prisma.message.findMany({
+                    where: {
+                        type: 'private',
+                        action: { actionType: 'scout', status: 'PENDING' },
+                        OR: deletedNations.map((nationId) => ({
+                            message: { path: ['src', 'nationId'], equals: nationId },
+                        })),
+                    },
+                    select: { id: true, mailbox: true },
+                });
+                if (letters.length > 0) {
+                    const ids = letters.map(({ id }) => id);
+                    const resolvedGameTick = BigInt(state.clockTick ?? state.lastTurnTick ?? 0);
+                    await prisma.messageAction.updateMany({
+                        where: { messageId: { in: ids }, status: 'PENDING' },
+                        data: { status: 'RESOLVED', resolvedGameTick },
+                    });
+                    await prisma.message.updateMany({
+                        where: { id: { in: ids } },
+                        data: {
+                            validUntil: world.gameTickToDate(Number(resolvedGameTick)),
+                            validUntilTick: resolvedGameTick,
+                        },
+                    });
+                    persistedMessageMailboxes.push(...letters.map(({ mailbox }) => mailbox));
+                }
             }
             if (options?.reservedTurns && persistedReservedTurnChanges) {
                 await options.reservedTurns.persistChanges(prisma, persistedReservedTurnChanges);

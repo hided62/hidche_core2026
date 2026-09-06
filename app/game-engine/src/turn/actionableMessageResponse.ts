@@ -192,6 +192,13 @@ const respondToScout = async (options: {
         return { ok: false, action: 'scout', reason: '유효하지 않은 등용장입니다.' };
     }
 
+    // 등용장은 발신 장수의 현재 소속이 아니라 발송 당시 국가에 귀속된다.
+    // 멸망 처리 도입 전에 남은 편지도 수락/거절 전에 영구 만료한다.
+    if (!world.getNationById(payload.src.nationId)) {
+        await invalidateMessageIds(db, world, [row.id], now);
+        return { ok: false, action: 'scout', reason: '등용장을 보낸 국가가 멸망했습니다.' };
+    }
+
     const sourceNationName = payload.src.nationName;
     const sourceNationJosaRo = JosaUtil.pick(sourceNationName, '로');
     if (response) {

@@ -600,102 +600,126 @@ describe('my information world commands', () => {
         expect(nextIntInclusive).not.toHaveBeenCalled();
     });
 
-    it('loads the internal recruitment acceptance action outside the selectable command profile', async () => {
-        const originalLastTurn = { command: '전투태세', arg: { term: 3 } };
-        const recipient = buildGeneral({
-            id: 8,
-            userId: 'user-8',
-            name: '재야장수',
-            nationId: 0,
-            cityId: 1,
-            officerLevel: 0,
-            lastTurn: originalLastTurn,
-        });
-        const recruiter = buildGeneral({
-            id: 9,
-            userId: 'user-9',
-            name: '등용장수',
-            nationId: 2,
-            cityId: 2,
-        });
-        const map = {
-            id: 'test',
-            name: 'test',
-            cities: [buildMapCity(1, [2]), buildMapCity(2, [1])],
-        };
-        const fixture = buildImmediateActionWorld({
-            general: recipient,
-            additionalGenerals: [recruiter],
-            cities: [
-                { id: 1, name: '낙양', nationId: 0, supplyState: 1, meta: {} },
-                { id: 2, name: '장안', nationId: 2, supplyState: 1, meta: {} },
-            ] as TurnWorldSnapshot['cities'],
-            nations: [
-                {
-                    id: 2,
-                    name: '등용국',
-                    color: '#222222',
-                    typeCode: 'che_중립',
-                    level: 1,
-                    capitalCityId: 2,
-                    chiefGeneralId: recruiter.id,
-                    gold: 0,
-                    rice: 0,
-                    power: 0,
-                    meta: { gennum: 1 },
+    it.each([
+        { recruiterNationId: 2, ruler: false },
+        { recruiterNationId: 0, ruler: false },
+        { recruiterNationId: 3, ruler: false },
+        { recruiterNationId: 2, ruler: true },
+    ])(
+        'checks original-nation acceptance with $recruiterNationId / ruler=$ruler',
+        async ({ recruiterNationId, ruler }) => {
+            const originalLastTurn = { command: '전투태세', arg: { term: 3 } };
+            const recipient = buildGeneral({
+                id: 8,
+                userId: 'user-8',
+                name: '재야장수',
+                nationId: 0,
+                cityId: 1,
+                officerLevel: 0,
+                lastTurn: originalLastTurn,
+            });
+            const recruiter = buildGeneral({
+                id: 9,
+                userId: 'user-9',
+                name: '등용장수',
+                nationId: 2,
+                cityId: 2,
+            });
+            const map = {
+                id: 'test',
+                name: 'test',
+                cities: [buildMapCity(1, [2]), buildMapCity(2, [1])],
+            };
+            const fixture = buildImmediateActionWorld({
+                general: recipient,
+                additionalGenerals: [recruiter],
+                cities: [
+                    { id: 1, name: '낙양', nationId: 0, supplyState: 1, meta: {} },
+                    { id: 2, name: '장안', nationId: 2, supplyState: 1, meta: {} },
+                ] as TurnWorldSnapshot['cities'],
+                nations: [
+                    {
+                        id: 2,
+                        name: '등용국',
+                        color: '#222222',
+                        typeCode: 'che_중립',
+                        level: 1,
+                        capitalCityId: 2,
+                        chiefGeneralId: recruiter.id,
+                        gold: 0,
+                        rice: 0,
+                        power: 0,
+                        meta: { gennum: 1 },
+                    },
+                ] as TurnWorldSnapshot['nations'],
+                map,
+            });
+            const executor = await createImmediateGeneralActionExecutor({
+                world: fixture.world,
+                reservedTurns: fixture.reservedTurns,
+                scenarioMeta: fixture.scenarioMeta,
+                map,
+                commandProfile: {
+                    general: ['che_등용'],
+                    nation: [],
                 },
-            ] as TurnWorldSnapshot['nations'],
-            map,
-        });
-        const executor = await createImmediateGeneralActionExecutor({
-            world: fixture.world,
-            reservedTurns: fixture.reservedTurns,
-            scenarioMeta: fixture.scenarioMeta,
-            map,
-            commandProfile: {
-                general: ['che_등용'],
-                nation: [],
-            },
-        });
+            });
 
-        await expect(
-            executor.execute({
-                actionKey: 'che_등용수락',
-                generalId: recipient.id,
-                rng: new RandUtil(new LiteHashDRBG('accept-recruitment-letter')),
-                args: { destNationId: 2, destGeneralId: recruiter.id },
-            })
-        ).resolves.toEqual({ ok: true });
-        expect(fixture.world.getGeneralById(recipient.id)).toMatchObject({
-            nationId: 2,
-            cityId: 2,
-            officerLevel: 1,
-            lastTurn: originalLastTurn,
-        });
-        expect(fixture.world.getGeneralById(recruiter.id)).toMatchObject({
-            experience: recruiter.experience + 100,
-            dedication: recruiter.dedication + 100,
-        });
-        const actionLogs = fixture.world
-            .consumeDirtyState()
-            .logs.filter((log) => log.scope === LogScope.GENERAL && log.category === LogCategory.ACTION);
-        expect(actionLogs.map((log) => log.text)).toEqual([
-            expect.stringContaining('레벨업'),
-            expect.stringContaining('승급'),
-            expect.stringContaining('망명하여 수도로'),
-            expect.stringContaining('레벨업'),
-            expect.stringContaining('승급'),
-            expect.stringContaining('등용에 성공했습니다.'),
-        ]);
-        expect(actionLogs.map((log) => log.format)).toEqual([
-            LogFormat.PLAIN,
-            LogFormat.PLAIN,
-            LogFormat.MONTH,
-            LogFormat.PLAIN,
-            LogFormat.PLAIN,
-            LogFormat.MONTH,
-        ]);
-    });
+            fixture.world.updateGeneral(recruiter.id, { nationId: recruiterNationId });
+            if (ruler) {
+                fixture.world.updateGeneral(recipient.id, { officerLevel: 12 });
+                const before = fixture.world.captureState();
+                await expect(
+                    executor.execute({
+                        actionKey: 'che_등용수락',
+                        generalId: recipient.id,
+                        rng: new RandUtil(new LiteHashDRBG('reject-ruler-letter')),
+                        args: { destNationId: 2, destGeneralId: recruiter.id },
+                    })
+                ).resolves.toEqual({ ok: false, reason: '군주는 등용장을 수락할 수 없습니다 등용수락 실패.' });
+                expect(fixture.world.captureState()).toEqual(before);
+                return;
+            }
+
+            await expect(
+                executor.execute({
+                    actionKey: 'che_등용수락',
+                    generalId: recipient.id,
+                    rng: new RandUtil(new LiteHashDRBG('accept-recruitment-letter')),
+                    args: { destNationId: 2, destGeneralId: recruiter.id },
+                })
+            ).resolves.toEqual({ ok: true });
+            expect(fixture.world.getGeneralById(recipient.id)).toMatchObject({
+                nationId: 2,
+                cityId: 2,
+                officerLevel: 1,
+                lastTurn: originalLastTurn,
+            });
+            expect(fixture.world.getGeneralById(recruiter.id)).toMatchObject({
+                experience: recruiter.experience + 100,
+                dedication: recruiter.dedication + 100,
+            });
+            const actionLogs = fixture.world
+                .consumeDirtyState()
+                .logs.filter((log) => log.scope === LogScope.GENERAL && log.category === LogCategory.ACTION);
+            expect(actionLogs.map((log) => log.text)).toEqual([
+                expect.stringContaining('레벨업'),
+                expect.stringContaining('승급'),
+                expect.stringContaining('망명하여 수도로'),
+                expect.stringContaining('레벨업'),
+                expect.stringContaining('승급'),
+                expect.stringContaining('등용에 성공했습니다.'),
+            ]);
+            expect(actionLogs.map((log) => log.format)).toEqual([
+                LogFormat.PLAIN,
+                LogFormat.PLAIN,
+                LogFormat.MONTH,
+                LogFormat.PLAIN,
+                LogFormat.PLAIN,
+                LogFormat.MONTH,
+            ]);
+        }
+    );
 
     it('rejects recruitment-letter acceptance in a random-appointment-only world', async () => {
         const recipient = buildGeneral({

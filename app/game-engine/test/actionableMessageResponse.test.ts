@@ -52,7 +52,21 @@ const buildWorld = (): InMemoryTurnWorld => {
     const snapshot: TurnWorldSnapshot = {
         generals: [actor],
         cities: [],
-        nations: [],
+        nations: [
+            {
+                id: 2,
+                name: '촉',
+                color: '#000000',
+                level: 1,
+                capitalCityId: 2,
+                chiefGeneralId: 8,
+                gold: 0,
+                rice: 0,
+                power: 0,
+                typeCode: 'che_중립',
+                meta: {},
+            },
+        ],
         troops: [],
         diplomacy: [],
         events: [],
@@ -210,6 +224,37 @@ describe('actionable message response', () => {
         expect(updateMany).not.toHaveBeenCalled();
         expect(world.peekDirtyState().messages).toHaveLength(0);
     });
+
+    it.each([true, false])(
+        'invalidates a surviving letter from a collapsed nation on response=%s',
+        async (response) => {
+            const world = buildWorld();
+            world.removeNation(source.nationId);
+            const { db, actionUpdateMany, updateMany } = buildDb([[buildRow('scout')]]);
+            const executor = buildExecutor();
+            const result = await respondToActionableMessage({
+                db,
+                world,
+                executor,
+                requestId,
+                userId: actor.userId!,
+                generalId: actor.id,
+                messageId: 29,
+                response,
+            });
+            expect(result).toEqual({ ok: false, action: 'scout', reason: '등용장을 보낸 국가가 멸망했습니다.' });
+            expect(executor.execute).not.toHaveBeenCalled();
+            expect(actionUpdateMany).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: { messageId: { in: [29] }, status: 'PENDING' },
+                    data: { status: 'RESOLVED', resolvedGameTick: expect.any(BigInt) },
+                })
+            );
+            expect(updateMany).toHaveBeenCalledOnce();
+            expect(world.getGeneralById(actor.id)?.nationId).toBe(actor.nationId);
+            expect(world.peekDirtyState().messages).toHaveLength(0);
+        }
+    );
 
     it('treats a legacy truthy used value as an invalid scout letter', async () => {
         for (const row of [buildRow('scout', { option: { action: 'scout', used: 1 } })]) {

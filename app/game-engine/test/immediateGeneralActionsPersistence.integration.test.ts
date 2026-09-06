@@ -4,6 +4,8 @@ import { SystemClock } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import type { MapDefinition, ScenarioConfig, ScenarioMeta, TurnSchedule } from '@sammo-ts/logic';
 
+import { buildScoutMessageDraft } from '@sammo-ts/logic/messages/scoutMessage.js';
+
 import { DatabaseTurnDaemonCommandQueue } from '../src/lifecycle/databaseCommandQueue.js';
 import { TurnDaemonLifecycle } from '../src/lifecycle/turnDaemonLifecycle.js';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
@@ -17,9 +19,9 @@ import { loadTurnWorldFromDatabase } from '../src/turn/worldLoader.js';
 const databaseUrl = process.env.IMMEDIATE_ACTION_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const worldId = 991_731;
-const generalId = 991_731;
-const cityId = 991_731;
-const existingNationId = 991_730;
+const generalId = 731;
+const cityId = 731;
+const existingNationId = 730;
 const requestId = 'integration:engine:immediate-action-uprising';
 const occupiedUniqueItem = 'che_무기_12_칠성검';
 
@@ -179,7 +181,8 @@ integration('immediate general action persistence', () => {
                 OR: [{ srcNationId: { gte: existingNationId } }, { destNationId: { gte: existingNationId } }],
             },
         });
-        await db.general.deleteMany({ where: { id: generalId } });
+        await db.message.deleteMany({ where: { mailbox: { in: [generalId, generalId + 1] } } });
+        await db.general.deleteMany({ where: { id: { in: [generalId, generalId + 1] } } });
         await db.city.deleteMany({ where: { id: cityId } });
         await db.nation.deleteMany({ where: { id: { gte: existingNationId } } });
         await db.worldState.deleteMany({ where: { id: worldId } });
@@ -288,11 +291,191 @@ integration('immediate general action persistence', () => {
                 OR: [{ srcNationId: { gte: existingNationId } }, { destNationId: { gte: existingNationId } }],
             },
         });
-        await db.general.deleteMany({ where: { id: generalId } });
+        await db.message.deleteMany({ where: { mailbox: { in: [generalId, generalId + 1] } } });
+        await db.general.deleteMany({ where: { id: { in: [generalId, generalId + 1] } } });
         await db.city.deleteMany({ where: { id: cityId } });
         await db.nation.deleteMany({ where: { id: { gte: existingNationId } } });
         await db.worldState.deleteMany({ where: { id: worldId } });
         await disconnect?.();
+    });
+
+    it.each([
+        'normal',
+        'resigned',
+        'transferred',
+        'deleted',
+        'ruler',
+        'collapsed',
+        'legacyCollapsed',
+        'random',
+    ] as const)('persists the recruitment-letter lifecycle: %s', async (mode) => {
+        const recruiterId = generalId + 1;
+        await db.general.create({
+            data: {
+                id: recruiterId,
+                name: '권유자',
+                meta: { killturn: 24 },
+                nationId: existingNationId,
+                officerLevel: 1,
+                cityId,
+                turnTime: general.turnTime,
+            },
+        });
+        await db.nation.update({
+            where: { id: existingNationId },
+            data: { capitalCityId: cityId, meta: { gennum: 1 } },
+        });
+        await db.city.update({ where: { id: cityId }, data: { nationId: existingNationId } });
+        const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+        });
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        const handler = createTurnDaemonCommandHandler({ world, scenarioMeta, map });
+        const flush = () =>
+            hooks.hooks.flushChanges!({
+                lastTurnTime: state.lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            });
+        try {
+            const draft = buildScoutMessageDraft({
+                srcGeneral: world.getGeneralById(recruiterId)!,
+                destGeneral: world.getGeneralById(generalId)!,
+                srcNation: world.getNationById(existingNationId),
+                destNation: null,
+                time: world.gameTickToDate(0),
+            });
+            expect(draft).not.toBeNull();
+            world.queueMessage(draft!);
+            await flush();
+            const letter = await db.message.findFirstOrThrow({
+                where: { mailbox: generalId },
+                include: { action: true },
+            });
+            expect(letter.action?.status).toBe('PENDING');
+            const envelopeWallTime = letter.createdAtWall;
+            if (mode === 'collapsed') {
+                world.queueMessage({
+                    ...draft!,
+                    src: { ...draft!.src, nationId: existingNationId + 10 },
+                    text: '다른 국가의 등용장',
+                });
+                world.queueMessage({ ...draft!, option: {}, text: '일반 서신' });
+                await flush();
+            }
+            while (hooks.takeCommittedReadModelChangeReceipt()) {
+                /* discard setup receipts */
+            }
+
+            if (mode === 'resigned' || mode === 'transferred') {
+                world.updateGeneral(recruiterId, { nationId: mode === 'resigned' ? 0 : existingNationId + 10 });
+            } else if (mode === 'deleted') {
+                world.removeGeneral(recruiterId);
+            } else if (mode === 'ruler') {
+                world.updateGeneral(generalId, { nationId: existingNationId + 10, officerLevel: 12 });
+            } else if (mode === 'random') {
+                world.updateWorldConfig({ joinMode: 'onlyRandom' });
+            } else if (mode === 'collapsed' || mode === 'legacyCollapsed') {
+                world.removeNation(existingNationId);
+            }
+            if (mode === 'collapsed') {
+                // Force failure after nation deletion: the envelope/action and nation must roll back together.
+                await db.$executeRawUnsafe(
+                    "ALTER TABLE message_action ADD CONSTRAINT scout_test_pending CHECK (status = 'PENDING')"
+                );
+                await expect(flush()).rejects.toThrow();
+                expect(await db.nation.findUnique({ where: { id: existingNationId } })).not.toBeNull();
+                expect((await db.messageAction.findUniqueOrThrow({ where: { messageId: letter.id } })).status).toBe(
+                    'PENDING'
+                );
+                await db.$executeRawUnsafe('ALTER TABLE message_action DROP CONSTRAINT scout_test_pending');
+            }
+            await flush();
+            if (mode === 'legacyCollapsed') {
+                // Simulate an old deployment which deleted the nation but left this action pending.
+                await db.messageAction.update({
+                    where: { messageId: letter.id },
+                    data: { status: 'PENDING', resolvedGameTick: null },
+                });
+            }
+            const currentLetter = await db.message.findUniqueOrThrow({
+                where: { id: letter.id },
+                include: { action: true },
+            });
+            expect(currentLetter.createdAtWall).toEqual(envelopeWallTime);
+            expect(currentLetter.action?.status).toBe(mode === 'collapsed' ? 'RESOLVED' : 'PENDING');
+            if (mode === 'collapsed') {
+                expect(currentLetter.validUntilTick).not.toBeNull();
+                const receipt = hooks.takeCommittedReadModelChangeReceipt();
+                expect(receipt?.invalidation.revisions).toContainEqual(
+                    expect.objectContaining({
+                        domain: 'messages.mailbox',
+                        entityId: generalId,
+                    })
+                );
+                const controls = await db.message.findMany({
+                    where: { mailbox: generalId, id: { not: letter.id } },
+                    include: { action: true },
+                    orderBy: { id: 'asc' },
+                });
+                expect(controls.map((entry) => entry.action?.status ?? null)).toEqual(['PENDING', null]);
+                expect(controls.every((entry) => entry.validUntil.getUTCFullYear() === 9999)).toBe(true);
+            }
+            const actionRequestId = `${requestId}:scout:${mode}`;
+            const payload = {
+                type: 'messageRespond' as const,
+                requestId: actionRequestId,
+                userId: general.userId!,
+                generalId,
+                messageId: letter.id,
+                response: true,
+            };
+            await db.inputEvent.create({
+                data: {
+                    requestId: actionRequestId,
+                    target: 'ENGINE',
+                    eventType: 'messageRespond',
+                    actorUserId: general.userId,
+                    payload,
+                },
+            });
+            const queue = new DatabaseTurnDaemonCommandQueue(db);
+            await queue.initialize();
+            const commands = await queue.drain();
+            expect(commands).toHaveLength(1);
+            const result = await hooks.hooks.executeCommand!(actionRequestId, async (ctx) => {
+                const value = await handler.handle(commands[0]!, ctx);
+                if (!value) throw new Error('missing message response');
+                return value;
+            });
+            if (mode === 'legacyCollapsed') {
+                expect(hooks.takeCommittedReadModelChangeReceipt()?.invalidation.revisions).toContainEqual(
+                    expect.objectContaining({ domain: 'messages.mailbox', entityId: generalId })
+                );
+            }
+            const accepted = ['normal', 'resigned', 'transferred', 'deleted'].includes(mode);
+            expect(result).toMatchObject(
+                accepted ? { ok: true, reason: 'success' } : { reason: expect.not.stringMatching(/^success$/) }
+            );
+            const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+            expect(reloaded.snapshot.generals.find(({ id }) => id === generalId)).toMatchObject({
+                nationId: accepted ? existingNationId : mode === 'ruler' ? existingNationId + 10 : 0,
+                officerLevel: accepted ? 1 : mode === 'ruler' ? 12 : 0,
+            });
+            expect((await db.messageAction.findUniqueOrThrow({ where: { messageId: letter.id } })).status).toBe(
+                mode === 'ruler' || mode === 'random' ? 'PENDING' : 'RESOLVED'
+            );
+            expect((await db.inputEvent.findUniqueOrThrow({ where: { requestId: actionRequestId } })).status).toBe(
+                'SUCCEEDED'
+            );
+            expect(await queue.drain()).toEqual([]);
+        } finally {
+            await db.$executeRawUnsafe('ALTER TABLE message_action DROP CONSTRAINT IF EXISTS scout_test_pending');
+            await hooks.close();
+        }
     });
 
     it('commits pre-opening uprising with rollback/retry while scheduled turns remain stopped', async () => {
