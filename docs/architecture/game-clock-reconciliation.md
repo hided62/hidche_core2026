@@ -6,9 +6,10 @@ Gameplay time is an integer `GameTick`; one turn is permanently `36,000,000`
 ticks. Wall time is separately authoritative for account, community, audit,
 lease, retry, notification, and operational rules. It is never projected into a
 game deadline. A long suspension advances the observed game coordinate to the
-resume wall instant without replaying skipped turns, monthly events, RNG,
-auctions, or tournaments. Every movable future GAME schedule is shifted by the
-same exact tick delta, including the sub-turn remainder. WALL occurrences and
+resume wall instant without replaying skipped complete turns, monthly events,
+RNG, auctions, or tournaments. Every movable future GAME schedule is shifted by
+the same tick delta. Exact alignment includes the sub-turn remainder; Gateway
+maintenance preserves the turn phase as described below. WALL occurrences and
 deadlines are outside that operation.
 
 The clock state is stored in `world_state`:
@@ -41,9 +42,20 @@ alignedTick = cutTick + gapTicks
 deadlineAfter = deadlineBefore + shiftTicks
 ```
 
-Planned maintenance, delayed opening, and unification wait use zero catch-up.
-The compatibility-only complete-turn behavior is named
-`LEGACY_COMPLETE_TURNS`; it is not the exact policy.
+From 2026-09-06, Gateway maintenance suspension explicitly uses
+`LEGACY_COMPLETE_TURNS`: it shifts schedules by complete turn intervals and
+continues the remaining sub-turn interval from the persisted execution cursor.
+This preserves every general's minute/second phase, including the time zone
+purchased at creation, and keeps general ordering. The remainder is less than
+one turn; completed turns are not recreated. A short interruption can therefore
+leave an unprocessed turn immediately due at resume. This is the same whole-turn
+alignment used by realtime backlog recovery.
+
+Delayed opening, unification wait, and explicit `EXACT` callers retain exact
+alignment with zero catch-up. Existing suspension ledgers retain their recorded
+policy when resumed; deployment does not rewrite historical coordinates or
+repair previously shifted general times. The maintenance policy is selected by
+Gateway, so updating game profile processes alone does not activate it.
 
 Every participant writes its `SHIFT`, `KEEP`, `REBUILD`, or `FORBID` decision,
 row count, and before/after checksum to `clock_reconciliation_participant`.

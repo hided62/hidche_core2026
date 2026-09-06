@@ -62,6 +62,95 @@ describeIntegration('durable clock reconciliation', () => {
         await clean();
     });
 
+    it.each([3_142_625, 6 * 3_600_000 + 3_142_625])(
+        'preserves purchased turn phases and the execution cursor after %i ms maintenance and reload',
+        async (gapMilliseconds) => {
+            const baseTime = new Date('2026-09-06T00:00:00.000Z');
+            const initialTick = 5 * 36_000_000 + 28_879_860;
+            const clock = new GameClock({
+                baseTime,
+                tick: initialTick,
+                mode: 'realtime',
+                wallAnchor: new Date(Date.now() + 3_600_000),
+                turnSeconds: 3_600,
+                phase: 'RUNNING',
+            });
+            const lastTurnTick = 5 * 36_000_000;
+            // 냥냥과 같은 00:19.902 구매 시각. 5시 턴은 이미 처리되어 다음은 6시다.
+            const nextTicks = [6 * 36_000_000 + 199_020, 6 * 36_000_000 + 420_010];
+            await db.worldState.create({
+                data: {
+                    scenarioCode: 'maintenance-phase',
+                    currentYear: 199,
+                    currentMonth: 2,
+                    tickSeconds: 3_600,
+                    clockBaseTime: baseTime,
+                    clockTick: BigInt(initialTick),
+                    clockMode: 'realtime',
+                    clockWallAnchor: clock.wallAnchor,
+                    lastTurnTick: BigInt(lastTurnTick),
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    deadlineGeneration: 1n,
+                },
+            });
+            await db.general.createMany({
+                data: nextTicks.map((tick, index) => ({
+                    id: index + 1,
+                    name: `purchased-${index}`,
+                    turnTick: BigInt(tick),
+                    turnTime: clock.tickToDate(tick),
+                    lastTurn: { command: '휴식' },
+                    meta: { killturn: 24 },
+                })),
+            });
+            const authority = { kind: 'OFFLINE' as const, profileName: 'maintenance-phase', reason: 'fixture' };
+            const suspended = await startClockSuspension({
+                db,
+                suspensionId: 'maintenance-phase',
+                source: 'MAINTENANCE',
+                policy: 'LEGACY_COMPLETE_TURNS',
+                authority,
+            });
+            const plan = await reconcileClockSuspension({
+                db,
+                suspensionId: suspended.suspensionId,
+                authority,
+                testResumeWallAt: new Date(suspended.cutWallAt.getTime() + gapMilliseconds),
+            });
+            const expectedShift = Math.floor(gapMilliseconds / 3_600_000) * 36_000_000;
+            expect(plan.shiftTicks).toBe(expectedShift);
+            expect(plan.catchUpTicks).toBe(31_426_250);
+            expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'phase-test' })).not.toBe(
+                'IDLE'
+            );
+            const reload = createGamePostgresConnector({ url: databaseUrl! });
+            try {
+                const world = await reload.prisma.worldState.findFirstOrThrow();
+                const generals = await reload.prisma.general.findMany({ orderBy: { id: 'asc' } });
+                expect(world).toMatchObject({
+                    clockPhase: 'RUNNING',
+                    currentYear: 199,
+                    currentMonth: 2,
+                    lastTurnTick: BigInt(lastTurnTick + expectedShift),
+                });
+                expect(generals.map((general) => Number(general.turnTick))).toEqual(
+                    nextTicks.map((tick) => tick + expectedShift)
+                );
+                expect(generals.map((general) => general.turnTime.toISOString().slice(14))).toEqual([
+                    '00:19.902Z',
+                    '00:42.001Z',
+                ]);
+                expect(generals.map((general) => general.meta)).toEqual([{ killturn: 24 }, { killturn: 24 }]);
+                // 미처리된 다음 턴만 남고, 처리한 5시 턴을 다시 만들지 않는다.
+                expect(Number(generals[0]!.turnTick)).toBeGreaterThan(Number(world.lastTurnTick));
+                expect((await reload.prisma.clockSuspension.findFirstOrThrow()).status).toBe('APPLIED');
+            } finally {
+                await reload.disconnect();
+            }
+        }
+    );
+
     it('preserves every remaining deadline and occurrence across a 65m17.250s exact gap', async () => {
         const baseTime = new Date('2026-01-01T00:00:00.000Z');
         const futureAnchor = new Date(Date.now() + 3_600_000);
