@@ -464,6 +464,19 @@ integration('unification finalization transaction', () => {
             expect(await db.message.count({ where: { mailbox: fixtureId } })).toBe(0);
             expect(world.peekDirtyState().pendingUnificationFinalizations).toHaveLength(0);
 
+            const assertLateInheritanceIgnored = async () => {
+                const beforePoints = await db.inheritancePoint.findMany({ where: { userId }, orderBy: { id: 'asc' } });
+                const beforeLogs = await db.inheritanceLog.count({ where: { userId } });
+                world.queueInheritancePointAdjustment(userId, 'previous', 999999);
+                world.queueInheritancePointAdjustment(userId, 'tournament', 100);
+                world.queueInheritanceLog({ userId, year: 190, month: 7, text: '확정 후 보상은 기록하지 않음' });
+                await hooks.hooks.flushChanges?.(runResult);
+                expect(await db.inheritancePoint.findMany({ where: { userId }, orderBy: { id: 'asc' } })).toEqual(
+                    beforePoints
+                );
+                expect(await db.inheritanceLog.count({ where: { userId } })).toBe(beforeLogs);
+            };
+
             await db.gameHistory.create({
                 data: {
                     serverId,
@@ -597,6 +610,7 @@ integration('unification finalization transaction', () => {
                 },
             });
             expect(yearbook.globalHistory).toEqual(expect.arrayContaining([expect.stringContaining('【통일】')]));
+            await assertLateInheritanceIgnored();
             expect(world.peekDirtyState().pendingUnificationFinalizations).toHaveLength(0);
 
             await hooks.hooks.flushChanges?.(runResult);
@@ -771,6 +785,8 @@ integration('unification finalization transaction', () => {
             expect(
                 await db.clockProjectionOutbox.findFirstOrThrow({ where: { suspensionId: suspension.id } })
             ).toMatchObject({ status: 'PENDING', targetRevision: 2n });
+
+            await assertLateInheritanceIgnored();
 
             if (process.env.REDIS_URL) {
                 const redis = createRedisConnector({ url: process.env.REDIS_URL });

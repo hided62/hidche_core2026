@@ -716,4 +716,59 @@ integration('mode 1 NPC possession through token reservation and the durable dae
         expect(await db.general.count({ where: { userId: rejectedUserId } })).toBe(0);
         expect(runtime!.world.listGenerals().some(({ userId: owner }) => owner === rejectedUserId)).toBe(false);
     }, 45_000);
+    it.each(['SUSPENDED', 'COMPLETED'])(
+        'reserves and possesses an NPC in %s without changing finalized records',
+        async (phase) => {
+            await stopRuntime('prepare frozen possession');
+            const original = await db.worldState.findFirstOrThrow();
+            const history = await db.gameHistory.findUniqueOrThrow({ where: { serverId: profile } });
+            const visitorId = `npc-visitor-${phase}`;
+            const visitor = buildAuth(visitorId, '축하방문자', phase === 'SUSPENDED' ? 801 : 802);
+            await db.worldState.update({
+                where: { id: original.id },
+                data: {
+                    clockPhase: phase,
+                    meta: { ...(original.meta as Record<string, GamePrisma.InputJsonValue>), isUnited: 2, isunited: 2 },
+                },
+            });
+            await db.gameHistory.update({ where: { serverId: profile }, data: { status: 'COMPLETED' } });
+            const records = async () => ({
+                hall: await db.hallOfFame.findMany({ where: { serverId: profile }, orderBy: { id: 'asc' } }),
+                old: await db.oldGeneral.findMany({ where: { serverId: profile }, orderBy: { id: 'asc' } }),
+                points: await db.inheritancePoint.findMany({ where: { userId: visitorId } }),
+                results: await db.inheritanceResult.count({ where: { serverId: profile } }),
+            });
+            const before = await records();
+            try {
+                await startRuntime(`npc-visitor-${phase}`);
+                const caller = appRouter.createCaller(buildContext(`npc-visitor-${phase}`, visitor));
+                const candidates = await caller.join.listPossessCandidates({});
+                const picked = candidates.candidates[0]!;
+                expect(picked).toBeDefined();
+                await caller.join.possessGeneral({ generalId: picked.id, tokenNonce: candidates.tokenNonce });
+                expect(await db.general.findUniqueOrThrow({ where: { id: picked.id } })).toMatchObject({
+                    userId: visitorId,
+                    npcState: 1,
+                });
+                expect(await records()).toEqual(before);
+                expect(await db.worldState.findUniqueOrThrow({ where: { id: original.id } })).toMatchObject({
+                    clockPhase: phase,
+                    clockTick: original.clockTick,
+                    lastTurnTick: original.lastTurnTick,
+                });
+                await stopRuntime('verify frozen possession reload');
+                await startRuntime(`npc-visitor-reload-${phase}`);
+                expect(runtime!.world.getGeneralById(picked.id)?.userId).toBe(visitorId);
+            } finally {
+                await stopRuntime('restore frozen possession');
+                await db.worldState.update({
+                    where: { id: original.id },
+                    data: { clockPhase: original.clockPhase, meta: original.meta! },
+                });
+                await db.gameHistory.update({ where: { serverId: profile }, data: { status: history.status } });
+                await startRuntime('frozen-possession-restored');
+            }
+        },
+        30_000
+    );
 });

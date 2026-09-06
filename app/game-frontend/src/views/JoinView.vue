@@ -808,6 +808,10 @@ onUnmounted(() => {
                     </span>
                 </summary>
                 <div v-if="!inheritConfig" class="advanced-body muted">유산 포인트 정보를 불러오지 못했습니다.</div>
+                <div v-else-if="inheritConfig.enabled === false" class="advanced-body muted">
+                    통일 이후에는 유산 포인트를 사용하거나 생성 보너스를 받지 않습니다. 기본 옵션으로 장수를 생성할 수
+                    있습니다.
+                </div>
                 <div v-else class="advanced-body inherit-panel">
                     <div class="inherit-summary">
                         <div>보유 포인트: {{ inheritTotalPoint }}</div>

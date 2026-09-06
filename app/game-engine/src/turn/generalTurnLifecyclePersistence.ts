@@ -1,3 +1,4 @@
+import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import {
     asRecord,
     HALL_OF_FAME_TYPES,
@@ -403,9 +404,14 @@ export const persistGeneralLifecycleEvents = async (
         data: { refreshScore: 0 },
     });
 
+    const recordsFinalized = await areSeasonRecordsFinalized(prisma, worldMeta.serverId);
     for (const event of events) {
         if (event.outcome === 'detached' || event.outcome === 'deleted') {
             await prisma.generalAccessLog.deleteMany({ where: { generalId: event.generalId } });
+        }
+        if (recordsFinalized) {
+            if (event.outcome === 'retired') await persistPostRetirementRankValues(prisma, event);
+            continue;
         }
         if (event.outcome !== 'deleted' && event.outcome !== 'retired') {
             continue;

@@ -170,6 +170,13 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                       ${gameplayAllowed}
                       OR "event_type" = 'getStatus'
                       OR (
+                          ${world?.clockPhase === 'SUSPENDED' || world?.clockPhase === 'COMPLETED'}
+                          AND "event_type" IN (
+                              'joinCreateGeneral', 'npcPossessGeneral',
+                              'selectPoolReserve', 'selectPoolCreate', 'selectPoolReselect'
+                          )
+                      )
+                      OR (
                           ${suspendedTournamentBetCommand}
                           AND "event_type" IN ('adjustGeneralResources', 'adjustGeneralMeta')
                           AND "payload" ->> 'reason' IN ('tournamentBet', 'tournamentBetRollback')

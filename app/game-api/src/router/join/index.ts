@@ -4,11 +4,7 @@ import { z } from 'zod';
 import type { GameApiContext, WorldStateRow } from '../../context.js';
 import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { asNumber, asRecord, asStringArray } from '@sammo-ts/common';
-import {
-    CLOCK_OPERATION_PERSISTENCE_LOCK,
-    GamePrisma,
-    acquireGameSchemaAdvisoryXactLock,
-} from '@sammo-ts/infra';
+import { CLOCK_OPERATION_PERSISTENCE_LOCK, GamePrisma, acquireGameSchemaAdvisoryXactLock } from '@sammo-ts/infra';
 import {
     isWarTraitKey,
     JOIN_PERSONALITY_TRAIT_KEYS,
@@ -339,6 +335,11 @@ export const joinRouter = router({
             };
         });
 
+        const serverId = asRecord(worldState.meta).serverId;
+        const history =
+            typeof serverId === 'string'
+                ? await ctx.db.gameHistory.findUnique({ where: { serverId }, select: { status: true } })
+                : null;
         const inheritConst = resolveInheritConstants(worldState);
         const inheritTotalPoint = ctx.auth?.user.id
             ? await readInheritancePoint(ctx.db, ctx.auth.user.id, 'previous')
@@ -376,6 +377,7 @@ export const joinRouter = router({
                 npcGeneralCount,
             },
             inherit: {
+                enabled: history?.status !== 'COMPLETED',
                 totalPoint: inheritTotalPoint,
                 costs: {
                     inheritBornSpecialPoint: inheritConst.inheritBornSpecialPoint,
@@ -595,10 +597,10 @@ export const joinRouter = router({
                             message: 'World state is not initialized.',
                         });
                     }
-                    if (!['PREOPEN', 'RUNNING', 'MANUAL'].includes(clockRows[0].clockPhase)) {
+                    if (!['PREOPEN', 'RUNNING', 'MANUAL', 'SUSPENDED', 'COMPLETED'].includes(clockRows[0].clockPhase)) {
                         throw new TRPCError({
                             code: 'PRECONDITION_FAILED',
-                            message: '게임 시계가 중단된 동안은 NPC 빙의 후보를 갱신할 수 없습니다.',
+                            message: '게임 시계를 조정하는 동안은 NPC 빙의 후보를 갱신할 수 없습니다.',
                         });
                     }
                     const worldState = await transaction.worldState.findFirst();

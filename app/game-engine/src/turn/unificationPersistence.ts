@@ -1,3 +1,4 @@
+import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
 import {
     acquireGameSchemaAdvisoryXactLock,
@@ -95,6 +96,8 @@ const claimGeneration = async (
         }
         return 'ALREADY_APPLIED';
     }
+    // 이전 버전/이관 기수에 generation row가 없어도 통일 기록을 다시 정산하지 않는다.
+    if (await areSeasonRecordsFinalized(transaction, input.serverId)) return 'ALREADY_APPLIED';
     await transaction.unificationFinalization.create({
         data: {
             generationKey: input.generationKey,

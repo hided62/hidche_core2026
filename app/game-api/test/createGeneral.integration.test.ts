@@ -229,6 +229,14 @@ integration('generic general creation through the durable turn daemon', () => {
                 create: { userId, key, value },
             });
         }
+        // 이 fixture는 특기 없는 일반 생성/reload를 검증한다. 1% 천재 추첨은 별도 계약이다.
+        const seededWorld = await db.worldState.findFirstOrThrow();
+        await db.worldState.update({
+            where: { id: seededWorld.id },
+            data: {
+                meta: { ...(seededWorld.meta as Record<string, GamePrisma.InputJsonValue>), genius: 0 },
+            },
+        });
         await startRuntime('create-general-integration-daemon');
     }, 60_000);
 
@@ -559,4 +567,91 @@ integration('generic general creation through the durable turn daemon', () => {
             expect.arrayContaining([expect.objectContaining({ userId: 'forged-owner' })])
         );
     }, 10_000);
+    it.each([
+        { phase: 'SUSPENDED', united: 0, finalized: false },
+        { phase: 'SUSPENDED', united: 2, finalized: true },
+        { phase: 'COMPLETED', united: 3, finalized: true },
+    ])(
+        'creates a visitor in $phase/$united without reopening season records',
+        async ({ phase, united, finalized }) => {
+            await stopRuntime('prepare frozen participation');
+            const original = await db.worldState.findFirstOrThrow();
+            const history = await db.gameHistory.findUniqueOrThrow({ where: { serverId: profile } });
+            const visitorId = `visitor-${phase}-${united}`;
+            const auth = buildAuth(visitorId, '방문자', 7000 + united);
+            await db.inheritancePoint.create({ data: { userId: visitorId, key: 'previous', value: 5000 } });
+            await db.worldState.update({
+                where: { id: original.id },
+                data: {
+                    clockPhase: phase,
+                    meta: {
+                        ...(original.meta as Record<string, GamePrisma.InputJsonValue>),
+                        isUnited: united,
+                        isunited: united,
+                    },
+                },
+            });
+            await db.gameHistory.update({
+                where: { serverId: profile },
+                data: { status: finalized ? 'COMPLETED' : 'OPEN' },
+            });
+            const readRecords = async () => ({
+                points: await db.inheritancePoint.findMany({ where: { userId: visitorId }, orderBy: { id: 'asc' } }),
+                logs: await db.inheritanceLog.count({ where: { userId: visitorId } }),
+                baseline: await db.gameInheritanceBaseline.count({ where: { serverId: profile, userId: visitorId } }),
+                hall: await db.hallOfFame.findMany({ where: { serverId: profile }, orderBy: { id: 'asc' } }),
+                results: await db.inheritanceResult.count({ where: { serverId: profile } }),
+                oldGenerals: await db.oldGeneral.count({ where: { serverId: profile } }),
+            });
+            const before = await readRecords();
+            try {
+                await startRuntime(`visitor-${phase}-${united}`);
+                const caller = appRouter.createCaller(buildContext(`visitor-${phase}-${united}`, auth));
+                expect((await caller.join.getConfig()).inherit.enabled).toBe(!finalized);
+                const input = {
+                    name: `방문${united}`,
+                    pic: false,
+                    leadership: 55,
+                    strength: 55,
+                    intel: 55,
+                    character: 'che_안전' as const,
+                };
+                if (finalized) {
+                    await expect(
+                        appRouter
+                            .createCaller(buildContext(`visitor-paid-${united}`, auth))
+                            .join.createGeneral({ ...input, inheritTurntimeZone: 7 })
+                    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+                    expect(await readRecords()).toEqual(before);
+                }
+                const result = await caller.join.createGeneral(input);
+                expect(await db.general.findUniqueOrThrow({ where: { id: result.generalId } })).toMatchObject({
+                    userId: visitorId,
+                    npcState: 0,
+                });
+                expect(await db.worldState.findUniqueOrThrow({ where: { id: original.id } })).toMatchObject({
+                    clockPhase: phase,
+                    clockTick: original.clockTick,
+                    lastTurnTick: original.lastTurnTick,
+                });
+                if (finalized) expect(await readRecords()).toEqual(before);
+                else
+                    expect(
+                        await db.gameInheritanceBaseline.count({ where: { serverId: profile, userId: visitorId } })
+                    ).toBe(1);
+                await stopRuntime('verify visitor persisted');
+                await startRuntime(`visitor-reload-${phase}-${united}`);
+                expect(runtime?.world.getGeneralById(result.generalId)?.userId).toBe(visitorId);
+            } finally {
+                await stopRuntime('restore participation fixture');
+                await db.worldState.update({
+                    where: { id: original.id },
+                    data: { clockPhase: original.clockPhase, meta: original.meta! },
+                });
+                await db.gameHistory.update({ where: { serverId: profile }, data: { status: history.status } });
+                await startRuntime('participation-fixture-restored');
+            }
+        },
+        30_000
+    );
 });

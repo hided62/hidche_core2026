@@ -1,3 +1,4 @@
+import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
 import {
@@ -613,14 +614,20 @@ export const createGeneralFromJoin = async (options: {
     const inheritBonus = validateAndNormalizeBonus(input.inheritBonusStat);
     const inheritConstants = resolveInheritConstants(worldState);
     const worldMeta = asRecord(worldState.meta);
+    const recordsFinalized = await areSeasonRecordsFinalized(db, worldMeta.serverId);
     const inheritRequiredPoint = calculateInheritanceCost(input, inheritConstants, inheritBonus);
-    const currentInheritancePoint = await applyInheritanceUser(
-        db,
-        input.userId,
-        worldState.currentYear,
-        worldState.currentMonth
-    );
-    await ensureGameInheritanceBaseline(db, worldMeta, input.userId, currentInheritancePoint);
+    if (recordsFinalized && inheritRequiredPoint > 0) {
+        fail('BAD_REQUEST', '통일 이후에는 유산 포인트를 사용하는 생성 옵션을 적용할 수 없습니다.');
+    }
+    const currentInheritancePoint = recordsFinalized
+        ? (await db.inheritancePoint.findMany({ where: { userId: input.userId }, select: { value: true } })).reduce(
+              (sum, row) => sum + row.value,
+              0
+          )
+        : await applyInheritanceUser(db, input.userId, worldState.currentYear, worldState.currentMonth);
+    if (!recordsFinalized) {
+        await ensureGameInheritanceBaseline(db, worldMeta, input.userId, currentInheritancePoint);
+    }
     if (currentInheritancePoint < inheritRequiredPoint) {
         fail('BAD_REQUEST', '유산 포인트가 부족합니다. 다시 가입해주세요!');
     }
@@ -743,7 +750,7 @@ export const createGeneralFromJoin = async (options: {
             ? input.ownerIconRevision
             : undefined;
     const nextInheritancePoint = currentInheritancePoint - inheritRequiredPoint;
-    const restInheritanceBonus = await resolveRestInheritanceBonus(db, worldState, input.userId);
+    const restInheritanceBonus = recordsFinalized ? 0 : await resolveRestInheritanceBonus(db, worldState, input.userId);
     const finalInheritancePoint = nextInheritancePoint + restInheritanceBonus;
     // Ref의 가오픈 삭제 대기는 정지된 게임 clock이 아니라 실제 요청 접수 시각부터 흐른다.
     // 미래 정식 오픈에 clock을 고정한 PREOPEN에서도 사용자가 가오픈 중 두 턴을 기다리면

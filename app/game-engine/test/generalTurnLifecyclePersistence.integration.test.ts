@@ -1360,4 +1360,33 @@ integration('general turn lifecycle persistence', () => {
         await expect(db.oldGeneral.count({ where: { serverId, generalNo: general.id } })).resolves.toBe(0);
         await expect(db.oldGeneral.count({ where: { serverId, generalNo: automaticGeneral.id } })).resolves.toBe(0);
     });
+    it('preserves all finalized settlements and archives even after an invader resume or NPC ownership change', async () => {
+        await db.gameHistory.update({ where: { serverId }, data: { status: 'COMPLETED' } });
+        const readRecords = async () => ({
+            hall: await db.hallOfFame.findMany({ where: { serverId }, orderBy: { id: 'asc' } }),
+            points: await db.inheritancePoint.findMany({ where: { userId: { in: userIds } }, orderBy: { id: 'asc' } }),
+            results: await db.inheritanceResult.findMany({ where: { serverId }, orderBy: { id: 'asc' } }),
+            logs: await db.inheritanceLog.findMany({ where: { userId: { in: userIds } }, orderBy: { id: 'asc' } }),
+            archives: await db.oldGeneral.findMany({ where: { serverId }, orderBy: { id: 'asc' } }),
+        });
+        const before = await readRecords();
+        for (const united of [1, 2, 3, 0]) {
+            const general = makeGeneral(generalIds[0]!, userIds[1]!, {
+                experience: 999999,
+                meta: { killturn: 0, inheritRandomUnique: true, inherit_active_action: 999999 },
+            });
+            await db.$transaction(async (transaction) => {
+                await persistGeneralLifecycleEvents(
+                    transaction,
+                    [
+                        { ...event(general, 'retired'), isUnitedAtEvent: united },
+                        { ...event(general, 'deleted'), isUnitedAtEvent: united },
+                    ],
+                    { serverId, isUnited: united },
+                    {}
+                );
+            });
+            expect(await readRecords()).toEqual(before);
+        }
+    });
 });

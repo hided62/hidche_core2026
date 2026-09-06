@@ -51,6 +51,7 @@ describe('general lifecycle archive history', () => {
         const general = archivedGeneral();
         const upsert = vi.fn(async () => undefined);
         const prisma = {
+            gameHistory: { findUnique: vi.fn(async () => ({ status: 'OPEN' })) },
             generalAccessLog: {
                 updateMany: vi.fn(async () => ({ count: 1 })),
                 deleteMany: vi.fn(async () => ({ count: 1 })),
@@ -146,6 +147,7 @@ describe('general lifecycle archive history', () => {
                 findUnique: vi.fn(async () => null),
             },
             gameHistory: {
+                findUnique: vi.fn(async () => ({ status: 'OPEN' })),
                 count: vi.fn(async () => 99),
             },
             hallOfFame: {

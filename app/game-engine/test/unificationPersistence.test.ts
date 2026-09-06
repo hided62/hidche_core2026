@@ -176,6 +176,19 @@ describe('persistUnificationFinalization', () => {
         expect(transaction.unificationFinalization.create).not.toHaveBeenCalled();
     });
 
+    it('does not reopen a completed imported season without a finalization generation', async () => {
+        const transaction = Object.assign({} as GamePrisma.TransactionClient, {
+            $executeRaw: vi.fn().mockResolvedValue(1),
+            $queryRaw: vi.fn().mockResolvedValue([]),
+            gameHistory: { findUnique: vi.fn().mockResolvedValue({ status: 'COMPLETED' }) },
+            unificationFinalization: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
+        });
+        await expect(persistUnificationFinalization(transaction, input, buildWorld())).resolves.toMatchObject({
+            status: 'ALREADY_APPLIED',
+        });
+        expect(transaction.unificationFinalization.create).not.toHaveBeenCalled();
+    });
+
     it('uses one supplied transaction for absolute inheritance and archive writes', async () => {
         const inheritanceUpsert = vi.fn().mockResolvedValue({});
         const inheritanceResultCreate = vi.fn().mockResolvedValue({});
@@ -216,7 +229,11 @@ describe('persistUnificationFinalization', () => {
                     { generalId: 1, type: 'ttl', value: 1 },
                 ]),
             },
-            gameHistory: { count: vi.fn().mockResolvedValue(1), update: gameHistoryUpdate },
+            gameHistory: {
+                findUnique: vi.fn().mockResolvedValue({ status: 'OPEN' }),
+                count: vi.fn().mockResolvedValue(1),
+                update: gameHistoryUpdate,
+            },
             hallOfFame: {
                 findMany: vi.fn().mockResolvedValue([]),
                 create: hallCreate,

@@ -664,4 +664,50 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             error: null,
         });
     }, 30_000);
+    it.each(['SUSPENDED', 'COMPLETED'])(
+        'creates from the selection pool while %s',
+        async (phase) => {
+            await runtime!.lifecycle.stop('prepare frozen pool creation');
+            await daemonLoop;
+            await runtime!.close();
+            const original = await db.worldState.findFirstOrThrow();
+            await db.worldState.update({ where: { id: original.id }, data: { clockPhase: phase } });
+            await db.gameHistory.update({ where: { serverId: profile }, data: { status: 'COMPLETED' } });
+            runtime = await createTurnDaemonRuntime({
+                profile,
+                databaseUrl: databaseUrl!,
+                enableDatabaseFlush: true,
+                enableLeaseHeartbeat: false,
+                leaseOwnerId: `frozen-pool-${phase}`,
+            });
+            turnDaemon = new DatabaseTurnDaemonTransport(db, 10_000);
+            daemonLoop = runtime.lifecycle.start();
+            await turnDaemon.requestStatus(10_000);
+            const visitorId = `pool-visitor-${phase}`;
+            const visitorAuth = { ...auth, user: { ...auth.user, id: visitorId } };
+            const readRecords = async () => ({
+                hall: await db.hallOfFame.count({ where: { serverId: profile } }),
+                old: await db.oldGeneral.count({ where: { serverId: profile } }),
+                points: await db.inheritancePoint.findMany({ where: { userId: visitorId } }),
+                results: await db.inheritanceResult.count({ where: { serverId: profile } }),
+            });
+            const before = await readRecords();
+            const candidates = await appRouter
+                .createCaller(buildContext(`pool-reserve-${phase}`, visitorAuth))
+                .join.getSelectionPool();
+            const result = await appRouter
+                .createCaller(buildContext(`pool-create-${phase}`, visitorAuth))
+                .join.selectPoolGeneral({ uniqueName: candidates.candidates[0]!.uniqueName, personality: 'che_안전' });
+            expect(await db.general.findUniqueOrThrow({ where: { id: result.generalId } })).toMatchObject({
+                userId: visitorId,
+            });
+            expect(await readRecords()).toEqual(before);
+            expect(await db.worldState.findUniqueOrThrow({ where: { id: original.id } })).toMatchObject({
+                clockPhase: phase,
+                clockTick: original.clockTick,
+                lastTurnTick: original.lastTurnTick,
+            });
+        },
+        30_000
+    );
 });

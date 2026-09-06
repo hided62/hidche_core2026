@@ -1,3 +1,4 @@
+import { areSeasonRecordsFinalized } from '../turn/seasonRecords.js';
 import { JosaUtil, asRecord } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma } from '@sammo-ts/infra';
 import { ActionLogger, LogFormat, type TournamentType, type TriggerValue } from '@sammo-ts/logic';
@@ -253,7 +254,8 @@ export const createTournamentRewardFinalizer = async (options: {
             }))
             .filter((entry) => !!entry.userId);
 
-        for (const entry of pointUpdates) {
+        const recordsFinalized = await areSeasonRecordsFinalized(db, world.getState().meta.serverId);
+        for (const entry of recordsFinalized ? [] : pointUpdates) {
             await db.inheritancePoint.upsert({
                 where: {
                     userId_key: { userId: entry.userId!, key: 'tournament' },

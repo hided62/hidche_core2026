@@ -387,6 +387,69 @@ integration('database command queue', () => {
         }
     );
 
+    it.each(['SUSPENDED', 'COMPLETED', 'RECONCILING'])(
+        'admits only participation commands while the clock is %s',
+        async (phase) => {
+            await db.worldState.updateMany({ data: { clockPhase: phase } });
+            const payloads: TurnDaemonCommand[] = [
+                {
+                    type: 'joinCreateGeneral',
+                    userId: 'visitor',
+                    ownerDisplayName: '방문자',
+                    seedOwnerIdentity: 'visitor',
+                    name: '방문',
+                    leadership: 55,
+                    strength: 55,
+                    intel: 55,
+                    pic: false,
+                    character: 'che_안전',
+                    profileId: 'che',
+                },
+                {
+                    type: 'npcPossessGeneral',
+                    userId: 'visitor',
+                    ownerDisplayName: '방문자',
+                    profileId: 'che',
+                    generalId: 7,
+                    tokenNonce: 1,
+                },
+                { type: 'selectPoolReserve', userId: 'visitor', seedOwnerIdentity: 'visitor' },
+                {
+                    type: 'selectPoolCreate',
+                    userId: 'visitor',
+                    ownerDisplayName: '방문자',
+                    uniqueName: '후보',
+                    personality: 'che_안전',
+                    seedOwnerIdentity: 'visitor',
+                },
+                { type: 'selectPoolReselect', userId: 'visitor', ownerDisplayName: '방문자', uniqueName: '후보' },
+                { type: 'vacation', userId: 'visitor', generalId: 7 },
+            ];
+            const types = payloads.map((payload) => payload.type);
+            await db.inputEvent.createMany({
+                data: payloads.map((payload) => ({
+                    requestId: `integration:engine:participation:${payload.type}`,
+                    target: 'ENGINE',
+                    eventType: payload.type,
+                    actorUserId: 'visitor',
+                    payload: payload as GamePrisma.InputJsonValue,
+                })),
+            });
+            const commands = await new DatabaseTurnDaemonCommandQueue(db).drain();
+            expect(commands.map((command) => command.type)).toEqual(phase === 'RECONCILING' ? [] : types.slice(0, -1));
+            const pending = await db.inputEvent.findUniqueOrThrow({
+                where: { requestId: 'integration:engine:participation:vacation' },
+            });
+            expect(pending).toMatchObject({ status: 'PENDING', attempts: 0 });
+            expect(await db.worldState.findFirst()).toMatchObject({
+                clockPhase: phase,
+                clockTick: 123n,
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+            });
+        }
+    );
+
     it('dequeues gameplay only in an executable phase and records the processing clock generation', async () => {
         const existingWorld = await db.worldState.findFirst({ orderBy: { id: 'asc' } });
         const world = existingWorld

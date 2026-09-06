@@ -6,6 +6,7 @@ const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 type FixtureState = {
+    finalized?: boolean;
     mapRequests: number;
     generalRequests: number;
     created?: boolean;
@@ -69,6 +70,7 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
                         npcGeneralCount: 1,
                     },
                     inherit: {
+                        enabled: !state.finalized,
                         totalPoint: 30,
                         costs: {
                             inheritBornSpecialPoint: 10,
@@ -453,3 +455,41 @@ test('shows the creation success dialog exactly once before navigating home', as
     await expect(page).toHaveURL(new RegExp(`${gameBasePath}/?$`));
     expect(state.createRequests).toBe(1);
 });
+
+for (const width of [1280, 390]) {
+    test(`allows completed-season creation without inheritance options at ${width}px`, async ({ page }, testInfo) => {
+        const state: FixtureState = { mapRequests: 0, generalRequests: 0, finalized: true };
+        await installFixture(page, state);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('join');
+        await page.locator('.advanced-options summary').click();
+        await expect(page.locator('.advanced-options')).toContainText('기본 옵션으로 장수를 생성할 수 있습니다.');
+        await expect(page.locator('.inherit-options')).toHaveCount(0);
+        await expect(
+            page.locator('.create-form').getByRole('button', { name: '장수 생성', exact: true })
+        ).toBeEnabled();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await page.locator('.advanced-options').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                color: getComputedStyle(element).color,
+                documentWidth: document.documentElement.scrollWidth,
+                viewportWidth: window.innerWidth,
+                html: element.outerHTML,
+            };
+        });
+        expect(geometry.documentWidth).toBe(geometry.viewportWidth);
+        await testInfo.attach('completed-join-geometry', {
+            body: JSON.stringify(geometry),
+            contentType: 'application/json',
+        });
+        await page.screenshot({ path: testInfo.outputPath('completed-join.png'), fullPage: true });
+        await page.locator('.create-form').getByRole('button', { name: '장수 생성', exact: true }).click();
+        await expect(page.getByRole('alertdialog', { name: '완료' })).toBeVisible();
+        expect(state.createRequests).toBe(1);
+    });
+}

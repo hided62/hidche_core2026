@@ -1,3 +1,4 @@
+import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import {
     acquireGameSchemaAdvisoryXactLock,
     CLOCK_OPERATION_PERSISTENCE_LOCK,
@@ -602,7 +603,8 @@ const persistNationBettingOpen = async (
 
 const persistNationBettingFinish = async (
     prisma: GamePrisma.TransactionClient,
-    finish: PendingNationBettingFinish
+    finish: PendingNationBettingFinish,
+    recordsFinalized: boolean
 ): Promise<void> => {
     await prisma.$queryRaw`
         SELECT id
@@ -652,7 +654,7 @@ const persistNationBettingFinish = async (
         })),
     });
 
-    for (const reward of rewards) {
+    for (const reward of recordsFinalized ? [] : rewards) {
         if (!reward.userId) {
             continue;
         }
@@ -1451,11 +1453,12 @@ export const createDatabaseTurnHooks = async (
                 `);
             }
 
+            const recordsFinalized = await areSeasonRecordsFinalized(prisma, asRecord(state.meta).serverId);
             for (const betting of pendingNationBettingOpens) {
                 await persistNationBettingOpen(prisma, betting);
             }
             for (const finish of pendingNationBettingFinishes) {
-                await persistNationBettingFinish(prisma, finish);
+                await persistNationBettingFinish(prisma, finish, recordsFinalized);
             }
 
             const meta = asRecord(state.meta);
@@ -1464,7 +1467,7 @@ export const createDatabaseTurnHooks = async (
             const persistInheritancePointAdjustments = async (
                 entries: typeof inheritancePointAdjustments
             ): Promise<void> => {
-                if (entries.length === 0) {
+                if (recordsFinalized || entries.length === 0) {
                     return;
                 }
                 const grouped = new Map<string, { userId: string; key: string; amount: number }>();
@@ -1490,7 +1493,7 @@ export const createDatabaseTurnHooks = async (
                 }
             };
             const persistInheritanceLogs = async (entries: typeof pendingInheritanceLogs): Promise<void> => {
-                if (entries.length === 0) {
+                if (recordsFinalized || entries.length === 0) {
                     return;
                 }
                 await prisma.inheritanceLog.createMany({

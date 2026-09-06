@@ -92,6 +92,31 @@ GAME 표시 좌표를 옮기는 명령이 별도로 예약된 정식 WALL 오픈
 이민족전이 끝나 `isUnited=3`이 되면 clock phase도 같은 월 transaction에서
 `COMPLETED`가 되어 이후 GAME_TIME이 진행하지 않습니다.
 
+### 정지·종료 중 참여와 기수 기록 확정
+
+`SUSPENDED`와 `COMPLETED`에서도 일반 장수 생성, NPC 빙의, 선택형 장수의
+후보 예약·생성·재선택은 기존 ENGINE input event/lease/clock fence를 거쳐
+처리합니다. NPC 빙의 후보도 같은 phase에서 예약할 수 있습니다. 예약 만료와
+재선택 cooldown은 기존 GAME_TIME 규칙을 유지하며, `RECONCILING`에서는
+처리하지 않습니다. 이 허용은 턴 실행이나 다른 ENGINE 명령을 열지 않습니다.
+
+기수 기록의 `gameHistory.status=COMPLETED`와 게임 시계 phase는 다릅니다.
+통일 직후 기록은 확정되지만 시계는 이민족 선택 대기(`SUSPENDED`), 이민족전
+진행(`RUNNING`), 이벤트 종료(`COMPLETED`)를 거칠 수 있습니다. 기록 보호는
+현재 serverId의 DB 기수 상태를 기준으로 합니다.
+
+첫 통일 transaction은 종전처럼 사망·은퇴 정산과 통일 유산/명예의 전당/
+왕조 archive를 저장한 뒤 기수를 확정합니다. 이후에는 유산 보상·사망·은퇴
+정산과 명예의 전당 추가/갱신, 장수 archive의 추가/소유자 덮어쓰기를 막습니다.
+따라서 통일 뒤 NPC에 빙의해도 기존 통일 기록의 소유자를 가져오거나 다음 기수의
+복귀 보너스용 참가 이력을 만들지 않습니다. 현재 장수·rank read model, 메시지,
+게임 운영 기록은 계속 갱신합니다.
+
+통일 이후 일반 생성은 유산 bucket 정리, 신규/복귀 보너스, 현재 기수 유산
+원금 기록을 하지 않습니다. 유산 포인트가 필요한 생성 옵션은 거부하고 생성
+화면에도 안내합니다. 통일 전 운영 일시정지는 기존 유산 생성 규칙을 유지합니다.
+이는 2026-09-06 승인된 Core 제품 정책입니다.
+
 DB migration은 GAME 규칙의 기존 DateTime 투영에서 tick을 채웁니다. 새 설치와 migration
 재실행은 `prisma:migrate:deploy:game`으로 수행합니다. 메시지의 연도 9999 같은
 무기한 호환값은 일반 메시지의 투영일 뿐입니다. actionable deadline은
