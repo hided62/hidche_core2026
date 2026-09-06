@@ -8,7 +8,7 @@ import type { TournamentState } from '../../tournament/types.js';
 import { TournamentStore, type TournamentClockContext } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
 import { assignManualApplicantGroup } from '../../tournament/workerHelpers.js';
-import { accessAuthedProcedure, authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
+import { accessAuthedProcedure, authedProcedure, engineAuthedProcedure, procedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
 import { ensureActiveRedisClockFence, ensureBettingRedisClockFence } from '../../services/redisClockFence.js';
@@ -38,19 +38,29 @@ const resolveCurrentDevelCost = (worldState: { config?: unknown; meta?: unknown 
     return resolveNumber(asRecord(worldState?.meta), ['develcost', 'develCost', 'develrate'], configured);
 };
 
-const adminProcedure = authedProcedure.use(({ ctx, next }) => {
-    const roles = ctx.auth?.user.roles ?? [];
-    if (!hasAdminRole(roles, ctx.profile.name)) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin permission is required.' });
-    }
-    return next();
-});
+const adminProcedure = engineAuthedProcedure
+    .use(({ ctx, next }) => {
+        const roles = ctx.auth?.user.roles ?? [];
+        if (!hasAdminRole(roles, ctx.profile.name)) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin permission is required.' });
+        }
+        return next();
+    })
+    .use(async ({ ctx, type, next }) => {
+        if (type !== 'mutation') return next({ ctx: { tournamentMutationLockHeld: false } });
+        // 참가·베팅은 Redis lock 안에서 ENGINE의 DB commit을 기다린다.
+        // 관리자도 Redis를 먼저 잡아 DB clock fence → Redis 역순 대기를 막는다.
+        const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+        return store.withMutationLock(() => next({ ctx: { tournamentMutationLockHeld: true } }));
+    })
+    .concat(procedure);
 
 const withTournamentClockMutation = async <T>(
     ctx: {
         db: Parameters<typeof loadCurrentGameTime>[0];
         redis: Parameters<typeof ensureActiveRedisClockFence>[0];
         profile: { name: string };
+        tournamentMutationLockHeld?: boolean;
     },
     store: TournamentStore,
     operation: () => Promise<T>
@@ -69,7 +79,9 @@ const withTournamentClockMutation = async <T>(
         deadlineGeneration: fence.generation,
         dateToTick: gameTime.dateToTick,
     };
-    return store.withClockContext(clockContext, () => store.withMutationLock(operation));
+    return store.withClockContext(clockContext, () =>
+        ctx.tournamentMutationLockHeld ? operation() : store.withMutationLock(operation)
+    );
 };
 
 const withTournamentBetClockMutation = async <T>(

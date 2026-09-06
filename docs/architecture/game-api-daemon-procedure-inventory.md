@@ -59,6 +59,22 @@ selection-pool create/reselect는 client request ID가 있을 때
 
 합계 **3개 route**다.
 
+## 토너먼트 관리자 Redis/DB 잠금 순서
+
+`setState`, `patchState`, `setParticipants`, `setMatches`, `setBettingEntries`,
+`seedParticipants`, `cancel`은 위의 ENGINE 완료 대기 49개 route와 별개다.
+관리자는 API input-event transaction을 유지하되 인증/관리자 권한 검사 → Redis
+mutation lock → API input-event/DB clock fence → 상태 변경 → commit → Redis unlock
+순서로 실행한다. `adminProcedure`가 Redis lock을 먼저 획득한 뒤 `procedure`를
+연결하고, `withTournamentClockMutation`은 이미 보유한 lock을 다시 획득하지 않는다.
+조회는 mutation lock과 API transaction을 열지 않는다.
+
+기존 DB → Redis 순서는 Redis lock을 보유하고 ENGINE DB commit을 기다리는
+참가·베팅·worker와 역순 경합하여 요청을 실패시킬 수 있었다. 잠금 순서를 통일하면서
+관리자 API 원장의 중복 요청 결과 재사용, 실패 재시도와 child ENGINE identity를
+보존한다. Redis와 PostgreSQL 사이의 기존 부분 실패 경계는 그대로이며, 이 수정이
+두 저장소의 atomic commit이나 durable saga를 제공하지는 않는다.
+
 ## 기존에 API outer transaction이 없던 ENGINE route
 
 | route | 근거 |
@@ -96,6 +112,10 @@ fence를 가진 채 ENGINE 결과를 기다리던 교착을 제거했다. 투표
   daemon command와 Redis timer projection을 완료하는 계약을 검증한다.
 - `app/game-api/test/tournamentRouter.test.ts`: 참가·베팅이 API transaction을 열지 않고
   request-scoped ENGINE command ID와 Redis mutation lock을 사용하는지 검증한다.
+- `app/game-api/test/tournamentLockOrder.integration.test.ts`: 실제 PostgreSQL/Redis에서
+  참가 요청과 7개 관리자 명령의 경합, API replay와 실패 후 같은 요청 재시도를 검사한다.
+  ENGINE transport는 별도 DB transaction의 실제 clock fence/내구성 접수 경계로 제어하며
+  전체 daemon의 자원 차감·보상 실행을 대신하지 않는다.
 - `app/game-api/test/inheritRouter.test.ts`,
   `app/game-engine/test/inheritanceActionPersistence.integration.test.ts`: 인증 actor, point/log,
   general/message 변경이 `inheritanceAction` ENGINE transaction에 함께 있는지 검증한다.
