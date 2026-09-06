@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
@@ -25,7 +24,7 @@ const myComment = ref('');
 const newVoteTitle = ref('');
 const newVoteOptionsText = ref('');
 const newVoteMultipleOptions = ref(1);
-const router = useRouter();
+const closeWindow = (): void => window.close();
 const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const getErrorMessage = (error: unknown): string => {
@@ -209,7 +208,7 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height back_btn"
                 type="button"
-                @click="router.push('/')"
+                @click="closeWindow"
             >
                 창 닫기
             </button>
@@ -409,7 +408,7 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height back_btn"
                 type="button"
-                @click="router.push('/')"
+                @click="closeWindow"
             >
                 창 닫기
             </button>

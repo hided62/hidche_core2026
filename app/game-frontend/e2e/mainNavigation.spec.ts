@@ -1278,6 +1278,60 @@ test('keeps the survey footer close button the same size as the top close button
     }
 });
 
+test('closes the survey popup from both close buttons without navigating the opener', async ({ page }, testInfo) => {
+    const state: NavigationFixture = {
+        officerLevel: 0,
+        permission: 0,
+        nationLevel: 0,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    };
+    await installFixture(page, state);
+    await waitForMain(page);
+    const openerUrl = page.url();
+    for (const width of [1000, 500]) {
+        for (const bar of ['back_bar', 'bottom_bar']) {
+            const popupPromise = page.waitForEvent('popup');
+            await page.evaluate(() => window.open('about:blank', '_blank'));
+            const popup = await popupPromise;
+            await installFixture(popup, state);
+            await popup.setViewportSize({ width, height: 900 });
+            await popup.goto(`${basePath}/survey`);
+            const button = popup.locator(`.${bar} .back_btn`);
+            await expect(button).toHaveText('창 닫기');
+            await popup.evaluate(() => document.fonts.ready);
+            await button.focus();
+            await expect(button).toBeFocused();
+            await button.hover();
+            const artifactName = `survey-close-${width}-${bar}`;
+            await popup.screenshot({ path: testInfo.outputPath(`${artifactName}.png`), fullPage: true });
+            await writeFile(
+                testInfo.outputPath(`${artifactName}.html`),
+                await popup.locator('.pageVote').evaluate((el) => el.outerHTML)
+            );
+            await writeFile(
+                testInfo.outputPath(`${artifactName}.json`),
+                JSON.stringify(
+                    await button.evaluate((el) => ({
+                        rect: el.getBoundingClientRect().toJSON(),
+                        style: { height: getComputedStyle(el).height, font: getComputedStyle(el).font },
+                    })),
+                    null,
+                    2
+                )
+            );
+            const closed = popup.waitForEvent('close');
+            await button.click();
+            await closed;
+            expect(popup.isClosed()).toBe(true);
+            expect(page.isClosed()).toBe(false);
+            expect(page.url()).toBe(openerUrl);
+        }
+    }
+});
+
 test('notifies only for a new incoming private message and marks it read from the notice', async ({
     page,
 }, testInfo) => {
