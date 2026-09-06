@@ -160,6 +160,28 @@ describe('GameClock', () => {
         );
     });
 
+    it.each([0, 3_142_625, 6 * 3_600_000 + 3_142_625, 13 * 3_600_000])(
+        'resumes observation after %i ms without moving any schedule',
+        (gapMs) => {
+            const cutWall = new Date('2026-09-06T05:48:07.986Z');
+            const plan = buildClockAlignmentPlan({
+                policy: 'PRESERVE_SCHEDULE',
+                sourceRevision: 2,
+                cutTick: 123,
+                cutWall,
+                resumeWall: new Date(cutWall.getTime() + gapMs),
+                ticksPerSecond: 10_000,
+            });
+            expect(plan).toMatchObject({
+                shiftTicks: 0,
+                catchUpTicks: gapMs * 10,
+                alignedTick: 123 + gapMs * 10,
+                sourceRevision: 2,
+                targetRevision: 3,
+            });
+        }
+    );
+
     it('preserves schedule ordering, remaining distance, and occurrence ticks across generated exact gaps', () => {
         let seed = 0x5eed1234;
         const next = (): number => {

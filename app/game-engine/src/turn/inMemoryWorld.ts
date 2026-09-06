@@ -921,13 +921,14 @@ export class InMemoryTurnWorld {
         if (clock.mode !== 'realtime' || clock.phase !== 'RUNNING') {
             return null;
         }
-        const turnMinutes = Math.max(1, Math.round(this.state.tickSeconds / 60));
-        const threshold = turnMinutes >= 20 ? 1 : turnMinutes >= 10 ? 3 : 6;
         const currentTick = clock.nowTick(wallNow);
         const wallAlignedTick = Math.max(currentTick, clock.dateToTick(wallNow));
         const lastTurnTick = this.state.lastTurnTick ?? clock.dateToTick(this.state.lastTurnTime);
-        const skippedTurns = Math.floor((wallAlignedTick - lastTurnTick) / GAME_TICKS_PER_TURN);
-        return skippedTurns > threshold ? { clock, wallAlignedTick, lastTurnTick, skippedTurns } : null;
+        // 운영 지연은 12턴 미만이면 전부 실행한다. 긴 중단은 완전한 게임 연도
+        // 묶음만 건너뛰어 장수 분·초와 나머지 미처리 턴을 그대로 남긴다.
+        const overdueTurns = Math.floor((wallAlignedTick - lastTurnTick) / GAME_TICKS_PER_TURN);
+        const skippedTurns = Math.floor(overdueTurns / 12) * 12;
+        return skippedTurns > 0 ? { clock, wallAlignedTick, lastTurnTick, skippedTurns } : null;
     }
 
     shouldRebaseRealtimeBacklog(wallNow: Date): boolean {

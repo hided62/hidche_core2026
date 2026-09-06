@@ -238,33 +238,29 @@ describe('runtime clock shift', () => {
         await expect(world.advanceMonth(new Date())).rejects.toThrow(/SUSPENDED/);
     });
 
-    it.each([
-        [5, 6],
-        [10, 3],
-        [20, 1],
-    ])('uses the Ref catch-up threshold for a %i-minute turn', (turnMinutes, threshold) => {
+    it.each([5, 10, 20, 60])('only skips complete 12-turn blocks for a %i-minute turn', (turnMinutes) => {
         const wallAnchor = new Date('2026-07-30T10:00:00.000Z');
-        const world = buildWorld({
-            tickSeconds: turnMinutes * 60,
-            clockBaseTime: wallAnchor,
-            clockTick: 0,
-            clockMode: 'realtime',
-            clockWallAnchor: wallAnchor,
-            lastTurnTick: 0,
-            lastTurnTime: wallAnchor,
-        });
-
-        expect(
-            world.shouldRebaseRealtimeBacklog(new Date(wallAnchor.getTime() + threshold * turnMinutes * 60_000))
-        ).toBe(false);
-        expect(
-            world.shouldRebaseRealtimeBacklog(new Date(wallAnchor.getTime() + (threshold + 1) * turnMinutes * 60_000))
-        ).toBe(true);
+        for (const turns of [0, 1, 11, 11.999, 12, 13, 23.999, 24, 25]) {
+            const world = buildWorld({
+                tickSeconds: turnMinutes * 60,
+                clockBaseTime: wallAnchor,
+                clockTick: 0,
+                clockMode: 'realtime',
+                clockWallAnchor: wallAnchor,
+                lastTurnTick: 0,
+                lastTurnTime: wallAnchor,
+            });
+            const resumedAt = new Date(wallAnchor.getTime() + turns * turnMinutes * 60_000);
+            expect(world.shouldRebaseRealtimeBacklog(resumedAt)).toBe(turns >= 12);
+            const result = world.rebaseRealtimeBacklog(resumedAt);
+            if (turns < 12) expect(result).toBeNull();
+            else expect(result?.skippedTurns).toBe(Math.floor(turns / 12) * 12);
+        }
     });
 
     it('skips a long realtime backlog while preserving the turn phase and wall-clock display', () => {
         const wallAnchor = new Date('2026-07-30T10:00:00.000Z');
-        const resumedAt = new Date('2026-07-30T10:35:00.000Z');
+        const resumedAt = new Date('2026-07-30T11:05:00.000Z');
         const world = buildWorld({
             tickSeconds: 300,
             clockBaseTime: wallAnchor,
@@ -285,30 +281,30 @@ describe('runtime clock shift', () => {
         const result = world.rebaseRealtimeBacklog(resumedAt);
 
         expect(result).toMatchObject({
-            skippedTurns: 7,
-            shiftedTicks: 7 * GAME_TICKS_PER_TURN,
-            lastTurnTime: resumedAt.toISOString(),
+            skippedTurns: 12,
+            shiftedTicks: 12 * GAME_TICKS_PER_TURN,
+            lastTurnTime: '2026-07-30T11:00:00.000Z',
         });
         expect(world.getGameNow(resumedAt)).toEqual(resumedAt);
         expect(world.getState()).toMatchObject({
-            clockTick: 7 * GAME_TICKS_PER_TURN,
+            clockTick: 13 * GAME_TICKS_PER_TURN,
             clockWallAnchor: resumedAt,
-            lastTurnTick: 7 * GAME_TICKS_PER_TURN,
+            lastTurnTick: 12 * GAME_TICKS_PER_TURN,
             meta: {
-                turntime: '2026-07-30 10:35:00.123456',
-                starttime: '2026-07-01 00:35:00',
+                turntime: '2026-07-30 11:00:00.123456',
+                starttime: '2026-07-01 01:00:00',
             },
         });
         expect(world.getGeneralById(1)).toMatchObject({
-            turnTick: 9 * GAME_TICKS_PER_TURN,
-            turnTime: new Date('2026-07-30T10:45:00.000Z'),
+            turnTick: 14 * GAME_TICKS_PER_TURN,
+            turnTime: new Date('2026-07-30T11:10:00.000Z'),
         });
         expect(world.getCheckpoint()).toMatchObject({
-            turnTick: 9 * GAME_TICKS_PER_TURN,
-            turnTime: '2026-07-30T10:45:00.000Z',
+            turnTick: 14 * GAME_TICKS_PER_TURN,
+            turnTime: '2026-07-30T11:10:00.000Z',
         });
         expect(world.peekDirtyState()).toMatchObject({
-            realtimeBacklogShiftTicks: 7 * GAME_TICKS_PER_TURN,
+            realtimeBacklogShiftTicks: 12 * GAME_TICKS_PER_TURN,
             generals: [],
         });
     });
@@ -328,7 +324,7 @@ describe('runtime clock shift', () => {
         });
 
         expect(world.getGameNow(resumedAt).toISOString()).toBe('2026-07-30T11:15:00.000Z');
-        expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 22 });
+        expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 12 });
         expect(world.getGameNow(resumedAt)).toEqual(resumedAt);
     });
 

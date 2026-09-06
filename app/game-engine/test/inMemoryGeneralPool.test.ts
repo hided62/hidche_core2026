@@ -231,13 +231,13 @@ describe('in-memory scenario general pool availability', () => {
             lastTurnTick: 0,
         });
         const before = world.captureState();
-        const resumedAt = new Date(claimedAt.getTime() + 40 * 60_000);
+        const resumedAt = new Date(claimedAt.getTime() + 120 * 60_000);
 
         expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({
-            skippedTurns: 4,
-            shiftedTicks: 4 * GAME_TICKS_PER_TURN,
+            skippedTurns: 12,
+            shiftedTicks: 12 * GAME_TICKS_PER_TURN,
         });
-        const rebasedReservedUntilTick = 6 * GAME_TICKS_PER_TURN;
+        const rebasedReservedUntilTick = 14 * GAME_TICKS_PER_TURN;
         const rebasedReservedUntil = world.gameTickToDate(rebasedReservedUntilTick);
         expect(world.captureState().generalPoolEntries).toMatchObject([
             {

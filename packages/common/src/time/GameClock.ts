@@ -3,7 +3,7 @@ export const MAX_SAFE_GAME_TICK = Number.MAX_SAFE_INTEGER;
 
 export type GameClockMode = 'realtime' | 'manual';
 export type GameClockPhase = 'PREOPEN' | 'RUNNING' | 'SUSPENDED' | 'RECONCILING' | 'MANUAL' | 'COMPLETED';
-export type ClockAlignmentPolicy = 'EXACT' | 'LEGACY_COMPLETE_TURNS' | 'CATCH_UP';
+export type ClockAlignmentPolicy = 'EXACT' | 'LEGACY_COMPLETE_TURNS' | 'CATCH_UP' | 'PRESERVE_SCHEDULE';
 
 declare const gameTickBrand: unique symbol;
 declare const observedGameInstantBrand: unique symbol;
@@ -103,7 +103,12 @@ export const parseGameClockPhase = (value: string): GameClockPhase => {
     throw new Error(`Unknown game clock phase: ${value}`);
 };
 
-const CLOCK_ALIGNMENT_POLICIES: readonly ClockAlignmentPolicy[] = ['EXACT', 'LEGACY_COMPLETE_TURNS', 'CATCH_UP'];
+const CLOCK_ALIGNMENT_POLICIES: readonly ClockAlignmentPolicy[] = [
+    'EXACT',
+    'LEGACY_COMPLETE_TURNS',
+    'CATCH_UP',
+    'PRESERVE_SCHEDULE',
+];
 
 export const parseClockAlignmentPolicy = (value: string): ClockAlignmentPolicy => {
     if ((CLOCK_ALIGNMENT_POLICIES as readonly string[]).includes(value)) {
@@ -188,6 +193,15 @@ export const buildClockAlignmentPlan = (input: {
     ticksPerSecond: number;
     catchUpTicks?: number;
 }): ClockAlignmentPlan => {
+    if (input.policy === 'PRESERVE_SCHEDULE') {
+        if ((input.catchUpTicks ?? 0) !== 0) {
+            throw new Error('PRESERVE_SCHEDULE derives catch-up from the complete wall gap.');
+        }
+        const exact = buildAlignmentPlan({ ...input, catchUpTicks: 0 });
+        // 운영 재개는 관측 시계만 현재로 돌린다. 예약/실행 커서는 보존하고
+        // 정상 엔진이 따라잡으며, 12턴 묶음 생략은 backlog 처리 한 곳에서 결정한다.
+        return { ...exact, shiftTicks: asGameTick(0), catchUpTicks: exact.gapTicks };
+    }
     if (input.policy === 'EXACT') {
         if ((input.catchUpTicks ?? 0) !== 0) {
             throw new Error('EXACT alignment does not allow catch-up ticks.');

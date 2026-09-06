@@ -302,7 +302,7 @@ integration('runtime clock shift persistence', () => {
 
     it('atomically rebases a long realtime backlog and open auction deadlines', async () => {
         const base = new Date('2099-09-01T00:00:00.000Z');
-        const resumedAt = new Date('2099-09-01T00:35:00.000Z');
+        const resumedAt = new Date('2099-09-01T01:00:00.000Z');
         const row = await db.worldState.create({
             data: {
                 scenarioCode: 'realtime-backlog-rebase',
@@ -408,7 +408,7 @@ integration('runtime clock shift persistence', () => {
         );
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
         try {
-            expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 7 });
+            expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 12 });
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: resumedAt.toISOString(),
                 processedGenerals: 0,
@@ -422,18 +422,18 @@ integration('runtime clock shift persistence', () => {
 
         const storedWorld = await db.worldState.findUniqueOrThrow({ where: { id: row.id } });
         expect(storedWorld).toMatchObject({
-            clockTick: BigInt(7 * GAME_TICKS_PER_TURN),
-            lastTurnTick: BigInt(7 * GAME_TICKS_PER_TURN),
+            clockTick: BigInt(12 * GAME_TICKS_PER_TURN),
+            lastTurnTick: BigInt(12 * GAME_TICKS_PER_TURN),
             clockWallAnchor: resumedAt,
         });
         const storedGeneral = await db.general.findUniqueOrThrow({ where: { id: general.id } });
         expect(storedGeneral).toMatchObject({
-            turnTick: BigInt(8 * GAME_TICKS_PER_TURN),
-            turnTime: new Date('2099-09-01T00:40:00.000Z'),
+            turnTick: BigInt(13 * GAME_TICKS_PER_TURN),
+            turnTime: new Date('2099-09-01T01:05:00.000Z'),
         });
         expect(await db.auction.findUniqueOrThrow({ where: { id: openAuction.id } })).toMatchObject({
-            closeTick: BigInt(9 * GAME_TICKS_PER_TURN),
-            closeAt: new Date('2099-09-01T00:45:00.000Z'),
+            closeTick: BigInt(14 * GAME_TICKS_PER_TURN),
+            closeAt: new Date('2099-09-01T01:10:00.000Z'),
         });
         expect(await db.auction.findUniqueOrThrow({ where: { id: finishedAuction.id } })).toMatchObject({
             closeTick: BigInt(2 * GAME_TICKS_PER_TURN),
@@ -442,8 +442,8 @@ integration('runtime clock shift persistence', () => {
         expect(await db.selectPoolEntry.findUniqueOrThrow({ where: { id: poolEntry.id } })).toMatchObject({
             ownerUserId: 'rebase-pool-user',
             generalId: null,
-            reservedUntilTick: BigInt(9 * GAME_TICKS_PER_TURN),
-            reservedUntil: new Date('2099-09-01T00:45:00.000Z'),
+            reservedUntilTick: BigInt(14 * GAME_TICKS_PER_TURN),
+            reservedUntil: new Date('2099-09-01T01:10:00.000Z'),
         });
 
         await db.auction.deleteMany({ where: { id: { in: [openAuction.id, finishedAuction.id] } } });

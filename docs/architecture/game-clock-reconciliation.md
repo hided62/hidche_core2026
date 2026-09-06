@@ -9,7 +9,7 @@ game deadline. A long suspension advances the observed game coordinate to the
 resume wall instant without replaying skipped complete turns, monthly events,
 RNG, auctions, or tournaments. Every movable future GAME schedule is shifted by
 the same tick delta. Exact alignment includes the sub-turn remainder; Gateway
-maintenance preserves the turn phase as described below. WALL occurrences and
+maintenance preserves schedules and delegates catch-up to the engine as described below. WALL occurrences and
 deadlines are outside that operation.
 
 The clock state is stored in `world_state`:
@@ -42,20 +42,29 @@ alignedTick = cutTick + gapTicks
 deadlineAfter = deadlineBefore + shiftTicks
 ```
 
-From 2026-09-06, Gateway maintenance suspension explicitly uses
-`LEGACY_COMPLETE_TURNS`: it shifts schedules by complete turn intervals and
-continues the remaining sub-turn interval from the persisted execution cursor.
-This preserves every general's minute/second phase, including the time zone
-purchased at creation, and keeps general ordering. The remainder is less than
-one turn; completed turns are not recreated. A short interruption can therefore
-leave an unprocessed turn immediately due at resume. This is the same whole-turn
-alignment used by realtime backlog recovery.
+From 2026-09-06, Gateway maintenance suspension uses `PRESERVE_SCHEDULE`.
+Resume advances only the observed tick/anchor and revision; it does not move
+execution cursors, general schedules, auction/message deadlines, or their
+minute/second phases. The ordinary engine then processes overdue generals in
+time order, bounded by one monthly boundary per pass, followed by that monthly
+transition. Completed turns are not recreated.
 
-Delayed opening, unification wait, and explicit `EXACT` callers retain exact
-alignment with zero catch-up. Existing suspension ledgers retain their recorded
-policy when resumed; deployment does not rewrite historical coordinates or
-repair previously shifted general times. The maintenance policy is selected by
-Gateway, so updating game profile processes alone does not activate it.
+The Core product policy for long realtime downtime is now independent of turn
+length: fewer than 12 overdue turns are executed normally. At 12 or more turns,
+only complete blocks of 12 are skipped. For example, a 13-turn backlog shifts
+schedules by 12 turns and executes the remaining turn; 23 skips 12 and executes
+11; 24 skips 24. Skipping never advances gameplay years, resources, RNG, or
+commands. The existing fenced backlog flush shifts the cursor and schedules
+together, retaining all sub-turn phases. Explicit operator schedule movement
+remains a separate action.
+
+This supersedes the short-lived maintenance `LEGACY_COMPLETE_TURNS` selection,
+which skipped every complete suspended turn without the 12-turn policy. Legacy
+policy values remain readable for existing ledgers. Unification wait, delayed
+opening, and explicit `EXACT` callers keep their distinct exact alignment
+contract. Applied historical ledgers are not rewritten by deployment. Both
+Gateway (maintenance selection) and game engine (12-turn backlog handling) must
+be deployed to activate the new behavior fully.
 
 Every participant writes its `SHIFT`, `KEEP`, `REBUILD`, or `FORBID` decision,
 row count, and before/after checksum to `clock_reconciliation_participant`.

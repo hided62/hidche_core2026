@@ -109,7 +109,7 @@ describeIntegration('durable clock reconciliation', () => {
                 db,
                 suspensionId: 'maintenance-phase',
                 source: 'MAINTENANCE',
-                policy: 'LEGACY_COMPLETE_TURNS',
+                policy: 'PRESERVE_SCHEDULE',
                 authority,
             });
             const plan = await reconcileClockSuspension({
@@ -118,9 +118,9 @@ describeIntegration('durable clock reconciliation', () => {
                 authority,
                 testResumeWallAt: new Date(suspended.cutWallAt.getTime() + gapMilliseconds),
             });
-            const expectedShift = Math.floor(gapMilliseconds / 3_600_000) * 36_000_000;
+            const expectedShift = 0;
             expect(plan.shiftTicks).toBe(expectedShift);
-            expect(plan.catchUpTicks).toBe(31_426_250);
+            expect(plan.catchUpTicks).toBe(gapMilliseconds * 10);
             expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'phase-test' })).not.toBe(
                 'IDLE'
             );

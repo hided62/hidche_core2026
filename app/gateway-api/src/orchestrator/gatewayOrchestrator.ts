@@ -1281,8 +1281,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         suspensionId: `gateway-maintenance-${suffix}`,
                         source: 'MAINTENANCE',
                         // 운영 중단은 생성 때 구매한 턴 구간과 장수 간 실행 순서를 보존한다.
-                        // 완전한 턴만 건너뛰고 잔여 구간은 저장된 실행 커서부터 이어간다.
-                        policy: 'LEGACY_COMPLETE_TURNS',
+                        // 관측 시계만 재개하고 정상 엔진이 미처리 턴을 따라잡게 한다.
+                        policy: 'PRESERVE_SCHEDULE',
                         authority,
                     });
                     suspension = await postgres.prisma.clockSuspension.findUniqueOrThrow({
