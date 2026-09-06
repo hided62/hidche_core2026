@@ -337,6 +337,62 @@ describe('legacy general turn lifecycle', () => {
         expect(harness.world.peekDirtyState().deletedGenerals).toContain(1);
     });
 
+    it('dissolves a dying ruler nation when only troop-leader NPCs remain', async () => {
+        const leader = makeGeneral({ officerLevel: 12, meta: { killturn: 1 } });
+        const troopLeader = makeGeneral({
+            id: 2,
+            userId: null,
+            npcState: 5,
+            officerLevel: 11,
+            troopId: 2,
+            turnTime: new Date(start.getTime() + 3_600_000),
+            meta: { killturn: 24, officer_city: 1, belong: 5, permission: 'ambassador' },
+        });
+        const snapshot = makeSnapshot([leader, troopLeader]);
+        snapshot.cities[0]!.conflict = { '1': 1 };
+        const harness = await createTurnTestHarness({ snapshot, state: makeState(), schedule, map });
+
+        await harness.runOneTick();
+
+        expect(harness.world.getGeneralById(1)).toBeNull();
+        expect(harness.world.getNationById(1)).toBeNull();
+        expect(harness.world.getCityById(1)).toMatchObject({ nationId: 0, frontState: 0, conflict: [] });
+        expect(harness.world.getGeneralById(2)).toMatchObject({
+            nationId: 0,
+            officerLevel: 0,
+            troopId: 0,
+            gold: troopLeader.gold,
+            rice: troopLeader.rice,
+            meta: { officer_city: 0, officerCity: 0, belong: 0, permission: 'normal' },
+        });
+        const dirty = harness.world.peekDirtyState();
+        expect(dirty.deletedNations).toContain(1);
+        expect(dirty.deletedNationSnapshots[0]?.generalIds).toEqual([1, 2]);
+        expect(dirty.logs.filter((log) => log.text.includes('【멸망】'))).toHaveLength(1);
+    });
+
+    it('repairs an already orphaned nation once but refuses a nation with a successor', async () => {
+        const troopLeader = makeGeneral({ id: 2, userId: null, npcState: 5, officerLevel: 11 });
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([troopLeader]),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        expect(harness.world.dissolveNationWithoutSuccessor(1)).toBe(true);
+        expect(harness.world.dissolveNationWithoutSuccessor(1)).toBe(false);
+        expect(harness.world.getGeneralById(2)?.nationId).toBe(0);
+        const intact = await createTurnTestHarness({
+            snapshot: makeSnapshot([makeGeneral({ officerLevel: 9 })]),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        expect(() => intact.world.dissolveNationWithoutSuccessor(1)).toThrow('still has a ruler or successor');
+        expect(intact.world.getCityById(1)?.nationId).toBe(1);
+        expect(intact.world.getNationById(1)).not.toBeNull();
+    });
+
     it('deletes an expired NPC even when its in-memory lifespan metadata is missing', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot([

@@ -9,12 +9,13 @@ import type {
     TurnSchedule,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
-import { getNextTurnAt, readScenarioGeneralPoolClaim } from '@sammo-ts/logic';
+import { getNextTurnAt, readScenarioGeneralPoolClaim, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import {
     GAME_TICKS_PER_TURN,
     GameClock,
     assertGameplayCommitAllowed,
     inferClockPhase,
+    JosaUtil,
     type GameClockMode,
     type GameClockPhase,
     type TurnRecoveryWindow,
@@ -78,6 +79,7 @@ export interface GeneralTurnResult {
         troopIds?: number[];
     };
     destroyedNationIds?: number[];
+    successorlessNationId?: number;
     lifecycleEvent?: GeneralLifecycleEvent;
 }
 
@@ -2028,6 +2030,11 @@ export class InMemoryTurnWorld {
                 this.removeTroop(troopId);
             }
         }
+        if (result.successorlessNationId !== undefined) {
+            // 사망 군주도 삭제 전 archive의 장수 목록과 멸망 로그에 포함한다.
+            this.generals.set(currentGeneral.id, result.general ?? currentGeneral);
+            this.dissolveNationWithoutSuccessor(result.successorlessNationId, currentGeneral.id);
+        }
         if (result.deleted?.general) {
             this.removeGeneral(currentGeneral.id);
         }
@@ -2225,6 +2232,64 @@ export class InMemoryTurnWorld {
         const changes = this.peekDirtyState();
         this.acknowledgeDirtyState(changes);
         return changes;
+    }
+
+    dissolveNationWithoutSuccessor(nationId: number, dyingLordId?: number): boolean {
+        const nation = this.nations.get(nationId);
+        if (!nation) {
+            return false;
+        }
+        const members = this.listGenerals().filter((general) => general.nationId === nationId);
+        const dyingLord = members.find((general) => general.id === dyingLordId);
+        if (
+            (dyingLordId !== undefined && dyingLord?.officerLevel !== 12) ||
+            members.some(
+                (general) => general.id !== dyingLordId && (general.npcState !== 5 || general.officerLevel === 12)
+            )
+        ) {
+            throw new Error(`Nation ${nationId} still has a ruler or successor.`);
+        }
+        // Ref nextRuler() -> deleteNation(true): 부대장(npc=5)은 후계자가
+        // 될 수 없다. 자원 약탈·포상·난수 소비 없이 도시를 공백지로 돌린다.
+        for (const city of this.listCities()) {
+            if (city.nationId === nationId) {
+                this.updateCity(city.id, { nationId: 0, frontState: 0 });
+            }
+        }
+        const orderedMembers = members.sort((left, right) => {
+            if (left.id === dyingLordId) return 1;
+            if (right.id === dyingLordId) return -1;
+            return left.id - right.id;
+        });
+        const pushHistory = (): void => {
+            this.pushLog({
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+                text: `<R><b>【멸망】</b></><D><b>${nation.name}</b></>${JosaUtil.pick(nation.name, '은')} <R>멸망</>했습니다.`,
+            });
+        };
+        for (const general of orderedMembers) {
+            if (general.id === dyingLordId) pushHistory();
+            // Ref applyDB()는 개인 역사 bucket을 행동 bucket보다 먼저 저장한다.
+            this.pushLog({
+                scope: LogScope.GENERAL,
+                category: LogCategory.HISTORY,
+                generalId: general.id,
+                format: LogFormat.YEAR_MONTH,
+                text: `<D><b>${nation.name}</b></>${JosaUtil.pick(nation.name, '이')} <R>멸망</>`,
+            });
+            this.pushLog({
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                generalId: general.id,
+                format: LogFormat.PLAIN,
+                text: `<D><b>${nation.name}</b></>${JosaUtil.pick(nation.name, '이')} <R>멸망</>했습니다.`,
+            });
+        }
+        // 과거 누락으로 군주가 이미 삭제된 국가의 운영 복구도 같은 정산을 쓴다.
+        if (dyingLordId === undefined) pushHistory();
+        return this.collapseNation(nationId);
     }
 
     collapseNation(nationId: number): boolean {

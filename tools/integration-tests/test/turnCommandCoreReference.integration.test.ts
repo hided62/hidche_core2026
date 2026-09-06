@@ -168,6 +168,60 @@ const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
 };
 
 integration('core ↔ legacy command-boundary differential', () => {
+    it('dissolves a successorless ruler nation at the death boundary', async () => {
+        const request = readFixture('fixtures/turn-differential/live-sortie-conquest.json');
+        request.actorGeneralId = 2;
+        request.action = '휴식';
+        request.args = {};
+        request.includeLifecycle = true;
+        request.setup!.generals![1] = {
+            ...request.setup!.generals![1],
+            npcState: 4,
+            killTurn: 1,
+            deadYear: 185,
+        };
+        request.setup!.generals!.push({
+            id: 3,
+            name: '부대장',
+            nationId: 2,
+            cityId: 70,
+            officerLevel: 11,
+            npcState: 5,
+            killTurn: 24,
+            gold: 2345,
+            rice: 6789,
+            crew: 0,
+        });
+        request.observe = {
+            ...request.observe,
+            generalIds: [1, 2, 3],
+            nationIds: [1, 2],
+            cityIds: [3, 70],
+            includeGlobalHistoryLogs: true,
+            includeNationHistoryLogs: true,
+        };
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        for (const result of [reference, core]) {
+            expect(result.after.generals.find((general) => general.id === 2)).toBeUndefined();
+            expect(result.after.nations.find((nation) => nation.id === 2)).toBeUndefined();
+            expect(result.after.cities.find((city) => city.id === 70)).toMatchObject({ nationId: 0, frontState: 0 });
+            expect(result.after.generals.find((general) => general.id === 3)).toMatchObject({
+                nationId: 0,
+                officerLevel: 0,
+                gold: 2345,
+                rice: 6789,
+            });
+        }
+        expect(core.rng).toEqual(reference.rng);
+        expect(semanticLogSignatures(core.after.logs.filter((log) => String(log.text).includes('멸망')))).toEqual(
+            semanticLogSignatures(reference.after.logs.filter((log) => String(log.text).includes('멸망')))
+        );
+    });
+
     it.each([
         ['nation declaration', 'fixtures/turn-differential/nation-declaration.json'],
         ['live sortie conquest', 'fixtures/turn-differential/live-sortie-conquest.json'],

@@ -2252,6 +2252,7 @@ export const createReservedTurnHandler = async (options: {
                 ? 'retired'
                 : 'active';
             let deleteGeneral = false;
+            let successorlessNationId: number | undefined;
             const deletedTroopIds = Array.from(commandDeletedTroopIds);
             const lifecycleSnapshot = cloneTurnGeneral(currentGeneral);
             if (currentGeneral.meta.killturn <= 0) {
@@ -2351,6 +2352,10 @@ export const createReservedTurnHandler = async (options: {
                                     `<Y>${successor.name}</>이 <D><b>${currentNation.name}</b></>의 유지를 이어 받았습니다`
                                 )
                             );
+                        } else {
+                            // Ref nextRuler()는 후계자가 없으면 군주 삭제 전에
+                            // deleteNation($general, true)로 국가 전체를 정산한다.
+                            successorlessNationId = currentNation.id;
                         }
                     }
                     if (currentGeneral.troopId === currentGeneral.id) {
@@ -2424,6 +2429,7 @@ export const createReservedTurnHandler = async (options: {
                       }
                     : undefined),
                 ...(destroyedNationIds.size > 0 ? { destroyedNationIds: [...destroyedNationIds] } : undefined),
+                ...(successorlessNationId !== undefined ? { successorlessNationId } : {}),
                 lifecycleEvent: {
                     generalId: currentGeneral.id,
                     outcome: lifecycleOutcome,

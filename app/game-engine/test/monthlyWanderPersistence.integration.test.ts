@@ -457,4 +457,157 @@ integration('monthly wandering nation persistence', () => {
             await hooks.close();
         }
     });
+    it('atomically repairs a rulerless nation with only troop NPCs and preserves its archive', async () => {
+        await cleanup();
+        const nation = buildNation(nationIds[1]!, '방랑국', 3, 0);
+        const city = buildCity(cityIds[0]!, '방랑성', nation.id);
+        const general = buildGeneral({
+            id: generalIds[0]!,
+            name: '부대장',
+            nationId: nation.id,
+            cityId: city.id,
+            officerLevel: 11,
+            npcState: 5,
+            gold: 2345,
+            rice: 6789,
+            belong: 5,
+            turnTime: new Date('0195-01-01T00:05:00.000Z'),
+        });
+        await db.nation.create({
+            data: {
+                id: nation.id,
+                name: nation.name,
+                color: nation.color,
+                level: nation.level,
+                typeCode: nation.typeCode,
+                chiefGeneralId: 12345,
+            },
+        });
+        await db.city.create({
+            data: {
+                id: city.id,
+                name: city.name,
+                level: city.level,
+                nationId: nation.id,
+                region: 1,
+                population: 1000,
+                populationMax: 2000,
+                agriculture: 100,
+                agricultureMax: 200,
+                commerce: 100,
+                commerceMax: 200,
+                security: 100,
+                securityMax: 200,
+                defence: 100,
+                defenceMax: 200,
+                wall: 100,
+                wallMax: 200,
+                frontState: 1,
+            },
+        });
+        await db.general.create({
+            data: {
+                id: general.id,
+                name: general.name,
+                nationId: nation.id,
+                cityId: city.id,
+                officerLevel: 11,
+                npcState: 5,
+                gold: general.gold,
+                rice: general.rice,
+                turnTime: general.turnTime,
+            },
+        });
+        await db.nationTurn.create({
+            data: { nationId: nation.id, officerLevel: 12, turnIdx: 0, actionCode: '휴식', arg: {} },
+        });
+        const row = await db.worldState.create({
+            data: {
+                scenarioCode,
+                currentYear: 195,
+                currentMonth: 1,
+                tickSeconds: 600,
+                meta: { serverId },
+            },
+        });
+        const scenarioConfig: TurnWorldSnapshot['scenarioConfig'] = {
+            stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+            iconPath: '',
+            map: {},
+            const: {},
+            environment: { mapName: 'test', unitSet: 'default' },
+        };
+        const world = new InMemoryTurnWorld(
+            {
+                id: row.id,
+                currentYear: 195,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: new Date('0195-01-01T00:00:00.000Z'),
+                meta: { serverId },
+            },
+            {
+                scenarioConfig,
+                scenarioMeta: {
+                    title: 'test',
+                    startYear: 193,
+                    life: null,
+                    fiction: null,
+                    history: [],
+                    ignoreDefaultEvents: false,
+                },
+                map: { id: 'test', name: 'test', cities: [] },
+                nations: [nation],
+                cities: [city],
+                generals: [general],
+                troops: [],
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+            },
+            { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
+        );
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        try {
+            world.dissolveNationWithoutSuccessor(nation.id);
+            const result = {
+                lastTurnTime: world.getState().lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            };
+            // A stale clock fence must leave the entire repair uncommitted and retryable.
+            await db.worldState.update({ where: { id: row.id }, data: { clockRevision: 2 } });
+            await expect(hooks.hooks.flushChanges!(result)).rejects.toThrow('Game clock fence changed');
+            expect(await db.nation.count({ where: { id: nation.id } })).toBe(1);
+            expect((await db.general.findUniqueOrThrow({ where: { id: general.id } })).nationId).toBe(nation.id);
+            expect(await db.oldNation.count({ where: { serverId } })).toBe(0);
+            await db.worldState.update({ where: { id: row.id }, data: { clockRevision: 1 } });
+            await hooks.hooks.flushChanges!(result);
+            expect(await db.nation.findUnique({ where: { id: nation.id } })).toBeNull();
+            expect(await db.city.findUniqueOrThrow({ where: { id: city.id } })).toMatchObject({
+                nationId: 0,
+                frontState: 0,
+            });
+            expect(await db.general.findUniqueOrThrow({ where: { id: general.id } })).toMatchObject({
+                nationId: 0,
+                officerLevel: 0,
+                gold: 2345,
+                rice: 6789,
+            });
+            expect(await db.nationTurn.count({ where: { nationId: nation.id } })).toBe(0);
+            const archive = await db.oldNation.findUniqueOrThrow({
+                where: { serverId_nation_sourceId: { serverId, nation: nation.id, sourceId: 0 } },
+            });
+            expect(archive.data).toMatchObject({ nation: nation.id, generals: [general.id] });
+            const logCount = await db.logEntry.count({ where: { text: { contains: '방랑국' } } });
+            expect(logCount).toBe(3);
+            expect(world.dissolveNationWithoutSuccessor(nation.id)).toBe(false);
+            await hooks.hooks.flushChanges!(result);
+            expect(await db.logEntry.count({ where: { text: { contains: '방랑국' } } })).toBe(logCount);
+        } finally {
+            await hooks.close();
+        }
+    });
 });
