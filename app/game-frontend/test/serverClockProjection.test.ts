@@ -49,3 +49,22 @@ void test('holds a preopen clock until its wall-clock start delay passes', () =>
 void test('rejects an invalid server clock sample', () => {
     assert.equal(sampleServerClock({ serverTime: 'not-a-time' }, 10_000), null);
 });
+
+void test('a single browser sample accelerates only inside the recovery window and rejoins normal time', () => {
+    const sample = sampleServerClock(
+        {
+            serverTime: '2026-09-06T00:20:00Z',
+            serverWallTime: '2026-09-06T04:20:00Z',
+            clockRunning: true,
+            clockRecovery: { startsAt: '2026-09-06T05:00:00Z', endsAt: '2026-09-06T09:00:00Z' },
+        },
+        0
+    );
+    assert.ok(sample);
+    const minute = 60_000;
+    assert.equal(projectServerClock(sample, 40 * minute).time.toISOString(), '2026-09-06T01:00:00.000Z');
+    assert.equal(projectServerClock(sample, 100 * minute).time.toISOString(), '2026-09-06T03:00:00.000Z');
+    assert.equal(projectServerClock(sample, 280 * minute).time.toISOString(), '2026-09-06T09:00:00.000Z');
+    assert.equal(projectServerClock(sample, 340 * minute).time.toISOString(), '2026-09-06T10:00:00.000Z');
+    assert.equal(projectServerClock(sample, 280 * minute).rate, 1);
+});

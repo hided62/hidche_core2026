@@ -15,6 +15,9 @@ export interface TurnEngineWorldStateRow {
     clockTick: bigint | null;
     clockMode: string;
     clockWallAnchor: Date | null;
+    clockRecoveryStartTick?: bigint | null;
+    clockRecoveryEndTick?: bigint | null;
+    clockRecoveryStartWallAt?: Date | null;
     lastTurnTick: bigint | null;
     clockPhase: string;
     clockRevision: bigint;
@@ -183,6 +186,9 @@ export interface TurnEngineWorldStateUpdateInput {
     clockTick: bigint;
     clockMode: string;
     clockWallAnchor: Date;
+    clockRecoveryStartTick?: bigint | null;
+    clockRecoveryEndTick?: bigint | null;
+    clockRecoveryStartWallAt?: Date | null;
     lastTurnTick: bigint;
     clockPhase: string;
     clockRevision: bigint;
@@ -200,6 +206,9 @@ export interface TurnEngineWorldStateCreateInput {
     clockTick: bigint;
     clockMode: string;
     clockWallAnchor: Date;
+    clockRecoveryStartTick?: bigint | null;
+    clockRecoveryEndTick?: bigint | null;
+    clockRecoveryStartWallAt?: Date | null;
     lastTurnTick: bigint;
     clockPhase: string;
     clockRevision: bigint;

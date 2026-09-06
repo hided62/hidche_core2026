@@ -190,12 +190,12 @@ describe('in-memory scenario general pool availability', () => {
         const before = world.captureState();
         const probeAfterOriginalExpiry = new Date(claimedAt.getTime() + 10 * 60_000);
 
-        world.shiftSchedule(15, claimedAt);
+        world.shiftSchedule(20, claimedAt);
 
         expect(world.captureState().generalPoolEntries).toMatchObject([
             {
                 id: 1,
-                reservedUntil: new Date(reservedUntil.getTime() + 15 * 60_000),
+                reservedUntil: new Date(reservedUntil.getTime() + 20 * 60_000),
                 reservedUntilTick: GAME_TICKS_PER_TURN / 2,
             },
             { id: 2, reservedUntil: null, reservedUntilTick: null },

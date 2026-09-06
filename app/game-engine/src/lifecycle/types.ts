@@ -72,11 +72,13 @@ export interface TurnStateStore {
         phase?: GameClockPhase;
         revision?: number;
         deadlineGeneration?: number;
+        startsAt?: Date;
     }>;
     promotePreopenAtOpening?(wallNow: Date): Promise<boolean>;
     shouldRebaseRealtimeBacklog?(wallNow: Date): Promise<boolean>;
     rebaseRealtimeBacklog?(wallNow: Date): Promise<RealtimeBacklogRebaseResult | null>;
     advanceGameClockTo?(target: Date, wallNow: Date): Promise<void>;
+    projectGameDeadline?(gameTime: Date): Promise<Date>;
 }
 
 export interface TurnDaemonControlQueue {

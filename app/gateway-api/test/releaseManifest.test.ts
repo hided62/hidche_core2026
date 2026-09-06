@@ -39,7 +39,7 @@ describe('readReleaseManifest', () => {
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
             gatewaySchemaHead: '20260825000000_add_bulk_release_batches',
-            gameSchemaHead: '20260903201500_complete_invader_game_clock',
+            gameSchemaHead: '20260906090000_add_turn_recovery_window',
         });
     });
 

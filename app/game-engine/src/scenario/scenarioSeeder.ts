@@ -68,6 +68,8 @@ export interface ScenarioSeedOptions {
     generalPoolOptions?: GeneralPoolLoaderOptions;
     resetTables?: boolean;
     now?: Date;
+    /** 실제 설치 시각. now는 예약된 게임 달력 기준일일 수 있다. */
+    wallNow?: Date;
     tickSeconds?: number;
     gameClockMode?: GameClockMode;
     installOptions?: ScenarioInstallOptions;
@@ -244,8 +246,14 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const gameClockMode = options.gameClockMode ?? 'realtime';
     // A realtime season prepared before its formal opening must not consume
     // wall time while users are only allowed to edit reserved commands.
-    const initialClockWallAnchor = install?.openAt && install.openAt.getTime() > now.getTime() ? install.openAt : now;
-    const initialClockPhase = resolveInitialClockPhase(gameClockMode, now, initialClockWallAnchor);
+    const wallNow = gameClockMode === 'manual' ? now : (options.wallNow ?? now);
+    const requestedOpening = install?.openAt && install.openAt.getTime() > wallNow.getTime() ? install.openAt : wallNow;
+    const openingFloor = cutTurn(requestedOpening, turnTermMinutes);
+    const initialClockWallAnchor =
+        gameClockMode === 'manual'
+            ? requestedOpening
+            : new Date(openingFloor.getTime() + (openingFloor < requestedOpening ? tickSeconds * 1_000 : 0));
+    const initialClockPhase = resolveInitialClockPhase(gameClockMode, wallNow, initialClockWallAnchor);
     const initialClock = new GameClock({
         baseTime: startState.startTime,
         tick: 0,
@@ -317,7 +325,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         develcost: (startState.currentYear - (scenario.startYear ?? startState.currentYear) + 10) * 2,
         starttime: formatDateTime(startState.startTime),
         turntime: formatDateTime(now),
-        opentime: formatDateTime(now),
+        opentime: formatDateTime(initialClockWallAnchor),
         lastTurnTime: formatDateTime(now),
     };
 
@@ -344,7 +352,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     }
 
     worldMeta.hiddenSeed = hiddenSeed;
-    worldMeta.seededAtWall = now.toISOString();
+    worldMeta.seededAtWall = wallNow.toISOString();
     worldMeta.scheduledOpenAtWall = initialClockWallAnchor.toISOString();
     worldMeta.projectedGameDateAtOpening = initialClock.baseTime.toISOString();
     worldMeta.calendarStart = startState.startTime.toISOString();

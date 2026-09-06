@@ -1,11 +1,21 @@
-export const GAME_TICKS_PER_TURN = 36_000_000;
+import {
+    observeTurnRecovery,
+    nextTurnBoundary,
+    planTurnRecovery,
+    projectRecoveryDeadline,
+    validateTurnRecovery,
+    type TurnRecoveryWindow,
+} from './TurnRecovery.js';
+import { GAME_TICKS_PER_TURN, asGameTick, type GameTick } from './gameTimeUnits.js';
+export { GAME_TICKS_PER_TURN, asGameTick, type GameTick } from './gameTimeUnits.js';
+
 export const MAX_SAFE_GAME_TICK = Number.MAX_SAFE_INTEGER;
 
 export type GameClockMode = 'realtime' | 'manual';
 export type GameClockPhase = 'PREOPEN' | 'RUNNING' | 'SUSPENDED' | 'RECONCILING' | 'MANUAL' | 'COMPLETED';
-export type ClockAlignmentPolicy = 'EXACT' | 'LEGACY_COMPLETE_TURNS' | 'CATCH_UP' | 'PRESERVE_SCHEDULE';
+export type ClockAlignmentPolicy =
+    'EXACT' | 'LEGACY_COMPLETE_TURNS' | 'CATCH_UP' | 'PRESERVE_SCHEDULE' | 'RECOVER_TURNS' | 'TURN_BOUNDARY';
 
-declare const gameTickBrand: unique symbol;
 declare const observedGameInstantBrand: unique symbol;
 declare const scheduleInstantBrand: unique symbol;
 declare const clockRevisionBrand: unique symbol;
@@ -13,7 +23,6 @@ declare const deadlineGenerationBrand: unique symbol;
 declare const wallInstantBrand: unique symbol;
 declare const monotonicDurationBrand: unique symbol;
 
-export type GameTick = number & { readonly [gameTickBrand]: 'GameTick' };
 export type ObservedGameInstant = GameTick & { readonly [observedGameInstantBrand]: 'ObservedGameInstant' };
 export type ScheduleInstant = GameTick & { readonly [scheduleInstantBrand]: 'ScheduleInstant' };
 export type ClockRevision = number & { readonly [clockRevisionBrand]: 'ClockRevision' };
@@ -31,6 +40,8 @@ export interface ClockAlignmentPlan {
     catchUpTicks: GameTick;
     shiftTicks: GameTick;
     alignedTick: GameTick;
+    recovery?: TurnRecoveryWindow | null;
+    resumeAnchor?: Date;
 }
 
 export interface GameClockState {
@@ -41,6 +52,7 @@ export interface GameClockState {
     turnSeconds: number;
     phase?: GameClockPhase;
     revision?: number;
+    recovery?: TurnRecoveryWindow | null;
 }
 
 const requireSafeTick = (tick: number): number => {
@@ -49,8 +61,6 @@ const requireSafeTick = (tick: number): number => {
     }
     return tick;
 };
-
-export const asGameTick = (tick: number): GameTick => requireSafeTick(tick) as GameTick;
 
 export const asObservedGameInstant = (tick: number): ObservedGameInstant =>
     requireSafeTick(tick) as ObservedGameInstant;
@@ -108,6 +118,8 @@ const CLOCK_ALIGNMENT_POLICIES: readonly ClockAlignmentPolicy[] = [
     'LEGACY_COMPLETE_TURNS',
     'CATCH_UP',
     'PRESERVE_SCHEDULE',
+    'RECOVER_TURNS',
+    'TURN_BOUNDARY',
 ];
 
 export const parseClockAlignmentPolicy = (value: string): ClockAlignmentPolicy => {
@@ -192,7 +204,56 @@ export const buildClockAlignmentPlan = (input: {
     resumeWall: Date;
     ticksPerSecond: number;
     catchUpTicks?: number;
+    normalTick?: number;
 }): ClockAlignmentPlan => {
+    if (input.policy === 'TURN_BOUNDARY') {
+        if (input.cutTick % GAME_TICKS_PER_TURN !== 0 || (input.catchUpTicks ?? 0) !== 0) {
+            throw new Error('Planned resume requires a suspended turn boundary and no catch-up.');
+        }
+        const exact = buildAlignmentPlan({ ...input, catchUpTicks: 0 });
+        const normalTick = input.normalTick ?? exact.alignedTick;
+        const alignedTick = nextTurnBoundary(Math.max(input.cutTick, normalTick));
+        return {
+            ...exact,
+            alignedTick,
+            shiftTicks: asGameTick(alignedTick - input.cutTick),
+            catchUpTicks: asGameTick(0),
+            resumeAnchor: new Date(
+                input.resumeWall.getTime() + Math.ceil(((alignedTick - normalTick) * 1_000) / input.ticksPerSecond)
+            ),
+            recovery: null,
+        };
+    }
+    if (input.policy === 'RECOVER_TURNS') {
+        if ((input.catchUpTicks ?? 0) !== 0)
+            throw new Error('Turn recovery derives its backlog from the saved observation.');
+        const exact = buildAlignmentPlan({ ...input, catchUpTicks: 0 });
+        const recovery = planTurnRecovery({
+            observedTick: input.cutTick,
+            normalTick: input.normalTick ?? exact.alignedTick,
+            wallNow: input.resumeWall,
+            turnSeconds: GAME_TICKS_PER_TURN / input.ticksPerSecond,
+        });
+        const shiftTicks = asGameTick(recovery.skippedTurns * GAME_TICKS_PER_TURN);
+        return {
+            ...exact,
+            shiftTicks,
+            catchUpTicks: asGameTick(Math.max(0, (input.normalTick ?? exact.alignedTick) - input.cutTick - shiftTicks)),
+            alignedTick: recovery.initialTick,
+            recovery: recovery.recovery,
+            ...(recovery.initialTick > (input.normalTick ?? exact.alignedTick)
+                ? {
+                      resumeAnchor: new Date(
+                          input.resumeWall.getTime() +
+                              Math.ceil(
+                                  ((recovery.initialTick - (input.normalTick ?? exact.alignedTick)) * 1_000) /
+                                      input.ticksPerSecond
+                              )
+                      ),
+                  }
+                : {}),
+        };
+    }
     if (input.policy === 'PRESERVE_SCHEDULE') {
         if ((input.catchUpTicks ?? 0) !== 0) {
             throw new Error('PRESERVE_SCHEDULE derives catch-up from the complete wall gap.');
@@ -239,6 +300,7 @@ export class GameClock {
     readonly ticksPerSecond: number;
     readonly phase: GameClockPhase;
     readonly revision: ClockRevision;
+    readonly recovery: TurnRecoveryWindow | null;
 
     constructor(state: GameClockState) {
         if (!Number.isInteger(state.turnSeconds) || state.turnSeconds <= 0) {
@@ -261,6 +323,10 @@ export class GameClock {
         this.ticksPerSecond = GAME_TICKS_PER_TURN / state.turnSeconds;
         this.phase = state.phase ?? inferClockPhase(state.mode);
         this.revision = asClockRevision(state.revision ?? 1);
+        this.recovery = state.recovery
+            ? { ...state.recovery, startWallAt: new Date(state.recovery.startWallAt) }
+            : null;
+        if (this.recovery) validateTurnRecovery(this.recovery);
     }
 
     static baseTimeForProjection(projectedTime: Date, tick: number, turnSeconds: number): Date {
@@ -291,6 +357,9 @@ export class GameClock {
         ) {
             return this.tick;
         }
+        if (this.recovery && this.phase === 'RUNNING') {
+            return Math.max(this.tick, observeTurnRecovery(this.recovery, wallNow, this.ticksPerSecond));
+        }
         const elapsedTicks = this.ticksBetween(this.wallAnchor, wallNow);
         // A future realtime anchor represents the formal opening at anchor tick.
         // Before that instant Ref exposes the elapsed offset as a negative tick,
@@ -305,6 +374,30 @@ export class GameClock {
 
     now(wallNow: Date): Date {
         return this.tickToDate(this.nowTick(wallNow));
+    }
+
+    /** 가속·대기와 별개로 유저가 익숙한 기존 시간표의 현재 좌표를 구한다. */
+    normalNowTick(wallNow: Date): number {
+        if (this.recovery) {
+            return this.addTicks(
+                (this.recovery.startTick + this.recovery.endTick) / 2,
+                this.ticksBetween(this.recovery.startWallAt, wallNow)
+            );
+        }
+        return this.addTicks(this.tick, this.ticksBetween(this.wallAnchor, wallNow));
+    }
+
+    /** tickToDate는 안정된 게임 좌표이며 이 메서드만 실제 실행 예정 시각을 반환한다. */
+    tickToWallDate(tick: number): Date {
+        return this.recovery
+            ? projectRecoveryDeadline(this.recovery, tick, this.ticksPerSecond)
+            : new Date(this.wallAnchor.getTime() + tickOffsetMilliseconds(tick - this.tick, this.ticksPerSecond));
+    }
+
+    executionRate(wallNow: Date): 1 | 2 {
+        if (!this.recovery || this.phase !== 'RUNNING' || this.mode !== 'realtime') return 1;
+        const end = projectRecoveryDeadline(this.recovery, this.recovery.endTick, this.ticksPerSecond);
+        return wallNow >= this.recovery.startWallAt && wallNow < end ? 2 : 1;
     }
 
     dateToTick(date: Date): number {

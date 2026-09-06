@@ -17,6 +17,7 @@ import {
     inferClockPhase,
     type GameClockMode,
     type GameClockPhase,
+    type TurnRecoveryWindow,
 } from '@sammo-ts/common';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
@@ -129,6 +130,7 @@ export interface InMemoryGameClockState {
     tick: number;
     mode: GameClockMode;
     wallAnchor: Date;
+    recovery?: TurnRecoveryWindow | null;
     lastTurnTick: number;
     phase: GameClockPhase;
     revision: number;
@@ -147,6 +149,8 @@ export interface DurableClockReconciliationAlignment {
     alignedTick: number;
     shiftTicks: number;
     resumeWallAt: Date;
+    resumeAnchor?: Date;
+    recovery?: TurnRecoveryWindow | null;
 }
 
 export type InheritancePersistencePhase = 'before_lifecycle' | 'after_lifecycle';
@@ -654,6 +658,7 @@ export class InMemoryTurnWorld {
             tick: this.state.clockTick ?? this.state.lastTurnTick ?? 0,
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: this.state.clockWallAnchor ?? this.state.lastTurnTime,
+            recovery: this.state.clockRecovery,
             turnSeconds: this.state.tickSeconds,
             phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
             revision: this.state.clockRevision ?? 1,
@@ -684,6 +689,7 @@ export class InMemoryTurnWorld {
             tick: this.state.clockTick ?? 0,
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: new Date((this.state.clockWallAnchor ?? this.state.lastTurnTime).getTime()),
+            recovery: this.state.clockRecovery ? structuredClone(this.state.clockRecovery) : null,
             lastTurnTick: this.state.lastTurnTick ?? 0,
             phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
             revision: this.state.clockRevision ?? 1,
@@ -693,6 +699,15 @@ export class InMemoryTurnWorld {
 
     getGameNow(wallNow: Date): Date {
         return this.getGameClock().now(wallNow);
+    }
+
+    projectGameDeadline(gameTime: Date): Date {
+        const clock = this.getGameClock();
+        return clock.tickToWallDate(clock.dateToTick(gameTime));
+    }
+
+    getNormalGameTick(wallNow: Date): number {
+        return this.getGameClock().normalNowTick(wallNow);
     }
 
     promotePreopenAtOpening(wallNow: Date): boolean {
@@ -759,7 +774,8 @@ export class InMemoryTurnWorld {
         this.state = {
             ...this.state,
             clockTick: input.alignedTick,
-            clockWallAnchor: new Date(input.resumeWallAt.getTime()),
+            clockWallAnchor: new Date((input.resumeAnchor ?? input.resumeWallAt).getTime()),
+            clockRecovery: input.recovery ? structuredClone(input.recovery) : null,
             lastTurnTick,
             lastTurnTime,
             clockPhase: 'RECONCILING',
@@ -865,6 +881,7 @@ export class InMemoryTurnWorld {
             clockTick: input.tick,
             clockMode: input.mode,
             clockWallAnchor: new Date(input.wallAnchor.getTime()),
+            clockRecovery: input.recovery ? structuredClone(input.recovery) : null,
             clockPhase: input.phase,
             clockRevision: input.revision,
             deadlineGeneration: input.deadlineGeneration,
@@ -918,11 +935,11 @@ export class InMemoryTurnWorld {
         skippedTurns: number;
     } | null {
         const clock = this.getGameClock();
-        if (clock.mode !== 'realtime' || clock.phase !== 'RUNNING') {
+        if (clock.mode !== 'realtime' || clock.phase !== 'RUNNING' || clock.recovery) {
             return null;
         }
         const currentTick = clock.nowTick(wallNow);
-        const wallAlignedTick = Math.max(currentTick, clock.dateToTick(wallNow));
+        const wallAlignedTick = Math.max(currentTick, clock.normalNowTick(wallNow));
         const lastTurnTick = this.state.lastTurnTick ?? clock.dateToTick(this.state.lastTurnTime);
         // 운영 지연은 12턴 미만이면 전부 실행한다. 긴 중단은 완전한 게임 연도
         // 묶음만 건너뛰어 장수 분·초와 나머지 미처리 턴을 그대로 남긴다.
@@ -1181,6 +1198,9 @@ export class InMemoryTurnWorld {
                 lastTurnTime: this.state.lastTurnTime.toISOString(),
             };
         }
+        if (previousClock.recovery && wallNow < previousClock.tickToWallDate(previousClock.recovery.endTick)) {
+            throw new Error('복구가 끝난 뒤 기본 턴 길이를 변경할 수 있습니다.');
+        }
         const currentWallAnchor = this.state.clockWallAnchor ?? previousClock.wallAnchor;
         const anchorWall = wallNow.getTime() < currentWallAnchor.getTime() ? currentWallAnchor : wallNow;
         const anchorTick = previousClock.nowTick(anchorWall);
@@ -1201,6 +1221,7 @@ export class InMemoryTurnWorld {
         this.state = {
             ...this.state,
             tickSeconds: nextTickSeconds,
+            clockRecovery: null,
             clockBaseTime: nextBaseTime,
             clockTick: anchorTick,
             clockWallAnchor: new Date(anchorWall.getTime()),
@@ -1670,9 +1691,12 @@ export class InMemoryTurnWorld {
         };
     }
 
-    shiftSchedule(deltaMinutes: number, wallNow = new Date()): { shiftedGenerals: number; lastTurnTime: string } {
+    shiftSchedule(deltaMinutes: number, _wallNow = new Date()): { shiftedGenerals: number; lastTurnTime: string } {
         if (!Number.isInteger(deltaMinutes) || deltaMinutes === 0) {
             throw new Error('Schedule shift must be a non-zero integer number of minutes.');
+        }
+        if ((deltaMinutes * 60) % this.state.tickSeconds !== 0) {
+            throw new Error('일정 이동은 현재 턴 길이의 정수 배수여야 합니다.');
         }
         const deltaMs = deltaMinutes * 60_000;
         const shiftDate = (date: Date): Date => new Date(date.getTime() + deltaMs);
@@ -1694,6 +1718,7 @@ export class InMemoryTurnWorld {
             tick: this.state.clockTick ?? 0,
             mode: this.state.clockMode ?? 'manual',
             wallAnchor: this.state.clockWallAnchor ?? this.state.lastTurnTime,
+            recovery: this.state.clockRecovery,
             turnSeconds: this.state.tickSeconds,
             phase: this.state.clockPhase ?? inferClockPhase(this.state.clockMode ?? 'manual'),
             revision: this.state.clockRevision ?? 1,
@@ -1709,14 +1734,14 @@ export class InMemoryTurnWorld {
         this.state = {
             ...this.state,
             clockBaseTime: nextBaseTime,
-            // Rebasing is also the explicit resume checkpoint. Realtime mode
-            // must not replay the operational downtime after an administrator
-            // deliberately delays or accelerates the game schedule.
-            // 가오픈의 anchor는 별도 예약된 정식 오픈이다. 표시 좌표를 옮기는
-            // 작업이 그 미래 경계를 현재 시각으로 당겨 게임을 시작시키면 안 된다.
-            clockWallAnchor: new Date(
-                previousClock.phase === 'PREOPEN' ? previousClock.wallAnchor.getTime() : wallNow.getTime()
-            ),
+            // 명시적 이동은 저장 좌표와 실제 실행 anchor를 같은 정수 턴만큼 옮긴다.
+            clockWallAnchor: shiftDate(previousClock.wallAnchor),
+            clockRecovery: this.state.clockRecovery
+                ? {
+                      ...this.state.clockRecovery,
+                      startWallAt: shiftDate(this.state.clockRecovery.startWallAt),
+                  }
+                : null,
             lastTurnTime: nextLastTurnTime,
             meta: nextMeta,
         };

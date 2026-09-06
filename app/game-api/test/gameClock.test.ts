@@ -23,6 +23,41 @@ const buildDatabase = (
     }) as unknown as DatabaseClient;
 
 describe('current game time projection', () => {
+    it('keeps independent workers frozen until this clock revision has a ready daemon', async () => {
+        const row = {
+            clockBaseTime: new Date('2026-09-06T00:00:00Z'),
+            clockTick: 0n,
+            clockMode: 'realtime',
+            clockWallAnchor: new Date('2026-09-06T00:00:00Z'),
+            tickSeconds: 3600,
+            clockPhase: 'RUNNING',
+            clockRevision: 2n,
+            deadlineGeneration: 2n,
+            clockRecoveryStartTick: 0n,
+            clockRecoveryEndTick: 288_000_000n,
+            clockRecoveryStartWallAt: new Date('2026-09-06T04:00:00Z'),
+        };
+        let ready = false;
+        const db = {
+            worldState: { findFirst: vi.fn(async () => row) },
+            $queryRaw: vi.fn(async () => [{ ready }]),
+        } as unknown as DatabaseClient;
+        const now = new Date('2026-09-06T05:00:00Z');
+        expect(await loadCurrentGameTime(db, now)).toMatchObject({ tick: 0, running: false, runtimeReady: false });
+        ready = true;
+        expect(await loadCurrentGameTime(db, now)).toMatchObject({
+            tick: 72_000_000,
+            running: true,
+            runtimeReady: true,
+            recovery: { startsAt: '2026-09-06T04:00:00.000Z', endsAt: '2026-09-06T08:00:00.000Z' },
+        });
+    });
+
+    it('holds an invader restart until its future turn boundary', async () => {
+        const db = buildDatabase('realtime', 'RUNNING');
+        const result = await loadCurrentGameTime(db, new Date('2026-08-21T10:59:59Z'));
+        expect(result).toMatchObject({ tick: 0, running: false, startsAt: new Date('2026-08-21T11:00:00Z') });
+    });
     it('projects negative realtime ticks until the future opening anchor', async () => {
         const db = buildDatabase();
 

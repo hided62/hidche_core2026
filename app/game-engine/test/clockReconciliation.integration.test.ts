@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { GameClock } from '@sammo-ts/common';
+import { GameClock, GAME_TICKS_PER_TURN as T, readTurnRecovery } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
+    readTurnRuntimeReady,
     createRedisConnector,
     GENERAL_ACCESS_PERSISTENCE_LOCK,
     GamePrisma,
@@ -13,6 +14,8 @@ import {
 
 import { reconcileClockSuspension, startClockSuspension } from '../src/turn/clockReconciliation.js';
 import { applyNextClockProjection } from '../src/turn/clockProjectionOutbox.js';
+import { prepareRealtimeRecovery } from '../src/turn/prepareRealtimeRecovery.js';
+import { DatabaseTurnDaemonLease } from '../src/lifecycle/databaseTurnDaemonLease.js';
 
 const databaseUrl = process.env.CLOCK_RECONCILIATION_DATABASE_URL;
 const enabled = Boolean(databaseUrl) && Boolean(process.env.REDIS_URL);
@@ -61,6 +64,158 @@ describeIntegration('durable clock reconciliation', () => {
     beforeEach(async () => {
         await clean();
     });
+
+    it.each([false, true])('fences outage recovery and reuses its window; repeated outage=%s', async (repeated) => {
+        const profile = 'recovery-startup';
+        await db.worldState.create({
+            data: {
+                scenarioCode: profile,
+                currentYear: 199,
+                currentMonth: 4,
+                tickSeconds: 3600,
+                clockBaseTime: new Date('0199-01-01T00:00:00Z'),
+                clockTick: repeated ? BigInt(4 * T) : 0n,
+                clockMode: 'realtime',
+                clockWallAnchor: new Date(Date.now() - 4 * 3_600_000),
+                lastTurnTick: repeated ? BigInt(4 * T) : 0n,
+                ...(repeated
+                    ? {
+                          clockRecoveryStartTick: 0n,
+                          clockRecoveryEndTick: BigInt(8 * T),
+                          clockRecoveryStartWallAt: new Date(Date.now() - 6 * 3_600_000),
+                      }
+                    : {}),
+                clockPhase: 'RUNNING',
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+            },
+        });
+        const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, { profile, heartbeat: false });
+        try {
+            const token = await lease.acquire();
+            expect(token).not.toBeNull();
+            expect(await readTurnRuntimeReady(db, 1n)).toBe(false);
+            const authority = {
+                kind: 'DAEMON' as const,
+                profileName: profile,
+                ownerId: token!.ownerId,
+                fencingEpoch: token!.fencingEpoch,
+            };
+            if (!repeated) {
+                await prepareRealtimeRecovery(db, authority, { paused: true });
+                const paused = await db.worldState.findFirstOrThrow();
+                expect(paused.clockPhase).toBe('SUSPENDED');
+                expect(paused.clockTick).toBe(0n);
+                expect((await db.clockSuspension.findFirstOrThrow()).status).toBe('SUSPENDED');
+                await prepareRealtimeRecovery(db, authority, { paused: true });
+                expect((await db.worldState.findFirstOrThrow()).clockPhase).toBe('SUSPENDED');
+            }
+            await prepareRealtimeRecovery(db, authority);
+            const pending = await db.worldState.findFirstOrThrow();
+            expect(pending.clockPhase).toBe('RECONCILING');
+            const recoveredWindow = readTurnRecovery(pending)!;
+            expect(recoveredWindow).not.toBeNull();
+            expect(recoveredWindow.endTick - recoveredWindow.startTick).toBe((repeated ? 12 : 8) * T);
+            expect(await readTurnRuntimeReady(db, pending.clockRevision)).toBe(false);
+            await applyNextClockProjection({ db, redis: redis.client, workerId: profile });
+            await lease.markClockReady();
+            expect(await readTurnRuntimeReady(db, pending.clockRevision)).toBe(true);
+            expect(await readTurnRuntimeReady(db, 1n)).toBe(false);
+            await lease.acquire();
+            expect(await readTurnRuntimeReady(db, pending.clockRevision)).toBe(false);
+            await prepareRealtimeRecovery(db, {
+                kind: 'DAEMON',
+                profileName: profile,
+                ownerId: token!.ownerId,
+                fencingEpoch: token!.fencingEpoch,
+            });
+            const reloaded = await db.worldState.findFirstOrThrow();
+            expect(readTurnRecovery(reloaded)).toEqual(readTurnRecovery(pending));
+            expect(reloaded.clockRevision).toBe(pending.clockRevision);
+        } finally {
+            await lease.close();
+        }
+    });
+
+    it.each([4, 12, 13, 23, 24])(
+        'persists recovery for %i turns and reloads the same normal boundary',
+        async (turns) => {
+            const now = new Date();
+            await db.worldState.create({
+                data: {
+                    scenarioCode: 'turn-recovery',
+                    currentYear: 199,
+                    currentMonth: 4,
+                    tickSeconds: 3600,
+                    clockBaseTime: new Date('2026-01-01T00:00:00Z'),
+                    clockTick: 0n,
+                    clockMode: 'realtime',
+                    clockWallAnchor: now,
+                    lastTurnTick: 0n,
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    deadlineGeneration: 1n,
+                },
+            });
+            const generalTick = T + 199_020;
+            await db.general.create({
+                data: {
+                    id: 26,
+                    name: '냥냥',
+                    turnTick: BigInt(generalTick),
+                    turnTime: new Date('2026-01-01T01:00:19.902Z'),
+                    meta: { purchasedPhase: true },
+                },
+            });
+            const authority = { kind: 'OFFLINE' as const, profileName: 'recovery-test', reason: 'fixture' };
+            const suspension = await startClockSuspension({
+                db,
+                suspensionId: 'recovery-test',
+                source: 'MAINTENANCE',
+                policy: turns === 4 ? 'EXACT' : 'RECOVER_TURNS',
+                authority,
+            });
+            const resumedAt = new Date(suspension.cutWallAt.getTime() + turns * 3_600_000);
+            const plan = await reconcileClockSuspension({
+                db,
+                suspensionId: suspension.suspensionId,
+                authority,
+                testResumeWallAt: resumedAt,
+                upgradeMaintenancePolicy: true,
+            });
+            expect(plan.shiftTicks).toBe(Math.floor(turns / 12) * 12 * T);
+            await applyNextClockProjection({ db, redis: redis.client, workerId: 'recovery-test' });
+            const row = await db.worldState.findFirstOrThrow();
+            const recovery = readTurnRecovery(row);
+            const reloaded = new GameClock({
+                baseTime: row.clockBaseTime!,
+                tick: Number(row.clockTick),
+                wallAnchor: row.clockWallAnchor!,
+                mode: 'realtime',
+                turnSeconds: row.tickSeconds,
+                recovery,
+            });
+            expect(row.currentMonth).toBe(4);
+            expect(row.lastTurnTick).toBe(BigInt(plan.shiftTicks));
+            const general = await db.general.findUniqueOrThrow({ where: { id: 26 } });
+            expect(general.turnTick).toBe(BigInt(generalTick + plan.shiftTicks));
+            expect(general.turnTime.toISOString().slice(14)).toBe('00:19.902Z');
+            expect(general.meta).toEqual({ purchasedPhase: true });
+            if (turns % 12 === 0) {
+                expect(recovery).toBeNull();
+            } else {
+                expect(recovery).not.toBeNull();
+                const end = reloaded.tickToWallDate(recovery!.endTick);
+                expect(reloaded.nowTick(end)).toBe(recovery!.endTick);
+                expect(reloaded.executionRate(new Date(end.getTime() - 1))).toBe(2);
+                expect(reloaded.executionRate(end)).toBe(1);
+                expect(reloaded.tickToWallDate(recovery!.endTick + 199_020).getTime() - end.getTime()).toBe(19_902);
+            }
+            const retry = await reconcileClockSuspension({ db, suspensionId: suspension.suspensionId, authority });
+            expect(retry.recovery).toEqual(plan.recovery);
+            expect(retry.catchUpTicks).toBe(plan.catchUpTicks);
+        }
+    );
 
     it.each([3_142_625, 6 * 3_600_000 + 3_142_625])(
         'preserves purchased turn phases and the execution cursor after %i ms maintenance and reload',

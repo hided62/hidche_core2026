@@ -22,6 +22,7 @@ export interface SeedProfileDatabaseOptions {
     tickSeconds?: number;
     gameClockMode?: GameClockMode;
     now?: Date;
+    wallNow?: Date;
     installOptions?: ScenarioInstallOptions;
     scenarioOptions?: Parameters<typeof seedScenarioToDatabase>[0]['scenarioOptions'];
     mapOptions?: Parameters<typeof seedScenarioToDatabase>[0]['mapOptions'];
@@ -115,9 +116,7 @@ const ensureAdminGeneral = async (prisma: GamePrisma.TransactionClient, adminUse
     const rawTurnTime = typeof meta.turntime === 'string' ? new Date(meta.turntime) : null;
     const fallbackTurnTime = rawTurnTime && !Number.isNaN(rawTurnTime.getTime()) ? rawTurnTime : new Date();
     const mode = worldState.clockMode === 'manual' ? 'manual' : 'realtime';
-    const phase = worldState.clockPhase
-        ? parseGameClockPhase(worldState.clockPhase)
-        : inferClockPhase(mode);
+    const phase = worldState.clockPhase ? parseGameClockPhase(worldState.clockPhase) : inferClockPhase(mode);
     const gameClock = new GameClock({
         baseTime: worldState.clockBaseTime ?? fallbackTurnTime,
         tick: Number(worldState.clockTick ?? 0n),
@@ -164,6 +163,7 @@ export const seedProfileDatabase = async (options: SeedProfileDatabaseOptions) =
         tickSeconds: options.tickSeconds,
         gameClockMode: options.gameClockMode,
         now: options.now,
+        wallNow: options.wallNow,
         installOptions: options.installOptions,
         scenarioOptions: options.scenarioOptions,
         mapOptions: options.mapOptions,

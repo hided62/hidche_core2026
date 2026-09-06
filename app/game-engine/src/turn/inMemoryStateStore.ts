@@ -41,6 +41,7 @@ export class InMemoryTurnStateStore implements TurnStateStore {
         phase: ReturnType<InMemoryTurnWorld['getGameClockState']>['phase'];
         revision: number;
         deadlineGeneration: number;
+        startsAt: Date;
     }> {
         const state = this.world.getGameClockState();
         return {
@@ -49,6 +50,7 @@ export class InMemoryTurnStateStore implements TurnStateStore {
             phase: state.phase,
             revision: state.revision,
             deadlineGeneration: state.deadlineGeneration,
+            startsAt: state.wallAnchor,
         };
     }
 
@@ -66,5 +68,9 @@ export class InMemoryTurnStateStore implements TurnStateStore {
 
     async advanceGameClockTo(target: Date, wallNow: Date): Promise<void> {
         this.world.advanceGameClockTo(target, wallNow);
+    }
+
+    async projectGameDeadline(gameTime: Date): Promise<Date> {
+        return this.world.projectGameDeadline(gameTime);
     }
 }

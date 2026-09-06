@@ -28,6 +28,7 @@ import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/ite
 import { z } from 'zod';
 import {
     GameClock,
+    readTurnRecovery,
     asRecord,
     inferClockPhase,
     isRecord,
@@ -440,14 +441,9 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             worldState.clockWallAnchor !== null &&
             worldState.lastTurnTick !== null;
         const clockMode = hasPersistedClock ? parseClockMode(worldState.clockMode) : 'manual';
-        const clockPhase = hasPersistedClock
-            ? parseGameClockPhase(worldState.clockPhase)
-            : inferClockPhase(clockMode);
+        const clockPhase = hasPersistedClock ? parseGameClockPhase(worldState.clockPhase) : inferClockPhase(clockMode);
         const clockRevision = toSafeTick(worldState.clockRevision, 'world_state.clock_revision');
-        const deadlineGeneration = toSafeTick(
-            worldState.deadlineGeneration,
-            'world_state.deadline_generation'
-        );
+        const deadlineGeneration = toSafeTick(worldState.deadlineGeneration, 'world_state.deadline_generation');
         const clockBaseTime = worldState.clockBaseTime ?? legacyLastTurnTime;
         const clockWallAnchor = worldState.clockWallAnchor ?? legacyLastTurnTime;
         const bootstrapClock = new GameClock({
@@ -455,6 +451,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             tick: 0,
             mode: clockMode,
             wallAnchor: clockWallAnchor,
+            recovery: readTurnRecovery(worldState),
             turnSeconds: worldState.tickSeconds,
             phase: clockPhase,
             revision: clockRevision,
@@ -468,6 +465,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
                     : toSafeTick(worldState.clockTick, 'world_state.clock_tick'),
             mode: clockMode,
             wallAnchor: clockWallAnchor,
+            recovery: readTurnRecovery(worldState),
             turnSeconds: worldState.tickSeconds,
             phase: clockPhase,
             revision: clockRevision,
@@ -537,6 +535,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
                 clockTick: gameClock.tick,
                 clockMode,
                 clockWallAnchor: gameClock.wallAnchor,
+                clockRecovery: gameClock.recovery,
                 lastTurnTick,
                 clockPhase,
                 clockRevision,

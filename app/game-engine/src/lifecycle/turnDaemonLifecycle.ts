@@ -170,6 +170,11 @@ export class TurnDaemonLifecycle {
                 await this.clock.sleepMs(500);
                 continue;
             }
+            if (gameClock?.mode === 'realtime' && gameClock.startsAt && wallNow < gameClock.startsAt) {
+                this.status.nextTurnTime = gameClock.startsAt.toISOString();
+                await this.clock.sleepMs(Math.min(500, gameClock.startsAt.getTime() - nowMs));
+                continue;
+            }
             // 수동 실행 요청도 가오픈·정지·재조정의 턴 실행 gate를 통과해야 한다.
             // 사용자 명령 처리는 루프 시작에서 계속하되 시간 진행은 여기서 분리한다.
             if (this.pendingRun) {
@@ -219,7 +224,10 @@ export class TurnDaemonLifecycle {
                 continue;
             }
 
-            const command = await this.controlQueue.waitFor(Math.max(0, nextTurnMs - gameNowMs));
+            const wallDeadline = await this.stateStore.projectGameDeadline?.(nextRunTime);
+            const command = await this.controlQueue.waitFor(
+                Math.max(0, wallDeadline ? wallDeadline.getTime() - nowMs : nextTurnMs - gameNowMs)
+            );
             if (command) {
                 await this.handleCommand(command);
             }

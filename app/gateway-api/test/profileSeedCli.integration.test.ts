@@ -48,14 +48,14 @@ describeDatabase('selected workspace profile seed CLI', () => {
                 JSON.stringify({
                     scenarioId: 1010,
                     tickSeconds: 60,
-                    now: '2036-03-03T00:00:00.000Z',
+                    now: '2036-03-03T02:10:30.000Z',
                     installOptions: {
                         serverId: 'selected-cli-seed',
                         firstGameIdx: 0,
                         installOperationId: 'selected-cli-operation',
                         installCommitSha: 'selected-cli-commit',
                         preopenAt: '2036-03-03T01:00:00.000Z',
-                        openAt: '2036-03-03T02:00:00.000Z',
+                        openAt: '2036-03-03T02:10:30.000Z',
                     },
                     adminUser: {
                         id: 'selected-cli-admin',
@@ -71,7 +71,8 @@ describeDatabase('selected workspace profile seed CLI', () => {
             const world = await connector.prisma.worldState.findFirstOrThrow();
             expect(world).toMatchObject({
                 scenarioCode: '1010',
-                clockWallAnchor: new Date('2036-03-03T02:00:00.000Z'),
+                clockWallAnchor: new Date('2036-03-03T02:11:00.000Z'),
+                clockPhase: 'PREOPEN',
                 meta: {
                     firstGameIdx: 0,
                     gameIdx: completedGameCount,
@@ -83,6 +84,8 @@ describeDatabase('selected workspace profile seed CLI', () => {
                 where: { userId: 'selected-cli-admin' },
             });
             expect(adminGeneral).toMatchObject({ meta: { createdBy: 'admin-seed' } });
+            expect(adminGeneral.turnTick).toBeGreaterThanOrEqual(0n);
+            expect(adminGeneral.turnTick).toBeLessThan(36_000_000n);
             const history = await connector.prisma.gameHistory.findUniqueOrThrow({
                 where: { serverId: 'selected-cli-seed' },
             });

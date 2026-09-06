@@ -193,6 +193,10 @@ const createHarness = (
         scheduleIntervalMs: 60_000,
         buildIntervalMs: 60_000,
         adminActionIntervalMs: 60_000,
+        transitionProfileClock: async (_profileName, action) => {
+            lifecycle.push(`clock:${action}`);
+            return { phase: action === 'SUSPEND' ? 'SUSPENDED' : 'RUNNING', revision: 2 };
+        },
         now: options.now,
         cancelGame: options.cancelGame,
         promoteProfileOpening: options.promoteProfileOpening
@@ -218,6 +222,13 @@ const createHarness = (
 };
 
 describe('GatewayOrchestrator first-class operations', () => {
+    it.each(['START', 'STOP'] as const)('routes %s through durable clock transition', async (action) => {
+        const harness = createHarness(buildOperation(action));
+        await harness.orchestrator.runOperationsNow();
+        expect(harness.lifecycle[0]).toBe(`clock:${action === 'START' ? 'RESUME' : 'SUSPEND'}`);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
     it('stops runtime, settles once, and seals a cancelled profile', async () => {
         const operation: GatewayOperationRecord = {
             id: '88888888-8888-4888-8888-888888888888',

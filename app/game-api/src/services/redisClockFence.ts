@@ -39,6 +39,7 @@ const ensureRedisClockFence = async (
     allowedPhases: readonly GameClockPhase[]
 ): Promise<ActiveRedisClockFence | null> => {
     if (
+        gameTime.runtimeReady === false ||
         !gameTime.phase ||
         !allowedPhases.includes(gameTime.phase) ||
         (gameTime.phase !== 'RUNNING' && gameTime.phase !== 'MANUAL' && gameTime.phase !== 'SUSPENDED') ||
@@ -68,6 +69,7 @@ export const ensureActiveRedisClockFence = async (
     profileName: string,
     gameTime: CurrentGameTime
 ): Promise<ActiveRedisClockFence | null> => {
+    if (!gameTime.running) return null;
     return ensureRedisClockFence(redis, profileName, gameTime, ['RUNNING']);
 };
 

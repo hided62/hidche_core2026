@@ -1,4 +1,4 @@
-import { parseGameClockPhase } from '@sammo-ts/common';
+import { parseGameClockPhase, readTurnRecovery, readSerializedTurnRecovery } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -28,6 +28,9 @@ export const synchronizeRuntimeClockAuthorityUnderHeldLock = async (
             clockTick: true,
             clockMode: true,
             clockWallAnchor: true,
+            clockRecoveryStartTick: true,
+            clockRecoveryEndTick: true,
+            clockRecoveryStartWallAt: true,
             lastTurnTick: true,
             clockPhase: true,
             clockRevision: true,
@@ -67,6 +70,7 @@ export const synchronizeRuntimeClockAuthorityUnderHeldLock = async (
                 shiftTicks: true,
                 alignedTick: true,
                 resumeWallAt: true,
+                detail: true,
             },
         });
         let expectedRevision = before.revision;
@@ -92,6 +96,7 @@ export const synchronizeRuntimeClockAuthorityUnderHeldLock = async (
                 alignedTick: safeNumber(ledger.alignedTick, `clock suspension ${ledger.id} aligned tick`),
                 shiftTicks: safeNumber(ledger.shiftTicks, `clock suspension ${ledger.id} shift ticks`),
                 resumeWallAt: ledger.resumeWallAt,
+                recovery: readSerializedTurnRecovery(ledger.detail),
             });
             expectedRevision = targetRevision;
         }
@@ -108,6 +113,7 @@ export const synchronizeRuntimeClockAuthorityUnderHeldLock = async (
         tick: safeNumber(durable.clockTick, 'durable clock tick'),
         mode: durable.clockMode === 'manual' ? 'manual' : 'realtime',
         wallAnchor: durable.clockWallAnchor,
+        recovery: readTurnRecovery(durable),
         lastTurnTick: safeNumber(durable.lastTurnTick, 'durable last turn tick'),
         phase: parseGameClockPhase(durable.clockPhase),
         revision: durableRevision,

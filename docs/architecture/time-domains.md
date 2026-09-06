@@ -18,6 +18,16 @@ effect; those are two facts, never one fallback clock.
 `createdAt`/`updatedAt` fields remain wall audit timestamps unless this inventory
 explicitly calls them game projections.
 
+## Recovery execution rate
+
+A turn always contains 36,000,000 GAME ticks. The configured normal duration
+remains unchanged during outage recovery. A persisted boundary-to-boundary
+window projects GAME time at 2x wall speed, then 1x after rejoining the normal
+schedule. The window and its wall anchor belong to clock authority; they are
+not gameplay deadlines or wall audit occurrences. See
+[reconciliation](./game-clock-reconciliation.md) for the 12-turn skip rule,
+planned-start boundaries, readiness fencing and deployment compatibility.
+
 ## Game database inventory
 
 PREOPEN user commands are executable even though scheduled turns are stopped.

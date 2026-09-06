@@ -145,6 +145,7 @@ model TurnDaemonLease {
   ownerId      String   @map("owner_id")
   leaseUntil   DateTime @map("lease_until")
   fencingEpoch BigInt   @default(1) @map("fencing_epoch")
+  clockReady   Boolean  @default(false) @map("clock_ready")
   heartbeatAt  DateTime @default(now()) @map("heartbeat_at")
 
   @@map("turn_daemon_lease")
@@ -160,6 +161,9 @@ model WorldState {
   clockTick          BigInt?   @map("clock_tick")
   clockMode          String    @default("realtime") @map("clock_mode")
   clockWallAnchor    DateTime? @map("clock_wall_anchor")
+  clockRecoveryStartTick BigInt? @map("clock_recovery_start_tick")
+  clockRecoveryEndTick BigInt? @map("clock_recovery_end_tick")
+  clockRecoveryStartWallAt DateTime? @map("clock_recovery_start_wall_at")
   lastTurnTick       BigInt?   @map("last_turn_tick")
   clockPhase         String    @default("RUNNING") @map("clock_phase")
   clockRevision      BigInt    @default(1) @map("clock_revision")

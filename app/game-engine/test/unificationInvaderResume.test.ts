@@ -143,7 +143,7 @@ describe('HWE-shaped unification invader resume', () => {
             tickSeconds: 60,
             lastTurnTime: liveLastTurnTime,
             clockBaseTime: new Date('2026-08-19T12:00:00.000Z'),
-            clockTick: 19_980_000_000,
+            clockTick: 19_944_000_000,
             clockMode: 'realtime',
             clockWallAnchor: liveWallAnchor,
             lastTurnTick: 19_944_000_000,
@@ -202,7 +202,7 @@ describe('HWE-shaped unification invader resume', () => {
                     actorUserId: recipient.userId,
                     target: 'ENGINE',
                     eventType: 'messageRespond',
-                    processingGameTick: 19_980_000_000n,
+                    processingGameTick: 19_944_000_000n,
                 })),
             },
             messageAction: { updateMany: vi.fn(async () => ({ count: 1 })) },
@@ -214,11 +214,11 @@ describe('HWE-shaped unification invader resume', () => {
                         id: 1014,
                         mailbox: recipient.id,
                         type: 'private',
-                        time: world.gameTickToDate(19_980_000_000),
+                        time: world.gameTickToDate(19_944_000_000),
                         validUntil: new Date('9999-12-31T00:00:00.000Z'),
                         actionType: 'raiseInvader',
                         actionStatus: 'PENDING',
-                        createdGameTick: 19_980_000_000n,
+                        createdGameTick: 19_944_000_000n,
                         expiresGameTick: null,
                         message,
                     },
@@ -256,13 +256,22 @@ describe('HWE-shaped unification invader resume', () => {
                 gapTicks: 108_000_000,
                 catchUpTicks: 0,
                 shiftTicks: 108_000_000,
-                alignedTick: 20_088_000_000,
+                alignedTick: 20_052_000_000,
                 resumeWallAt: acceptedAt,
+                resumeAnchor: new Date('2026-08-20T06:25:00Z'),
             }),
         });
         const processor = new InMemoryTurnProcessor(world);
         const clock = new ManualClock(acceptedAt.getTime());
+        vi.spyOn(queue, 'waitFor').mockImplementation(async (milliseconds) => {
+            await clock.sleepMs(milliseconds ?? 0);
+            const pending = await queue.drain();
+            for (const command of pending.slice(1)) queue.enqueue(command);
+            return pending[0] ?? null;
+        });
+        const runWallTimes: Date[] = [];
         const run = vi.fn(async (...args: Parameters<InMemoryTurnProcessor['run']>) => {
+            runWallTimes.push(new Date(clock.nowMs()));
             const result = await processor.run(...args);
             if (world.getState().currentMonth === 4) {
                 queue.enqueue({ type: 'shutdown', reason: 'resumed monthly boundary verified' });
@@ -307,7 +316,7 @@ describe('HWE-shaped unification invader resume', () => {
         expect(commandDb.$queryRaw).toHaveBeenCalledTimes(2);
         expect(commandDb.messageAction.updateMany).toHaveBeenCalledWith({
             where: { messageId: { in: [1014] }, status: 'PENDING' },
-            data: { status: 'RESOLVED', resolvedGameTick: 20_088_000_000n },
+            data: { status: 'RESOLVED', resolvedGameTick: 20_052_000_000n },
         });
         expect(world.getState()).toMatchObject({
             currentYear: 226,
@@ -324,11 +333,11 @@ describe('HWE-shaped unification invader resume', () => {
         expect(initialInvaderTurnTimes).toHaveLength(10);
         expect(Math.min(...initialInvaderTurnTimes)).toBeGreaterThanOrEqual(alignedMonthlyBoundary);
         expect(Math.max(...initialInvaderTurnTimes)).toBeLessThan(alignedMonthlyBoundary + 60_000);
-        expect(run).toHaveBeenCalledTimes(2);
-        expect(run.mock.calls.map(([targetTime]) => targetTime.toISOString())).toEqual([
-            '2026-08-20T06:24:58.611Z',
-            '2026-08-20T06:25:00.000Z',
-        ]);
-        expect(lifecycle.getStatus().lastTurnTime).toBe('2026-08-20T06:25:00.000Z');
+        expect(run).toHaveBeenCalled();
+        expect(runWallTimes.every((time) => time >= new Date('2026-08-20T06:25:00Z'))).toBe(true);
+        const nextMonth = addMinutes(liveLastTurnTime, 4);
+        expect(run.mock.calls.every(([targetTime]) => targetTime <= nextMonth)).toBe(true);
+        expect(run.mock.calls.at(-1)![0]).toEqual(nextMonth);
+        expect(lifecycle.getStatus().lastTurnTime).toBe(nextMonth.toISOString());
     });
 });

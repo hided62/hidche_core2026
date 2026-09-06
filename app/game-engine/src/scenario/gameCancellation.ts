@@ -571,7 +571,10 @@ const cancelGameInTransaction = async (
     return { ...resultFromPersisted(created), alreadyApplied: false };
 };
 
-export const cancelGame = async (request: GameCancellationRequest): Promise<GameCancellationResult> => {
+export const cancelGame = async (
+    request: GameCancellationRequest,
+    connectorFactory: typeof createGamePostgresConnector = createGamePostgresConnector
+): Promise<GameCancellationResult> => {
     if (!request.reason.trim()) throw new Error('Game cancellation reason is required.');
     if (!GAME_CANCELLATION_HISTORY_MODES.includes(request.historyMode)) throw new Error('Invalid history mode.');
     if (!GAME_CANCELLATION_GENERAL_MODES.includes(request.generalMode)) throw new Error('Invalid general mode.');
@@ -580,7 +583,7 @@ export const cancelGame = async (request: GameCancellationRequest): Promise<Game
         earnedPoint: 0,
         earnedPointRetentionPercent: request.earnedPointRetentionPercent,
     });
-    const connector = createGamePostgresConnector({ url: request.databaseUrl });
+    const connector = connectorFactory({ url: request.databaseUrl });
     await connector.connect();
     try {
         return await connector.prisma.$transaction(

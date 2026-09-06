@@ -16,6 +16,7 @@ const props = defineProps<{
     clockMode?: 'realtime' | 'manual';
     clockRunning?: boolean;
     clockStartsAt?: string | null;
+    clockRecovery?: { startsAt: string; endsAt: string } | null;
     turnEngineRunning?: boolean | null;
     status: {
         onlineUserCount: number;
@@ -34,6 +35,7 @@ const props = defineProps<{
 const tournamentStatus = computed(() => resolveTournamentStageName(props.tournamentStage));
 const currentServerTime = ref('기록 없음');
 const hasServerClock = ref(false);
+const recovering = ref(false);
 const turnEngineStopped = computed(() => props.turnEngineRunning === false);
 const turnEngineStatusUnknown = computed(() => typeof props.turnEngineRunning !== 'boolean');
 const serverClockTitle = computed(() => {
@@ -57,6 +59,7 @@ const updateServerClock = () => {
 
     const now = Date.now();
     const projection = projectServerClock(serverClockSample, now);
+    recovering.value = projection.rate === 2;
     currentServerTime.value = formatServerDateTime(projection.time, {
         format: 'monthDayTime',
         fallback: '기록 없음',
@@ -67,16 +70,37 @@ const updateServerClock = () => {
     const nextDelays: number[] = [];
     if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
         const untilStartMs = serverClockSample.startDelayMs - projection.clientElapsedMs;
-        nextDelays.push(untilStartMs > 0 ? untilStartMs : millisecondsUntilNextMinute(projection.time));
+        nextDelays.push(
+            untilStartMs > 0 ? untilStartMs : millisecondsUntilNextMinute(projection.time) / projection.rate
+        );
+    }
+    for (const boundary of [serverClockSample.recoveryStartDelayMs, serverClockSample.recoveryEndDelayMs]) {
+        if (boundary !== undefined && boundary > projection.clientElapsedMs)
+            nextDelays.push(boundary - projection.clientElapsedMs);
     }
     if (nextDelays.length === 0) return;
     serverClockTimer = setTimeout(updateServerClock, Math.max(1, Math.min(...nextDelays)));
 };
 
 watch(
-    () => [props.serverTime, props.serverWallTime, props.clockMode, props.clockRunning, props.clockStartsAt] as const,
-    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt]) => {
-        serverClockSample = sampleServerClock({ serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt });
+    () =>
+        [
+            props.serverTime,
+            props.serverWallTime,
+            props.clockMode,
+            props.clockRunning,
+            props.clockStartsAt,
+            props.clockRecovery,
+        ] as const,
+    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt, clockRecovery]) => {
+        serverClockSample = sampleServerClock({
+            serverTime,
+            serverWallTime,
+            clockMode,
+            clockRunning,
+            clockStartsAt,
+            clockRecovery,
+        });
         updateServerClock();
     },
     { immediate: true }
@@ -100,7 +124,7 @@ onUnmounted(() => {
                 }"
                 :title="serverClockTitle"
             >
-                현재 시각: {{ currentServerTime }}
+                현재 시각: {{ currentServerTime }}<span v-if="recovering"> · 복구 2배속</span>
             </div>
             <div class="status-row tournament-status">
                 <RouterLink to="/tournament">

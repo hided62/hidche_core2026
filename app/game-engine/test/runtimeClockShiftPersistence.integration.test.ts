@@ -244,7 +244,7 @@ integration('runtime clock shift persistence', () => {
                     type: 'shiftSchedule',
                     requestId,
                     actionId,
-                    deltaMinutes: -15,
+                    deltaMinutes: -20,
                 } as GamePrisma.InputJsonValue,
             },
         });
@@ -257,29 +257,30 @@ integration('runtime clock shift persistence', () => {
             await hooks.close();
         }
 
-        expect(world.getState().lastTurnTime.toISOString()).toBe('2099-07-30T09:45:00.000Z');
-        expect(world.getGeneralById(generalIds[0])?.turnTime.toISOString()).toBe('2099-07-30T09:55:00.000Z');
+        expect(world.getState().lastTurnTime.toISOString()).toBe('2099-07-30T09:40:00.000Z');
+        expect(world.getGeneralById(generalIds[0])?.turnTime.toISOString()).toBe('2099-07-30T09:50:00.000Z');
         expect(await stateStore.loadCheckpoint()).toMatchObject({
-            turnTime: '2099-07-30T09:45:00.000Z',
+            turnTime: '2099-07-30T09:40:00.000Z',
             generalId: 0,
         });
-        expect(lifecycle.getStatus().nextTurnTime).toBe('2099-07-30T09:55:00.000Z');
+        // 예정된 재개 경계까지 대기하며, 그 뒤 첫 장수의 시각을 다시 계산한다.
+        expect(lifecycle.getStatus().nextTurnTime).toBe('2099-07-30T09:40:00.000Z');
         const storedWorld = await db.worldState.findUniqueOrThrow({ where: { id: row.id } });
         expect(storedWorld.meta).toMatchObject({
-            lastTurnTime: '2099-07-30T09:45:00.000Z',
-            starttime: '2099-06-30 23:45:00',
+            lastTurnTime: '2099-07-30T09:40:00.000Z',
+            starttime: '2099-06-30 23:40:00',
         });
         expect(storedWorld.clockTick).toBe(0n);
         expect(storedWorld.lastTurnTick).toBe(0n);
         const storedGeneral = await db.general.findUniqueOrThrow({ where: { id: generalIds[1] } });
-        expect(storedGeneral.turnTime.toISOString()).toBe('2099-07-30T10:05:00.000Z');
+        expect(storedGeneral.turnTime.toISOString()).toBe('2099-07-30T10:00:00.000Z');
         expect(storedGeneral.turnTick).toBe(BigInt(2 * GAME_TICKS_PER_TURN));
         const storedAuctions = await db.auction.findMany({
             where: { id: { in: auctionRows.map((auction) => auction.id) } },
         });
         const closeAtById = new Map(storedAuctions.map((auction) => [auction.id, auction.closeAt.toISOString()]));
         expect(auctionRows.map((auction) => closeAtById.get(auction.id))).toEqual([
-            '2099-07-30T09:45:00.000Z',
+            '2099-07-30T09:40:00.000Z',
             '2099-07-30T11:00:00.000Z',
             '2099-07-30T12:00:00.000Z',
             '2099-07-30T13:00:00.000Z',
@@ -291,7 +292,7 @@ integration('runtime clock shift persistence', () => {
                 type: 'shiftSchedule',
                 ok: true,
                 actionId,
-                deltaMinutes: -15,
+                deltaMinutes: -20,
                 shiftedGenerals: 2,
                 shiftedAuctions: 1,
             },

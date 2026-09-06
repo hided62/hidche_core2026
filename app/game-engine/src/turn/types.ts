@@ -11,7 +11,7 @@ import type {
     WorldSnapshot,
     GeneralLastTurn,
 } from '@sammo-ts/logic';
-import type { GameClockMode, GameClockPhase } from '@sammo-ts/common';
+import type { GameClockMode, GameClockPhase, TurnRecoveryWindow } from '@sammo-ts/common';
 
 export interface TurnWorldState {
     id: number;
@@ -23,6 +23,7 @@ export interface TurnWorldState {
     clockTick?: number;
     clockMode?: GameClockMode;
     clockWallAnchor?: Date;
+    clockRecovery?: TurnRecoveryWindow | null;
     lastTurnTick?: number;
     clockPhase?: GameClockPhase;
     clockRevision?: number;

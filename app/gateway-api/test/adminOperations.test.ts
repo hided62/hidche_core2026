@@ -1566,13 +1566,32 @@ describe('admin runtime clock action API', () => {
         expect(harness.updatedStatuses).toEqual([]);
     });
 
+    it('routes direct profile status changes through clock suspension', async () => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'RUNNING' });
+        await harness.caller.admin.profiles.setStatus({ profileName: 'che:2', status: 'PAUSED' });
+        expect(harness.lifecycle[0]).toBe('clock:SUSPEND');
+        expect(harness.updatedStatuses).toEqual(['PAUSED']);
+    });
+
+    it('rejects schedule movement that changes within-turn phases', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'ACCELERATE',
+                durationMinutes: 15,
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(harness.createdRuntimeActions).toEqual([]);
+    });
+
     it('creates a first-class clock action owned by the authenticated administrator', async () => {
         const harness = await buildCaller(unusedCreateOperation);
 
         const result = await harness.caller.admin.profiles.requestAction({
             profileName: 'che:2',
             action: 'ACCELERATE',
-            durationMinutes: 15,
+            durationMinutes: 20,
             reason: '운영 일정 조정',
         });
 
@@ -1580,7 +1599,7 @@ describe('admin runtime clock action API', () => {
             ok: true,
             action: {
                 action: 'ACCELERATE',
-                durationMinutes: 15,
+                durationMinutes: 20,
                 status: 'REQUESTED',
             },
         });
@@ -1589,7 +1608,7 @@ describe('admin runtime clock action API', () => {
                 profileName: 'che:2',
                 action: 'ACCELERATE',
                 payload: {},
-                durationMinutes: 15,
+                durationMinutes: 20,
                 reason: '운영 일정 조정',
                 requestedBy: harness.admin.id,
             },
@@ -1605,7 +1624,7 @@ describe('admin runtime clock action API', () => {
             harness.caller.admin.profiles.requestAction({
                 profileName: 'che:2',
                 action: 'DELAY',
-                durationMinutes: 5,
+                durationMinutes: 20,
             })
         ).rejects.toMatchObject({
             code: 'CONFLICT',

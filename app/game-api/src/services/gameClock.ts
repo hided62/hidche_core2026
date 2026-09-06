@@ -1,5 +1,6 @@
 import {
     GameClock,
+    readTurnRecovery,
     inferClockPhase,
     parseGameClockPhase,
     type GameClockMode,
@@ -7,6 +8,7 @@ import {
 } from '@sammo-ts/common';
 
 import type { DatabaseClient } from '../context.js';
+import { readTurnRuntimeReady } from '@sammo-ts/infra';
 
 export interface CurrentGameTime {
     now: Date;
@@ -17,6 +19,8 @@ export interface CurrentGameTime {
     revision?: number | null;
     deadlineGeneration?: number | null;
     running: boolean;
+    runtimeReady?: boolean;
+    recovery?: { startsAt: string; endsAt: string } | null;
     startsAt: Date | null;
     dateToTick(date: Date): number | null;
 }
@@ -43,6 +47,9 @@ export const loadCurrentGameTime = async (db: DatabaseClient, wallNow = new Date
             clockTick: true,
             clockMode: true,
             clockWallAnchor: true,
+            clockRecoveryStartTick: true,
+            clockRecoveryEndTick: true,
+            clockRecoveryStartWallAt: true,
             tickSeconds: true,
             clockPhase: true,
             clockRevision: true,
@@ -86,12 +93,18 @@ export const loadCurrentGameTime = async (db: DatabaseClient, wallNow = new Date
         tick: storedTick,
         mode,
         wallAnchor: state.clockWallAnchor,
+        recovery: readTurnRecovery(state),
         turnSeconds: state.tickSeconds,
         phase,
         revision,
     });
-    const tick = clock.nowTick(wallNow);
-    const running = phase === 'RUNNING' && mode === 'realtime';
+    const runtimeReady =
+        phase !== 'RUNNING' ||
+        mode !== 'realtime' ||
+        state.clockRecoveryStartTick === undefined ||
+        (await readTurnRuntimeReady(db, state.clockRevision));
+    const tick = runtimeReady ? clock.nowTick(wallNow) : clock.tick;
+    const running = runtimeReady && phase === 'RUNNING' && mode === 'realtime' && wallNow >= clock.wallAnchor;
     return {
         now: clock.tickToDate(tick),
         wallNow,
@@ -101,7 +114,16 @@ export const loadCurrentGameTime = async (db: DatabaseClient, wallNow = new Date
         revision,
         deadlineGeneration,
         running,
-        startsAt: phase === 'PREOPEN' ? state.clockWallAnchor : null,
+        runtimeReady,
+        recovery:
+            clock.recovery && clock.tickToWallDate(clock.recovery.endTick) > wallNow
+                ? {
+                      startsAt: clock.recovery.startWallAt.toISOString(),
+                      endsAt: clock.tickToWallDate(clock.recovery.endTick).toISOString(),
+                  }
+                : null,
+        startsAt:
+            phase === 'PREOPEN' || (phase === 'RUNNING' && wallNow < clock.wallAnchor) ? state.clockWallAnchor : null,
         dateToTick: (date) => clock.dateToTick(date),
     };
 };

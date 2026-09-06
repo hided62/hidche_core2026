@@ -93,6 +93,7 @@ export class DatabaseTurnDaemonLease {
             ON CONFLICT ("profile") DO UPDATE
             SET
                 "owner_id" = EXCLUDED."owner_id",
+                "clock_ready" = FALSE,
                 "lease_until" = EXCLUDED."lease_until",
                 "fencing_epoch" = CASE
                     WHEN "turn_daemon_lease"."owner_id" = EXCLUDED."owner_id"
@@ -124,6 +125,14 @@ export class DatabaseTurnDaemonLease {
 
     getToken(): TurnDaemonLeaseToken | null {
         return this.token ? { ...this.token } : null;
+    }
+
+    async markClockReady(): Promise<void> {
+        await this.db.$transaction(async (db) => {
+            await this.assertActive(db);
+            const token = this.getToken()!;
+            await db.turnDaemonLease.update({ where: { profile: token.profile }, data: { clockReady: true } });
+        });
     }
 
     isLost(): boolean {

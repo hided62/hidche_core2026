@@ -7,6 +7,10 @@ import {
     buildClockAlignmentPlan,
     parseClockAlignmentPolicy,
     parseGameClockPhase,
+    readTurnRecovery,
+    readSerializedTurnRecovery,
+    serializeTurnRecovery,
+    type TurnRecoveryWindow,
     type ClockAlignmentPolicy,
 } from '@sammo-ts/common';
 import {
@@ -43,6 +47,8 @@ export interface ClockReconciliationResult {
     shiftTicks: number;
     alignedTick: number;
     resumeWallAt: Date;
+    recovery?: TurnRecoveryWindow | null;
+    resumeAnchor?: Date;
 }
 
 interface DbWallRow {
@@ -213,6 +219,10 @@ const lockParticipants = async (db: GamePrisma.TransactionClient, _cutTick: bigi
     `);
 };
 
+// Gateway는 아직 배포하지 않은 profile의 Prisma 모델로 기존 시계 프로토콜을 처리한다.
+const supportsRecoveryColumns = (db: GamePrisma.TransactionClient): boolean =>
+    Boolean(db.worldState.fields?.clockRecoveryStartTick);
+
 const readParticipantSnapshots = async (
     db: GamePrisma.TransactionClient,
     worldStateId: number,
@@ -224,6 +234,13 @@ const readParticipantSnapshots = async (
                 where: { id: worldStateId },
                 select: {
                     clockTick: true,
+                    ...(supportsRecoveryColumns(db)
+                        ? {
+                              clockRecoveryStartTick: true,
+                              clockRecoveryEndTick: true,
+                              clockRecoveryStartWallAt: true,
+                          }
+                        : {}),
                     clockRevision: true,
                     deadlineGeneration: true,
                     lastTurnTick: true,
@@ -290,6 +307,7 @@ const readParticipantSnapshots = async (
         snapshot('world-clock', 'REBUILD', [
             {
                 clockTick: world.clockTick,
+                ...serializeTurnRecovery(readTurnRecovery(world)),
                 clockRevision: world.clockRevision,
                 deadlineGeneration: world.deadlineGeneration,
             },
@@ -431,6 +449,7 @@ export const persistClockSuspensionLedgerUnderHeldLocks = async (options: {
     cutWallAt: Date;
     rateTicksPerSecond: number;
     sourceRevision: number;
+    normalTickAtCutWall?: number;
     policy?: ClockAlignmentPolicy;
     catchUpTicks?: number;
 }): Promise<void> => {
@@ -475,7 +494,11 @@ export const persistClockSuspensionLedgerUnderHeldLocks = async (options: {
             rateTicksPerSecond: options.rateTicksPerSecond,
             catchUpTicks: BigInt(catchUpTicks),
             participantChecksumBefore: aggregateChecksum(participants),
-            detail: asJson({ authority: 'DAEMON', profileName: options.profileName }),
+            detail: asJson({
+                authority: 'DAEMON',
+                profileName: options.profileName,
+                normalTickAtCutWall: Math.max(options.cutTick, options.normalTickAtCutWall ?? options.cutTick),
+            }),
         },
     });
     await persistInitialParticipants(options.db, options.suspensionId, participants);
@@ -712,6 +735,7 @@ export const startClockSuspension = async (options: {
     authority: ClockOperationAuthority;
     policy?: ClockAlignmentPolicy;
     catchUpTicks?: number;
+    recoverDurableObservation?: boolean;
 }): Promise<ClockSuspensionResult> => {
     if (!options.suspensionId.trim() || options.suspensionId.length > 64) {
         throw new Error('Clock suspension ID must contain 1-64 characters.');
@@ -761,7 +785,13 @@ export const startClockSuspension = async (options: {
                 if (!world.clockBaseTime || world.clockTick === null || !world.clockWallAnchor) {
                     throw new Error('Clock suspension requires a fully initialized logical game clock.');
                 }
-                const cutWallAt = await readDbWall(db);
+                if (
+                    options.recoverDurableObservation &&
+                    (options.authority.kind !== 'DAEMON' || options.source !== 'RECOVERY' || policy !== 'RECOVER_TURNS')
+                ) {
+                    throw new Error('Only daemon outage recovery may use the durable observation.');
+                }
+                const cutWallAt = options.recoverDurableObservation ? world.clockWallAnchor : await readDbWall(db);
                 const storedTick = safeNumber(world.clockTick, 'world clock tick');
                 const sourceRevision = safeNumber(world.clockRevision, 'world clock revision');
                 const clock = new GameClock({
@@ -769,11 +799,12 @@ export const startClockSuspension = async (options: {
                     tick: storedTick,
                     mode: world.clockMode === 'manual' ? 'manual' : 'realtime',
                     wallAnchor: world.clockWallAnchor,
+                    recovery: readTurnRecovery(world),
                     turnSeconds: world.tickSeconds,
                     phase,
                     revision: sourceRevision,
                 });
-                const cutTick = clock.nowTick(cutWallAt);
+                const cutTick = options.recoverDurableObservation ? clock.tick : clock.nowTick(cutWallAt);
                 await lockParticipants(db, BigInt(cutTick));
                 await db.worldState.update({
                     where: { id: worldStateId },
@@ -797,6 +828,7 @@ export const startClockSuspension = async (options: {
                         detail: asJson({
                             authority: options.authority.kind,
                             profileName: options.authority.profileName,
+                            normalTickAtCutWall: Math.max(cutTick, clock.normalNowTick(cutWallAt)),
                         }),
                     },
                 });
@@ -827,6 +859,7 @@ export const reconcileClockSuspensionInTransaction = async (options: {
     authority?: ClockOperationAuthority;
     /** Deterministic fixture seam; production must always use PostgreSQL CURRENT_TIMESTAMP. */
     testResumeWallAt?: Date;
+    upgradeMaintenancePolicy?: boolean;
 }): Promise<ClockReconciliationResult> => {
     const db = options.db;
     const worldStateId = await lockWorld(db);
@@ -855,6 +888,14 @@ export const reconcileClockSuspensionInTransaction = async (options: {
             shiftTicks: safeNumber(suspension.shiftTicks, 'shift ticks'),
             alignedTick: safeNumber(suspension.alignedTick, 'aligned tick'),
             resumeWallAt: suspension.resumeWallAt,
+            recovery: readSerializedTurnRecovery(suspension.detail),
+            resumeAnchor:
+                suspension.detail &&
+                typeof suspension.detail === 'object' &&
+                !Array.isArray(suspension.detail) &&
+                typeof suspension.detail.resumeAnchor === 'string'
+                    ? new Date(suspension.detail.resumeAnchor)
+                    : (world.clockWallAnchor ?? suspension.resumeWallAt),
         };
     }
     if (suspension.status !== 'SUSPENDED') {
@@ -882,14 +923,41 @@ export const reconcileClockSuspensionInTransaction = async (options: {
         throw new Error('A clock reconciliation wall override is allowed only in tests.');
     }
     const resumeWallAt = options.testResumeWallAt ? new Date(options.testResumeWallAt.getTime()) : await readDbWall(db);
+    const legacyUnificationWait = suspension.source === 'UNIFICATION_WAIT' && suspension.policy !== 'TURN_BOUNDARY';
+    const upgradeMaintenance =
+        options.upgradeMaintenancePolicy === true &&
+        supportsRecoveryColumns(db) &&
+        suspension.source === 'MAINTENANCE' &&
+        suspension.policy !== 'RECOVER_TURNS';
+    const effectivePolicy = legacyUnificationWait
+        ? 'TURN_BOUNDARY'
+        : upgradeMaintenance
+          ? 'RECOVER_TURNS'
+          : parseClockAlignmentPolicy(suspension.policy);
+    const alignmentCutTick = legacyUnificationWait
+        ? safeNumber(world.lastTurnTick!, 'unification execution boundary')
+        : cutTick;
     const plan = buildClockAlignmentPlan({
-        policy: parseClockAlignmentPolicy(suspension.policy),
+        policy: effectivePolicy,
         sourceRevision: safeNumber(suspension.sourceRevision, 'source revision'),
-        cutTick,
+        cutTick: alignmentCutTick,
         cutWall: suspension.cutWallAt,
         resumeWall: resumeWallAt,
         ticksPerSecond: suspension.rateTicksPerSecond,
         catchUpTicks: safeNumber(suspension.catchUpTicks, 'catch-up ticks'),
+        normalTick: (() => {
+            const detail =
+                suspension.detail && typeof suspension.detail === 'object' && !Array.isArray(suspension.detail)
+                    ? suspension.detail
+                    : {};
+            const normalAtCut = typeof detail.normalTickAtCutWall === 'number' ? detail.normalTickAtCutWall : cutTick;
+            return (
+                normalAtCut +
+                Math.trunc(
+                    ((resumeWallAt.getTime() - suspension.cutWallAt.getTime()) * suspension.rateTicksPerSecond) / 1_000
+                )
+            );
+        })(),
     });
     const before = await readParticipantSnapshots(db, worldStateId, suspension.cutTick);
     assertShiftFits(before, plan.shiftTicks);
@@ -908,8 +976,21 @@ export const reconcileClockSuspensionInTransaction = async (options: {
         targetGeneration,
         BigInt(plan.shiftTicks),
         projectionDeltaMilliseconds,
-        resumeWallAt
+        plan.resumeAnchor ?? resumeWallAt
     );
+    if (supportsRecoveryColumns(db)) {
+        await db.worldState.update({
+            where: { id: worldStateId },
+            data: {
+                clockRecoveryStartTick: plan.recovery ? BigInt(plan.recovery.startTick) : null,
+                clockRecoveryEndTick: plan.recovery ? BigInt(plan.recovery.endTick) : null,
+                clockRecoveryStartWallAt: plan.recovery?.startWallAt ?? null,
+            },
+        });
+    } else if (plan.recovery) {
+        throw new Error('Turn recovery requires an upgraded profile schema and Prisma client.');
+    }
+
     const after = await readParticipantSnapshots(db, worldStateId, suspension.cutTick);
     const afterByKey = new Map(after.map((participant) => [participant.key, participant]));
     for (const participant of before) {
@@ -967,8 +1048,20 @@ export const reconcileClockSuspensionInTransaction = async (options: {
         where: { id: suspension.id },
         data: {
             status: 'RECONCILING',
+            ...(legacyUnificationWait || upgradeMaintenance ? { policy: effectivePolicy } : {}),
             resumeWallAt,
             gapTicks: BigInt(plan.gapTicks),
+            catchUpTicks: BigInt(plan.catchUpTicks),
+            detail: asJson({
+                ...(suspension.detail && typeof suspension.detail === 'object' && !Array.isArray(suspension.detail)
+                    ? suspension.detail
+                    : {}),
+                ...serializeTurnRecovery(plan.recovery ?? null),
+                resumeAnchor: (plan.resumeAnchor ?? resumeWallAt).toISOString(),
+                ...(legacyUnificationWait || upgradeMaintenance
+                    ? { previousPolicy: suspension.policy, executionBoundaryTick: alignmentCutTick }
+                    : {}),
+            }),
             shiftTicks: BigInt(plan.shiftTicks),
             alignedTick: BigInt(plan.alignedTick),
             participantChecksumBefore: aggregateChecksum(before),
@@ -986,6 +1079,8 @@ export const reconcileClockSuspensionInTransaction = async (options: {
         shiftTicks: plan.shiftTicks,
         alignedTick: plan.alignedTick,
         resumeWallAt,
+        recovery: plan.recovery ?? null,
+        resumeAnchor: plan.resumeAnchor ?? resumeWallAt,
     };
 };
 
@@ -1024,6 +1119,7 @@ export const reconcileClockSuspension = async (options: {
     authority: ClockOperationAuthority;
     /** Deterministic fixture seam; production must always use PostgreSQL CURRENT_TIMESTAMP. */
     testResumeWallAt?: Date;
+    upgradeMaintenancePolicy?: boolean;
 }): Promise<ClockReconciliationResult> =>
     runSerializableClockOperation(() =>
         options.db.$transaction(
@@ -1037,6 +1133,7 @@ export const reconcileClockSuspension = async (options: {
                     profileName: options.authority.profileName,
                     authority: options.authority,
                     ...(options.testResumeWallAt ? { testResumeWallAt: options.testResumeWallAt } : {}),
+                    upgradeMaintenancePolicy: options.upgradeMaintenancePolicy,
                 });
             },
             { isolationLevel: 'Serializable', maxWait: 10_000, timeout: 30_000 }

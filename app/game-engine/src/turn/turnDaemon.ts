@@ -900,6 +900,17 @@ const createTurnDaemonRuntimeWithLease = async (
             turnDaemonLease: turnDaemonLease ?? undefined,
             transactionTimeoutMs: options.databaseTransactionTimeoutMs,
         });
+        try {
+            await dbHooks.prepareRealtimeRecovery({ paused: await gatewayGate?.shouldPause() });
+        } catch (error) {
+            await Promise.allSettled([
+                dbHooks.close(),
+                reservedTurnStoreHandle?.close(),
+                gatewayGate?.close(),
+                turnDaemonLease?.close(),
+            ]);
+            throw error;
+        }
         auctionBidder = await createAuctionBidder({
             databaseUrl: options.databaseUrl,
             world,
@@ -983,6 +994,9 @@ const createTurnDaemonRuntimeWithLease = async (
     redisConnector = realtimeRuntime.redisConnector;
     hooks = realtimeRuntime.hooks;
     stopClockProjectionWorker = realtimeRuntime.stopClockProjectionWorker;
+    // 복구 창이 DB에 저장되고 projection worker가 구성된 뒤에만 독립 worker를 허용한다.
+    // RECONCILING 상태이면 기존 revision/phase fence가 outbox 완료까지 계속 차단한다.
+    await turnDaemonLease?.markClockReady();
 
     const commandConnector = hooks ? createGamePostgresConnector({ url: options.databaseUrl }) : null;
     const databaseCommandQueue = commandConnector ? new DatabaseTurnDaemonCommandQueue(commandConnector.prisma) : null;

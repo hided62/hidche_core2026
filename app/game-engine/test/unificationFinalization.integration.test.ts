@@ -611,7 +611,7 @@ integration('unification finalization transaction', () => {
             const suspension = await db.clockSuspension.findFirstOrThrow({ where: { worldStateId: worldRow.id } });
             expect(suspension).toMatchObject({
                 source: 'UNIFICATION_WAIT',
-                policy: 'EXACT',
+                policy: 'TURN_BOUNDARY',
                 status: 'SUSPENDED',
                 sourceRevision: 1n,
                 targetRevision: 2n,

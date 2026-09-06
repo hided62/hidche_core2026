@@ -311,6 +311,7 @@ watch(
                 :clock-mode="lobbyInfo?.clockMode"
                 :clock-running="lobbyInfo?.clockRunning"
                 :clock-starts-at="lobbyInfo?.clockStartsAt"
+                :clock-recovery="lobbyInfo?.clockRecovery"
                 :turn-engine-running="lobbyInfo?.turnEngineRunning"
             />
         </div>
@@ -365,6 +366,7 @@ watch(
                             :clock-mode="lobbyInfo?.clockMode"
                             :clock-running="lobbyInfo?.clockRunning"
                             :clock-starts-at="lobbyInfo?.clockStartsAt"
+                            :clock-recovery="lobbyInfo?.clockRecovery"
                             :autorun-limit="reservedGeneralAutorunLimit"
                             :map-data="worldMap"
                             :map-layout="mapLayout"
@@ -547,6 +549,7 @@ watch(
                     :clock-mode="lobbyInfo?.clockMode"
                     :clock-running="lobbyInfo?.clockRunning"
                     :clock-starts-at="lobbyInfo?.clockStartsAt"
+                    :clock-recovery="lobbyInfo?.clockRecovery"
                     :autorun-limit="reservedGeneralAutorunLimit"
                     :map-data="worldMap"
                     :map-layout="mapLayout"

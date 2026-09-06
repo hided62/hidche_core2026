@@ -74,6 +74,7 @@ export const lobbyRouter = router({
             clockMode: gameTime.mode ?? 'realtime',
             clockRunning: gameTime.running,
             clockStartsAt: gameTime.startsAt?.toISOString() ?? null,
+            clockRecovery: gameTime.recovery ?? null,
             turnEngineRunning,
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
             npcMode: worldState.config.npcMode ?? 0,

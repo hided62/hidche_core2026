@@ -2285,6 +2285,22 @@ export const adminRouter = router({
                         message: 'preopenAt and openAt are required for RESERVED status.',
                     });
                 }
+                const current = await ctx.profiles.getProfile(input.profileName);
+                if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                if (current.currentScenario !== null && current.status !== input.status) {
+                    const clockAction =
+                        input.status === 'RUNNING'
+                            ? 'RESUME'
+                            : current.status === 'RUNNING' && (input.status === 'PAUSED' || input.status === 'STOPPED')
+                              ? 'SUSPEND'
+                              : null;
+                    if (clockAction)
+                        await ctx.orchestrator.transitionProfileClock(
+                            input.profileName,
+                            clockAction,
+                            'operator setStatus'
+                        );
+                }
                 const result = await ctx.profiles.updateStatus(input.profileName, input.status, {
                     preopenAt: input.preopenAt,
                     openAt: input.openAt,
@@ -2694,6 +2710,18 @@ export const adminRouter = router({
                         code: 'BAD_REQUEST',
                         message: '설문은 게임 내 설문 관리 화면에서 생성해 주세요.',
                     });
+                }
+
+                if (input.action === 'ACCELERATE' || input.action === 'DELAY') {
+                    const [settings] = (await ctx.orchestrator.listRuntimeSettings?.([profile.profileName])) ?? [];
+                    if (!settings || input.durationMinutes! % settings.turnTermMinutes !== 0) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: settings
+                                ? `일정 이동은 현재 턴 길이(${settings.turnTermMinutes}분)의 정수 배로 입력해 주세요.`
+                                : '현재 턴 길이를 확인할 수 없습니다.',
+                        });
+                    }
                 }
 
                 if (

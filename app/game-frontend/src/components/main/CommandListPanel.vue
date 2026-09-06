@@ -29,6 +29,7 @@ const props = defineProps<{
     clockMode?: 'realtime' | 'manual';
     clockRunning?: boolean;
     clockStartsAt?: string | null;
+    clockRecovery?: { startsAt: string; endsAt: string } | null;
     autorunLimit?: number | null;
     storageKey?: string;
     mapData?: CommandMapData | null;
@@ -60,11 +61,7 @@ const labelMap = computed(() => {
 });
 
 const firstReservedMonth = computed(
-    () =>
-        (props.currentYear ?? 0) * 12 +
-        (props.currentMonth ?? 1) -
-        1 +
-        (props.general?.nextTurnMonthOffset ?? 0)
+    () => (props.currentYear ?? 0) * 12 + (props.currentMonth ?? 1) - 1 + (props.general?.nextTurnMonthOffset ?? 0)
 );
 
 const rows = computed<ReservedCommandRow[]>(() => {
@@ -119,7 +116,7 @@ const updateServerClock = () => {
         currentServerTime.value = '--:--:--';
         return;
     }
-    const { clientElapsedMs, time: projectedTime } = projectServerClock(serverClockSample);
+    const { clientElapsedMs, time: projectedTime, rate } = projectServerClock(serverClockSample);
     currentServerTime.value = formatLocalTimeSeconds(projectedTime);
     if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
         const untilStartMs = serverClockSample.startDelayMs - clientElapsedMs;
@@ -127,15 +124,30 @@ const updateServerClock = () => {
             updateServerClock,
             untilStartMs > 0
                 ? Math.min(untilStartMs, MAX_SERVER_CLOCK_TIMER_DELAY_MS)
-                : 1_000 - projectedTime.getMilliseconds()
+                : (1_000 - projectedTime.getMilliseconds()) / rate
         );
     }
 };
 
 watch(
-    () => [props.serverTime, props.serverWallTime, props.clockMode, props.clockRunning, props.clockStartsAt] as const,
-    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt]) => {
-        serverClockSample = sampleServerClock({ serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt });
+    () =>
+        [
+            props.serverTime,
+            props.serverWallTime,
+            props.clockMode,
+            props.clockRunning,
+            props.clockStartsAt,
+            props.clockRecovery,
+        ] as const,
+    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt, clockRecovery]) => {
+        serverClockSample = sampleServerClock({
+            serverTime,
+            serverWallTime,
+            clockMode,
+            clockRunning,
+            clockStartsAt,
+            clockRecovery,
+        });
         updateServerClock();
     },
     { immediate: true }

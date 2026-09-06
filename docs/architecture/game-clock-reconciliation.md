@@ -5,11 +5,9 @@
 Gameplay time is an integer `GameTick`; one turn is permanently `36,000,000`
 ticks. Wall time is separately authoritative for account, community, audit,
 lease, retry, notification, and operational rules. It is never projected into a
-game deadline. A long suspension advances the observed game coordinate to the
-resume wall instant without replaying skipped complete turns, monthly events,
-RNG, auctions, or tournaments. Every movable future GAME schedule is shifted by
-the same tick delta. Exact alignment includes the sub-turn remainder; Gateway
-maintenance preserves schedules and delegates catch-up to the engine as described below. WALL occurrences and
+game deadline. A suspension keeps the normal schedule and all within-turn phases. Whole
+12-turn blocks of outage are moved without executing gameplay; the remaining
+one to eleven turns are executed at twice normal speed. Wall occurrences and
 deadlines are outside that operation.
 
 The clock state is stored in `world_state`:
@@ -33,7 +31,7 @@ progression.
 A suspension begins under the turn-daemon fence and schema-scoped clock lock.
 It records the cut tick, database wall instant, rate, source revision, and
 participant checksum in `clock_suspension`. Resume reads the database wall
-instant and builds an exact plan:
+instant and builds a policy plan. The historical `EXACT` policy uses:
 
 ```text
 gapTicks = max(0, ticksBetween(cutWall, resumeWall, rateAtCut))
@@ -42,29 +40,57 @@ alignedTick = cutTick + gapTicks
 deadlineAfter = deadlineBefore + shiftTicks
 ```
 
-From 2026-09-06, Gateway maintenance suspension uses `PRESERVE_SCHEDULE`.
-Resume advances only the observed tick/anchor and revision; it does not move
-execution cursors, general schedules, auction/message deadlines, or their
-minute/second phases. The ordinary engine then processes overdue generals in
-time order, bounded by one monthly boundary per pass, followed by that monthly
-transition. Completed turns are not recreated.
+From 2026-09-06, maintenance and crash recovery use `RECOVER_TURNS`.
+This supersedes the earlier same-day `PRESERVE_SCHEDULE` immediate catch-up
+policy. The base turn length does not change. One turn remains 36,000,000
+ticks; a persisted `TurnRecoveryWindow` changes only the wall execution rate.
 
-The Core product policy for long realtime downtime is now independent of turn
-length: fewer than 12 overdue turns are executed normally. At 12 or more turns,
-only complete blocks of 12 are skipped. For example, a 13-turn backlog shifts
-schedules by 12 turns and executes the remaining turn; 23 skips 12 and executes
-11; 24 skips 24. Skipping never advances gameplay years, resources, RNG, or
-commands. The existing fenced backlog flush shifts the cursor and schedules
-together, retaining all sub-turn phases. Explicit operator schedule movement
-remains a separate action.
+- Count complete overdue turns from the durable observation to the normal
+  timeline. Skip only `floor(overdueTurns / 12) * 12` turns, moving future
+  schedules and the execution cursor by the same integer delta.
+- Execute the sub-turn remainder immediately through the ordinary engine.
+  Reach the next normal turn boundary at normal speed, then execute the
+  remaining one to eleven turns of backlog at 2x speed.
+- Join the original schedule at the recorded end boundary and return to 1x.
+  Four hours of backlog on a 60-minute server needs four hours at 2x; it runs
+  eight turns in that time. Resources, RNG, commands and monthly handlers run
+  normally for those turns, in the existing chronological order.
+- Purchased within-turn offsets remain logical offsets. Their wall offsets
+  compress during recovery and return to the original minutes/seconds after
+  the end boundary. The API and browser expose the recovery interval.
 
-This supersedes the short-lived maintenance `LEGACY_COMPLETE_TURNS` selection,
-which skipped every complete suspended turn without the 12-turn policy. Legacy
-policy values remain readable for existing ledgers. Unification wait, delayed
-opening, and explicit `EXACT` callers keep their distinct exact alignment
-contract. Applied historical ledgers are not rewritten by deployment. Both
-Gateway (maintenance selection) and game engine (12-turn backlog handling) must
-be deployed to activate the new behavior fully.
+`clock_recovery_start_tick`, `clock_recovery_end_tick`, and
+`clock_recovery_start_wall_at` are an all-or-none durable window. Flush/reload
+preserves it; a short restart reuses it. A new long outage replans against the
+original normal timeline. Game-date epoch and wall epoch may differ; never
+convert the real wall instant using `dateToTick` to compute normal time.
+
+Before a newly leased daemon permits independent workers to advance time, it
+prepares recovery under the clock lock. `turn_daemon_lease.clock_ready` starts
+false and becomes true only after durable recovery and projection-worker
+setup. A paused profile is durably suspended during upgrade and stays suspended
+until explicitly resumed. API/worker clock reads require a live ready lease at the read revision;
+RECONCILING remains fenced until the Redis outbox is applied.
+
+Planned realtime opening rounds upward to a turn boundary. The seed CLI passes
+actual wall time separately from the requested game-calendar baseline, and
+Gateway publishes the stored opening anchor for both display and scheduling. Unification wait
+uses `TURN_BOUNDARY`, cuts at the completed monthly cursor, and resumes at the
+next normal boundary without replaying the intentional waiting period. An old
+pending unification ledger is upgraded on resume; applied history stays intact.
+Explicit operator movement accepts signed whole turns only. A future resume
+anchor gates execution until that wall instant. Base-rate changes are rejected
+while a recovery window is active.
+
+Legacy policy values stay readable for historical ledgers. Gateway and game
+profiles deploy independently: the Gateway loads the profile workspace's Prisma
+connector for profiles without the recovery migration and retains the existing
+`PRESERVE_SCHEDULE` maintenance behavior there. It never writes new columns or
+an accelerated recovery window through that legacy model. New profiles use the
+new connector and `RECOVER_TURNS`, including upgrading a pending old maintenance
+ledger on resume. Applied historical operations remain unchanged. DB-preserving
+DEPLOY upgrades each profile independently; other profiles need not restart.
+The release manifest declares `20260906090000_add_turn_recovery_window`.
 
 Every participant writes its `SHIFT`, `KEEP`, `REBUILD`, or `FORBID` decision,
 row count, and before/after checksum to `clock_reconciliation_participant`.

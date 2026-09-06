@@ -1,4 +1,4 @@
-import { GameClock, inferClockPhase, parseGameClockPhase } from '@sammo-ts/common';
+import { GameClock, readTurnRecovery, inferClockPhase, parseGameClockPhase } from '@sammo-ts/common';
 
 import { GamePrisma, type GamePrismaClient } from './gamePrisma.js';
 import { acquireGameSchemaAdvisoryXactLock, CLOCK_OPERATION_PERSISTENCE_LOCK } from './gameSchemaAdvisoryLock.js';
@@ -8,6 +8,21 @@ type ClockAcceptanceDatabase = Pick<GamePrismaClient, '$executeRaw' | '$queryRaw
 interface DbWallRow {
     wallNow: Date;
 }
+
+/** 새 daemon의 시계 복구가 끝나기 전에는 독립 worker가 시간을 진행하지 않는다. */
+export const readTurnRuntimeReady = async (
+    db: Pick<GamePrismaClient, '$queryRaw'>,
+    revision: bigint
+): Promise<boolean> => {
+    const [row] = await db.$queryRaw<Array<{ ready: boolean }>>(GamePrisma.sql`
+        SELECT EXISTS (
+            SELECT 1 FROM turn_daemon_lease, world_state
+            WHERE clock_ready = TRUE AND lease_until > timezone('UTC', clock_timestamp())
+              AND clock_revision = ${revision}
+        ) AS ready
+    `);
+    return row?.ready === true;
+};
 
 export interface InputEventClockCoordinate {
     wallAt: Date;
@@ -38,6 +53,9 @@ export const readInputEventClockCoordinate = async (
             clockTick: true,
             clockMode: true,
             clockWallAnchor: true,
+            clockRecoveryStartTick: true,
+            clockRecoveryEndTick: true,
+            clockRecoveryStartWallAt: true,
             tickSeconds: true,
             clockPhase: true,
             clockRevision: true,
@@ -60,11 +78,17 @@ export const readInputEventClockCoordinate = async (
         tick,
         mode,
         wallAnchor: world.clockWallAnchor,
+        recovery: readTurnRecovery(world),
         turnSeconds: world.tickSeconds,
         phase,
         revision,
     });
-    const observedTick = clock.nowTick(wall.wallNow);
+    const ready =
+        phase !== 'RUNNING' ||
+        mode !== 'realtime' ||
+        world.clockRecoveryStartTick === undefined ||
+        (await readTurnRuntimeReady(db, world.clockRevision));
+    const observedTick = ready ? clock.nowTick(wall.wallNow) : clock.tick;
     return {
         wallAt: wall.wallNow,
         gameAt: clock.tickToDate(observedTick),

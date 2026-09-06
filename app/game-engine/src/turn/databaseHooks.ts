@@ -65,6 +65,7 @@ import {
 } from './clockReconciliation.js';
 import { applyNextClockProjection, type ClockProjectionRedis } from './clockProjectionOutbox.js';
 import { synchronizeRuntimeClockAuthorityUnderHeldLock } from './runtimeClockAuthoritySync.js';
+import { prepareRealtimeRecovery } from './prepareRealtimeRecovery.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -73,6 +74,7 @@ export interface DatabaseTurnHooks {
     close(): Promise<void>;
     applyClockProjection(redis: ClockProjectionRedis, workerId: string): Promise<boolean>;
     synchronizeClockAuthority(): Promise<boolean>;
+    prepareRealtimeRecovery(options?: { paused?: boolean }): Promise<void>;
 }
 
 export interface CommittedReadModelChangeReceipt {
@@ -141,6 +143,9 @@ const CLOCK_ONLY_WORLD_META_KEYS = new Set([
     'clockTick',
     'clock_tick',
     'clockWallAnchor',
+    'clockRecoveryStartTick',
+    'clockRecoveryEndTick',
+    'clockRecoveryStartWallAt',
     'clock_wall_anchor',
     'heartbeat',
     'heartbeatAt',
@@ -1139,6 +1144,9 @@ export const createDatabaseTurnHooks = async (
             clockTick: BigInt(state.clockTick ?? 0),
             clockMode: state.clockMode ?? 'manual',
             clockWallAnchor: state.clockWallAnchor ?? state.lastTurnTime,
+            clockRecoveryStartTick: state.clockRecovery ? BigInt(state.clockRecovery.startTick) : null,
+            clockRecoveryEndTick: state.clockRecovery ? BigInt(state.clockRecovery.endTick) : null,
+            clockRecoveryStartWallAt: state.clockRecovery?.startWallAt ?? null,
             lastTurnTick: BigInt(state.lastTurnTick ?? world.dateToGameTick(state.lastTurnTime)),
             clockPhase: state.clockPhase ?? (state.clockMode === 'realtime' ? 'RUNNING' : 'MANUAL'),
             clockRevision: BigInt(state.clockRevision ?? 1),
@@ -1260,7 +1268,7 @@ export const createDatabaseTurnHooks = async (
             }
             const unificationCutWallAt = unificationSuspensionTransition ? await readClockDatabaseWall(prisma) : null;
             const unificationCutTick = unificationCutWallAt
-                ? world.dateToGameTick(world.getGameNow(unificationCutWallAt))
+                ? (state.lastTurnTick ?? world.dateToGameTick(state.lastTurnTime))
                 : null;
             const suspensionPreparation =
                 unificationCutTick !== null
@@ -1909,7 +1917,9 @@ export const createDatabaseTurnHooks = async (
                     worldStateId: state.id,
                     profileName: options?.profileName ?? 'default',
                     source: 'UNIFICATION_WAIT',
+                    policy: 'TURN_BOUNDARY',
                     cutTick,
+                    normalTickAtCutWall: world.getNormalGameTick(suspensionPreparation.cutWallAt),
                     cutWallAt: suspensionPreparation.cutWallAt,
                     rateTicksPerSecond: GAME_TICKS_PER_TURN / state.tickSeconds,
                     sourceRevision: state.clockRevision ?? 1,
@@ -2062,6 +2072,25 @@ export const createDatabaseTurnHooks = async (
                 select: { clockPhase: true },
             });
             return clock?.clockPhase === 'RUNNING' || clock?.clockPhase === 'MANUAL';
+        },
+        prepareRealtimeRecovery: async (recoveryOptions) => {
+            const token = options?.turnDaemonLease?.getToken();
+            if (!token) return;
+            await prepareRealtimeRecovery(
+                prisma,
+                {
+                    kind: 'DAEMON',
+                    profileName: token.profile,
+                    ownerId: token.ownerId,
+                    fencingEpoch: token.fencingEpoch,
+                },
+                recoveryOptions
+            );
+            await prisma.$transaction(async (transaction) => {
+                await options?.turnDaemonLease?.assertActive(transaction);
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                await synchronizeRuntimeClockAuthorityUnderHeldLock(transaction, world);
+            }, transactionOptions);
         },
         synchronizeClockAuthority: () =>
             prisma.$transaction(async (transaction) => {

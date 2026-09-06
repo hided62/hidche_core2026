@@ -42,7 +42,9 @@
         "clock_suspension.gap_ticks",
         "clock_suspension.shift_ticks",
         "clock_suspension.aligned_tick",
-        "clock_projection_outbox.target_revision"
+        "clock_projection_outbox.target_revision",
+        "world_state.clock_recovery_start_tick",
+        "world_state.clock_recovery_end_tick"
     ],
     "wallTimeFields": [
         "input_event.created_at",
@@ -85,8 +87,17 @@
         {
             "key": "world-clock",
             "policy": "REBUILD",
-            "authorityFields": ["world_state.clock_tick", "world_state.clock_revision"],
-            "projectionFields": ["world_state.clock_base_time", "world_state.clock_wall_anchor"],
+            "authorityFields": [
+                "world_state.clock_tick",
+                "world_state.clock_revision",
+                "world_state.clock_recovery_start_tick",
+                "world_state.clock_recovery_end_tick"
+            ],
+            "projectionFields": [
+                "world_state.clock_base_time",
+                "world_state.clock_wall_anchor",
+                "world_state.clock_recovery_start_wall_at"
+            ],
             "owner": "game-engine/clock-operation"
         },
         {

@@ -4,6 +4,7 @@ export type ServerClockProjectionInput = {
     clockMode?: 'realtime' | 'manual';
     clockRunning?: boolean;
     clockStartsAt?: string | null;
+    clockRecovery?: { startsAt: string; endsAt: string } | null;
 };
 
 export type SampledServerClock = {
@@ -11,6 +12,8 @@ export type SampledServerClock = {
     sampledClientTimeMs: number;
     clockMode: 'realtime' | 'manual';
     startDelayMs: number | null;
+    recoveryStartDelayMs?: number;
+    recoveryEndDelayMs?: number;
 };
 
 const parseInstant = (value?: string | null): number | null => {
@@ -40,11 +43,20 @@ export const sampleServerClock = (
                 : null;
     }
 
+    const wallSample = parseInstant(input.serverWallTime);
+    const recoveryStart = parseInstant(input.clockRecovery?.startsAt);
+    const recoveryEnd = parseInstant(input.clockRecovery?.endsAt);
     return {
         serverTimeMs,
         sampledClientTimeMs,
         clockMode: input.clockMode ?? 'realtime',
         startDelayMs,
+        ...(wallSample !== null && recoveryStart !== null && recoveryEnd !== null && recoveryEnd > recoveryStart
+            ? {
+                  recoveryStartDelayMs: recoveryStart - wallSample,
+                  recoveryEndDelayMs: recoveryEnd - wallSample,
+              }
+            : {}),
     };
 };
 
@@ -55,9 +67,25 @@ export const projectServerClock = (sample: SampledServerClock, clientTimeMs = Da
             ? 0
             : Math.max(0, clientElapsedMs - sample.startDelayMs);
 
+    const accelerationMs =
+        sample.startDelayMs === null || sample.clockMode === 'manual'
+            ? 0
+            : Math.max(
+                  0,
+                  Math.min(clientElapsedMs, sample.recoveryEndDelayMs ?? 0) -
+                      Math.max(0, sample.recoveryStartDelayMs ?? 0)
+              );
+    const rate =
+        sample.startDelayMs !== null &&
+        sample.clockMode !== 'manual' &&
+        clientElapsedMs >= (sample.recoveryStartDelayMs ?? Infinity) &&
+        clientElapsedMs < (sample.recoveryEndDelayMs ?? -Infinity)
+            ? 2
+            : 1;
     return {
         clientElapsedMs,
-        time: new Date(sample.serverTimeMs + elapsedGameMs),
+        rate,
+        time: new Date(sample.serverTimeMs + elapsedGameMs + accelerationMs),
     };
 };
 

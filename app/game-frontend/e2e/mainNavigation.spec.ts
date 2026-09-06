@@ -46,6 +46,7 @@ type NavigationFixture = {
     clockMode?: 'realtime' | 'manual';
     clockRunning?: boolean;
     clockStartsAt?: string | null;
+    clockRecovery?: { startsAt: string; endsAt: string } | null;
     turnEngineRunning?: boolean | null;
     cityDefence?: number;
     cityState?: number;
@@ -636,6 +637,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     clockMode: state.clockMode ?? 'realtime',
                     clockRunning: state.clockRunning ?? true,
                     clockStartsAt: state.clockStartsAt ?? null,
+                    clockRecovery: state.clockRecovery ?? null,
                     turnEngineRunning: state.turnEngineRunning === undefined ? true : state.turnEngineRunning,
                     scenarioTitle: state.scenarioTitle ?? '',
                     autorunUser: state.autorunUser ?? null,
@@ -6078,3 +6080,63 @@ test('same-account main tabs share one realtime diff and exclude a tab while syn
         })
         .toBe(1);
 });
+
+for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 390, height: 844 },
+]) {
+    test(`turn recovery returns to normal speed at the boundary (${viewport.width}px)`, async ({ page }) => {
+        const start = new Date('2026-09-06T07:59:50Z');
+        await page.clock.install({ time: start });
+        await page.setViewportSize(viewport);
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 1,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            serverTime: '2026-09-06T07:59:40Z',
+            serverWallTime: start.toISOString(),
+            clockMode: 'realtime',
+            clockRunning: true,
+            turnEngineRunning: true,
+            clockRecovery: { startsAt: '2026-09-06T04:00:00Z', endsAt: '2026-09-06T08:00:00Z' },
+        };
+        await installFixture(page, state);
+        await page.goto('./');
+        await expect(page.locator('.game-shell__title')).toBeVisible({ timeout: 15_000 });
+        await page.evaluate(() => document.fonts.ready);
+        const status = page.locator('.execution-status:visible');
+        await expect(status).toContainText('복구 2배속');
+        const root = process.env.TURN_RECOVERY_ARTIFACT_DIR;
+        const measure = () =>
+            status.evaluate((element) => ({
+                rect: element.getBoundingClientRect().toJSON(),
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                font: getComputedStyle(element).font,
+                lineHeight: getComputedStyle(element).lineHeight,
+                text: element.textContent,
+            }));
+        const before = await measure();
+        expect(before.scrollWidth).toBeLessThanOrEqual(before.clientWidth + 1);
+        if (root) {
+            await mkdir(root, { recursive: true });
+            await page.screenshot({ path: resolve(root, `recovering-${viewport.width}.png`), fullPage: true });
+        }
+        await page.clock.runFor(20_000);
+        await expect(status).not.toContainText('복구 2배속');
+        await expect(status).toContainText('17:00');
+        const after = await measure();
+        expect(after.scrollWidth).toBeLessThanOrEqual(after.clientWidth + 1);
+        if (root) {
+            await page.screenshot({ path: resolve(root, `normal-${viewport.width}.png`), fullPage: true });
+            await writeFile(
+                resolve(root, `geometry-${viewport.width}.json`),
+                JSON.stringify({ viewport, before, after }, null, 2)
+            );
+        }
+    });
+}

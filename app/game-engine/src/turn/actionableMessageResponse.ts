@@ -332,7 +332,7 @@ const respondToRaiseInvader = async (options: {
         reservedTurns,
         env: buildCommandEnv(world.getScenarioConfig(), world.getUnitSet()),
         loadArchivedNationMaxId: options.loadArchivedNationMaxId,
-        clockWallNow: alignment.resumeWallAt,
+        clockWallNow: alignment.resumeAnchor ?? alignment.resumeWallAt,
     });
     const event: TurnEvent = { id: 0, targetCode: 'month', priority: 0, condition: true, action: [], meta: {} };
     await handler(

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GamePrismaClient } from '@sammo-ts/infra';
-import { GAME_TICKS_PER_TURN } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, planTurnRecovery } from '@sammo-ts/common';
+import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { applyRuntimeClockShift } from '../src/turn/runtimeClockShift.js';
 import { applyRuntimeGameSettings } from '../src/turn/runtimeGameSettings.js';
@@ -83,6 +84,70 @@ const buildWorld = (stateOverride: Partial<TurnWorldState> = {}): InMemoryTurnWo
 };
 
 describe('runtime clock shift', () => {
+    it('runs two real monthly cycles per normal interval, survives reload, and returns to one cycle', async () => {
+        const base = new Date('2026-07-30T10:00:00Z');
+        const wallAt = (minutes: number) => new Date(base.getTime() + minutes * 60_000);
+        const plan = planTurnRecovery({
+            observedTick: 0,
+            normalTick: 4 * GAME_TICKS_PER_TURN,
+            wallNow: wallAt(40),
+            turnSeconds: 600,
+        });
+        let world = buildWorld({
+            clockBaseTime: base,
+            clockTick: 0,
+            clockWallAnchor: wallAt(40),
+            clockRecovery: plan.recovery,
+            clockMode: 'realtime',
+            clockPhase: 'RUNNING',
+            lastTurnTick: 0,
+        });
+        for (const [id, milliseconds] of [
+            [1, 19_902],
+            [2, 42_001],
+        ]) {
+            world.updateGeneral(id!, {
+                turnTime: new Date(base.getTime() + milliseconds!),
+                turnTick: milliseconds! * 60,
+            });
+        }
+        const executions: Array<[number, number, boolean]> = [];
+        const processorForWorld = () =>
+            new InMemoryTurnProcessor(world, {
+                afterExecuteGeneral: async (general, result) => {
+                    executions.push([world.getState().currentMonth, general.id, result.ok]);
+                },
+            });
+        let processor = processorForWorld();
+        for (let minutes = 45; minutes <= 80; minutes += 5) {
+            const now = wallAt(minutes);
+            const target = world.getGameNow(now);
+            world.advanceGameClockTo(target, now);
+            const result = await processor.run(target, { budgetMs: 10_000, maxGenerals: 10, catchUpCap: 1 });
+            expect(result).toMatchObject({ processedGenerals: 2, processedTurns: 1, partial: false });
+            if (minutes === 60) {
+                const snapshot = world.captureState();
+                world = buildWorld();
+                world.restoreState(snapshot);
+                processor = processorForWorld();
+            }
+        }
+        expect(executions).toEqual(
+            Array.from({ length: 8 }, (_, month) => [
+                [month + 1, 1, true],
+                [month + 1, 2, true],
+            ]).flat()
+        );
+        expect(world.getState().currentMonth).toBe(9);
+        expect(world.getGeneralById(1)!.turnTime).toEqual(new Date(wallAt(80).getTime() + 19_902));
+        const next = await processor.run(world.getGameNow(wallAt(90)), {
+            budgetMs: 10_000,
+            maxGenerals: 10,
+            catchUpCap: 1,
+        });
+        expect(next).toMatchObject({ processedGenerals: 2, processedTurns: 1 });
+        expect(world.getState().currentMonth).toBe(10);
+    });
     it('preserves the scenario config when the raw world config is unavailable', () => {
         const world = buildWorld();
 
@@ -99,7 +164,7 @@ describe('runtime clock shift', () => {
         ['accelerates', -15, '2026-07-30T09:45:00.000Z', '2026-07-30T09:55:00.000Z'],
         ['delays', 15, '2026-07-30T10:15:00.000Z', '2026-07-30T10:25:00.000Z'],
     ] as const)('%s the world, every general, checkpoint, and pending auction together', (_, delta, last, general) => {
-        const world = buildWorld();
+        const world = buildWorld({ tickSeconds: 900 });
         world.setCheckpoint({ turnTime: '2026-07-30T10:10:00.000Z', generalId: 1, year: 190, month: 1 });
         world.queueNeutralAuction({
             registrationKey: 'test',
@@ -132,7 +197,7 @@ describe('runtime clock shift', () => {
         expect(world.peekDirtyState().generals.map((entry) => entry.id)).toEqual([1, 2]);
     });
 
-    it.each([0, 1.5, Number.NaN])('rejects an invalid shift without mutation: %s', (delta) => {
+    it.each([0, 1.5, 15, Number.NaN])('rejects an invalid shift without mutation: %s', (delta) => {
         const world = buildWorld();
         expect(() => world.shiftSchedule(delta)).toThrow();
         expect(world.getState().lastTurnTime.toISOString()).toBe('2026-07-30T10:00:00.000Z');
@@ -140,7 +205,7 @@ describe('runtime clock shift', () => {
     });
 
     it('keeps legacy wall-clock metadata independent from the process timezone', () => {
-        const world = buildWorld();
+        const world = buildWorld({ tickSeconds: 900 });
 
         world.shiftSchedule(-15);
 
@@ -212,7 +277,7 @@ describe('runtime clock shift', () => {
         expect(world.getGameClockState()).toMatchObject({ phase: 'RUNNING', tick: 0 });
     });
 
-    it('preserves the formal wall opening when PREOPEN game display dates are shifted', () => {
+    it('moves the formal opening together with an explicit whole-turn schedule shift', () => {
         const openAt = new Date('2026-09-06T00:00:00.000Z');
         const now = new Date('2026-09-05T00:00:00.000Z');
         const world = buildWorld({
@@ -223,11 +288,13 @@ describe('runtime clock shift', () => {
             lastTurnTick: 0,
             clockPhase: 'PREOPEN',
         });
-        world.shiftSchedule(15, now);
-        expect(world.getGameClockState()).toMatchObject({ phase: 'PREOPEN', tick: 0, wallAnchor: openAt });
+        world.shiftSchedule(20, now);
+        const shiftedOpen = new Date(openAt.getTime() + 20 * 60_000);
+        expect(world.getGameClockState()).toMatchObject({ phase: 'PREOPEN', tick: 0, wallAnchor: shiftedOpen });
         expect(world.promotePreopenAtOpening(now)).toBe(false);
-        expect(world.getRunnableGameNow(now)).toEqual(new Date('2026-07-30T10:15:00.000Z'));
-        expect(world.promotePreopenAtOpening(openAt)).toBe(true);
+        expect(world.getRunnableGameNow(now)).toEqual(new Date('2026-07-30T10:20:00.000Z'));
+        expect(world.promotePreopenAtOpening(openAt)).toBe(false);
+        expect(world.promotePreopenAtOpening(shiftedOpen)).toBe(true);
     });
 
     it('rejects gameplay commits while the durable clock is suspended', async () => {
@@ -309,7 +376,7 @@ describe('runtime clock shift', () => {
         });
     });
 
-    it('repairs an already accumulated realtime projection lag during a long rebase', () => {
+    it('preserves the normal game-to-wall mapping during a whole-year rebase', () => {
         const base = new Date('2026-07-30T10:00:00.000Z');
         const staleAnchor = new Date('2026-07-30T11:00:00.000Z');
         const resumedAt = new Date('2026-07-30T11:50:00.000Z');
@@ -325,7 +392,7 @@ describe('runtime clock shift', () => {
 
         expect(world.getGameNow(resumedAt).toISOString()).toBe('2026-07-30T11:15:00.000Z');
         expect(world.rebaseRealtimeBacklog(resumedAt)).toMatchObject({ skippedTurns: 12 });
-        expect(world.getGameNow(resumedAt)).toEqual(resumedAt);
+        expect(world.getGameNow(resumedAt)).toEqual(new Date('2026-07-30T11:15:00.000Z'));
     });
 
     it('does not lose realtime elapsed time when an overdue target is committed later', () => {

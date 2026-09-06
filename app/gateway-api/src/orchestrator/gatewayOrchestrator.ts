@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 
@@ -1237,7 +1238,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         if (!profile || profile.currentScenario === null) {
             throw new Error(`Profile clock is unavailable: ${profileName}`);
         }
-        const postgres = createGamePostgresConnector({ url: this.resolveProfileDatabaseUrl(profile) });
+        const { connectorFactory, supportsTurnRecovery } = await this.resolveProfileClockAdapter(profile);
+        const postgres = connectorFactory({ url: this.resolveProfileDatabaseUrl(profile) });
         const redis = createRedisConnector(resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env));
         await postgres.connect();
         await redis.connect();
@@ -1265,6 +1267,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 select: { clockPhase: true, clockRevision: true, deadlineGeneration: true },
             });
             if (!world) throw new Error(`Profile has no world_state: ${profileName}`);
+            if (['PREOPEN', 'MANUAL', 'COMPLETED'].includes(world.clockPhase)) {
+                return { phase: world.clockPhase, revision: clockRevisionAsNumber(world.clockRevision) };
+            }
 
             if (action === 'SUSPEND') {
                 let suspension = await postgres.prisma.clockSuspension.findFirst({
@@ -1281,8 +1286,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         suspensionId: `gateway-maintenance-${suffix}`,
                         source: 'MAINTENANCE',
                         // 운영 중단은 생성 때 구매한 턴 구간과 장수 간 실행 순서를 보존한다.
-                        // 관측 시계만 재개하고 정상 엔진이 미처리 턴을 따라잡게 한다.
-                        policy: 'PRESERVE_SCHEDULE',
+                        // 완전한 12턴은 정수 이동하고 잔여 지연은 복구 구간에서 두 배속으로 실행한다.
+                        policy: supportsTurnRecovery ? 'RECOVER_TURNS' : 'PRESERVE_SCHEDULE',
                         authority,
                     });
                     suspension = await postgres.prisma.clockSuspension.findUniqueOrThrow({
@@ -1326,7 +1331,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return { phase: 'SUSPENDED', revision: clockRevisionAsNumber(world.clockRevision) };
             }
             if (world.clockPhase === 'SUSPENDED') {
-                await reconcileClockSuspension({ db: postgres.prisma, suspensionId: suspension.id, authority });
+                await reconcileClockSuspension({
+                    db: postgres.prisma,
+                    suspensionId: suspension.id,
+                    authority,
+                    upgradeMaintenancePolicy: supportsTurnRecovery,
+                });
             } else if (world.clockPhase !== 'RECONCILING') {
                 throw new Error(`Cannot resume profile clock from ${world.clockPhase}.`);
             }
@@ -1353,7 +1363,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await this.promoteProfileOpeningOverride(profile);
             return;
         }
-        const postgres = createGamePostgresConnector({ url: this.resolveProfileDatabaseUrl(profile) });
+        const { connectorFactory } = await this.resolveProfileClockAdapter(profile);
+        const postgres = connectorFactory({ url: this.resolveProfileDatabaseUrl(profile) });
         const redis = createRedisConnector(resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env));
         await postgres.connect();
         await redis.connect();
@@ -1695,6 +1706,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 if (!gatewayProfileCapabilities(profile.status).operatorResumable) {
                     throw new Error(`Profile status ${profile.status} cannot be started by an operator.`);
                 }
+                await this.transitionProfileClock(profile.profileName, 'RESUME', operation.reason ?? 'operator START');
                 await this.appendOperationLog(operation.id, 'runtime', '프로필 process를 시작합니다.');
                 const updated = await updateOperationProfile(
                     {
@@ -1735,6 +1747,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 if (!gatewayProfileCapabilities(profile.status).runtimeExpected && profile.status !== 'STOPPED') {
                     throw new Error(`Profile status ${profile.status} cannot be stopped by an operator.`);
                 }
+                await this.transitionProfileClock(profile.profileName, 'SUSPEND', operation.reason ?? 'operator STOP');
                 await this.appendOperationLog(operation.id, 'runtime', '프로필 process를 정지합니다.');
                 await updateOperationProfile({ status: 'STOPPED' }, () =>
                     this.repository.updateStatus(profile.profileName, 'STOPPED')
@@ -1979,14 +1992,19 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 'settlement',
                 '기수·장수 기록과 유산 포인트를 원자적으로 정산합니다.'
             );
-            const result = await this.cancelGame({
-                cancellationId: operation.id,
-                databaseUrl,
-                cancelledBy: operation.requestedBy,
-                reason: operation.reason ?? '',
-                ...options,
-                cancelledAt: this.now(),
-            });
+            const result = await this.cancelGame(
+                {
+                    cancellationId: operation.id,
+                    databaseUrl,
+                    cancelledBy: operation.requestedBy,
+                    reason: operation.reason ?? '',
+                    ...options,
+                    cancelledAt: this.now(),
+                },
+                this.cancelGame === defaultCancelGame
+                    ? (await this.resolveProfileClockAdapter(profile)).connectorFactory
+                    : undefined
+            );
             cancellationCommitted = true;
             await assertLease();
             await updateClaimedProfile({
@@ -2493,11 +2511,24 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 throw new Error(`Selected profile seed failed: ${seedResult.output.slice(-4000)}`);
             }
             await appendLog('seed', '시나리오 초기 데이터 생성을 완료했습니다.');
+            // 실제 seed가 정한 경계를 공개 시간표와 scheduler에도 사용한다.
+            const openingConnector = createGamePostgresConnector({ url: seedInfo.databaseUrl });
+            let effectiveOpenAt = openAt;
+            try {
+                await openingConnector.connect();
+                const clock = await openingConnector.prisma.worldState.findFirstOrThrow({
+                    select: { clockMode: true, clockWallAnchor: true },
+                });
+                if (clock.clockMode === 'realtime' && clock.clockWallAnchor) effectiveOpenAt = clock.clockWallAnchor;
+            } finally {
+                await openingConnector.disconnect();
+            }
+
             await this.clearTournamentRuntimeState(profile.profileName);
             await assertLease?.();
             const completedAt = this.now().toISOString();
             const now = this.now();
-            const desiredStatus = resolveResetLifecycleStatus(now, preopenAt, openAt);
+            const desiredStatus = resolveResetLifecycleStatus(now, preopenAt, effectiveOpenAt);
             const publishedProfile = await updateClaimedProfile(
                 {
                     currentScenario: String(scenarioId),
@@ -2508,8 +2539,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     buildLastUsedAt: completedAt,
                     buildCompletedAt: completedAt,
                     buildError: null,
-                    preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
-                    openAt: openAt ? openAt.toISOString() : null,
+                    preopenAt: preopenAt
+                        ? preopenAt.toISOString()
+                        : effectiveOpenAt
+                          ? effectiveOpenAt.toISOString()
+                          : null,
+                    openAt: effectiveOpenAt ? effectiveOpenAt.toISOString() : null,
                     scheduledStartAt: action.scheduledAt ?? null,
                     ...(releaseSource ? { meta: writeProfileReleaseSource(profile.meta, releaseSource) } : {}),
                 },
@@ -2523,8 +2558,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         await this.repository.updateCurrentScenario(profile.profileName, String(scenarioId));
                     }
                     return this.repository.updateStatus(profile.profileName, desiredStatus, {
-                        preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
-                        openAt: openAt ? openAt.toISOString() : null,
+                        preopenAt: preopenAt
+                            ? preopenAt.toISOString()
+                            : effectiveOpenAt
+                              ? effectiveOpenAt.toISOString()
+                              : null,
+                        openAt: effectiveOpenAt ? effectiveOpenAt.toISOString() : null,
                         scheduledStartAt: action.scheduledAt ?? null,
                     });
                 }
@@ -2800,6 +2839,25 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         } finally {
             await fs.rm(tempDirectory, { recursive: true, force: true });
         }
+    }
+
+    private async resolveProfileClockAdapter(profile: GatewayProfileRecord): Promise<{
+        connectorFactory: typeof createGamePostgresConnector;
+        supportsTurnRecovery: boolean;
+    }> {
+        // Gateway와 profile은 독립 배포된다. 이전 profile에는 당시 Prisma 모델과
+        // 기존 즉시 따라잡기 정책을 사용하고, 새 profile만 복구 창을 저장한다.
+        const profileWorkspace = profile.buildWorkspace ?? this.processConfig.workspaceRoot;
+        const manifest = await readReleaseManifest(profileWorkspace);
+        const supportsTurnRecovery = manifest.gameSchemaHead >= '20260906090000_add_turn_recovery_window';
+        const connectorFactory = supportsTurnRecovery
+            ? createGamePostgresConnector
+            : (
+                  (await import(pathToFileURL(path.join(profileWorkspace, 'packages/infra/dist/index.js')).href)) as {
+                      createGamePostgresConnector: typeof createGamePostgresConnector;
+                  }
+              ).createGamePostgresConnector;
+        return { connectorFactory, supportsTurnRecovery };
     }
 
     private resolveProfileDatabaseUrl(profile: GatewayProfileRecord): string {
