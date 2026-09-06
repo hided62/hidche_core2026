@@ -166,6 +166,9 @@ void test('개인·인사·국가 명령의 Ref brief 변형을 보존한다', (
         ['che_징병', { crewType: 1100, amount: 3200 }, '【보병】 3200명 징병'],
         ['che_숙련전환', { srcArmType: 0, destArmType: 1 }, '【보병】숙련을 【궁병】숙련으로 전환'],
         ['che_장비매매', { itemType: 'horse', itemCode: 'None' }, '【명마】를 판매.'],
+        ['che_장비매매', { itemType: 'weapon', itemCode: 'None' }, '【무기】를 판매.'],
+        ['che_장비매매', { itemType: 'book', itemCode: 'None' }, '【서적】을 판매.'],
+        ['che_장비매매', { itemType: 'item', itemCode: 'None' }, '【도구】를 판매.'],
         ['che_장비매매', { itemType: 'horse', itemCode: 'che_명마_01_노기' }, '【노기(+1)】를 구입'],
     ];
     for (const [action, args, expected] of cases) {

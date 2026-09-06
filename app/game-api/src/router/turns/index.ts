@@ -387,6 +387,12 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         itemModules: moduleBundle.itemModules,
         currentSecurity: city?.security ?? 0,
         generalGold: general.gold,
+        ownedItems: {
+            horse: general.horseCode,
+            weapon: general.weaponCode,
+            book: general.bookCode,
+            item: general.itemCode,
+        },
     });
     const inputOptions: TurnCommandInputOptions = {
         cities: cities.map((entry) => ({

@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 
+import { buildEquipmentTradeItemOptions } from '../../game-api/src/turns/commandInput.js';
+
 const response = (data: unknown) => ({ result: { data } });
 const runtimeNavigation = JSON.parse(
     await readFile(new URL('../../../resources/navigation.json', import.meta.url), 'utf8')
@@ -765,6 +767,17 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
                     revision: 0,
                     autorunLimit: state.autorunLimit ?? null,
                 });
+            }
+            if (operation === 'turns.reserved.setGeneralBulk' && state.equipmentItemOptions) {
+                const input = operationInput(route, index) as {
+                    entries: Array<{ turnList: number[]; action: string; args: Record<string, unknown> }>;
+                };
+                for (const entry of input.entries) {
+                    for (const turnIndex of entry.turnList) {
+                        state.reservedTurns![turnIndex] = { index: turnIndex, action: entry.action, args: entry.args };
+                    }
+                }
+                return response({ ok: true, revision: 1, turns: state.reservedTurns, autorunLimit: null });
             }
             if (operation === 'messages.getRecent') {
                 return response(state.messages ?? emptyMessages(state.permission));
@@ -5061,6 +5074,80 @@ for (const viewport of [
     { name: 'desktop', width: 1200, height: 900 },
     { name: 'mobile', width: 500, height: 900 },
 ] as const) {
+    test(`reserves owned unique equipment sales and preserves the slot brief on ${viewport.name}`, async ({ page }) => {
+        const items = buildEquipmentTradeItemOptions({
+            configConst: {},
+            itemModules: [
+                {
+                    key: 'owned_unique',
+                    slot: 'item',
+                    name: '옥벽(보물)',
+                    info: '보유 유니크',
+                    cost: 10001,
+                    reqSecu: 0,
+                    buyable: false,
+                },
+            ],
+            currentSecurity: 0,
+            generalGold: 0,
+            ownedItems: { horse: null, weapon: null, book: null, item: 'owned_unique' },
+        });
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            draftCommandTable: true,
+            equipmentItemOptions: items.item.map((option) => ({ ...option, value: String(option.value) })),
+            reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+        };
+        await installFixture(page, state);
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await waitForMain(page);
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '국가', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('item');
+        const equipment = picker.getByLabel('장비', { exact: true });
+        await equipment.click();
+        await equipment.press('Escape');
+        await equipment.selectOption({ label: '옥벽(보물) 판매' });
+        await expect(equipment).toHaveValue('None');
+        await expect(equipment.locator('option')).toHaveText(['옥벽(보물) 판매']);
+        await expect(picker).toContainText('소유 물품 판매 · 판매가 5,000금');
+        await equipment.focus();
+        await expect(equipment).toBeFocused();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await equipment.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+                rect: element.getBoundingClientRect().toJSON(),
+                font: style.font,
+                color: style.color,
+                background: style.backgroundColor,
+                outline: style.outline,
+                html: element.outerHTML,
+                documentWidth: document.documentElement.scrollWidth,
+            };
+        });
+        expect(geometry.documentWidth).toBeLessThanOrEqual(viewport.width);
+        await writeFile(test.info().outputPath(`owned-sale-${viewport.name}.json`), JSON.stringify(geometry, null, 2));
+        await picker.screenshot({ path: test.info().outputPath(`owned-sale-${viewport.name}.png`) });
+        const request = page.waitForRequest((request) => request.url().includes('turns.reserved.setGeneralBulk'));
+        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        const payload = (await request).postDataJSON();
+        expect(JSON.stringify(payload)).toContain('"itemCode":"None"');
+        expect(JSON.stringify(payload)).toContain('"itemType":"item"');
+        await expect(page.locator('.action-column [title="【도구】를 판매."]')).toHaveText('【도구】를 판매.');
+        await page.reload();
+        await expect(page.locator('.action-column [title="【도구】를 판매."]')).toHaveText('【도구】를 판매.');
+        await page.screenshot({ path: test.info().outputPath(`owned-sale-brief-${viewport.name}.png`) });
+    });
+
     test(`renders only scenario-scoped equipment items on ${viewport.name}`, async ({ page }) => {
         const state: NavigationFixture = {
             officerLevel: 5,

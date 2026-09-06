@@ -222,8 +222,28 @@ describe('turn command argument input', () => {
         );
     });
 
+    it('keeps owned unique equipment sales outside the purchase pool in every slot', async () => {
+        for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
+            const owned = { ...buildShopItem('owned_unique', '보유 유니크'), slot, buyable: false, cost: 10001 };
+            const items = buildEquipmentTradeItemOptions({
+                configConst: {},
+                itemModules: [owned],
+                currentSecurity: 0,
+                generalGold: 0,
+                ownedItems: { horse: null, weapon: null, book: null, item: null, [slot]: owned.key },
+            });
+            expect(items[slot]).toEqual([
+                { value: 'None', label: '보유 유니크 판매', description: '소유 물품 판매 · 판매가 5,000금' },
+            ]);
+            await expect(
+                parseReservedTurnArgs('general', 'che_장비매매', { itemType: slot, itemCode: 'None' })
+            ).resolves.toEqual({ itemType: slot, itemCode: 'None' });
+        }
+    });
+
     it('limits equipment trade options to the Ref default items when a scenario omits allItems', () => {
         const items = buildEquipmentTradeItemOptions({
+            ownedItems: { horse: null, weapon: null, book: null, item: null },
             configConst: {},
             itemModules: [buildShopItem('che_치료_환약', '환약'), buildShopItem('event_전투특기_격노', '격노의 비급')],
             currentSecurity: 5000,
@@ -236,6 +256,7 @@ describe('turn command argument input', () => {
 
     it('shows only zero-count buyable items selected by an explicit scenario pool', () => {
         const items = buildEquipmentTradeItemOptions({
+            ownedItems: { horse: null, weapon: null, book: null, item: null },
             configConst: {
                 allItems: {
                     item: {

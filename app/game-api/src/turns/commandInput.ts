@@ -125,14 +125,28 @@ export const buildEquipmentTradeItemOptions = (options: {
     itemModules: readonly EquipmentTradeItemModule[];
     currentSecurity: number;
     generalGold: number;
+    ownedItems: Readonly<Record<ItemModule['slot'], string | null>>;
 }): TurnCommandInputOptions['items'] => {
     const purchasableItemKeys = resolveLegacyPurchasableItemKeys(options.configConst);
-    const items: TurnCommandInputOptions['items'] = {
-        horse: [{ value: 'None', label: '판매/해제' }],
-        weapon: [{ value: 'None', label: '판매/해제' }],
-        book: [{ value: 'None', label: '판매/해제' }],
-        item: [{ value: 'None', label: '판매/해제' }],
-    };
+    const items: TurnCommandInputOptions['items'] = {};
+    const catalog = new Map(options.itemModules.map((item) => [item.key, item]));
+    // Ref의 소유 물품 판매는 구매 허용 목록과 독립적으로 전체 catalog에서 해석한다.
+    for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
+        const ownedCode = options.ownedItems[slot];
+        const ownedItem = ownedCode && ownedCode !== 'None' ? catalog.get(ownedCode) : undefined;
+        const slotName = STATIC_LABELS.itemType?.[slot] ?? slot;
+        items[slot] = [
+            {
+                value: 'None',
+                label: ownedItem ? `${ownedItem.name} 판매` : `${slotName} 판매`,
+                description: ownedItem
+                    ? `소유 물품 판매 · 판매가 ${Math.floor((ownedItem.cost ?? 0) / 2).toLocaleString()}금`
+                    : ownedCode && ownedCode !== 'None'
+                      ? '보유 장비 정보를 확인할 수 없습니다.'
+                      : '현재 보유한 장비가 없습니다.',
+            },
+        ];
+    }
 
     for (const item of options.itemModules) {
         if (!item.buyable || !purchasableItemKeys.has(item.key)) {
