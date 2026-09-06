@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { TurnDaemonCommandResult, TurnRunResult } from '@sammo-ts/common';
-import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import { LogCategory, LogFormat, LogScope, type MapDefinition, type ScenarioConfig } from '@sammo-ts/logic';
 
 import { createDatabaseTurnHooks, type DatabaseTurnHooks } from '../src/turn/databaseHooks.js';
@@ -137,7 +137,7 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
         await db.$executeRawUnsafe(`
             ALTER TABLE read_model_outbox
             ADD CONSTRAINT ${rollbackConstraint}
-            CHECK ((payload->>'version')::integer <> 1)
+            CHECK ((payload->>'version')::integer <> 1) NOT VALID
         `);
         world.updateWorldMeta({ durableFixture: 'must-rollback' });
         world.pushLog({
@@ -270,5 +270,41 @@ integration('game-engine read-model journal PostgreSQL transaction', () => {
         expect(secondQueuedReceipt?.changes.worldChanged).toBe(true);
         expect(hooks.takeCommittedReadModelChangeReceipt()).toBeNull();
         await expect(db.readModelOutbox.count()).resolves.toBe(5);
+
+        await db.inputEvent.update({
+            where: { requestId },
+            data: { eventType: 'voteReward', status: 'PROCESSING', result: GamePrisma.DbNull },
+        });
+        const voteResult: TurnDaemonCommandResult = {
+            type: 'voteReward',
+            ok: true,
+            voteId: 1,
+            generalId: directLogGeneralId,
+            awardedUnique: false,
+        };
+        await db.$executeRawUnsafe(`
+            ALTER TABLE read_model_outbox ADD CONSTRAINT ${rollbackConstraint}
+            CHECK ((payload->>'version')::integer <> 1) NOT VALID
+        `);
+        await expect(hooks.hooks.executeCommand?.(requestId, async () => voteResult)).rejects.toThrow(
+            rollbackConstraint
+        );
+        expect(hooks.takeCommittedReadModelChangeReceipt()).toBeNull();
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: 'PROCESSING',
+            result: null,
+        });
+        await expect(db.readModelOutbox.count()).resolves.toBe(5);
+
+        await db.$executeRawUnsafe(`ALTER TABLE read_model_outbox DROP CONSTRAINT ${rollbackConstraint}`);
+        await hooks.hooks.executeCommand?.(requestId, async () => voteResult);
+        expect(hooks.takeCommittedReadModelChangeReceipt()?.invalidation.revisions).toEqual([
+            { domain: 'front.general', entityId: directLogGeneralId, revision: 1n },
+        ]);
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: 'SUCCEEDED',
+            result: voteResult,
+        });
+        await expect(db.readModelOutbox.count()).resolves.toBe(6);
     });
 });

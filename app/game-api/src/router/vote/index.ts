@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { getAuthenticatedUserId, getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime, type CurrentGameTime } from '../../services/gameClock.js';
 import { throwIfCommandRejected } from '../shared/turnDaemon.js';
@@ -102,10 +102,7 @@ export const hasPollEnded = (
     time: CurrentGameTime
 ): boolean =>
     Boolean(poll.closed_at) ||
-    Boolean(
-        poll.end_at &&
-            (poll.end_tick === null || time.tick === null || poll.end_tick < BigInt(time.tick))
-    );
+    Boolean(poll.end_at && (poll.end_tick === null || time.tick === null || poll.end_tick < BigInt(time.tick)));
 
 const toGameTickOrNull = (time: CurrentGameTime, date: Date | null): bigint | null => {
     if (!date) return null;
@@ -290,7 +287,9 @@ export const voteRouter = router({
                 userCnt,
             };
         }),
-    submitVote: authedProcedure
+    // 투표·보상은 ENGINE transaction이 소유한다. API가 clock fence를 잡고
+    // 결과를 기다리면 같은 fence가 필요한 데몬이 진행하지 못한다.
+    submitVote: engineAuthedProcedure
         .input(
             z.object({
                 voteId: z.number().int().positive(),
@@ -366,7 +365,6 @@ export const voteRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: rewardResult.reason });
             }
 
-            ctx.changeJournal?.mark('front.general', general.id);
             return { ok: true, wonLottery: rewardResult.awardedUnique };
         }),
     addComment: authedProcedure

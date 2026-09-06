@@ -16,6 +16,34 @@ import type { TurnWorldChanges } from '../src/turn/inMemoryWorld.js';
 import type { ReservedTurnChanges } from '../src/turn/reservedTurnStore.js';
 
 describe('durable read-model change journal mapping', () => {
+    it.each([false, true])(
+        'invalidates only the voting actor on successful vote completion (replay=%s)',
+        (alreadyApplied) => {
+            expect(
+                createReadModelChangeJournal(createEmptyRealtimeReadModelChanges(), {
+                    type: 'voteReward',
+                    ok: true,
+                    voteId: 1,
+                    generalId: 7,
+                    awardedUnique: false,
+                    alreadyApplied,
+                }).snapshot()
+            ).toEqual([{ domain: 'front.general', entityId: 7 }]);
+        }
+    );
+
+    it('does not publish vote completion for a rejected vote', () => {
+        expect(
+            createReadModelChangeJournal(createEmptyRealtimeReadModelChanges(), {
+                type: 'voteReward',
+                ok: false,
+                voteId: 1,
+                generalId: 7,
+                reason: 'closed',
+            }).snapshot()
+        ).toEqual([]);
+    });
+
     it('maps every final engine invalidation to its precise durable domain', () => {
         const changes = {
             ...createEmptyRealtimeReadModelChanges(),

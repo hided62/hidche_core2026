@@ -454,8 +454,16 @@ const markIds = (journal: ChangeJournal, domain: ReadModelDomain, ids: readonly 
  * actor-targeted. General name/nation changes affect the global online list,
  * while frontStatusActorIds is the private actor projection.
  */
-export const createReadModelChangeJournal = (changes: RealtimeReadModelChanges): ChangeJournal => {
+export const createReadModelChangeJournal = (
+    changes: RealtimeReadModelChanges,
+    commandResult?: TurnDaemonCommandResult
+): ChangeJournal => {
     const journal = new ChangeJournal();
+    // 설문 완료 여부는 투표한 actor만의 projection이다. 보상과 같은 ENGINE
+    // transaction에 기록해야 API 응답 실패·재시도에도 commit 뒤 알림이 보존된다.
+    if (commandResult?.type === 'voteReward' && commandResult.ok) {
+        journal.mark('front.general', commandResult.generalId);
+    }
     markIds(journal, 'general.content', changes.generalIds);
     markIds(journal, 'city.content', changes.cityIds);
     markIds(journal, 'nation.content', changes.nationIds);
@@ -1981,7 +1989,7 @@ export const createDatabaseTurnHooks = async (
             if (worldReadModelSignature !== worldReadModelBaseline) {
                 readModelChanges.worldChanged = true;
             }
-            const journal = createReadModelChangeJournal(readModelChanges);
+            const journal = createReadModelChangeJournal(readModelChanges, commandCompletion?.result);
             if (hasDashboardSourceMutation(changes, readModelChanges)) {
                 journal.mark('dashboard.global');
             }

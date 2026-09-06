@@ -216,6 +216,40 @@ const buildContext = (options: {
 };
 
 describe('vote router actor and permission boundaries', () => {
+    it('waits for the ENGINE vote without holding an outer API transaction', async () => {
+        const fixture = buildContext({ requestId: 'vote-boundary' });
+        const transaction = vi.fn(async () => {
+            throw new Error('API transaction blocks the vote ENGINE clock fence');
+        });
+        Object.assign(fixture.context.db, { $transaction: transaction });
+
+        await expect(
+            appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] })
+        ).resolves.toEqual({ ok: true, wonLottery: false });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fixture.requestCommand).toHaveBeenCalledWith(
+            expect.objectContaining({
+                requestId: 'vote-boundary:vote.submitVote:engine:0:voteReward',
+                userId: 'user-1',
+                generalId: 7,
+            })
+        );
+    });
+
+    it.each([
+        { auth: null, code: 'UNAUTHORIZED' },
+        { auth: { ...buildAuth(), sanctions: { bannedUntil: '2999-01-01T00:00:00Z' } }, code: 'FORBIDDEN' },
+    ])(
+        'rejects voting before dispatch when authentication or sanctions disallow access: %j',
+        async ({ auth, code }) => {
+            const fixture = buildContext({ auth });
+            await expect(
+                appRouter.createCaller(fixture.context).vote.submitVote({ voteId: 1, selection: [0] })
+            ).rejects.toMatchObject({ code });
+            expect(fixture.requestCommand).not.toHaveBeenCalled();
+        }
+    );
+
     it('keeps a poll open at its exact Ref end tick and closes it after that tick', () => {
         const now = new Date('2026-07-26T00:00:00Z');
         const time = {
@@ -259,7 +293,7 @@ describe('vote router actor and permission boundaries', () => {
         expect(fixture.queryRaw.mock.calls.some(([query]) => sqlText(query).includes('INSERT INTO vote ('))).toBe(
             false
         );
-        expect(fixture.changeJournal.snapshot()).toEqual([{ domain: 'front.general', entityId: 7 }]);
+        expect(fixture.changeJournal.snapshot()).toEqual([]);
         expect(fixture.redisIncr).not.toHaveBeenCalled();
         expect(fixture.redisPublish).not.toHaveBeenCalled();
     });

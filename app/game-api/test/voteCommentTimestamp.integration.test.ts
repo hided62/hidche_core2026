@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import {
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
+    createGamePostgresConnector,
+    tryGameSchemaAdvisoryXactLock,
+    type GamePrismaClient,
+} from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../src/context.js';
+import { DatabaseTurnDaemonTransport } from '../src/daemon/databaseTransport.js';
 import { appRouter } from '../src/router.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -77,6 +83,63 @@ integration('vote comment operational timestamp', () => {
     afterAll(async () => {
         await cleanup();
         await closeDb?.();
+    });
+
+    it('lets a separate ENGINE transaction claim the clock fence while submitVote waits', async () => {
+        const requestId = 'integration:vote-comment-timestamp:submit';
+        const engineRequestId = `${requestId}:vote.submitVote:engine:0:voteReward`;
+        const transport = new DatabaseTurnDaemonTransport(db, 2_000);
+        const context: Partial<GameApiContext> = {
+            requestId,
+            db,
+            auth,
+            profile: { id: 'che', scenario: 'vote-comment-timestamp', name: 'che:vote-comment-timestamp' },
+            turnDaemon: {
+                sendCommand: transport.sendCommand.bind(transport),
+                requestStatus: transport.requestStatus.bind(transport),
+                requestCommand: async (command) => {
+                    // 실제 DB transport의 durable 접수와 별도 connection의 clock fence를
+                    // 검증한다. 보상 계산 자체는 voteReward suite가 검증한다.
+                    const acceptedId = await transport.sendCommand(command);
+                    expect(acceptedId).toBe(engineRequestId);
+                    await db.$transaction(async (transaction) => {
+                        expect(await tryGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK)).toBe(
+                            true
+                        );
+                        const event = await transaction.inputEvent.findUniqueOrThrow({
+                            where: { requestId: acceptedId },
+                        });
+                        expect(event).toMatchObject({
+                            target: 'ENGINE',
+                            status: 'PENDING',
+                            actorUserId: fixtureUserId,
+                        });
+                        await transaction.inputEvent.update({
+                            where: { requestId: acceptedId },
+                            data: {
+                                status: 'SUCCEEDED',
+                                result: {
+                                    type: 'voteReward',
+                                    ok: true,
+                                    voteId: fixtureId,
+                                    generalId: fixtureId,
+                                    awardedUnique: false,
+                                },
+                            },
+                        });
+                    });
+                    return transport.requestCommand(command);
+                },
+            },
+        };
+        const caller = appRouter.createCaller(context as GameApiContext);
+
+        await expect(caller.vote.submitVote({ voteId: fixtureId, selection: [0] })).resolves.toEqual({
+            ok: true,
+            wonLottery: false,
+        });
+        expect(await db.inputEvent.count({ where: { requestId: `${requestId}:vote.submitVote` } })).toBe(0);
+        expect(await db.inputEvent.count({ where: { requestId: engineRequestId } })).toBe(1);
     });
 
     it('stores current writers and rollback-compatible vote defaults as UTC wall time in KST', async () => {

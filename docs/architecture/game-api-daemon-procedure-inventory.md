@@ -24,8 +24,7 @@ transaction을 만든다. `engineAuthedProcedure`, `accessEngineAuthedProcedure`
 - **ENGINE 소유 + 불필요한 API outer**: gameplay durable mutation은 ENGINE이 전부
   소유하지만 route가 아직 API `input_event`/journal transaction에 감싸여 있다.
 
-현재 합계는 **ENGINE 전환 36 + 혼합 3 + 기존 ENGINE 9 + 불필요한 API
-outer 1 = 49**다.
+현재 합계는 **ENGINE 전환 37 + 혼합 3 + 기존 ENGINE 9 = 49**다.
 
 ENGINE 전환 route의 explicit `requestId`는 각 route가 기존에 사용하던 HTTP 요청
 또는 user/client-scoped durable identity를 유지한다. `inheritanceAction`은
@@ -49,7 +48,7 @@ selection-pool create/reselect는 client request ID가 있을 때
 | `nation.setNotice`, `nation.setScoutMsg`, `nation.setSecretLimit`, `nation.setRate`, `nation.setBlockWar`, `nation.setBill`, `nation.setBlockScout` | `engineAuthedProcedure`; API는 인증 actor, 현재 국가와 조기 권한만 읽고 semantic mutation을 전달 (`app/game-api/src/router/nation/endpoints/setNotice.ts`, `setScoutMsg.ts`, `setSecretLimit.ts`, `setRate.ts`, `setBlockWar.ts`, `setBill.ts`, `setBlockScout.ts`) | `setNationSetting`이 실행 시점 owner/nation/직책·permission을 다시 검사한다. 전쟁 설정 잔여 횟수 차감과 임관 잠금 검사를 현재 ENGINE state에서 수행하고, 공지는 logical game time과 author snapshot을 국가 meta와 같은 transaction에 저장한다 (`app/game-engine/src/turn/nationSettingMutation.ts`, `worldCommandHandler.ts`). |
 | `npc.setNationPolicy`, `npc.setNationPriority`, `npc.setGeneralPriority` | `accessEngineAuthedInputProcedure`; API는 현재 화면값과 unit-set 기반 입력 보조만 수행하고 actor-bound semantic delta와 명시적 nullable revision을 전달 (`app/game-api/src/router/npc/index.ts`) | `setNpcPolicy`가 실행 시점 owner/nation/permission, strict CAS, 현재 troop/city membership, priority와 numeric policy를 검증하고 logical setter snapshot과 delta만 반영한다 (`app/game-engine/src/turn/npcPolicyMutation.ts`, `worldCommandHandler.ts`). |
 
-합계 **36개 route**다.
+이 표의 **36개 route**와 아래 설문 전환 **1개 route**를 합쳐 **37개 route**다.
 
 ## 혼합 또는 validation 이관이 먼저 필요한 route
 
@@ -70,14 +69,15 @@ selection-pool create/reselect는 client request ID가 있을 때
 
 합계 **9개 route**다.
 
-## ENGINE이 소유하지만 API outer transaction이 남은 route
+## 설문 투표의 ENGINE 전환
 
-| route | 현재 상태 | 남은 일 |
-| --- | --- | --- |
-| `vote.submitVote` | `authedProcedure`가 API outer `input_event` transaction을 만든다. API는 poll/actor 조기 validation 후 `voteReward`를 보내고 `front.general` journal을 표시한다 (`app/game-api/src/router/vote/index.ts:294-369`). ENGINE은 poll row lock, 선택 validation, vote insert, reward/idempotency marker, 금·아이템·로그 변경을 한 mutation transaction에서 소유한다 (`app/game-engine/src/turn/worldCommandHandler.ts:2430-2847`). | viewer-specific `front.general` invalidation을 ENGINE commit journal로 옮기고, 현재 middleware가 만드는 `voteReward` child identity를 explicit request ID로 보존한 뒤 ENGINE procedure로 전환한다. |
-
-합계 **1개 route**다. Gameplay DB mutation 소유권 기준으로는 불필요한 outer이지만,
-`front.general` journal이 API에 남아 있으므로 procedure만 바꾸면 실시간 갱신 계약을 잃는다.
+`vote.submitVote`는 `engineAuthedProcedure`로 actor/입력만 검증하고 기존
+`<requestId>:vote.submitVote:engine:0:voteReward` identity를 전달한다. API가 clock
+fence를 가진 채 ENGINE 결과를 기다리던 교착을 제거했다. 투표·보상·marker는
+기존 ENGINE transaction이 소유하고, `databaseHooks.ts`가 성공한 `voteReward`
+결과의 general ID로 `front.general`을 같은 commit journal에 기록한다.
+재시도 성공도 본인 projection만 갱신하며 거절된 투표는 완료 알림을 만들지 않는다.
+따라서 ENGINE 소유 route에 불필요한 API outer transaction은 남지 않는다.
 
 ## 검증 계약
 
@@ -100,8 +100,10 @@ selection-pool create/reselect는 client request ID가 있을 때
   `app/game-engine/test/inheritanceActionPersistence.integration.test.ts`: 인증 actor, point/log,
   general/message 변경이 `inheritanceAction` ENGINE transaction에 함께 있는지 검증한다.
 - `app/game-api/test/voteRouter.test.ts`, `app/game-engine/test/voteReward.test.ts`: API 조기
-  validation과 ENGINE의 vote insert/reward/idempotency 경계를 검증한다. API outer/journal
-  제거는 아직 검증 대상이 아니다.
+  validation, API outer transaction 부재와 ENGINE의 vote insert/reward/idempotency 경계를 검증한다.
+- `voteCommentTimestamp.integration.test.ts`는 실제 PostgreSQL의 별도 ENGINE clock fence와
+  durable 접수를, `readModelChangeJournalPersistence.integration.test.ts`는 설문 완료와
+  본인 알림의 atomic commit/rollback을 검증한다.
 - raw inventory 재검색: `rg -n "requestCommand\\(" app/game-api/src/router`와
   `openAuctionWithDaemon`, `requestInheritanceAction`, `updateNationSetting`,
   `requestNpcPolicyMutation`,
