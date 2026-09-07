@@ -40,30 +40,53 @@ alignedTick = cutTick + gapTicks
 deadlineAfter = deadlineBefore + shiftTicks
 ```
 
-From 2026-09-06, maintenance and crash recovery use `RECOVER_TURNS`.
-This supersedes the earlier same-day `PRESERVE_SCHEDULE` immediate catch-up
-policy. The base turn length does not change. One turn remains 36,000,000
-ticks; a persisted `TurnRecoveryWindow` changes only the wall execution rate.
+From 2026-09-07, maintenance and crash recovery use the following
+`RECOVER_TURNS` policy. The base turn length does not change. One turn remains
+36,000,000 ticks; a persisted `TurnRecoveryWindow` changes only wall execution.
 
-- Count complete overdue turns from the durable observation to the normal
-  timeline. Skip only `floor(overdueTurns / 12) * 12` turns, moving future
-  schedules and the execution cursor by the same integer delta.
-- Execute the sub-turn remainder immediately through the ordinary engine.
-  Reach the next normal turn boundary at normal speed, then execute the
-  remaining one to eleven turns of backlog at 2x speed.
-- Join the original schedule at the recorded end boundary and return to 1x.
-  Four hours of backlog on a 60-minute server needs four hours at 2x; it runs
-  eight turns in that time. Resources, RNG, commands and monthly handlers run
-  normally for those turns, in the existing chronological order.
-- Purchased within-turn offsets remain logical offsets. Their wall offsets
-  compress during recovery and return to the original minutes/seconds after
-  the end boundary. The API and browser expose the recovery interval.
+- An entire delay strictly below `min(600 seconds, turnSeconds / 10)` catches
+  up immediately through the ordinary engine. Equality uses recovery. The
+  limit is 30 seconds on a 5-minute server and 6 minutes on a 60-minute server.
+- For longer delays, skip only complete 12-turn blocks, moving future
+  schedules and the execution cursor by the same integer delta. Never apply
+  the short-delay exception again to the remainder. An exact multiple of
+  12 turns needs no acceleration window.
+- Preserve the remaining observation, including its partial-month position.
+  Wait without advancing, then execute at 2x until joining the original
+  schedule at a logical month boundary. There is no initial 1x segment or
+  fractional immediate burst in a newly planned window.
+- Let `S` be the observation after skips, `N` the normal tick at resume,
+  `T` one turn, and `r` ticks per second. Choose
+  `E = ceil((2*N-S)/T)*T`. The end is `resume + (E-N)/r` and the wait is
+  `(E+S-2*N)/(2*r)`. End wall time and 2x duration round up to milliseconds;
+  derive the start by subtraction. This preserves the end boundary with at
+  most one millisecond of wall resolution error.
+- On a 60-minute server stopped at game 00:10 and resumed at wall 00:24,
+  wait until 00:35, then run 2x until game/wall 01:00. A 240-minute outage
+  from the same stop waits from 04:10 to 04:35 and rejoins at 09:00.
+- Resources, RNG, commands and monthly handlers execute in the existing
+  chronological order. Purchased within-turn offsets remain logical offsets;
+  their wall offsets compress during recovery and return to normal afterward.
 
 `clock_recovery_start_tick`, `clock_recovery_end_tick`, and
-`clock_recovery_start_wall_at` are an all-or-none durable window. Flush/reload
-preserves it; a short restart reuses it. A new long outage replans against the
-original normal timeline. Game-date epoch and wall epoch may differ; never
-convert the real wall instant using `dateToTick` to compute normal time.
+`clock_recovery_start_wall_at` are an all-or-none durable window. The migration
+`20260907150000_wait_then_turn_recovery` permits partial-month starts and keeps
+end-boundary and safe-integer constraints. Existing windows remain valid and
+retain their old pre-start 1x behavior; new windows use the stored tick as the
+frozen lower bound and `clockWallAnchor` as the future start gate. Do not roll
+back to code requiring whole-turn starts while a new window is stored.
+
+Flush/reload preserves the window; short restarts reuse it. A new long outage
+replans against the original normal timeline. Game-date epoch and wall epoch
+may differ; never use `dateToTick(realWallInstant)` to compute normal time.
+The API and browser expose waiting, start and end boundaries without needing
+a fresh response at the speed transitions.
+
+Projection completion stores one public system message with both recovery
+wall dates (Korean time) and ISO interval metadata. Message creation, mailbox
+read-model invalidation, and the `RUNNING`/outbox `APPLIED` transition share a
+PostgreSQL transaction. Retries after Redis application cannot duplicate the
+message. Existing read-model outbox delivery refreshes connected clients.
 
 Before a newly leased daemon permits independent workers to advance time, it
 prepares recovery under the clock lock. `turn_daemon_lease.clock_ready` starts

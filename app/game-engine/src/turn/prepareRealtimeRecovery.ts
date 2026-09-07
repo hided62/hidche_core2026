@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { immediateRecoveryLimitSeconds } from '@sammo-ts/common';
 import type { GamePrismaClient } from '@sammo-ts/infra';
 import {
     readClockDatabaseWall,
@@ -27,8 +28,12 @@ export const prepareRealtimeRecovery = async (
     if (world.clockPhase !== 'RUNNING' || !world.clockWallAnchor || world.clockTick === null) return;
     const now = await readClockDatabaseWall(db);
     // 가속 중 정상적인 프로세스 교체는 기존 창을 그대로 재사용한다.
-    // 한 턴 미만의 장애는 잔여 구간 실행만 필요하므로 새 좌표 세대를 만들지 않는다.
-    if (!options.paused && now.getTime() - world.clockWallAnchor.getTime() < world.tickSeconds * 1_000) return;
+    // 짧은 중단만 즉시 처리한다. 기준값과 같으면 대기 후 복구한다.
+    if (
+        !options.paused &&
+        now.getTime() - world.clockWallAnchor.getTime() < immediateRecoveryLimitSeconds(world.tickSeconds) * 1_000
+    )
+        return;
     const suspensionId = `recovery-${randomUUID()}`;
     await startClockSuspension({
         db,

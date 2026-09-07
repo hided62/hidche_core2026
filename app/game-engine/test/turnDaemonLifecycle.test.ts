@@ -49,6 +49,36 @@ describe('TurnDaemonLifecycle', () => {
         }
     );
 
+    it('holds even an explicit run during the recovery wait', async () => {
+        const now = new Date('2026-09-07T00:24:00Z');
+        const startsAt = new Date('2026-09-07T00:35:00Z');
+        const controlQueue = new InMemoryControlQueue();
+        controlQueue.enqueue({ type: 'run', reason: 'manual' });
+        const processor = { run: vi.fn() };
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(now.getTime()),
+                controlQueue,
+                processor,
+                getNextTickTime: (value) => addMinutes(value, 60),
+                stateStore: {
+                    loadLastTurnTime: async () => now,
+                    loadNextGeneralTurnTime: async () => now,
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                    loadGameClock: async () => {
+                        controlQueue.enqueue({ type: 'shutdown' });
+                        return { mode: 'realtime', phase: 'RUNNING', now, startsAt };
+                    },
+                },
+            },
+            { profile: 'recovery-wait-gate', defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 } }
+        );
+        await lifecycle.start();
+        expect(processor.run).not.toHaveBeenCalled();
+    });
+
     it('durably rebases a long realtime backlog before executing another turn', async () => {
         const wallNow = new Date('2026-08-23T01:35:00.000Z');
         const clock = new ManualClock(wallNow.getTime());

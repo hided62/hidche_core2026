@@ -68,3 +68,27 @@ void test('a single browser sample accelerates only inside the recovery window a
     assert.equal(projectServerClock(sample, 340 * minute).time.toISOString(), '2026-09-06T10:00:00.000Z');
     assert.equal(projectServerClock(sample, 280 * minute).rate, 1);
 });
+
+void test('waits then accelerates from a partial month and returns to normal without resampling', () => {
+    const sample = sampleServerClock(
+        {
+            serverTime: '2026-09-07T00:10:00Z',
+            serverWallTime: '2026-09-07T00:24:00Z',
+            clockMode: 'realtime',
+            clockRunning: false,
+            clockStartsAt: '2026-09-07T00:35:00Z',
+            clockRecovery: { startsAt: '2026-09-07T00:35:00Z', endsAt: '2026-09-07T01:00:00Z' },
+        },
+        0
+    );
+    assert.ok(sample);
+    for (const elapsed of [0, 660000 - 1, 660000]) {
+        assert.equal(projectServerClock(sample, elapsed).time.toISOString(), '2026-09-07T00:10:00.000Z');
+    }
+    assert.equal(projectServerClock(sample, 660001).time.toISOString(), '2026-09-07T00:10:00.002Z');
+    assert.equal(projectServerClock(sample, 2160000 - 1).time.toISOString(), '2026-09-07T00:59:59.998Z');
+    assert.equal(projectServerClock(sample, 2160000 - 1).rate, 2);
+    assert.equal(projectServerClock(sample, 2160000).time.toISOString(), '2026-09-07T01:00:00.000Z');
+    assert.equal(projectServerClock(sample, 2160000).rate, 1);
+    assert.equal(projectServerClock(sample, 2160001).time.toISOString(), '2026-09-07T01:00:00.001Z');
+});

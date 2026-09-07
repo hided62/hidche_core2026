@@ -1,9 +1,18 @@
 import { createHash } from 'node:crypto';
 
-import { GameClock, parseGameClockPhase } from '@sammo-ts/common';
+import {
+    ChangeJournal,
+    GameClock,
+    formatServerDateTime,
+    parseGameClockPhase,
+    readTurnRecovery,
+} from '@sammo-ts/common';
+import { MESSAGE_MAILBOX_PUBLIC, resolveMessageTargetIcon, sendMessage } from '@sammo-ts/logic';
 import {
     CLOCK_OPERATION_PERSISTENCE_LOCK,
     GamePrisma,
+    persistMessageEnvelope,
+    writeReadModelChangeJournal,
     acquireGameSchemaAdvisoryXactLock,
     type GamePrismaClient,
 } from '@sammo-ts/infra';
@@ -302,6 +311,47 @@ export const applyNextClockProjection = async (options: {
                 throw new Error('Clock projection final RUNNING transition fence failed.');
             }
             const appliedAt = await readDbWall(transaction);
+            // RUNNING 전이와 같은 transaction에 남겨 재시도 시 전체 공지를 중복 발송하지 않는다.
+            const recovery = readTurnRecovery(world);
+            const journal = new ChangeJournal();
+            journal.mark('world.content').mark('map.world');
+            if (recovery) {
+                const recoveredClock = new GameClock({
+                    baseTime: world.clockBaseTime!,
+                    tick: Number(world.clockTick),
+                    wallAnchor: world.clockWallAnchor!,
+                    mode: 'realtime',
+                    turnSeconds: world.tickSeconds,
+                    recovery,
+                });
+                const endsAt = recoveredClock.tickToWallDate(recovery.endTick);
+                const system = {
+                    generalId: 0,
+                    generalName: '시스템',
+                    nationId: 0,
+                    nationName: '',
+                    color: '#000000',
+                    icon: resolveMessageTargetIcon(),
+                };
+                await sendMessage(
+                    { insertMessage: (draft) => persistMessageEnvelope(transaction, draft) },
+                    {
+                        msgType: 'public',
+                        src: system,
+                        dest: system,
+                        text: `서버 재개에 따른 2배속 복구 시간: ${formatServerDateTime(recovery.startWallAt)} ~ ${formatServerDateTime(endsAt)} (한국 시각). 시작 전까지 대기하며, 종료 시 정상 속도로 진행합니다.`,
+                        time: appliedAt,
+                        validUntil: new Date('9999-12-31T00:00:00Z'),
+                        option: {
+                            recoveryStartsAt: recovery.startWallAt.toISOString(),
+                            recoveryEndsAt: endsAt.toISOString(),
+                        },
+                    }
+                );
+                journal.mark('messages.mailbox', MESSAGE_MAILBOX_PUBLIC);
+            }
+            await writeReadModelChangeJournal(transaction, journal.snapshot());
+
             await transaction.clockProjectionOutbox.update({
                 where: { id: outbox.id },
                 data: { status: 'APPLIED', appliedAt, lockedAt: null, lockedBy: null, lastError: null },

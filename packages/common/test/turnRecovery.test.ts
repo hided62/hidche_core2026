@@ -35,6 +35,21 @@ describe('turn-aligned double-speed recovery', () => {
         expect(reloaded.executionRate(wall(8))).toBe(1);
     });
 
+    it('preserves pre-start normal speed for an existing serialized window', () => {
+        const old = new GameClock({
+            baseTime: wall(0),
+            tick: T / 3,
+            wallAnchor: wall(4 + 1 / 3),
+            mode: 'realtime',
+            turnSeconds: 3600,
+            recovery: { startTick: nextTurnBoundary(T), endTick: nextTurnBoundary(9 * T), startWallAt: wall(5) },
+        });
+        expect(old.nowTick(wall(4.5))).toBe(T / 2);
+        expect(old.nowTick(wall(5))).toBe(T);
+        expect(old.nowTick(wall(9))).toBe(9 * T);
+        expect(old.normalNowTick(wall(4.5))).toBe(4.5 * T);
+    });
+
     it('resumes a planned wait at a whole-turn boundary without changing purchased phase', () => {
         const plan = buildClockAlignmentPlan({
             policy: 'TURN_BOUNDARY',
@@ -102,18 +117,104 @@ describe('turn-aligned double-speed recovery', () => {
         expect(observeTurnRecovery(recovery!, wall(9), 10_000)).toBe(9 * T);
     });
 
-    it('retains the fractional phase and begins acceleration at the next boundary', () => {
+    it.each([
+        [14, 11, 60],
+        [49, 6, 120],
+        [59, 26, 180],
+        [100, 15, 240],
+        [240, 25, 540],
+        [400, 15, 840],
+        [700, 15, 1440],
+    ])('waits then runs 2x after stopping at 00:10 for %i minutes', (delay, wait, endMinute) => {
+        const observed = T / 6;
+        const resumed = wall((10 + delay) / 60);
         const plan = planTurnRecovery({
-            observedTick: 0,
-            normalTick: 4 * T + T / 3,
-            wallNow: wall(4 + 1 / 3),
+            observedTick: observed,
+            normalTick: ((10 + delay) * T) / 60,
+            wallNow: resumed,
             turnSeconds: 3600,
         });
-        expect(plan.initialTick).toBe(T / 3);
-        expect(plan.recovery!.startWallAt).toEqual(wall(5));
-        expect(observeTurnRecovery(plan.recovery!, wall(4.5), 10_000)).toBe(T / 2);
-        expect(observeTurnRecovery(plan.recovery!, wall(5), 10_000)).toBe(T);
-        expect(observeTurnRecovery(plan.recovery!, wall(9), 10_000)).toBe(9 * T);
+        const recovery = plan.recovery!;
+        const start = recovery.startWallAt;
+        const end = wall(endMinute / 60);
+        const clock = new GameClock({
+            baseTime: wall(0),
+            tick: plan.initialTick,
+            wallAnchor: start,
+            mode: 'realtime',
+            turnSeconds: 3600,
+            recovery,
+        });
+        expect(plan.initialTick).toBe(observed);
+        expect(start.getTime() - resumed.getTime()).toBeCloseTo(wait * 60000, 0);
+        expect(clock.nowTick(resumed)).toBe(observed);
+        expect(clock.nowTick(new Date(start.getTime() - 1))).toBe(observed);
+        expect(clock.nowTick(start)).toBe(observed);
+        expect(clock.nowTick(new Date(start.getTime() + 1))).toBe(observed + 20);
+        expect(clock.tickToWallDate(recovery.endTick)).toEqual(end);
+        expect(recovery.endTick % T).toBe(0);
+        expect(clock.nowTick(new Date(end.getTime() - 1))).toBe(recovery.endTick - 20);
+        expect(clock.nowTick(end)).toBe(clock.normalNowTick(end));
+        expect(clock.nowTick(new Date(end.getTime() + 1))).toBe(recovery.endTick + 10);
+        expect(clock.executionRate(new Date(end.getTime() - 1))).toBe(2);
+        expect(clock.executionRate(end)).toBe(1);
+    });
+
+    it.each([300, 3600, 6000, 7200])('uses the strict whole-delay threshold for a %i second turn', (turnSeconds) => {
+        const rate = T / turnSeconds;
+        const limitMs = Math.min(600, turnSeconds / 10) * 1000;
+        for (const delta of [-1, 0, 1]) {
+            const delayMs = limitMs + delta;
+            const normal = Math.trunc((delayMs * rate) / 1000);
+            const plan = planTurnRecovery({
+                observedTick: 0,
+                normalTick: normal,
+                wallNow: new Date(base + delayMs),
+                turnSeconds,
+            });
+            expect(plan.recovery === null).toBe(delta < 0);
+            expect(plan.initialTick).toBe(delta < 0 ? normal : 0);
+        }
+        // 장시간 중단의 작은 나머지에는 즉시 처리 예외를 다시 적용하지 않는다.
+        const long = planTurnRecovery({ observedTick: 0, normalTick: 12 * T + rate, wallNow: wall(20), turnSeconds });
+        expect(long.skippedTurns).toBe(12);
+        expect(long.initialTick).toBe(12 * T);
+        expect(long.recovery).not.toBeNull();
+    });
+
+    it('keeps integer ticks and deadline ordering for sub-millisecond phases', () => {
+        for (const turnSeconds of [300, 3600, 7200, 36000]) {
+            const rate = T / turnSeconds;
+            for (const observed of [1, T / 6 + 1, T - 1]) {
+                const now = wall(4);
+                const normal = observed + 4 * T + 1;
+                const plan = planTurnRecovery({
+                    observedTick: observed,
+                    normalTick: normal,
+                    wallNow: now,
+                    turnSeconds,
+                });
+                const recovery = plan.recovery!;
+                const clock = new GameClock({
+                    baseTime: wall(0),
+                    tick: observed,
+                    wallAnchor: recovery.startWallAt,
+                    mode: 'realtime',
+                    turnSeconds,
+                    recovery,
+                });
+                expect(recovery.startWallAt.getTime()).toBeGreaterThanOrEqual(now.getTime());
+                const end = clock.tickToWallDate(recovery.endTick);
+                expect(clock.nowTick(end)).toBe(recovery.endTick);
+                expect(clock.nowTick(new Date(end.getTime() - 1))).toBeLessThan(recovery.endTick);
+                expect(Math.abs(clock.normalNowTick(now) - normal)).toBeLessThanOrEqual(Math.ceil(rate / 1000));
+                for (const tick of [observed + 1, observed + T, recovery.endTick - 1, recovery.endTick + 1]) {
+                    const deadline = clock.tickToWallDate(tick);
+                    expect(clock.nowTick(deadline)).toBeGreaterThanOrEqual(tick);
+                    expect(clock.nowTick(new Date(deadline.getTime() - 1))).toBeLessThan(tick);
+                }
+            }
+        }
     });
 
     it('preserves purchased phase coordinates while projecting compressed wall deadlines', () => {

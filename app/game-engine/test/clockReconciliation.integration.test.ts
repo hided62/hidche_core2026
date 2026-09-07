@@ -29,6 +29,8 @@ describeIntegration('durable clock reconciliation', () => {
     const clean = async (): Promise<void> => {
         await redis.client.flushDb();
         await db.$transaction([
+            db.readModelOutbox.deleteMany(),
+            db.readModelRevision.deleteMany(),
             db.clockProjectionOutbox.deleteMany(),
             db.clockReconciliationParticipant.deleteMany(),
             db.clockSuspension.deleteMany(),
@@ -63,6 +65,66 @@ describeIntegration('durable clock reconciliation', () => {
 
     beforeEach(async () => {
         await clean();
+    });
+
+    it('accepts partial starts while rejecting incomplete and off-boundary DB windows', async () => {
+        const row = await db.worldState.create({
+            data: {
+                scenarioCode: 'constraint',
+                currentYear: 199,
+                currentMonth: 1,
+                tickSeconds: 3600,
+                clockRecoveryStartTick: 1n,
+                clockRecoveryEndTick: BigInt(T),
+                clockRecoveryStartWallAt: new Date(),
+            },
+        });
+        for (const data of [
+            { clockRecoveryStartWallAt: null },
+            { clockRecoveryEndTick: BigInt(T + 1) },
+            { clockRecoveryStartTick: BigInt(T) },
+            { clockRecoveryStartTick: 0n, clockRecoveryEndTick: BigInt(25 * T) },
+        ]) {
+            await expect(db.worldState.update({ where: { id: row.id }, data })).rejects.toThrow(
+                'world_state_turn_recovery_window_check'
+            );
+        }
+        expect((await db.worldState.findUniqueOrThrow({ where: { id: row.id } })).clockRecoveryStartTick).toBe(1n);
+    });
+
+    it.each([300, 420])('applies startup recovery after %i seconds on a 60-minute server', async (delay) => {
+        const profile = 'short-startup';
+        await db.worldState.create({
+            data: {
+                scenarioCode: profile,
+                currentYear: 199,
+                currentMonth: 1,
+                tickSeconds: 3600,
+                clockBaseTime: new Date('2026-01-01T00:00:00Z'),
+                clockTick: BigInt(T / 6),
+                clockWallAnchor: new Date(Date.now() - delay * 1000),
+                clockMode: 'realtime',
+                clockPhase: 'RUNNING',
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+                lastTurnTick: 0n,
+            },
+        });
+        const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, { profile, heartbeat: false });
+        try {
+            const token = (await lease.acquire())!;
+            await prepareRealtimeRecovery(db, {
+                kind: 'DAEMON',
+                profileName: profile,
+                ownerId: token.ownerId,
+                fencingEpoch: token.fencingEpoch,
+            });
+            const world = await db.worldState.findFirstOrThrow();
+            expect(world.clockPhase).toBe(delay < 360 ? 'RUNNING' : 'RECONCILING');
+            expect(readTurnRecovery(world) === null).toBe(delay < 360);
+        } finally {
+            await lease.close();
+        }
     });
 
     it.each([false, true])('fences outage recovery and reuses its window; repeated outage=%s', async (repeated) => {
@@ -115,7 +177,7 @@ describeIntegration('durable clock reconciliation', () => {
             expect(pending.clockPhase).toBe('RECONCILING');
             const recoveredWindow = readTurnRecovery(pending)!;
             expect(recoveredWindow).not.toBeNull();
-            expect(recoveredWindow.endTick - recoveredWindow.startTick).toBe((repeated ? 12 : 8) * T);
+            expect(recoveredWindow.endTick - recoveredWindow.startTick).toBe((repeated ? 13 : 9) * T);
             expect(await readTurnRuntimeReady(db, pending.clockRevision)).toBe(false);
             await applyNextClockProjection({ db, redis: redis.client, workerId: profile });
             await lease.markClockReady();
@@ -140,7 +202,7 @@ describeIntegration('durable clock reconciliation', () => {
     it.each([4, 12, 13, 23, 24])(
         'persists recovery for %i turns and reloads the same normal boundary',
         async (turns) => {
-            const now = new Date();
+            const now = new Date(Date.now() + 3_600_000);
             await db.worldState.create({
                 data: {
                     scenarioCode: 'turn-recovery',
@@ -214,6 +276,102 @@ describeIntegration('durable clock reconciliation', () => {
             const retry = await reconcileClockSuspension({ db, suspensionId: suspension.suspensionId, authority });
             expect(retry.recovery).toEqual(plan.recovery);
             expect(retry.catchUpTicks).toBe(plan.catchUpTicks);
+            expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'retry' })).toBe('IDLE');
+            const announcements = await db.message.findMany({ where: { mailbox: 9999 } });
+            expect(announcements).toHaveLength(recovery ? 1 : 0);
+            if (recovery) {
+                expect(announcements[0]!.message).toMatchObject({
+                    src: { generalName: '시스템' },
+                    option: {
+                        recoveryStartsAt: recovery.startWallAt.toISOString(),
+                        recoveryEndsAt: reloaded.tickToWallDate(recovery.endTick).toISOString(),
+                    },
+                });
+                expect(await db.messageAction.count()).toBe(0);
+                expect(
+                    await db.readModelRevision.findFirst({ where: { domain: 'messages.mailbox', entityId: 9999 } })
+                ).toMatchObject({ revision: 1n });
+            }
+        }
+    );
+
+    it.each([359999, 360000, 360001, 840000, 12 * 3600000 + 1000])(
+        'persists strict recovery boundaries for %i ms',
+        async (gap) => {
+            const observed = T / 6;
+            const future = new Date(Date.now() + 3600000);
+            await db.worldState.create({
+                data: {
+                    scenarioCode: 'wait-boundary',
+                    currentYear: 199,
+                    currentMonth: 1,
+                    tickSeconds: 3600,
+                    clockBaseTime: new Date('2026-01-01T00:00:00Z'),
+                    clockTick: BigInt(observed),
+                    clockMode: 'realtime',
+                    clockWallAnchor: future,
+                    lastTurnTick: 0n,
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    deadlineGeneration: 1n,
+                },
+            });
+            const authority = { kind: 'OFFLINE' as const, profileName: 'wait-boundary', reason: 'fixture' };
+            const suspension = await startClockSuspension({
+                db,
+                suspensionId: 'wait-boundary',
+                source: 'MAINTENANCE',
+                policy: 'RECOVER_TURNS',
+                authority,
+            });
+            const now = new Date(suspension.cutWallAt.getTime() + gap);
+            const plan = await reconcileClockSuspension({
+                db,
+                suspensionId: suspension.suspensionId,
+                authority,
+                testResumeWallAt: now,
+            });
+            expect(plan.recovery === null).toBe(gap < 360000);
+            expect(await db.message.count()).toBe(0);
+            // Redis 장애 후에도 알림은 DB의 RUNNING 전이와 함께 한 번만 저장한다.
+            await expect(
+                applyNextClockProjection({
+                    db,
+                    workerId: 'failure',
+                    redis: {
+                        get: (key) => redis.client.get(key),
+                        eval: async (script, options) => {
+                            await redis.client.eval(script, options);
+                            throw new Error('fixture Redis outage');
+                        },
+                    },
+                })
+            ).rejects.toThrow('fixture Redis outage');
+            expect(await db.message.count()).toBe(0);
+            await db.clockProjectionOutbox.updateMany({ data: { availableAt: new Date(0) } });
+            expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'retry' })).toBe('RECOVERED');
+            const row = await db.worldState.findFirstOrThrow();
+            const recovery = readTurnRecovery(row);
+            expect(await db.message.count()).toBe(recovery ? 1 : 0);
+            const clock = new GameClock({
+                baseTime: row.clockBaseTime!,
+                tick: Number(row.clockTick),
+                wallAnchor: row.clockWallAnchor!,
+                turnSeconds: row.tickSeconds,
+                mode: 'realtime',
+                recovery,
+            });
+            if (recovery) {
+                expect(row.clockWallAnchor).toEqual(recovery.startWallAt);
+                expect(clock.nowTick(now)).toBe(observed + plan.shiftTicks);
+                expect(clock.nowTick(new Date(recovery.startWallAt.getTime() - 1))).toBe(observed + plan.shiftTicks);
+                const end = clock.tickToWallDate(recovery.endTick);
+                expect(clock.nowTick(end)).toBe(clock.normalNowTick(end));
+            } else {
+                expect(clock.nowTick(now)).toBe(observed + gap * 10);
+            }
+            expect(await applyNextClockProjection({ db, redis: redis.client, workerId: 'done' })).toBe('IDLE');
+            expect(await db.message.count()).toBe(recovery ? 1 : 0);
         }
     );
 

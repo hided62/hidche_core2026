@@ -6247,8 +6247,8 @@ for (const viewport of [
     { width: 1200, height: 900 },
     { width: 390, height: 844 },
 ]) {
-    test(`turn recovery returns to normal speed at the boundary (${viewport.width}px)`, async ({ page }) => {
-        const start = new Date('2026-09-06T07:59:50Z');
+    test(`turn recovery waits then accelerates and returns to normal speed (${viewport.width}px)`, async ({ page }) => {
+        const start = new Date('2026-09-06T07:59:45Z');
         await page.clock.install({ time: start });
         await page.setViewportSize(viewport);
         const state: NavigationFixture = {
@@ -6262,15 +6262,18 @@ for (const viewport of [
             serverTime: '2026-09-06T07:59:40Z',
             serverWallTime: start.toISOString(),
             clockMode: 'realtime',
-            clockRunning: true,
+            clockRunning: false,
+            clockStartsAt: '2026-09-06T07:59:50Z',
             turnEngineRunning: true,
-            clockRecovery: { startsAt: '2026-09-06T04:00:00Z', endsAt: '2026-09-06T08:00:00Z' },
+            clockRecovery: { startsAt: '2026-09-06T07:59:50Z', endsAt: '2026-09-06T08:00:00Z' },
         };
         await installFixture(page, state);
         await page.goto('./');
         await expect(page.locator('.game-shell__title')).toBeVisible({ timeout: 15_000 });
         await page.evaluate(() => document.fonts.ready);
         const status = page.locator('.execution-status:visible');
+        await expect(status).not.toContainText('복구 2배속');
+        await page.clock.runFor(5_000);
         await expect(status).toContainText('복구 2배속');
         const root = process.env.TURN_RECOVERY_ARTIFACT_DIR;
         const measure = () =>
@@ -6288,7 +6291,7 @@ for (const viewport of [
             await mkdir(root, { recursive: true });
             await page.screenshot({ path: resolve(root, `recovering-${viewport.width}.png`), fullPage: true });
         }
-        await page.clock.runFor(20_000);
+        await page.clock.runFor(10_000);
         await expect(status).not.toContainText('복구 2배속');
         await expect(status).toContainText('17:00');
         const after = await measure();

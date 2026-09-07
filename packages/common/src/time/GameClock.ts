@@ -241,6 +241,7 @@ export const buildClockAlignmentPlan = (input: {
             catchUpTicks: asGameTick(Math.max(0, (input.normalTick ?? exact.alignedTick) - input.cutTick - shiftTicks)),
             alignedTick: recovery.initialTick,
             recovery: recovery.recovery,
+            ...(recovery.recovery ? { resumeAnchor: recovery.recovery.startWallAt } : {}),
             ...(recovery.initialTick > (input.normalTick ?? exact.alignedTick)
                 ? {
                       resumeAnchor: new Date(
@@ -380,8 +381,8 @@ export class GameClock {
     normalNowTick(wallNow: Date): number {
         if (this.recovery) {
             return this.addTicks(
-                (this.recovery.startTick + this.recovery.endTick) / 2,
-                this.ticksBetween(this.recovery.startWallAt, wallNow)
+                this.recovery.endTick,
+                this.ticksBetween(this.tickToWallDate(this.recovery.endTick), wallNow)
             );
         }
         return this.addTicks(this.tick, this.ticksBetween(this.wallAnchor, wallNow));

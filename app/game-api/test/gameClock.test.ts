@@ -53,6 +53,47 @@ describe('current game time projection', () => {
         });
     });
 
+    it('exposes waiting, 2x and normal speed boundaries from a reloaded recovery', async () => {
+        const db = {
+            worldState: {
+                findFirst: vi.fn(async () => ({
+                    clockBaseTime: new Date('2026-09-07T00:00:00Z'),
+                    clockTick: 6000000n,
+                    clockMode: 'realtime',
+                    clockWallAnchor: new Date('2026-09-07T00:35:00Z'),
+                    tickSeconds: 3600,
+                    clockPhase: 'RUNNING',
+                    clockRevision: 2n,
+                    deadlineGeneration: 2n,
+                    clockRecoveryStartTick: 6000000n,
+                    clockRecoveryEndTick: 36000000n,
+                    clockRecoveryStartWallAt: new Date('2026-09-07T00:35:00Z'),
+                })),
+            },
+            $queryRaw: vi.fn(async () => [{ ready: true }]),
+        } as unknown as DatabaseClient;
+        for (const now of ['00:24:00', '00:34:59.999']) {
+            expect(await loadCurrentGameTime(db, new Date(`2026-09-07T${now}Z`))).toMatchObject({
+                tick: 6000000,
+                running: false,
+                startsAt: new Date('2026-09-07T00:35:00Z'),
+                recovery: { startsAt: '2026-09-07T00:35:00.000Z', endsAt: '2026-09-07T01:00:00.000Z' },
+            });
+        }
+        expect(await loadCurrentGameTime(db, new Date('2026-09-07T00:35:00.001Z'))).toMatchObject({
+            tick: 6000020,
+            running: true,
+            startsAt: null,
+        });
+        expect(await loadCurrentGameTime(db, new Date('2026-09-07T00:59:59.999Z'))).toMatchObject({ tick: 35999980 });
+        expect(await loadCurrentGameTime(db, new Date('2026-09-07T01:00:00Z'))).toMatchObject({
+            tick: 36000000,
+            running: true,
+            recovery: null,
+        });
+        expect(await loadCurrentGameTime(db, new Date('2026-09-07T01:00:00.001Z'))).toMatchObject({ tick: 36000010 });
+    });
+
     it('holds an invader restart until its future turn boundary', async () => {
         const db = buildDatabase('realtime', 'RUNNING');
         const result = await loadCurrentGameTime(db, new Date('2026-08-21T10:59:59Z'));
