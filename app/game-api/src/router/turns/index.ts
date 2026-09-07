@@ -17,6 +17,7 @@ import {
     assertReservedTurnActionAvailable,
     assertReservedTurnArgsPassLegacyBasicValidation,
     buildEquipmentTradeItemOptions,
+    loadEquipmentTradeItemOrder,
     parseReservedTurnArgs,
     TURN_COMMAND_NATION_COLORS,
     type TurnCommandInputOptions,
@@ -272,6 +273,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         traits,
         moduleBundle,
         map,
+        itemOrder,
     ] = await Promise.all([
         general.cityId > 0
             ? ctx.db.city.findUnique({
@@ -330,6 +332,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         loadBattleSimTraitOptions(),
         moduleBundlePromise,
         loadMapDefinitionByName(resolveMapName(worldState, ctx.profile.id)),
+        loadEquipmentTradeItemOrder(worldState.scenarioCode),
     ]);
 
     const nationById = new Map(nations.map((entry) => [entry.id, entry]));
@@ -383,6 +386,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         troopNames: new Map(troops.map((entry) => [entry.troopLeaderId, entry.name])),
     });
     const items = buildEquipmentTradeItemOptions({
+        itemOrder,
         configConst: asRecord(asRecord(worldState.config).const),
         itemModules: moduleBundle.itemModules,
         currentSecurity: city?.security ?? 0,

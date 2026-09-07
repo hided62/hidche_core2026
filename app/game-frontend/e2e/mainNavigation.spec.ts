@@ -2,7 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 
-import { buildEquipmentTradeItemOptions } from '../../game-api/src/turns/commandInput.js';
+import { buildEquipmentTradeItemOptions, loadEquipmentTradeItemOrder } from '../../game-api/src/turns/commandInput.js';
+import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
+import { ITEM_KEYS, loadItemModules } from '@sammo-ts/logic/items/index.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const runtimeNavigation = JSON.parse(
@@ -5130,6 +5132,80 @@ for (const viewport of [
     { name: 'desktop', width: 1200, height: 900 },
     { name: 'mobile', width: 500, height: 900 },
 ] as const) {
+    test(`preserves scenario JSON equipment purchase order on ${viewport.name}`, async ({ page }) => {
+        const scenario = await loadScenarioDefinitionById(2701);
+        const modules = await loadItemModules([...ITEM_KEYS]);
+        const pool = scenario.config.const.allItems as Record<string, Record<string, number>>;
+        const expectedKeys = Object.keys(pool.item!).filter(
+            (key) => pool.item![key]! <= 0 && modules.some((item) => item.key === key && item.buyable)
+        );
+        const items = buildEquipmentTradeItemOptions({
+            configConst: {
+                allItems: Object.fromEntries(
+                    Object.entries(pool).map(([slot, entries]) => [
+                        slot,
+                        Object.fromEntries(Object.entries(entries).reverse()),
+                    ])
+                ),
+            },
+            itemOrder: await loadEquipmentTradeItemOrder('2701'),
+            itemModules: modules,
+            currentSecurity: 5000,
+            generalGold: 100000,
+            ownedItems: { horse: null, weapon: null, book: null, item: null },
+        });
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            draftCommandTable: true,
+            equipmentItemOptions: items.item.map((option) => ({ ...option, value: String(option.value) })),
+            reservedTurns: Array.from({ length: 30 }, (_, index) => ({ index, action: '휴식', args: {} })),
+        };
+        await installFixture(page, state);
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await waitForMain(page);
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '국가', exact: true }).click();
+        await picker.getByRole('button', { name: '장비 매매', exact: true }).click();
+        await picker.getByLabel('장비 종류', { exact: true }).selectOption('item');
+        const equipment = picker.getByLabel('장비', { exact: true });
+        await equipment.click();
+        await equipment.press('Escape');
+        expect(
+            await equipment
+                .locator('option')
+                .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))
+        ).toEqual(['None', ...expectedKeys]);
+        await expect(equipment.locator('option').nth(1)).toHaveText('환약(치료)');
+        await equipment.selectOption('che_훈련_청주');
+        await equipment.focus();
+        await expect(equipment).toBeFocused();
+        await page.evaluate(() => document.fonts.ready);
+        const artifact = await equipment.evaluate((element) => ({
+            rect: element.getBoundingClientRect().toJSON(),
+            font: getComputedStyle(element).font,
+            color: getComputedStyle(element).color,
+            html: element.outerHTML,
+            selected: (element as HTMLSelectElement).value,
+            documentWidth: document.documentElement.scrollWidth,
+        }));
+        expect(artifact.documentWidth).toBeLessThanOrEqual(viewport.width);
+        await writeFile(
+            test.info().outputPath(`equipment-order-${viewport.name}.json`),
+            JSON.stringify(artifact, null, 2)
+        );
+        await picker.screenshot({ path: test.info().outputPath(`equipment-order-${viewport.name}.png`) });
+        const request = page.waitForRequest((entry) => entry.url().includes('turns.reserved.setGeneral'));
+        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        expect(JSON.stringify((await request).postDataJSON())).toContain('"itemCode":"che_훈련_청주"');
+    });
+
     test(`reserves owned unique equipment sales and preserves the slot brief on ${viewport.name}`, async ({ page }) => {
         const items = buildEquipmentTradeItemOptions({
             configConst: {},

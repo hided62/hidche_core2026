@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
     assertReservedTurnArgsPassLegacyBasicValidation,
     buildEquipmentTradeItemOptions,
+    loadEquipmentTradeItemOrder,
     buildTurnCommandInputFields,
     parseReservedTurnArgs,
     sanitizeReservedTurnArgs,
@@ -222,6 +223,58 @@ describe('turn command argument input', () => {
         );
     });
 
+    it('preserves scenario order while filtering unavailable catalog entries in every slot', () => {
+        for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
+            const items = buildEquipmentTradeItemOptions({
+                configConst: {
+                    allItems: { [slot]: { z_last_code: 0, missing: 0, unique: 1, blocked: 0, a_first_code: -1 } },
+                },
+                itemModules: [
+                    { ...buildShopItem('a_first_code', '첫 코드'), slot },
+                    { ...buildShopItem('z_last_code', '마지막 코드'), slot },
+                    { ...buildShopItem('unique', '유니크'), slot },
+                    { ...buildShopItem('blocked', '비매품'), slot, buyable: false },
+                ],
+                currentSecurity: 5000,
+                generalGold: 1000,
+                ownedItems: { horse: null, weapon: null, book: null, item: null },
+            });
+            expect(items[slot].map((item) => item.value)).toEqual(['None', 'z_last_code', 'a_first_code']);
+        }
+    });
+
+    it('restores original scenario order after DB key reordering without restoring removed purchase permissions', async () => {
+        const scenario = await loadScenarioDefinitionById(2701);
+        const pool = scenario.config.const.allItems as Record<string, Record<string, number>>;
+        const originalKeys = Object.keys(pool.item!);
+        const buyableKeys = originalKeys.filter((key) => pool.item![key]! <= 0);
+        const removedKey = buyableKeys[1]!;
+        const reorderedPool = Object.fromEntries(Object.entries(pool.item!).reverse());
+        reorderedPool[removedKey] = 1;
+        reorderedPool.runtime_added = 0;
+        const items = buildEquipmentTradeItemOptions({
+            configConst: { allItems: { item: reorderedPool } },
+            itemOrder: await loadEquipmentTradeItemOrder('scenario_2701.json'),
+            itemModules: [...buyableKeys]
+                .reverse()
+                .concat('runtime_added')
+                .map((key) => buildShopItem(key, key)),
+            currentSecurity: 5000,
+            generalGold: 1000,
+            ownedItems: { horse: null, weapon: null, book: null, item: null },
+        });
+        expect(items.item.map((item) => item.value)).toEqual([
+            'None',
+            ...buyableKeys.filter((key) => key !== removedKey),
+            'runtime_added',
+        ]);
+        expect((await loadEquipmentTradeItemOrder('1'))?.filter((key) => key.startsWith('che_치료'))).toEqual([
+            'che_치료_환약',
+        ]);
+        expect(await loadEquipmentTradeItemOrder('unknown')).toBeUndefined();
+        expect(await loadEquipmentTradeItemOrder('999999')).toBeUndefined();
+    });
+
     it('keeps owned unique equipment sales outside the purchase pool in every slot', async () => {
         for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
             const owned = { ...buildShopItem('owned_unique', '보유 유니크'), slot, buyable: false, cost: 10001 };
@@ -245,12 +298,28 @@ describe('turn command argument input', () => {
         const items = buildEquipmentTradeItemOptions({
             ownedItems: { horse: null, weapon: null, book: null, item: null },
             configConst: {},
-            itemModules: [buildShopItem('che_치료_환약', '환약'), buildShopItem('event_전투특기_격노', '격노의 비급')],
+            itemModules: [
+                buildShopItem('event_전투특기_격노', '격노의 비급'),
+                buildShopItem('che_계략_향낭', '향낭'),
+                buildShopItem('che_계략_이추', '이추'),
+                buildShopItem('che_훈련_청주', '청주'),
+                buildShopItem('che_사기_탁주', '탁주'),
+                buildShopItem('che_저격_수극', '수극'),
+                buildShopItem('che_치료_환약', '환약'),
+            ],
             currentSecurity: 5000,
             generalGold: 1000,
         });
 
-        expect(items.item.map((item) => item.value)).toEqual(['None', 'che_치료_환약']);
+        expect(items.item.map((item) => item.value)).toEqual([
+            'None',
+            'che_치료_환약',
+            'che_저격_수극',
+            'che_사기_탁주',
+            'che_훈련_청주',
+            'che_계략_이추',
+            'che_계략_향낭',
+        ]);
         expect(items.item[1]?.description).toBe('현재 구입 가능 · 가격 100 · 환약 · 설명');
     });
 
