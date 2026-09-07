@@ -1,3 +1,4 @@
+import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
 import { ActionLogger, ItemLoader, LogFormat, isItemKey, type MessageDraft } from '@sammo-ts/logic';
 import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
@@ -124,7 +125,7 @@ export const buildAuctionBidderSystemMessage = (options: {
         nationId: options.bidder.nationId,
         nationName: options.nation?.name ?? '재야',
         color: options.nation?.color ?? '#000000',
-        icon: options.bidder.picture ?? '',
+        icon: resolveMessageTargetIcon(options.bidder),
     },
     text: options.text,
     time: new Date(options.time.getTime()),

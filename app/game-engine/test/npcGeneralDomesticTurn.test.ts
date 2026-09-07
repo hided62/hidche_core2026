@@ -105,6 +105,8 @@ describe('NPC 일반 내정 턴', () => {
             {
                 id: 1,
                 name: 'NPC_무장',
+                picture: '롤시나리오/다이애나.png',
+                imageServer: 0,
                 nationId: 1,
                 cityId: 1,
                 troopId: 0,
@@ -297,7 +299,12 @@ describe('NPC 일반 내정 턴', () => {
             expect.objectContaining({
                 msgType: 'public',
                 text: '기부는 저처럼 돈 많은 사람들이 많이 하면 됩니다',
-                src: expect.objectContaining({ generalId: 1, generalName: 'NPC_무장', nationId: 1 }),
+                src: expect.objectContaining({
+                    generalId: 1,
+                    generalName: 'NPC_무장',
+                    nationId: 1,
+                    icon: 'https://sam-image.hided.net/icons/롤시나리오/다이애나.png',
+                }),
                 time: logicalGameNow,
             })
         );

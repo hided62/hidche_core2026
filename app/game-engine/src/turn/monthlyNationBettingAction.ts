@@ -1,3 +1,4 @@
+import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -127,7 +128,7 @@ export const createOpenNationBettingHandler = (options: {
                     nationId: general.nationId,
                     nationName: nation?.name ?? '재야',
                     color: nation?.color ?? '#000000',
-                    icon: general.picture ?? '',
+                    icon: resolveMessageTargetIcon(general),
                 },
                 text,
                 time: now,

@@ -7,8 +7,6 @@ const DEFAULT_NATION = {
     color: '#000000',
 };
 
-const DEFAULT_SHARED_ICON_PUBLIC_URL = 'https://sam-image.hided.net/icons';
-
 export const resolveNationInfo = async (
     db: DatabaseClient,
     nationId: number
@@ -25,14 +23,13 @@ export const resolveNationInfo = async (
 
 export const buildTargetFromGeneral = async (db: DatabaseClient, general: GeneralRow): Promise<MessageTarget> => {
     const nation = await resolveNationInfo(db, general.nationId);
-    const picture = general.picture?.trim() || 'default.jpg';
     return {
         generalId: general.id,
         generalName: general.name,
         nationId: general.nationId,
         nationName: nation.name,
         color: nation.color,
-        icon: general.imageServer ? `d_pic/${picture}` : `${DEFAULT_SHARED_ICON_PUBLIC_URL}/${picture}`,
+        icon: resolveMessageTargetIcon({ picture: general.picture, imageServer: general.imageServer }),
     };
 };
 

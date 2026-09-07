@@ -4,7 +4,6 @@ import {
     DEFAULT_USER_ICON_PUBLIC_URL,
     externalizeLegacyImageUrl,
 } from './imageAssets.ts';
-import { gameFrontendRuntimeConfig } from '../config/runtimeConfig.ts';
 
 export const DEFAULT_GENERAL_ICON_URL = `${configuredSharedIconPublicUrl()}/default.jpg`;
 export const DEFAULT_GATEWAY_USER_ICON_BASE_URL = DEFAULT_USER_ICON_PUBLIC_URL;
@@ -69,7 +68,8 @@ export const resolveMessageGeneralIconUrl = (
     if (normalized.startsWith('/') || /^https?:\/\//iu.test(normalized)) {
         return normalized;
     }
-    return `${gameFrontendRuntimeConfig.appBasePath}${normalized.replace(/^\/+/u, '')}`;
+    // 기존 NPC 대사와 알림에는 URL 대신 picture 상대 경로가 저장되어 있다.
+    return resolveGeneralIconUrl({ picture: normalized, imageServer: 0 });
 };
 
 export const useDefaultGeneralIcon = (event: Event): void => {

@@ -1,3 +1,4 @@
+import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
 import {
@@ -246,7 +247,7 @@ const cancelPendingUniqueAuctions = async (
                     nationId: bidder.nationId,
                     nationName: nation?.name ?? '재야',
                     color: nation?.color ?? '#000000',
-                    icon: bidder.picture ?? '',
+                    icon: resolveMessageTargetIcon(bidder),
                 },
                 text: `${planned.auctionId}번 ${planned.title}가 취소되었습니다.`,
                 time: input.completedAt,

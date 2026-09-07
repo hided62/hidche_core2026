@@ -6302,3 +6302,89 @@ for (const viewport of [
         }
     });
 }
+
+for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 390, height: 844 },
+]) {
+    test(`NPC message portraits resolve stored and new scenario icons at ${viewport.width}px`, async ({
+        page,
+    }, testInfo) => {
+        const picture = '롤시나리오/다이애나.png';
+        const iconUrl = `https://sam-image.hided.net/icons/${picture.split('/').map(encodeURIComponent).join('/')}`;
+        const asset = await readFile(resolve(process.cwd(), '../../../image/icons', picture));
+        const defaultAsset = await readFile(resolve(process.cwd(), '../../../image/icons/default.jpg'));
+        const state: NavigationFixture = {
+            officerLevel: 1,
+            permission: 0,
+            nationLevel: 1,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            messages: {
+                ...emptyMessages(0),
+                public: [picture, `https://sam-image.hided.net/icons/${picture}`, ''].map((icon, index) => ({
+                    id: 801 + index,
+                    text: '새로운 달이 떠오르고 있다.',
+                    time: '2026-09-07 12:00:00',
+                    msgType: 'public',
+                    src: {
+                        generalId: 22 + index,
+                        generalName: index === 2 ? '유저' : '다이애나',
+                        nationId: 1,
+                        nationName: '위',
+                        color: '#008000',
+                        icon,
+                    },
+                    dest: null,
+                    option: {},
+                })),
+            },
+        };
+        await installFixture(page, state);
+        await page.route('https://sam-image.hided.net/icons/**', (route) =>
+            route.fulfill({
+                contentType: route.request().url() === iconUrl ? 'image/png' : 'image/jpeg',
+                body: route.request().url() === iconUrl ? asset : defaultAsset,
+            })
+        );
+        await page.setViewportSize(viewport);
+        await waitForMain(page);
+        const measurements = [];
+        for (const id of [801, 802, 803]) {
+            const icon = page.locator(`.msg-plate[data-id="${id}"]:visible img.general-icon`).first();
+            await expect(icon).toBeVisible();
+            await expect
+                .poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth))
+                .toBe(id === 803 ? 64 : 128);
+            const result = await icon.evaluate((element) => {
+                const image = element as HTMLImageElement;
+                const rect = image.getBoundingClientRect();
+                return {
+                    src: image.src,
+                    width: rect.width,
+                    height: rect.height,
+                    naturalWidth: image.naturalWidth,
+                    naturalHeight: image.naturalHeight,
+                    objectFit: getComputedStyle(image).objectFit,
+                };
+            });
+            expect(result.src).toBe(id === 803 ? 'https://sam-image.hided.net/icons/default.jpg' : iconUrl);
+            expect(result.width).toBe(64);
+            expect(result.height).toBe(64);
+            measurements.push(result);
+        }
+        await page.reload();
+        await expect(page.locator('.msg-plate[data-id="801"]:visible img').first()).toHaveAttribute('src', iconUrl);
+        await writeFile(testInfo.outputPath('icon-geometry.json'), JSON.stringify({ viewport, measurements }, null, 2));
+        await writeFile(
+            testInfo.outputPath('messages.html'),
+            await page
+                .locator('.msg-plate[data-id="801"]:visible')
+                .first()
+                .evaluate((el) => el.outerHTML)
+        );
+        await page.screenshot({ path: testInfo.outputPath('npc-message-icons.png'), fullPage: true });
+    });
+}

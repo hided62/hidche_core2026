@@ -1,3 +1,4 @@
+import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { randomUUID } from 'node:crypto';
 
 import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
@@ -106,7 +107,7 @@ export const buildAuctionOutbidRefundMessage = (options: {
         nationId: options.bidder.nationId,
         nationName: options.nation?.name ?? '재야',
         color: options.nation?.color ?? '#000000',
-        icon: options.bidder.picture ?? '',
+        icon: resolveMessageTargetIcon(options.bidder),
     },
     text: `${options.auctionId}번 ${options.title ?? '경매'}에 상회입찰자가 나타났습니다.`,
     time: new Date(options.time.getTime()),
