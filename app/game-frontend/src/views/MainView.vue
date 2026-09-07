@@ -321,7 +321,7 @@ watch(
                 <strong>설문조사 안내</strong>
                 <button type="button" aria-label="설문조사 알림 닫기" @click="dashboard.dismissSurveyNotice">×</button>
             </div>
-            <RouterLink to="/survey">새로운 설문조사가 있습니다.</RouterLink>
+            <RouterLink to="/survey" target="_blank" rel="noopener noreferrer">새로운 설문조사가 있습니다.</RouterLink>
         </aside>
 
         <aside
@@ -1133,7 +1133,7 @@ button {
 
     .survey-notice {
         z-index: 90;
-        bottom: 16px;
+        bottom: 61px;
     }
 
     .private-message-notice {

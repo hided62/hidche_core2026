@@ -132,7 +132,7 @@ onUnmounted(() => {
                 </RouterLink>
             </div>
             <div class="status-row vote-status">
-                <RouterLink v-if="status?.latestVote" to="/survey">
+                <RouterLink v-if="status?.latestVote" to="/survey" target="_blank" rel="noopener noreferrer">
                     <span class="vote-label">설문: </span>{{ status.latestVote.title }}
                 </RouterLink>
                 <span v-else class="vote-empty">설문: 진행 중인 설문 없음</span>

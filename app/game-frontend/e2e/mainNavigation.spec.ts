@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
+import { expect, test, type BrowserContext, type Locator, type Page, type Route } from '@playwright/test';
 
 import { buildEquipmentTradeItemOptions, loadEquipmentTradeItemOrder } from '../../game-api/src/turns/commandInput.js';
 import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
@@ -554,7 +554,7 @@ const generalContext = (state: NavigationFixture) => ({
     penalties: {},
 });
 
-const installFixture = async (page: Page, state: NavigationFixture) => {
+const installFixture = async (page: Page | BrowserContext, state: NavigationFixture) => {
     await page.addInitScript(
         ({ profile }) => {
             localStorage.setItem('sammo-game-token', 'ga_navigation');
@@ -625,6 +625,8 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
         }
         const results = operations.map((operation, index) => {
             if (operation === 'auth.status') return response({ ok: true });
+            if (operation === 'vote.getVoteList') return response({ polls: [], voteReward: 150 });
+            if (operation === 'vote.getAdminStatus') return response({ ok: false });
             if (operation === 'lobby.info') {
                 return response({
                     myGeneral: { id: 7, name: '메뉴검증장수' },
@@ -1280,59 +1282,89 @@ test('keeps the survey footer close button the same size as the top close button
     }
 });
 
-test('closes the survey popup from both close buttons without navigating the opener', async ({ page }, testInfo) => {
-    const state: NavigationFixture = {
-        officerLevel: 0,
-        permission: 0,
-        nationLevel: 0,
-        stage: 0,
-        npcMode: 1,
-        generalMeCalls: 0,
-        operations: [],
-    };
-    await installFixture(page, state);
-    await waitForMain(page);
-    const openerUrl = page.url();
-    for (const width of [1000, 500]) {
-        for (const bar of ['back_bar', 'bottom_bar']) {
-            const popupPromise = page.waitForEvent('popup');
-            await page.evaluate(() => window.open('about:blank', '_blank'));
-            const popup = await popupPromise;
-            await installFixture(popup, state);
-            await popup.setViewportSize({ width, height: 900 });
-            await popup.goto(`${basePath}/survey`);
-            const button = popup.locator(`.${bar} .back_btn`);
-            await expect(button).toHaveText('창 닫기');
-            await popup.evaluate(() => document.fonts.ready);
-            await button.focus();
-            await expect(button).toBeFocused();
-            await button.hover();
-            const artifactName = `survey-close-${width}-${bar}`;
-            await popup.screenshot({ path: testInfo.outputPath(`${artifactName}.png`), fullPage: true });
-            await writeFile(
-                testInfo.outputPath(`${artifactName}.html`),
-                await popup.locator('.pageVote').evaluate((el) => el.outerHTML)
-            );
-            await writeFile(
-                testInfo.outputPath(`${artifactName}.json`),
-                JSON.stringify(
-                    await button.evaluate((el) => ({
-                        rect: el.getBoundingClientRect().toJSON(),
-                        style: { height: getComputedStyle(el).height, font: getComputedStyle(el).font },
-                    })),
-                    null,
-                    2
-                )
-            );
-            const closed = popup.waitForEvent('close');
-            await button.click();
-            await closed;
-            expect(popup.isClosed()).toBe(true);
-            expect(page.isClosed()).toBe(false);
-            expect(page.url()).toBe(openerUrl);
+for (const entry of ['menu', 'status', 'notice'] as const) {
+    test(`closes the survey popup opened from ${entry} without navigating the opener`, async ({
+        page,
+        context,
+    }, testInfo) => {
+        const state: NavigationFixture = {
+            officerLevel: 0,
+            permission: 0,
+            nationLevel: 0,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+        };
+        await installFixture(context, state);
+        await waitForMain(page);
+        const openerUrl = page.url();
+        for (const width of [1000, 500]) {
+            await page.setViewportSize({ width, height: 900 });
+            for (const bar of ['back_bar', 'bottom_bar']) {
+                const link =
+                    entry === 'menu'
+                        ? page.locator('[data-menu-position="top"] [data-navigation-id="survey"]')
+                        : entry === 'status'
+                          ? page.locator('.vote-status a')
+                          : page.locator('.survey-notice a');
+                if (entry === 'notice' && width === 500) {
+                    const noticeRect = await page.locator('.survey-notice').boundingBox();
+                    const menuRect = await page.locator('.main-mobile-bottom').boundingBox();
+                    expect(noticeRect!.y + noticeRect!.height).toBeLessThanOrEqual(menuRect!.y - 16);
+                    await page.screenshot({ path: testInfo.outputPath(`survey-notice-${width}-${bar}.png`) });
+                    await writeFile(
+                        testInfo.outputPath(`survey-notice-${width}-${bar}.json`),
+                        JSON.stringify({ noticeRect, menuRect }, null, 2)
+                    );
+                }
+                const popupPromise = page.waitForEvent('popup', { timeout: 5_000 });
+                await link.click();
+                const popup = await popupPromise;
+                await popup.waitForLoadState('domcontentloaded');
+                await popup.setViewportSize({ width, height: 900 });
+                await expect(popup).toHaveURL(`${basePath}/survey`);
+                expect(await popup.evaluate(() => window.opener === null)).toBe(true);
+                if (bar === 'bottom_bar') await popup.reload();
+                const button = popup.locator(`.${bar} .back_btn`);
+                await expect(button).toHaveText('창 닫기');
+                await popup.evaluate(() => document.fonts.ready);
+                await button.focus();
+                await expect(button).toBeFocused();
+                await button.hover();
+                const artifactName = `survey-close-${width}-${bar}`;
+                await popup.screenshot({ path: testInfo.outputPath(`${artifactName}.png`), fullPage: true });
+                await writeFile(
+                    testInfo.outputPath(`${artifactName}.html`),
+                    await popup.locator('.pageVote').evaluate((el) => el.outerHTML)
+                );
+                await writeFile(
+                    testInfo.outputPath(`${artifactName}.json`),
+                    JSON.stringify(
+                        await button.evaluate((el) => ({
+                            rect: el.getBoundingClientRect().toJSON(),
+                            openerIsNull: window.opener === null,
+                            historyLength: window.history.length,
+                            documentWidth: document.documentElement.scrollWidth,
+                            style: { height: getComputedStyle(el).height, font: getComputedStyle(el).font },
+                        })),
+                        null,
+                        2
+                    )
+                );
+                const closed = popup.waitForEvent('close');
+                // 실제 창이 닫히면 click 응답보다 CDP target 종료가 먼저 도착할 수 있다.
+                await button.click().catch((error: unknown) => {
+                    if (!popup.isClosed()) throw error;
+                });
+                await closed;
+                expect(popup.isClosed()).toBe(true);
+                expect(page.isClosed()).toBe(false);
+                expect(page.url()).toBe(openerUrl);
+            }
         }
-    }
-});
+    });
+}
 
 test('notifies only for a new incoming private message and marks it read from the notice', async ({
     page,
