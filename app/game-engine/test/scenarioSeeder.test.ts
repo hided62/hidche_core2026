@@ -1,3 +1,4 @@
+import { GameClock } from '@sammo-ts/common';
 import { createGamePostgresConnector } from '@sammo-ts/infra';
 import { describe, expect, test } from 'vitest';
 import { resolveDatabaseUrl } from '../src/scenario/databaseUrl.js';
@@ -94,6 +95,99 @@ const canRun = await canConnectToDatabase(databaseUrl);
 const describeDb = describe.runIf(canRun);
 
 describeDb('scenario database seed', () => {
+    test.each([
+        { sync: true, turnMinutes: 60, hour: 10, month: 10, yearOffset: -1 },
+        { sync: true, turnMinutes: 60, hour: 1, month: 1, yearOffset: 0 },
+        { sync: true, turnMinutes: 60, hour: 13, month: 1, yearOffset: 0 },
+        { sync: false, turnMinutes: 60, hour: 10, month: 1, yearOffset: 0 },
+        { sync: true, turnMinutes: 5, hour: 10, month: 7, yearOffset: -1 },
+    ])(
+        'preserves exact opening and its calendar: $sync / $hour / $turnMinutes',
+        async ({ sync, hour, month, yearOffset, turnMinutes }) => {
+            const openAt = new Date(2030, 0, 1, hour, 30, 15, 123);
+            const preopenAt = new Date(openAt.getTime() - 90 * 60_000);
+            const scenario = await loadScenarioDefinitionById(scenarioId);
+            await seedScenarioToDatabase({
+                scenarioId,
+                databaseUrl,
+                resetTables: true,
+                now: preopenAt,
+                wallNow: preopenAt,
+                installOptions: { sync, turnTermMinutes: turnMinutes, preopenAt, openAt },
+            });
+            const connector = createGamePostgresConnector({ url: databaseUrl });
+            try {
+                await connector.connect();
+                const world = await connector.prisma.worldState.findFirstOrThrow();
+                expect(world).toMatchObject({
+                    currentYear: (scenario.startYear ?? 0) + yearOffset,
+                    currentMonth: month,
+                    clockBaseTime: openAt,
+                    clockWallAnchor: openAt,
+                    clockTick: 0n,
+                    lastTurnTick: 0n,
+                    clockPhase: 'PREOPEN',
+                });
+                const clock = new GameClock({
+                    baseTime: world.clockBaseTime!,
+                    wallAnchor: world.clockWallAnchor!,
+                    tick: Number(world.clockTick),
+                    mode: 'realtime',
+                    phase: 'PREOPEN',
+                    turnSeconds: world.tickSeconds,
+                });
+                expect(clock.nowTick(new Date(openAt.getTime() - 1))).toBeLessThan(0);
+                expect(clock.nowTick(openAt)).toBe(0);
+                expect(clock.tickToDate(clock.nowTick(preopenAt))).toEqual(preopenAt);
+                const afterOpening = new Date(openAt.getTime() + turnMinutes * 60_000);
+                expect(clock.tickToDate(clock.nowTick(afterOpening))).toEqual(afterOpening);
+                expect(clock.nowTick(afterOpening)).toBe(36_000_000);
+                const generals = await connector.prisma.general.findMany({
+                    select: { turnTick: true, turnTime: true },
+                });
+                expect(generals.length).toBeGreaterThan(0);
+                for (const general of generals) {
+                    expect(general.turnTick).toBeGreaterThanOrEqual(0n);
+                    expect(general.turnTime.getTime()).toBeGreaterThanOrEqual(openAt.getTime());
+                }
+            } finally {
+                await connector.disconnect();
+            }
+        }
+    );
+
+    test.each([false, true])(
+        'starts immediately without rounding when the opening is absent or late: %s',
+        async (late) => {
+            const wallNow = new Date(2030, 0, 1, 10, 30, 15, 123);
+            await seedScenarioToDatabase({
+                scenarioId,
+                databaseUrl,
+                resetTables: true,
+                now: new Date(2030, 0, 1, 1, 0),
+                wallNow,
+                installOptions: {
+                    sync: true,
+                    turnTermMinutes: 60,
+                    openAt: late ? new Date(2030, 0, 1, 9, 0) : null,
+                },
+            });
+            const connector = createGamePostgresConnector({ url: databaseUrl });
+            try {
+                await connector.connect();
+                await expect(connector.prisma.worldState.findFirstOrThrow()).resolves.toMatchObject({
+                    clockBaseTime: wallNow,
+                    clockWallAnchor: wallNow,
+                    clockPhase: 'RUNNING',
+                    clockTick: 0n,
+                    currentMonth: 10,
+                });
+            } finally {
+                await connector.disconnect();
+            }
+        }
+    );
+
     test('persists each blank-land scenario item contract without leaking the shared addon', async () => {
         const readPersistedItemContract = async (targetScenarioId: number) => {
             const { applied } = await seedScenarioToDatabase({

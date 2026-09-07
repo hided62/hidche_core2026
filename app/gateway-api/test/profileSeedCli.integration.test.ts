@@ -71,7 +71,8 @@ describeDatabase('selected workspace profile seed CLI', () => {
             const world = await connector.prisma.worldState.findFirstOrThrow();
             expect(world).toMatchObject({
                 scenarioCode: '1010',
-                clockWallAnchor: new Date('2036-03-03T02:11:00.000Z'),
+                clockWallAnchor: new Date('2036-03-03T02:10:30.000Z'),
+                clockBaseTime: new Date('2036-03-03T02:10:30.000Z'),
                 clockPhase: 'PREOPEN',
                 meta: {
                     firstGameIdx: 0,

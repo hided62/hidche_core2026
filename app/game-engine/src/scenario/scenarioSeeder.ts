@@ -242,20 +242,23 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             : (options.tickSeconds ?? DEFAULT_TICK_SECONDS);
     const turnTermMinutes = Math.max(1, Math.round(tickSeconds / 60));
     const sync = install?.sync ?? false;
-    const startState = resolveStartState(scenario.startYear ?? null, now, turnTermMinutes, sync);
     const gameClockMode = options.gameClockMode ?? 'realtime';
     // A realtime season prepared before its formal opening must not consume
     // wall time while users are only allowed to edit reserved commands.
     const wallNow = gameClockMode === 'manual' ? now : (options.wallNow ?? now);
     const requestedOpening = install?.openAt && install.openAt.getTime() > wallNow.getTime() ? install.openAt : wallNow;
-    const openingFloor = cutTurn(requestedOpening, turnTermMinutes);
-    const initialClockWallAnchor =
-        gameClockMode === 'manual'
-            ? requestedOpening
-            : new Date(openingFloor.getTime() + (openingFloor < requestedOpening ? tickSeconds * 1_000 : 0));
+    // Opening is an exact wall instant, independent of the calendar's 12-turn
+    // grouping. Only the initial year/month uses the legacy calendar alignment.
+    const initialClockWallAnchor = requestedOpening;
+    const startState = resolveStartState(
+        scenario.startYear ?? null,
+        gameClockMode === 'manual' ? now : requestedOpening,
+        turnTermMinutes,
+        sync
+    );
     const initialClockPhase = resolveInitialClockPhase(gameClockMode, wallNow, initialClockWallAnchor);
     const initialClock = new GameClock({
-        baseTime: startState.startTime,
+        baseTime: gameClockMode === 'manual' ? startState.startTime : initialClockWallAnchor,
         tick: 0,
         mode: gameClockMode,
         wallAnchor: initialClockWallAnchor,
@@ -324,9 +327,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         // monthly pre-handler recalculates the same value at each boundary.
         develcost: (startState.currentYear - (scenario.startYear ?? startState.currentYear) + 10) * 2,
         starttime: formatDateTime(startState.startTime),
-        turntime: formatDateTime(now),
+        turntime: formatDateTime(gameClockMode === 'manual' ? now : initialClock.baseTime),
         opentime: formatDateTime(initialClockWallAnchor),
-        lastTurnTime: formatDateTime(now),
+        lastTurnTime: formatDateTime(gameClockMode === 'manual' ? now : initialClock.baseTime),
     };
 
     const firstGameIdx =

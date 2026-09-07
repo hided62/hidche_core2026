@@ -72,9 +72,15 @@ setup. A paused profile is durably suspended during upgrade and stays suspended
 until explicitly resumed. API/worker clock reads require a live ready lease at the read revision;
 RECONCILING remains fenced until the Redis outbox is applied.
 
-Planned realtime opening rounds upward to a turn boundary. The seed CLI passes
-actual wall time separately from the requested game-calendar baseline, and
-Gateway publishes the stored opening anchor for both display and scheduling. Unification wait
+Planned realtime opening preserves the exact requested wall instant, including
+minutes, seconds, and milliseconds. The seed CLI passes actual wall time separately;
+an absent or already elapsed opening starts at the actual seed wall time. Tick zero's
+game-date projection and wall anchor both use that effective opening instant.
+The legacy 12-turn calendar grouping determines only the initial year/month and
+calendar metadata; it must not round opening or offset the displayed clock.
+PREOPEN admission keeps its separately requested instant. Gateway publishes the
+stored opening anchor for both display and scheduling. Existing seasons are not
+rebased by this seed-only change. Unification wait
 uses `TURN_BOUNDARY`, cuts at the completed monthly cursor, and resumes at the
 next normal boundary without replaying the intentional waiting period. An old
 pending unification ledger is upgraded on resume; applied history stays intact.
