@@ -20,6 +20,7 @@ interface MapSummary {
         initialLevel: number;
         increaseYears: number;
     };
+    uniqueItemLimit?: { count: number; until: { year: number; month: number } | null };
     cityList: [number, number, number, number, number, number][];
     nationList: [number, string, string, number][];
     myCity?: number | null;
@@ -334,6 +335,11 @@ const titleTooltipLines = computed(() => {
         lines.push(`기술등급 제한 : ${currentLevel}등급 (최종)`);
     } else {
         lines.push(`기술등급 제한 : ${currentLevel}등급 (${currentLevel * limit.increaseYears + startYear}년 해제)`);
+    }
+    const uniqueLimit = props.mapData.uniqueItemLimit;
+    if (uniqueLimit) {
+        const period = uniqueLimit.until ? `${uniqueLimit.until.year}년 ${uniqueLimit.until.month}월까지 ` : '';
+        lines.push(`보유 유니크 한도: ${period}${uniqueLimit.count}개${uniqueLimit.until ? '' : ' (최종)'}`);
     }
     return lines;
 });

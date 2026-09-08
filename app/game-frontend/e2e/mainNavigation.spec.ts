@@ -65,6 +65,7 @@ type NavigationFixture = {
     draftCommandTable?: boolean;
     equipmentItemOptions?: Array<{ value: string; label: string; description?: string }>;
     refCommandCategories?: boolean;
+    uniqueItemLimit?: { count: number; until: { year: number; month: number } | null };
     currentYear?: number;
     currentMonth?: number;
     mapName?: string;
@@ -753,6 +754,7 @@ const installFixture = async (page: Page | BrowserContext, state: NavigationFixt
             }
             if (operation === 'world.getMap') {
                 return response({
+                    uniqueItemLimit: state.uniqueItemLimit,
                     result: true,
                     version: 0,
                     startYear: 180,
@@ -3561,8 +3563,9 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         nationLevel: 3,
         stage: 6,
         npcMode: 1,
-        currentYear: 182,
+        currentYear: 181,
         currentMonth: 1,
+        uniqueItemLimit: { count: 1, until: { year: 182, month: 12 } },
         generalMeCalls: 0,
         operations: [],
         validMapImages: true,
@@ -3575,13 +3578,15 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         const mapPanel = page.locator(`.layout-${layout} [data-main-target="map"]`);
         const title = mapPanel.locator('.map-title');
         const tooltip = mapPanel.getByRole('tooltip');
-        await expect(title).toHaveText(/182年 1月/u);
-        await expect(title).toHaveCSS('color', 'rgb(255, 255, 0)');
+        await expect(title).toHaveText(/181年 1月/u);
+        await expect(title).toHaveCSS('color', 'rgb(255, 165, 0)');
         await expect(title).toHaveAttribute('tabindex', '0');
         await expect(tooltip).toBeHidden();
         await title.hover();
         await expect(tooltip).toBeVisible();
-        await expect(tooltip).toHaveText('초반제한 기간 : 0년 12개월 (183년)기술등급 제한 : 1등급 (185년 해제)');
+        await expect(tooltip).toHaveText(
+            '초반제한 기간 : 1년 12개월 (183년)기술등급 제한 : 1등급 (185년 해제)보유 유니크 한도: 182년 12월까지 1개'
+        );
         const geometry = await mapPanel.evaluate((panel) => {
             const panelRect = panel.getBoundingClientRect();
             const titleRect = panel.querySelector('.map-title')?.getBoundingClientRect();
@@ -3608,6 +3613,9 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         return geometry;
     };
 
+    await page.evaluate(async () => {
+        await document.fonts.ready;
+    });
     const desktopGeometry = await assertTitleTooltip('desktop');
     await testInfo.attach('main-map-year-tooltip-desktop.png', {
         body: await page.screenshot({ fullPage: false }),
@@ -3624,10 +3632,29 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         body: await page.screenshot({ fullPage: false }),
         contentType: 'image/png',
     });
+    await testInfo.attach('main-map-year-tooltip-dom.html', {
+        body: Buffer.from(await page.locator('.layout-mobile [data-main-target="map"]').evaluate((el) => el.outerHTML)),
+        contentType: 'text/html',
+    });
     await testInfo.attach('main-map-year-tooltip-geometry.json', {
         body: Buffer.from(`${JSON.stringify({ desktop: desktopGeometry, mobile: mobileGeometry }, null, 2)}\n`),
         contentType: 'application/json',
     });
+    state.currentYear = 183;
+    state.uniqueItemLimit = { count: 2, until: { year: 189, month: 12 } };
+    await waitForMain(page);
+    const mobileMap = page.locator('.layout-mobile [data-main-target="map"]');
+    await mobileMap.locator('.map-title').focus();
+    await expect(mobileMap.getByRole('tooltip')).toContainText('보유 유니크 한도: 189년 12월까지 2개');
+    state.currentYear = 200;
+    state.uniqueItemLimit = { count: 4, until: null };
+    await waitForMain(page);
+    await mobileMap.locator('.map-title').focus();
+    await expect(mobileMap.getByRole('tooltip')).toContainText('보유 유니크 한도: 4개 (최종)');
+    state.uniqueItemLimit = undefined;
+    await waitForMain(page);
+    await mobileMap.locator('.map-title').focus();
+    await expect(mobileMap.getByRole('tooltip')).not.toContainText('보유 유니크 한도');
 });
 
 test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
