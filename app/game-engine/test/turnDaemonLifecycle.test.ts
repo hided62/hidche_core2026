@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ManualClock } from '@sammo-ts/common';
+import { TurnDaemonLeaseLostError } from '../src/lifecycle/databaseTurnDaemonLease.js';
 
 import {
     InMemoryControlQueue,
@@ -14,6 +15,39 @@ import {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
+    it.each([false, true])('reports a fatal lease gate and exits even if reporting fails (%s)', async (reportFails) => {
+        const now = new Date('2026-09-09T17:30:00Z');
+        const error = new TurnDaemonLeaseLostError('che:default');
+        const processor = { run: vi.fn() };
+        const onRunError = vi.fn(async () => {
+            if (reportFails) throw new Error('gateway unavailable');
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(now.getTime()),
+                controlQueue: new InMemoryControlQueue(),
+                processor,
+                getNextTickTime: (value) => addMinutes(value, 5),
+                stateStore: {
+                    loadLastTurnTime: async () => now,
+                    loadNextGeneralTurnTime: async () => now,
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                },
+                hooks: { onRunError },
+                pauseGate: async () => {
+                    throw error;
+                },
+            },
+            { profile: 'che', defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 } }
+        );
+        await expect(lifecycle.start()).rejects.toBe(error);
+        expect(onRunError).toHaveBeenCalledExactlyOnceWith(error);
+        expect(processor.run).not.toHaveBeenCalled();
+        expect(lifecycle.getStatus()).toMatchObject({ state: 'stopping', paused: true, lastError: error.message });
+    });
+
     it.each(['PREOPEN', 'SUSPENDED', 'RECONCILING', 'COMPLETED'] as const)(
         'does not dispatch an explicit run while the clock phase is %s',
         async (phase) => {

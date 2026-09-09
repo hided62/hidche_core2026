@@ -90,7 +90,20 @@ export class TurnDaemonLifecycle {
 
     start(): Promise<void> {
         if (!this.loopPromise) {
-            this.loopPromise = this.runLoop();
+            this.loopPromise = this.runLoop().catch(async (error: unknown) => {
+                // 초기화와 pause gate 실패도 관리자에게 즉시 남긴다. lease를
+                // 잃은 runtime은 대기 상태로 살아 있으면 안전하게 재개할 수 없다.
+                this.status.state = 'stopping';
+                this.status.running = false;
+                this.status.paused = true;
+                this.status.lastError = error instanceof Error ? error.message : 'Unknown lifecycle error.';
+                try {
+                    await this.hooks?.onRunError?.(error);
+                } catch {
+                    // 장애 기록 실패가 원래 종료 원인을 덮어쓰지 않게 한다.
+                }
+                throw error;
+            });
         }
         return this.loopPromise;
     }

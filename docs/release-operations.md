@@ -306,6 +306,12 @@ process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상
 뒤 원인을 해결하고 실패한 작업을 재시도해 주세요. 재시도는 처음 고정된 commit을
 사용합니다.
 
+VM 중단이나 DB 연결 장애로 turn-daemon lease가 만료되면 기존 owner는 턴과
+관리자 mutation을 처리할 수 없습니다. Lifecycle은 이를 즉시 `lastError`와
+`PAUSED`로 기록하고 종료합니다. PM2가 새 runtime과 DB snapshot으로 시작한 뒤
+관리자가 `재개`를 요청합니다. 이전 owner의 lease를 연장하거나 fencing 검증을
+우회하지 않습니다. 초기화·pause gate 실패도 같은 오류 기록 경로를 사용합니다.
+
 Turn daemon의 DB persistence interactive transaction은 기본 30초입니다. 정상 turn
 budget과 같은 Prisma 기본 5초를 그대로 쓰면 populated season의 flush가 경계에서
 rollback되고 profile이 `PAUSED`로 전환될 수 있습니다. timeout을 늘려도 한
