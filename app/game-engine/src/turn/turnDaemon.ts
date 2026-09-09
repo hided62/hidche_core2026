@@ -93,11 +93,7 @@ import {
     createResetOfficerLockHandler,
 } from './monthlyCoreEventAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
-import {
-    DatabaseTurnDaemonLease,
-    TurnDaemonLeaseLostError,
-    TurnDaemonLeaseUnavailableError,
-} from '../lifecycle/databaseTurnDaemonLease.js';
+import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 import { EngineStateManager } from './engineStateManager.js';
 import { applyRuntimeClockShift } from './runtimeClockShift.js';
 import { applyRuntimeGameSettings } from './runtimeGameSettings.js';
@@ -892,6 +888,19 @@ const createTurnDaemonRuntimeWithLease = async (
               gatewayDatabaseUrl: options.gatewayDatabaseUrl,
               profileName: options.profileName,
               cacheMs: options.pauseGateIntervalMs,
+              incidentContext: () => {
+                  const state = world.getState();
+                  const clock = world.getGameClockState();
+                  const token = turnDaemonLease?.getToken();
+                  return {
+                      year: state.currentYear,
+                      month: state.currentMonth,
+                      clockPhase: clock.phase,
+                      clockTick: clock.tick,
+                      ownerId: token?.ownerId ?? null,
+                      fencingEpoch: token?.fencingEpoch.toString() ?? null,
+                  };
+              },
           })
         : null;
     if (gatewayGate) {
@@ -1066,7 +1075,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 if (turnDaemonLease?.isLost()) {
                     // 만료된 owner는 재개 명령도 처리할 수 없다. 현재 runtime을
                     // 끝내 PM2가 새 owner와 DB snapshot으로 시작하도록 한다.
-                    throw new TurnDaemonLeaseLostError(options.profileName ?? options.profile);
+                    throw turnDaemonLease.getLossError();
                 }
                 const gatewayPaused = (await pauseGate?.()) ?? false;
                 const phase = world.getGameClockState().phase;

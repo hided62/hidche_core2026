@@ -7,6 +7,7 @@ import {
 import { gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common/gateway/profileStatus';
 import { computed, onMounted, ref, watch } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
+import ProfileRuntimeDiagnostics from '../components/ProfileRuntimeDiagnostics.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { useToast } from '../composables/useToast';
 import {
@@ -2443,6 +2444,7 @@ onMounted(() => {
                             </div>
 
                             <div class="text-xs text-zinc-400">빌드 커밋: {{ profile.buildCommitSha ?? '미지정' }}</div>
+                            <ProfileRuntimeDiagnostics :profile-name="profile.profileName" />
 
                             <div
                                 v-if="profile.status === 'PAUSED' && profile.lastError"

@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks';
+import { randomUUID } from 'node:crypto';
 
-import { gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common';
+import { describeRuntimeError, gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common';
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 
 export interface GatewayProfileGateOptions {
@@ -8,6 +9,7 @@ export interface GatewayProfileGateOptions {
     gatewayDatabaseUrl?: string;
     profileName: string;
     cacheMs?: number;
+    incidentContext?: () => Record<string, string | number | boolean | null>;
 }
 
 export interface GatewayProfileGate {
@@ -22,6 +24,7 @@ const PROFILE_STATUSES_MARKABLE_AS_PAUSED = ['PREOPEN', 'RUNNING', 'PAUSED'] as 
 export const createGatewayProfileGate = async (options: GatewayProfileGateOptions): Promise<GatewayProfileGate> => {
     const connector = createGatewayPostgresConnector({
         url: options.gatewayDatabaseUrl ?? options.databaseUrl,
+        connectionTimeoutMillis: 3000,
     });
     await connector.connect();
     const prisma = connector.prisma;
@@ -54,19 +57,44 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
             return cachedPause;
         },
         async markPaused(error?: unknown): Promise<void> {
-            const message = error instanceof Error ? error.message : error ? String(error) : null;
+            const failure = error ? describeRuntimeError(error) : null;
+            const message = failure?.message ?? null;
             try {
-                await prisma.gatewayProfile.updateMany({
-                    where: {
-                        profileName: options.profileName,
-                        status: { in: [...PROFILE_STATUSES_MARKABLE_AS_PAUSED] },
-                    },
-                    data: {
-                        status: 'PAUSED',
-                        lastError: message,
-                    },
+                await prisma.$transaction(async (tx) => {
+                    const updated = await tx.gatewayProfile.updateMany({
+                        where: {
+                            profileName: options.profileName,
+                            status: { in: [...PROFILE_STATUSES_MARKABLE_AS_PAUSED] },
+                            OR: [{ status: { not: 'PAUSED' } }, { lastError: { not: message } }, { lastError: null }],
+                        },
+                        data: {
+                            status: 'PAUSED',
+                            lastError: message,
+                        },
+                    });
+                    if (updated.count && failure) {
+                        // 상태와 이력을 함께 commit한다. 재개가 lastError를 지워도
+                        // 당시 원인과 실행 좌표는 관리자 감사 저장소에 남는다.
+                        await tx.adminAuditEvent.create({
+                            data: {
+                                correlationId: randomUUID(),
+                                actorUserId: 'system:turn-daemon',
+                                actorUsername: 'turn-daemon',
+                                credentialKind: 'DAEMON',
+                                action: 'runtime.failure',
+                                targetType: 'profile-runtime',
+                                targetId: options.profileName,
+                                profileName: options.profileName,
+                                outcome: 'FAILED',
+                                errorCode: failure.code,
+                                errorMessage: failure.message,
+                                summary: { frames: failure.frames, ...options.incidentContext?.() },
+                            },
+                        });
+                    }
                 });
             } catch {
+                if (failure) console.error('[turn-daemon] failed to persist runtime incident', failure);
                 return;
             }
         },

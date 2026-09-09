@@ -5,6 +5,8 @@ import type { TurnRunBudget } from '../lifecycle/types.js';
 import { resolveDatabaseUrl } from '../scenario/databaseUrl.js';
 import { createTurnDaemonRuntime } from './turnDaemon.js';
 import { createTurnDaemonMemoryReporter } from './turnDaemonMemoryReporter.js';
+import { createGatewayProfileGate } from './gatewayProfileGate.js';
+import { TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonCliOptions {
     profile?: string;
@@ -89,6 +91,27 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
         pauseGateIntervalMs,
         adminActionIntervalMs,
         gameClockMode,
+    }).catch(async (error: unknown) => {
+        // 중복 starter가 정상 owner를 멈추면 안 된다. 그 밖의 초기화 실패는
+        // lifecycle hook이 아직 없으므로 여기서 별도로 관리자에게 기록한다.
+        if (!(error instanceof TurnDaemonLeaseUnavailableError)) {
+            try {
+                const gate = await createGatewayProfileGate({
+                    databaseUrl,
+                    gatewayDatabaseUrl,
+                    profileName,
+                    incidentContext: () => ({ stage: 'startup' }),
+                });
+                try {
+                    await gate.markPaused(error);
+                } finally {
+                    await gate.close();
+                }
+            } catch {
+                /* 원래 시작 실패를 보존한다. */
+            }
+        }
+        throw error;
     });
 
     const memoryReporter = createTurnDaemonMemoryReporter({

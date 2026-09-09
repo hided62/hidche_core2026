@@ -5,6 +5,7 @@ export interface ManagedProcessInfo {
     cwd?: string;
     script?: string;
     restartCount?: number;
+    exitCode?: number;
 }
 
 export interface ProcessDefinition {

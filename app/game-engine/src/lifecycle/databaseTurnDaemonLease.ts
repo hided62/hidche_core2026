@@ -24,8 +24,8 @@ export class TurnDaemonLeaseUnavailableError extends Error {
 }
 
 export class TurnDaemonLeaseLostError extends Error {
-    constructor(profile: string) {
-        super(`Turn daemon lease was lost for profile "${profile}".`);
+    constructor(profile: string, reason?: string) {
+        super(`Turn daemon lease was lost for profile "${profile}".${reason ? ` ${reason}` : ''}`);
         this.name = 'TurnDaemonLeaseLostError';
     }
 }
@@ -50,6 +50,7 @@ export class DatabaseTurnDaemonLease {
     private expiryTimer: NodeJS.Timeout | null = null;
     private renewalInFlight = false;
     private lost = false;
+    private lossReason: string | undefined;
 
     private constructor(
         db: GamePrismaClient,
@@ -116,6 +117,7 @@ export class DatabaseTurnDaemonLease {
             fencingEpoch: BigInt(row.fencing_epoch),
         };
         this.lost = false;
+        this.lossReason = undefined;
         this.scheduleExpiryWatchdog(requestStartedAt);
         if (this.heartbeatEnabled) {
             this.startHeartbeat();
@@ -139,6 +141,10 @@ export class DatabaseTurnDaemonLease {
         return this.lost;
     }
 
+    getLossError(): TurnDaemonLeaseLostError {
+        return new TurnDaemonLeaseLostError(this.profile, this.lossReason);
+    }
+
     async renew(): Promise<boolean> {
         const token = this.token;
         if (!token || this.lost || this.renewalInFlight) {
@@ -160,7 +166,7 @@ export class DatabaseTurnDaemonLease {
                 RETURNING "profile", "owner_id", "fencing_epoch"
             `);
             if (rows.length === 0) {
-                this.markLost();
+                this.markLost('Heartbeat renewal rejected: lease expired or owner/epoch changed.');
                 return false;
             }
             if (this.lost) {
@@ -176,7 +182,7 @@ export class DatabaseTurnDaemonLease {
     async assertActive(transaction?: GamePrisma.TransactionClient): Promise<void> {
         const token = this.token;
         if (!token || this.lost) {
-            throw new TurnDaemonLeaseLostError(this.profile);
+            throw this.getLossError();
         }
         const db = transaction ?? this.db;
         const rows = await db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
@@ -190,8 +196,8 @@ export class DatabaseTurnDaemonLease {
             FOR UPDATE
         `);
         if (rows.length === 0) {
-            this.markLost();
-            throw new TurnDaemonLeaseLostError(this.profile);
+            this.markLost('Transaction fencing rejected: lease expired or owner/epoch changed.');
+            throw this.getLossError();
         }
     }
 
@@ -228,8 +234,10 @@ export class DatabaseTurnDaemonLease {
         }
         const intervalMs = Math.max(250, Math.floor(this.leaseDurationMs / 3));
         this.heartbeatTimer = setInterval(() => {
-            void this.renew().catch(() => {
-                this.markLost();
+            void this.renew().catch((error: unknown) => {
+                this.markLost(
+                    `Heartbeat database request failed (${error instanceof Error ? error.name : 'unknown error'}).`
+                );
             });
         }, intervalMs);
         this.heartbeatTimer.unref();
@@ -248,7 +256,9 @@ export class DatabaseTurnDaemonLease {
         this.stopExpiryWatchdog();
         const remainingMs = Math.max(0, this.leaseDurationMs - (performance.now() - requestStartedAt));
         this.expiryTimer = setTimeout(() => {
-            this.markLost();
+            this.markLost(
+                `Heartbeat deadline exceeded (${this.leaseDurationMs}ms; renewal in flight: ${this.renewalInFlight}).`
+            );
         }, remainingMs);
         this.expiryTimer.unref();
     }
@@ -260,7 +270,9 @@ export class DatabaseTurnDaemonLease {
         }
     }
 
-    private markLost(): void {
+    private markLost(reason: string): void {
+        if (this.lost) return;
+        this.lossReason = reason;
         this.lost = true;
         this.stopHeartbeat();
         this.stopExpiryWatchdog();

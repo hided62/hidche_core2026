@@ -2078,6 +2078,26 @@ export const adminRouter = router({
         }),
     }),
     profiles: router({
+        diagnostics: adminProcedure
+            .input(z.object({ profileName: z.string().min(1).max(100) }))
+            .query(async ({ ctx, input }) => {
+                const auth = requireAdminAuth(ctx);
+                if (!canReadProfile(auth, input.profileName)) throw new TRPCError({ code: 'FORBIDDEN' });
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) throw new TRPCError({ code: 'NOT_FOUND' });
+                const [observation, incidents, processes] = await Promise.all([
+                    ctx.orchestrator.inspectRuntime?.(input.profileName) ?? Promise.resolve(null),
+                    ctx.adminAudit.list({ profileName: input.profileName, targetType: 'profile-runtime', limit: 20 }),
+                    ctx.orchestrator.listRuntimeStates([input.profileName]).catch(() => []),
+                ]);
+                return {
+                    profileName: input.profileName,
+                    status: profile.status,
+                    observation,
+                    runtime: processes[0] ?? null,
+                    incidents,
+                };
+            }),
         getResetDefaults: adminProcedure
             .input(z.object({ profileName: z.string().min(1) }))
             .query(async ({ ctx, input }) => {

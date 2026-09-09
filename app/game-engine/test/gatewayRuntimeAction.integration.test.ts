@@ -112,6 +112,7 @@ integration('gateway runtime action consumer', () => {
     });
 
     it('does not overwrite a terminal operator status while reporting a daemon error', async () => {
+        const existingIncidents = await db.adminAuditEvent.count({ where: { profileName, action: 'runtime.failure' } });
         const gate = await createGatewayProfileGate({
             databaseUrl: databaseUrl!,
             gatewayDatabaseUrl: databaseUrl!,
@@ -127,6 +128,19 @@ integration('gateway runtime action consumer', () => {
                 status: 'PAUSED',
                 lastError: 'running failure',
             });
+            await gate.markPaused(new Error('running failure'));
+            const incidents = await db.adminAuditEvent.findMany({ where: { profileName, action: 'runtime.failure' } });
+            expect(incidents).toHaveLength(existingIncidents + 1);
+            expect(incidents[0]).toMatchObject({
+                credentialKind: 'DAEMON',
+                errorCode: 'Error',
+                errorMessage: 'running failure',
+            });
+
+            await db.gatewayProfile.update({ where: { profileName }, data: { status: 'RUNNING', lastError: null } });
+            expect(await db.adminAuditEvent.count({ where: { profileName, action: 'runtime.failure' } })).toBe(
+                existingIncidents + 1
+            );
 
             await db.gatewayProfile.update({
                 where: { profileName },
@@ -137,6 +151,9 @@ integration('gateway runtime action consumer', () => {
                 status: 'STOPPED',
                 lastError: null,
             });
+            expect(await db.adminAuditEvent.count({ where: { profileName, action: 'runtime.failure' } })).toBe(
+                existingIncidents + 1
+            );
         } finally {
             await gate.close();
         }

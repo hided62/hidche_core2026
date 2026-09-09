@@ -435,6 +435,35 @@ describe('admin profile navigation API', () => {
     });
 });
 
+describe('runtime diagnostics authorization', () => {
+    it('allows the scoped administrator and rejects another profile scope', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.runtime:che:2'], firstUserIsAdmin: false }
+        );
+        await expect(harness.caller.admin.profiles.diagnostics({ profileName: 'che:2' })).resolves.toMatchObject({
+            profileName: 'che:2',
+            incidents: [],
+        });
+        await expect(harness.caller.admin.profiles.diagnostics({ profileName: 'kwe:2' })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+    });
+    it('rejects users without profile administration permission', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: [], firstUserIsAdmin: false }
+        );
+        await expect(harness.caller.admin.profiles.diagnostics({ profileName: 'che:2' })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+    });
+});
+
 describe('admin scenario catalog API', () => {
     it('marks scenario zero as the current selectable scenario', async () => {
         const harness = await buildCaller(

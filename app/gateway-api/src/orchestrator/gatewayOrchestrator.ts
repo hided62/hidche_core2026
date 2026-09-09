@@ -20,7 +20,7 @@ import {
     type GameCancellationHistoryMode,
     type GameCancellationResult,
 } from '@sammo-ts/game-engine/scenario/gameCancellation.js';
-import { gatewayProfileCapabilities } from '@sammo-ts/common';
+import { gatewayProfileCapabilities, type ProfileRuntimeDiagnostics } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
     createRedisConnector,
@@ -177,6 +177,7 @@ export interface GatewayOrchestratorHandle {
     }>;
     listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]>;
     listRuntimeSettings?(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]>;
+    inspectRuntime?(profileName: string): Promise<ProfileRuntimeDiagnostics>;
     transitionProfileClock(
         profileName: string,
         action: 'SUSPEND' | 'RESUME',
@@ -1162,6 +1163,94 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             })
         );
         return snapshots;
+    }
+
+    async inspectRuntime(profileName: string): Promise<ProfileRuntimeDiagnostics> {
+        const processes = await this.processManager.list().catch(() => null);
+        const empty: ProfileRuntimeDiagnostics = {
+            profileName,
+            checkedAt: new Date().toISOString(),
+            database: 'UNINITIALIZED',
+            processObservation: processes ? 'AVAILABLE' : 'UNAVAILABLE',
+            processes: (processes ?? [])
+                .filter((process) => process.name.startsWith(`sammo:${profileName}:`))
+                .map((process) => ({
+                    name: process.name,
+                    status: process.status,
+                    restartCount: process.restartCount ?? 0,
+                    exitCode: process.exitCode ?? null,
+                })),
+            lease: null,
+            clock: null,
+        };
+        const profile = await this.repository.getProfile(profileName);
+        if (!profile || profile.currentScenario === null) return empty;
+        const connector = createGamePostgresConnector({
+            url: this.resolveProfileDatabaseUrl(profile),
+            maxConnections: 1,
+            connectionTimeoutMillis: 3000,
+        });
+        try {
+            await connector.connect();
+            return await connector.prisma.$transaction(
+                async (db) => {
+                    await db.$executeRaw`SET LOCAL statement_timeout = '3000ms'`;
+                    const [time] = await db.$queryRaw<
+                        Array<{ now: Date }>
+                    >`SELECT clock_timestamp() AT TIME ZONE 'UTC' AS now`;
+                    const lease = await db.turnDaemonLease.findUnique({ where: { profile: profileName } });
+                    const clock = await db.worldState.findFirst({
+                        orderBy: { id: 'asc' },
+                        select: {
+                            clockPhase: true,
+                            clockRevision: true,
+                            clockTick: true,
+                            lastTurnTick: true,
+                            currentYear: true,
+                            currentMonth: true,
+                            clockWallAnchor: true,
+                            clockRecoveryStartWallAt: true,
+                            clockRecoveryEndTick: true,
+                        },
+                    });
+                    const now = time!.now;
+                    return {
+                        ...empty,
+                        checkedAt: now.toISOString(),
+                        database: 'AVAILABLE' as const,
+                        lease: lease
+                            ? {
+                                  ownerId: lease.ownerId,
+                                  fencingEpoch: lease.fencingEpoch.toString(),
+                                  heartbeatAt: lease.heartbeatAt.toISOString(),
+                                  leaseUntil: lease.leaseUntil.toISOString(),
+                                  heartbeatAgeMs: Math.max(0, now.getTime() - lease.heartbeatAt.getTime()),
+                                  valid: lease.leaseUntil > now,
+                                  clockReady: lease.clockReady,
+                              }
+                            : null,
+                        clock: clock
+                            ? {
+                                  phase: clock.clockPhase,
+                                  revision: clock.clockRevision.toString(),
+                                  tick: clock.clockTick?.toString() ?? null,
+                                  lastTurnTick: clock.lastTurnTick?.toString() ?? null,
+                                  year: clock.currentYear,
+                                  month: clock.currentMonth,
+                                  wallAnchor: clock.clockWallAnchor?.toISOString() ?? null,
+                                  recoveryStartWallAt: clock.clockRecoveryStartWallAt?.toISOString() ?? null,
+                                  recoveryEndTick: clock.clockRecoveryEndTick?.toString() ?? null,
+                              }
+                            : null,
+                    };
+                },
+                { timeout: 5000, maxWait: 3000 }
+            );
+        } catch {
+            return { ...empty, checkedAt: new Date().toISOString(), database: 'UNAVAILABLE' };
+        } finally {
+            await connector.disconnect().catch(() => undefined);
+        }
     }
 
     async listRuntimeSettings(profileNames: string[]): Promise<ProfileRuntimeSettingsSnapshot[]> {

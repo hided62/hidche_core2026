@@ -306,6 +306,27 @@ process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상
 뒤 원인을 해결하고 실패한 작업을 재시도해 주세요. 재시도는 처음 고정된 commit을
 사용합니다.
 
+### 서버 장애 진단
+
+`/gateway/admin/servers/:profileName`의 **장애 진단과 이력**에서 직접 조회합니다.
+프로필 읽기 권한을 서버에서 검사하며 다른 profile의 이력은 반환하지 않습니다.
+
+- DB 시각으로 계산한 lease 유효성·마지막 heartbeat·만료 시각과 owner/epoch,
+  시계 phase/revision·마지막 처리 tick·복구 시작 시각을 보여줍니다.
+- PM2 상태·재시작 횟수·마지막 종료 코드를 별도로 표시합니다. 프로세스가 online이어도
+  lease가 만료되면 실행 권한 만료로 분류합니다. DB 또는 PM2 조회 실패는 확인 실패로
+  표시하며 정상이나 중지로 단정하지 않습니다.
+- 실행·명령·lifecycle 및 초기화 실패는 `admin_audit_event`의
+  `action=runtime.failure`, `credentialKind=DAEMON`으로 저장합니다. profile PAUSED
+  전환과 같은 transaction이며 현재 오류와 같은 반복 보고는 중복 저장하지 않습니다.
+  재개·배포로 `lastError`가 사라져도 append-only 이력은 남습니다.
+- 오류 종류·정화한 메시지·최대 8개 stack frame과 게임 연월/시계/lease 좌표를
+  저장합니다. 연결 URL과 인증값은 제거합니다. Gateway DB 자체에 기록할 수 없는
+  장애는 정화한 오류를 프로세스 로그에 남깁니다. OOM·강제 종료처럼 hook을 실행하지
+  못한 경우에는 PM2 종료 정보와 호스트 로그를 함께 확인합니다.
+- 화면은 조회 시점의 snapshot입니다. 원인을 해결한 뒤 재개하고 새로고침하여
+  lease와 시계를 다시 확인합니다. 복구 시작 시각 전의 대기를 장애로 오인하지 않습니다.
+
 VM 중단이나 DB 연결 장애로 turn-daemon lease가 만료되면 기존 owner는 턴과
 관리자 mutation을 처리할 수 없습니다. Lifecycle은 이를 즉시 `lastError`와
 `PAUSED`로 기록하고 종료합니다. PM2가 새 runtime과 DB snapshot으로 시작한 뒤

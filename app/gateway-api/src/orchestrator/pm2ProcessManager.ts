@@ -123,6 +123,12 @@ export class Pm2ProcessManager implements ProcessManager {
                                 cwd: item.pm2_env?.pm_cwd ?? undefined,
                                 script: item.pm2_env?.pm_exec_path ?? undefined,
                                 restartCount: item.pm2_env?.restart_time ?? 0,
+                                exitCode:
+                                    item.pm2_env &&
+                                    'exit_code' in item.pm2_env &&
+                                    typeof item.pm2_env.exit_code === 'number'
+                                        ? item.pm2_env.exit_code
+                                        : undefined,
                             })) ?? [];
                         resolve(normalized);
                     });
@@ -145,16 +151,13 @@ export class Pm2ProcessManager implements ProcessManager {
                             reject(new Error(`PM2 process name already exists: ${definition.name}`));
                             return;
                         }
-                        pm2.start(
-                            buildPm2StartOptions(definition),
-                            (error) => {
-                                if (error) {
-                                    reject(error);
-                                    return;
-                                }
-                                resolve();
+                        pm2.start(buildPm2StartOptions(definition), (error) => {
+                            if (error) {
+                                reject(error);
+                                return;
                             }
-                        );
+                            resolve();
+                        });
                     });
                 })
         );

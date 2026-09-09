@@ -42,9 +42,11 @@ const installFixture = async (
         currentScenario?: string | null;
         gameIsUnited?: number;
         openerOnly?: boolean;
+        diagnosticsFixture?: boolean;
     } = {}
 ) => {
     let requested = false;
+    let diagnosticReads = 0;
     let installRequested = false;
     let installActive = false;
     let postRequestProfileReads = 0;
@@ -84,6 +86,57 @@ const installFixture = async (
             installActive = true;
         }
         const results = operations.map((operation) => {
+            if (operation === 'admin.profiles.diagnostics' && options.diagnosticsFixture) {
+                diagnosticReads += 1;
+                return response({
+                    profileName: 'che:default',
+                    status: diagnosticReads > 1 ? 'RUNNING' : 'PAUSED',
+                    runtime: { daemonRunning: true },
+                    observation: {
+                        profileName: 'che:default',
+                        checkedAt: '2026-09-09T18:00:00.000Z',
+                        database: 'AVAILABLE',
+                        processObservation: 'AVAILABLE',
+                        processes: [
+                            { name: 'sammo:hwe:default:turn-daemon', status: 'online', restartCount: 1, exitCode: 1 },
+                        ],
+                        lease: {
+                            ownerId: 'owner-0123456789-0123456789-0123456789',
+                            fencingEpoch: '72',
+                            heartbeatAt: '2026-09-09T17:30:00.000Z',
+                            leaseUntil: '2026-09-09T17:30:30.000Z',
+                            heartbeatAgeMs: 1800000,
+                            valid: diagnosticReads > 1,
+                            clockReady: true,
+                        },
+                        clock: {
+                            phase: 'RUNNING',
+                            revision: '6',
+                            tick: '11286094560',
+                            lastTurnTick: '11268000000',
+                            year: 206,
+                            month: 2,
+                            wallAnchor: '2026-09-09T17:00:00.000Z',
+                            recoveryStartWallAt: null,
+                            recoveryEndTick: null,
+                        },
+                    },
+                    incidents: [
+                        {
+                            id: 'incident-1',
+                            createdAt: '2026-09-09T17:30:31.000Z',
+                            errorCode: 'TurnDaemonLeaseLostError',
+                            errorMessage: 'Heartbeat deadline exceeded (30000ms; renewal in flight: true).',
+                            summary: {
+                                year: 206,
+                                month: 2,
+                                clockPhase: 'RUNNING',
+                                frames: ['at flush (/srv/app/flush.ts:42:7)'],
+                            },
+                        },
+                    ],
+                });
+            }
             if (operation === 'me') {
                 return response({
                     id: 'admin-user',
@@ -390,7 +443,9 @@ test('updates live game options from the authoritative database snapshot', async
     await page.screenshot({ path: testInfo.outputPath('runtime-settings-mobile.png'), fullPage: true });
 });
 
-test('distinguishes a turn pause from an inaccessible stopped server in operator controls', async ({ page }, testInfo) => {
+test('distinguishes a turn pause from an inaccessible stopped server in operator controls', async ({
+    page,
+}, testInfo) => {
     await installFixture(page, {
         profileStatus: 'PAUSED',
         pauseReason: "Cannot assign to read only property 'charges' of object '#<Object>'",
@@ -582,4 +637,49 @@ test('directs profile deployment to the selected server version tab', async ({ p
     expect(linkGeometry.left).toBeGreaterThanOrEqual(0);
     expect(linkGeometry.right).toBeLessThanOrEqual(linkGeometry.viewportWidth);
     await page.screenshot({ path: testInfo.outputPath('status-tabs-mobile.png'), fullPage: true });
+});
+
+test('runtime diagnostics shows expired lease and retains history after recovery on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    await installFixture(page, { profileStatus: 'PAUSED', diagnosticsFixture: true });
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await page.getByRole('button', { name: '장애 진단과 이력' }).click();
+    const panel = page.getByTestId('runtime-diagnostics');
+    await expect(panel).toContainText('턴 실행 권한 만료');
+    await panel.locator('summary').filter({ hasText: 'TurnDaemonLeaseLostError' }).click();
+    await expect(panel).toContainText('Heartbeat deadline exceeded');
+    await expect(panel).toContainText('flush.ts:42:7');
+    await panel.getByText('프로세스 상태와 종료 코드', { exact: true }).click();
+    await expect(panel).toContainText('마지막 종료 코드 1');
+    for (const width of [1200, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(() => document.fonts.ready);
+        const measured = await panel.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                left: rect.left,
+                right: rect.right,
+                width: rect.width,
+                viewport: innerWidth,
+                scrollWidth: element.scrollWidth,
+                clientWidth: element.clientWidth,
+                font: style.font,
+                border: style.border,
+                html: element.outerHTML,
+            };
+        });
+        expect(measured.left).toBeGreaterThanOrEqual(0);
+        expect(measured.right).toBeLessThanOrEqual(width);
+        expect(measured.scrollWidth).toBeLessThanOrEqual(measured.clientWidth);
+        await testInfo.attach(`diagnostics-${width}.json`, {
+            body: JSON.stringify(measured),
+            contentType: 'application/json',
+        });
+        await page.screenshot({ path: testInfo.outputPath(`diagnostics-${width}.png`), fullPage: true });
+    }
+    await page.getByRole('button', { name: '장애 진단 새로고침' }).click();
+    await expect(panel).toContainText('턴 프로세스와 실행 권한 정상');
+    await expect(panel).toContainText('Heartbeat deadline exceeded');
 });

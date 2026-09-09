@@ -174,6 +174,36 @@ const postTrpc = async (
 };
 
 describe('admin security over HTTP transport', () => {
+    it('protects runtime diagnostics at the HTTP authentication and profile scope boundaries', async () => {
+        const harness = await createHarness(['admin.profiles.runtime:che:default']);
+        const input = { profileName: 'che:default' };
+        expect((await postTrpc(harness.baseUrl, 'admin.profiles.diagnostics', input)).response.status).toBe(401);
+        expect(
+            (await postTrpc(harness.baseUrl, 'admin.profiles.diagnostics', input, harness.adminSessionToken)).response
+                .status
+        ).toBe(200);
+        expect(
+            (
+                await postTrpc(
+                    harness.baseUrl,
+                    'admin.profiles.diagnostics',
+                    { profileName: 'kwe:default' },
+                    harness.adminSessionToken
+                )
+            ).response.status
+        ).toBe(403);
+        expect(
+            (
+                await postTrpc(
+                    harness.baseUrl,
+                    'admin.profiles.diagnostics',
+                    { profileName: '' },
+                    harness.adminSessionToken
+                )
+            ).response.status
+        ).toBe(400);
+    });
+
     it('accepts query input from a POST JSON body but still rejects a mutation sent as GET', async () => {
         const harness = await createHarness();
 
