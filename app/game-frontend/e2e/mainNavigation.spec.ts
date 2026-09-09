@@ -65,6 +65,7 @@ type NavigationFixture = {
     draftCommandTable?: boolean;
     equipmentItemOptions?: Array<{ value: string; label: string; description?: string }>;
     refCommandCategories?: boolean;
+    uniqueItemLimit?: { count: number; until: { year: number; month: number } | null };
     currentYear?: number;
     currentMonth?: number;
     mapName?: string;
@@ -753,6 +754,7 @@ const installFixture = async (page: Page | BrowserContext, state: NavigationFixt
             }
             if (operation === 'world.getMap') {
                 return response({
+                    uniqueItemLimit: state.uniqueItemLimit,
                     result: true,
                     version: 0,
                     startYear: 180,
@@ -3561,8 +3563,9 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         nationLevel: 3,
         stage: 6,
         npcMode: 1,
-        currentYear: 182,
+        currentYear: 181,
         currentMonth: 1,
+        uniqueItemLimit: { count: 1, until: { year: 182, month: 12 } },
         generalMeCalls: 0,
         operations: [],
         validMapImages: true,
@@ -3575,13 +3578,15 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         const mapPanel = page.locator(`.layout-${layout} [data-main-target="map"]`);
         const title = mapPanel.locator('.map-title');
         const tooltip = mapPanel.getByRole('tooltip');
-        await expect(title).toHaveText(/182年 1月/u);
-        await expect(title).toHaveCSS('color', 'rgb(255, 255, 0)');
+        await expect(title).toHaveText(/181年 1月/u);
+        await expect(title).toHaveCSS('color', 'rgb(255, 165, 0)');
         await expect(title).toHaveAttribute('tabindex', '0');
         await expect(tooltip).toBeHidden();
         await title.hover();
         await expect(tooltip).toBeVisible();
-        await expect(tooltip).toHaveText('초반제한 기간 : 0년 12개월 (183년)기술등급 제한 : 1등급 (185년 해제)');
+        await expect(tooltip).toHaveText(
+            '초반제한 기간 : 1년 12개월 (183년)기술등급 제한 : 1등급 (185년 해제)보유 유니크 한도: 182년 12월까지 1개'
+        );
         const geometry = await mapPanel.evaluate((panel) => {
             const panelRect = panel.getBoundingClientRect();
             const titleRect = panel.querySelector('.map-title')?.getBoundingClientRect();
@@ -3608,6 +3613,9 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         return geometry;
     };
 
+    await page.evaluate(async () => {
+        await document.fonts.ready;
+    });
     const desktopGeometry = await assertTitleTooltip('desktop');
     await testInfo.attach('main-map-year-tooltip-desktop.png', {
         body: await page.screenshot({ fullPage: false }),
@@ -3624,10 +3632,29 @@ test('main map year exposes the Ref restriction and technology limit on desktop 
         body: await page.screenshot({ fullPage: false }),
         contentType: 'image/png',
     });
+    await testInfo.attach('main-map-year-tooltip-dom.html', {
+        body: Buffer.from(await page.locator('.layout-mobile [data-main-target="map"]').evaluate((el) => el.outerHTML)),
+        contentType: 'text/html',
+    });
     await testInfo.attach('main-map-year-tooltip-geometry.json', {
         body: Buffer.from(`${JSON.stringify({ desktop: desktopGeometry, mobile: mobileGeometry }, null, 2)}\n`),
         contentType: 'application/json',
     });
+    state.currentYear = 183;
+    state.uniqueItemLimit = { count: 2, until: { year: 189, month: 12 } };
+    await waitForMain(page);
+    const mobileMap = page.locator('.layout-mobile [data-main-target="map"]');
+    await mobileMap.locator('.map-title').focus();
+    await expect(mobileMap.getByRole('tooltip')).toContainText('보유 유니크 한도: 189년 12월까지 2개');
+    state.currentYear = 200;
+    state.uniqueItemLimit = { count: 4, until: null };
+    await waitForMain(page);
+    await mobileMap.locator('.map-title').focus();
+    await expect(mobileMap.getByRole('tooltip')).toContainText('보유 유니크 한도: 4개 (최종)');
+    state.uniqueItemLimit = undefined;
+    await waitForMain(page);
+    await mobileMap.locator('.map-title').focus();
+    await expect(mobileMap.getByRole('tooltip')).not.toContainText('보유 유니크 한도');
 });
 
 test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
@@ -6303,5 +6330,91 @@ for (const viewport of [
                 JSON.stringify({ viewport, before, after }, null, 2)
             );
         }
+    });
+}
+
+for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 390, height: 844 },
+]) {
+    test(`NPC message portraits resolve stored and new scenario icons at ${viewport.width}px`, async ({
+        page,
+    }, testInfo) => {
+        const picture = '롤시나리오/다이애나.png';
+        const iconUrl = `https://sam-image.hided.net/icons/${picture.split('/').map(encodeURIComponent).join('/')}`;
+        const asset = await readFile(resolve(process.cwd(), '../../../image/icons', picture));
+        const defaultAsset = await readFile(resolve(process.cwd(), '../../../image/icons/default.jpg'));
+        const state: NavigationFixture = {
+            officerLevel: 1,
+            permission: 0,
+            nationLevel: 1,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            messages: {
+                ...emptyMessages(0),
+                public: [picture, `https://sam-image.hided.net/icons/${picture}`, ''].map((icon, index) => ({
+                    id: 801 + index,
+                    text: '새로운 달이 떠오르고 있다.',
+                    time: '2026-09-07 12:00:00',
+                    msgType: 'public',
+                    src: {
+                        generalId: 22 + index,
+                        generalName: index === 2 ? '유저' : '다이애나',
+                        nationId: 1,
+                        nationName: '위',
+                        color: '#008000',
+                        icon,
+                    },
+                    dest: null,
+                    option: {},
+                })),
+            },
+        };
+        await installFixture(page, state);
+        await page.route('https://sam-image.hided.net/icons/**', (route) =>
+            route.fulfill({
+                contentType: route.request().url() === iconUrl ? 'image/png' : 'image/jpeg',
+                body: route.request().url() === iconUrl ? asset : defaultAsset,
+            })
+        );
+        await page.setViewportSize(viewport);
+        await waitForMain(page);
+        const measurements = [];
+        for (const id of [801, 802, 803]) {
+            const icon = page.locator(`.msg-plate[data-id="${id}"]:visible img.general-icon`).first();
+            await expect(icon).toBeVisible();
+            await expect
+                .poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth))
+                .toBe(id === 803 ? 64 : 128);
+            const result = await icon.evaluate((element) => {
+                const image = element as HTMLImageElement;
+                const rect = image.getBoundingClientRect();
+                return {
+                    src: image.src,
+                    width: rect.width,
+                    height: rect.height,
+                    naturalWidth: image.naturalWidth,
+                    naturalHeight: image.naturalHeight,
+                    objectFit: getComputedStyle(image).objectFit,
+                };
+            });
+            expect(result.src).toBe(id === 803 ? 'https://sam-image.hided.net/icons/default.jpg' : iconUrl);
+            expect(result.width).toBe(64);
+            expect(result.height).toBe(64);
+            measurements.push(result);
+        }
+        await page.reload();
+        await expect(page.locator('.msg-plate[data-id="801"]:visible img').first()).toHaveAttribute('src', iconUrl);
+        await writeFile(testInfo.outputPath('icon-geometry.json'), JSON.stringify({ viewport, measurements }, null, 2));
+        await writeFile(
+            testInfo.outputPath('messages.html'),
+            await page
+                .locator('.msg-plate[data-id="801"]:visible')
+                .first()
+                .evaluate((el) => el.outerHTML)
+        );
+        await page.screenshot({ path: testInfo.outputPath('npc-message-icons.png'), fullPage: true });
     });
 }

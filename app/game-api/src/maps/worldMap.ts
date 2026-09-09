@@ -1,5 +1,6 @@
 import type { GameApiContext, WorldStateRow } from '../context.js';
 import { asRecord, isRecord } from '@sammo-ts/common';
+import { resolveUniqueConfig } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import { readMapWorldSourceRevision } from './worldMapSourceRevision.js';
 
 export type MapCityCompact = [number, number, number, number, number, number];
@@ -16,6 +17,7 @@ export type BaseMapResult = {
         initialLevel: number;
         increaseYears: number;
     };
+    uniqueItemLimit: { count: number; until: { year: number; month: number } | null };
     cityList: MapCityCompact[];
     nationList: MapNationCompact[];
 };
@@ -52,7 +54,7 @@ const MAP_VERSION = 0 as const;
 const BASE_MAP_TTL_SECONDS = 30;
 const PUBLIC_MAP_TTL_SECONDS = 600;
 
-const resolveStartYear = (worldState: WorldStateRow): number => {
+const resolveStartYear = (worldState: Pick<WorldStateRow, 'meta'>): number => {
     const meta = asRecord(worldState.meta);
     const scenarioMeta = asRecord(meta.scenarioMeta);
     const startYear = scenarioMeta.startYear;
@@ -85,6 +87,28 @@ const resolveTechLevelLimit = (worldState: WorldStateRow): BaseMapResult['techLe
         initialLevel: readPositiveInteger(constValues.initialAllowedTechLevel, 1),
         increaseYears: readPositiveInteger(constValues.techLevelIncYear, 5),
     };
+};
+
+// 획득/경매와 같은 시나리오 설정을 사용하며, 장수 개인의 보유 수는 공개하지 않는다.
+export const resolveMapUniqueItemLimit = (
+    worldState: Pick<WorldStateRow, 'config' | 'meta' | 'currentYear'>
+): BaseMapResult['uniqueItemLimit'] => {
+    const config = resolveUniqueConfig(asRecord(asRecord(worldState.config).const));
+    const startYear = resolveStartYear(worldState);
+    const relativeYear = worldState.currentYear - startYear;
+    const slotCount = Object.keys(config.allItems).length;
+    let count = Math.min(1, slotCount);
+    for (const [targetYear, targetCount] of config.maxUniqueItemLimit) {
+        const nextCount = Math.min(targetCount, slotCount);
+        if (relativeYear < targetYear) {
+            if (nextCount !== count) {
+                return { count, until: { year: startYear + targetYear - 1, month: 12 } };
+            }
+        } else {
+            count = nextCount;
+        }
+    }
+    return { count, until: null };
 };
 
 const normalizeNumberRecord = (value: unknown): Record<number, number> => {
@@ -154,7 +178,10 @@ const loadBaseMap = async (
         }
         if (cached) {
             try {
-                return JSON.parse(cached) as BaseMapResult;
+                const parsed = JSON.parse(cached) as BaseMapResult;
+                if (parsed.uniqueItemLimit) {
+                    return parsed;
+                }
             } catch {
                 // Ignore cache parse errors.
             }
@@ -207,6 +234,7 @@ const loadBaseMap = async (
         year: worldState.currentYear,
         month: worldState.currentMonth,
         techLevelLimit: resolveTechLevelLimit(worldState),
+        uniqueItemLimit: resolveMapUniqueItemLimit(worldState),
         cityList,
         nationList,
     };

@@ -1,3 +1,4 @@
+import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import type {
     ActionContextBase,
     ActionContextBuilder,
@@ -2121,7 +2122,7 @@ export const createReservedTurnHandler = async (options: {
                         nationId: currentGeneral.nationId,
                         nationName: currentNation?.name ?? '재야',
                         color: currentNation?.color ?? '#000000',
-                        icon: currentGeneral.picture ?? '',
+                        icon: resolveMessageTargetIcon(currentGeneral),
                     };
                     messages.push({
                         msgType: 'public',

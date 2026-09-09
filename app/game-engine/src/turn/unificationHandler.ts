@@ -1,3 +1,4 @@
+import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { createHash } from 'node:crypto';
 
 import { asNumber, asRecord, JosaUtil } from '@sammo-ts/common';
@@ -156,7 +157,7 @@ export const createUnificationHandler = (options: {
                                 nationId: winner.id,
                                 nationName: winner.name,
                                 color: winner.color,
-                                icon: recipient.picture ?? '',
+                                icon: resolveMessageTargetIcon(recipient),
                             },
                             text: `이벤트 게임으로 이민족[${invader.difficulty}]을 소환`,
                             time: context.turnTime,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GameApiContext } from '../src/context.js';
-import { loadWorldMap, buildRevisionedBaseMapCacheKey } from '../src/maps/worldMap.js';
+import { loadWorldMap, buildRevisionedBaseMapCacheKey, resolveMapUniqueItemLimit } from '../src/maps/worldMap.js';
 import { readMapWorldSourceRevision } from '../src/maps/worldMapSourceRevision.js';
 
 const revisionRow = (overrides: Record<string, unknown> = {}) => ({
@@ -18,16 +18,14 @@ describe('world map revision cache', () => {
             db: { $queryRaw: queryRaw },
         } as unknown as GameApiContext;
 
-        await expect(buildRevisionedBaseMapCacheKey(ctx)).resolves.toBe(
-            'sammo:map:base:hwe:scenario_2400:pg12'
-        );
+        await expect(buildRevisionedBaseMapCacheKey(ctx)).resolves.toBe('sammo:map:base:hwe:scenario_2400:pg12');
         await expect(buildRevisionedBaseMapCacheKey(ctx, 'public')).resolves.toBe(
             'sammo:map:public:hwe:scenario_2400:pg12'
         );
         expect(queryRaw).toHaveBeenCalledTimes(2);
         const statement = queryRaw.mock.calls[0]?.[0] as { sql: string; values: unknown[] };
         expect(statement.sql).toContain('read_model_revision_meta');
-        expect(statement.sql).toContain("revision.\"domain\" = 'map.world'");
+        expect(statement.sql).toContain('revision."domain" = \'map.world\'');
         expect(statement.values).toEqual([]);
     });
 
@@ -98,6 +96,7 @@ describe('world map revision cache', () => {
         const first = await loadWorldMap(ctx, { generalId: 7, useCache: true });
         const second = await loadWorldMap(ctx, { generalId: 8, useCache: true });
 
+        expect(first?.uniqueItemLimit).toEqual({ count: 0, until: null });
         expect(first).toMatchObject({ myCity: 3, myNation: 2, spyList: { 5: 9 } });
         expect(second).toMatchObject({ myCity: 4, myNation: 3, spyList: { 6: 8 } });
         expect(redis.set).toHaveBeenCalledTimes(1);
@@ -106,6 +105,12 @@ describe('world map revision cache', () => {
         expect(shared).not.toHaveProperty('shownByGeneralList');
         expect(shared).not.toHaveProperty('myCity');
         expect(shared).not.toHaveProperty('myNation');
+        // 배포 전 캐시는 새 안내 필드를 포함하도록 DB에서 다시 만든다.
+        delete shared.uniqueItemLimit;
+        cache.set(cache.keys().next().value!, JSON.stringify(shared));
+        const refreshed = await loadWorldMap(ctx, { generalId: 7, useCache: true });
+        expect(refreshed?.uniqueItemLimit).toEqual({ count: 0, until: null });
+        expect(redis.set).toHaveBeenCalledTimes(2);
     });
 
     it('does not read or write Redis when PostgreSQL revision authority is unavailable', async () => {
@@ -121,12 +126,60 @@ describe('world map revision cache', () => {
             redis,
             db: {
                 $queryRaw: queryRaw,
-                worldState: { findFirst: vi.fn(async () => ({ currentYear: 185, currentMonth: 1, config: {}, meta: {} })) },
+                worldState: {
+                    findFirst: vi.fn(async () => ({ currentYear: 185, currentMonth: 1, config: {}, meta: {} })),
+                },
             },
         } as unknown as GameApiContext;
 
         await expect(loadWorldMap(ctx, { useCache: true })).resolves.toMatchObject({ result: true });
         expect(redis.get).not.toHaveBeenCalled();
         expect(redis.set).not.toHaveBeenCalled();
+    });
+});
+
+describe('map unique ownership limit', () => {
+    const state = (currentYear: number, constValues: Record<string, unknown> = {}) => ({
+        currentYear,
+        meta: { scenarioMeta: { startYear: 180 } },
+        config: { const: { allItems: { horse: {}, weapon: {}, book: {}, item: {} }, ...constValues } },
+    });
+
+    it.each([
+        [179, 1, 182],
+        [181, 1, 182],
+        [182, 1, 182],
+        [183, 2, 189],
+        [189, 2, 189],
+        [190, 3, 199],
+        [200, 4, null],
+    ])('projects year %i and the inclusive last month', (year, count, untilYear) => {
+        expect(resolveMapUniqueItemLimit(state(year!))).toEqual({
+            count,
+            until: untilYear === null ? null : { year: untilYear, month: 12 },
+        });
+    });
+
+    it('uses custom thresholds, skips unchanged caps and respects the slot pool', () => {
+        expect(
+            resolveMapUniqueItemLimit(
+                state(181, {
+                    maxUniqueItemLimit: [
+                        [-1, 1],
+                        [2, 1],
+                        [4, 3],
+                        [8, 4],
+                    ],
+                })
+            )
+        ).toEqual({ count: 1, until: { year: 183, month: 12 } });
+        expect(
+            resolveMapUniqueItemLimit(
+                state(183, {
+                    allItems: { horse: {}, weapon: {} },
+                })
+            )
+        ).toEqual({ count: 2, until: null });
+        expect(resolveMapUniqueItemLimit(state(181, { allItems: {} }))).toEqual({ count: 0, until: null });
     });
 });

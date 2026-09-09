@@ -52,6 +52,13 @@ void describe('generalIcon', () => {
         );
     });
 
+    void it('resolves stored NPC message pictures like directory icons across scenarios', () => {
+        for (const picture of ['롤시나리오/다이애나.png', '장수/관우 1.png', '22.jpg', 'default.jpg']) {
+            assert.equal(resolveMessageGeneralIconUrl(picture), resolveGeneralIconUrl({ picture, imageServer: 0 }));
+        }
+        assert.equal(resolveMessageGeneralIconUrl(null), resolveGeneralIconUrl({ picture: null }));
+    });
+
     void it('translates legacy message d_pic references without changing absolute or external icons', () => {
         assert.equal(
             resolveMessageGeneralIconUrl('d_pic/users/core2026/user name.jpg', '/gateway/api/user-icons/'),
