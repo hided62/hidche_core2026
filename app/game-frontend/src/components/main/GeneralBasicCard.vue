@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../../composables/useClockDisplay';
+const { projectTime } = useClockDisplay();
 import { computed } from 'vue';
 
 import SkeletonLines from '../ui/SkeletonLines.vue';
@@ -257,7 +259,7 @@ const specialText = computed(() => {
                     {{ props.general.officerLevelText }} | {{ props.general.generalType ?? '-' }} |
                     <span :style="{ color: injuryInfo.color }">{{ injuryInfo.text }}</span> 】
                     <span data-general-turn-time>{{
-                        props.general.turnTime ? formatLocalTimeSeconds(props.general.turnTime) : '-'
+                        props.general.turnTime ? formatLocalTimeSeconds(projectTime(props.general.turnTime)) : '-'
                     }}</span>
                 </div>
 

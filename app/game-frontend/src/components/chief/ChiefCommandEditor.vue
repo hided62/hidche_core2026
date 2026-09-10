@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useClockDisplay } from '../../composables/useClockDisplay';
+import { formatSeoulTimeSeconds } from '../../utils/legacyDateTime';
+const { time } = useClockDisplay();
+const currentTime = computed(() => (time.value ? formatSeoulTimeSeconds(time.value) : '--:--:--'));
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
 import type {
     CommandMapData,
@@ -50,7 +54,7 @@ const reserveBulk = (entries: CommandPatternEntry[], complete?: ReservationCompl
         :mobile="props.mobile"
         :title="props.officerLevelText"
         :name="props.name"
-        :current-time="props.rows[0]?.time"
+        :current-time="currentTime"
         :map-data="props.mapData"
         :map-layout="props.mapLayout"
         @reserve-bulk="reserveBulk"

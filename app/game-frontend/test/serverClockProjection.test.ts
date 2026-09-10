@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     millisecondsUntilNextMinute,
     projectServerClock,
+    projectRecoveryTime,
     sampleServerClock,
 } from '../src/utils/serverClockProjection.ts';
 
@@ -91,4 +92,60 @@ void test('waits then accelerates from a partial month and returns to normal wit
     assert.equal(projectServerClock(sample, 2160000).time.toISOString(), '2026-09-07T01:00:00.000Z');
     assert.equal(projectServerClock(sample, 2160000).rate, 1);
     assert.equal(projectServerClock(sample, 2160001).time.toISOString(), '2026-09-07T01:00:00.001Z');
+});
+
+void test('actual deadlines compress only the recovery window and preserve the original phase afterward', () => {
+    const sample = sampleServerClock(
+        {
+            serverTime: '2026-09-10T01:00:00Z',
+            serverWallTime: '2026-09-10T02:00:00Z',
+            clockRunning: true,
+            clockRecovery: { startsAt: '2026-09-10T02:00:00Z', endsAt: '2026-09-10T03:00:00Z' },
+        },
+        0
+    );
+    assert.ok(sample);
+    for (const [game, actual] of [
+        ['01:20', '02:10'],
+        ['02:20', '02:40'],
+        ['03:20', '03:20'],
+        ['01:00', '02:00'],
+        ['03:00', '03:00'],
+    ]) {
+        assert.equal(
+            projectRecoveryTime(sample, new Date(`2026-09-10T${game}:00Z`)).toISOString(),
+            `2026-09-10T${actual}:00.000Z`
+        );
+    }
+    // Recovery resampling must not move a deadline, even with a skewed browser clock.
+    const middle = sampleServerClock(
+        {
+            serverTime: '2026-09-10T02:00:00Z',
+            serverWallTime: '2026-09-10T02:30:00Z',
+            clockRecovery: { startsAt: '2026-09-10T02:00:00Z', endsAt: '2026-09-10T03:00:00Z' },
+        },
+        1234567
+    );
+    assert.equal(
+        projectRecoveryTime(middle, new Date('2026-09-10T02:20:00Z')).toISOString(),
+        '2026-09-10T02:40:00.000Z'
+    );
+});
+
+void test('actual deadline projection handles waiting, missing metadata, stopped clocks and historical dates', () => {
+    const input = {
+        serverTime: '2026-09-10T00:10:00Z',
+        serverWallTime: '2026-09-10T00:24:00Z',
+        clockRunning: false,
+        clockStartsAt: '2026-09-10T00:35:00Z',
+        clockRecovery: { startsAt: '2026-09-10T00:35:00Z', endsAt: '2026-09-10T01:00:00Z' },
+    };
+    const target = new Date('2026-09-10T00:20:00Z');
+    assert.equal(projectRecoveryTime(sampleServerClock(input, 0), target).toISOString(), '2026-09-10T00:40:00.000Z');
+    const history = new Date('2026-09-09T23:00:00Z');
+    assert.equal(projectRecoveryTime(sampleServerClock(input, 0), history), history);
+    assert.equal(projectRecoveryTime(sampleServerClock({ ...input, clockStartsAt: null }, 0), target), target);
+    assert.equal(projectRecoveryTime(sampleServerClock({ ...input, clockMode: 'manual' }, 0), target), target);
+    assert.equal(projectRecoveryTime(sampleServerClock({ ...input, clockRecovery: null }, 0), target), target);
+    assert.equal(projectRecoveryTime(null, target), target);
 });

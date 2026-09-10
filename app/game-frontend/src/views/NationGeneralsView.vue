@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatGameTime } = useClockDisplay();
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -495,7 +497,7 @@ const cellValue = (general: General, columnId: NationGeneralColumnId): CellValue
         case 'reservedCommand':
             return commandText(general, false);
         case 'turntime':
-            return formatServerDateTime(details(general).turnTime, { format: 'minuteSecond', fallback: '?' });
+            return formatGameTime(details(general).turnTime, { format: 'minuteSecond', fallback: '?' });
         case 'recent_war':
             return formatServerDateTime(details(general).recentWar, { format: 'minuteSecond', fallback: '-' });
         case 'years_1':

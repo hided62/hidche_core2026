@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed } from 'vue';
+import { useClockDisplay } from '../../composables/useClockDisplay';
 import { addMinutes } from 'date-fns';
 import ReservedCommandEditor from '../command/ReservedCommandEditor.vue';
 import { generalTurnEditorModeStorageKey } from '../command/commandQueue';
 import { formatLocalDateTime, formatLocalTimeSeconds } from '../../utils/legacyDateTime';
-import { projectServerClock, sampleServerClock, type SampledServerClock } from '../../utils/serverClockProjection';
+
 import { gameFrontendRuntimeConfig } from '../../config/runtimeConfig';
 import type {
     CommandMapData,
@@ -13,6 +14,9 @@ import type {
     CommandTable,
     ReservedCommandRow,
 } from '../command/types';
+
+const { projectTime, time } = useClockDisplay();
+const currentServerTime = computed(() => (time.value ? formatLocalTimeSeconds(time.value) : '--:--:--'));
 
 type ReservationCompletion = (success: boolean) => void;
 
@@ -69,7 +73,7 @@ const rows = computed<ReservedCommandRow[]>(() => {
     const term = props.turnTermMinutes ?? 0;
     return (props.reservedGeneralTurns ?? []).map((turn, offset) => {
         const absoluteMonth = firstReservedMonth.value + offset;
-        const date = base && Number.isFinite(base.getTime()) ? addMinutes(base, offset * term) : null;
+        const date = base && Number.isFinite(base.getTime()) ? projectTime(addMinutes(base, offset * term)) : null;
         return {
             ...turn,
             args: turn.args ?? {},
@@ -100,61 +104,8 @@ const autonomousUntil = computed(() => {
         base && Number.isFinite(base.getTime())
             ? addMinutes(base, (lastAutonomousMonth - currentAbsoluteMonth) * term)
             : null;
-    const currentTimeLabel = expiresAt ? formatLocalDateTime(expiresAt) : '현재시각 확인 불가';
+    const currentTimeLabel = expiresAt ? formatLocalDateTime(projectTime(expiresAt)) : '현재시각 확인 불가';
     return `${untilYear}年 ${untilMonth}月 · ${currentTimeLabel}까지`;
-});
-
-const currentServerTime = ref('--:--:--');
-const MAX_SERVER_CLOCK_TIMER_DELAY_MS = 60_000;
-let serverClockSample: SampledServerClock | null = null;
-let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
-
-const updateServerClock = () => {
-    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
-    serverClockTimer = undefined;
-    if (serverClockSample === null) {
-        currentServerTime.value = '--:--:--';
-        return;
-    }
-    const { clientElapsedMs, time: projectedTime, rate } = projectServerClock(serverClockSample);
-    currentServerTime.value = formatLocalTimeSeconds(projectedTime);
-    if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
-        const untilStartMs = serverClockSample.startDelayMs - clientElapsedMs;
-        serverClockTimer = setTimeout(
-            updateServerClock,
-            untilStartMs > 0
-                ? Math.min(untilStartMs, MAX_SERVER_CLOCK_TIMER_DELAY_MS)
-                : (1_000 - projectedTime.getMilliseconds()) / rate
-        );
-    }
-};
-
-watch(
-    () =>
-        [
-            props.serverTime,
-            props.serverWallTime,
-            props.clockMode,
-            props.clockRunning,
-            props.clockStartsAt,
-            props.clockRecovery,
-        ] as const,
-    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt, clockRecovery]) => {
-        serverClockSample = sampleServerClock({
-            serverTime,
-            serverWallTime,
-            clockMode,
-            clockRunning,
-            clockStartsAt,
-            clockRecovery,
-        });
-        updateServerClock();
-    },
-    { immediate: true }
-);
-
-onUnmounted(() => {
-    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
 });
 </script>
 

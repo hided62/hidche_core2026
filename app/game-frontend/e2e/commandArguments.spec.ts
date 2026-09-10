@@ -840,12 +840,23 @@ const install = async (
     page: Page,
     rejectGeneral = false,
     commandTableResponse: unknown = commandTable,
-    generalId = 1
+    generalId = 1,
+    recoveryClock?: {
+        serverTime: string;
+        serverWallTime: string;
+        clockRunning: boolean;
+        clockRecovery: { startsAt: string; endsAt: string } | null;
+        turnEngineRunning: boolean;
+    }
 ) => {
     const requests: unknown[] = [];
     const currentGeneralContext = {
         ...generalContext,
-        general: { ...generalContext.general, id: generalId },
+        general: {
+            ...generalContext.general,
+            id: generalId,
+            ...(recoveryClock ? { turnTime: '2026-09-10T01:20:00Z' } : {}),
+        },
     };
     const generalTurns = turns(30);
     const nationTurns = turns(12);
@@ -929,7 +940,8 @@ const install = async (
                     myGeneral: { id: generalId, name: '장수' },
                     year: 200,
                     month: 1,
-                    turnTerm: 10,
+                    turnTerm: recoveryClock ? 60 : 10,
+                    ...recoveryClock,
                     userCnt: 1,
                     maxUserCnt: 100,
                     npcCnt: 0,
@@ -959,7 +971,19 @@ const install = async (
                 });
             }
             if (name === 'turns.getCommandTable') return response(commandTableResponse);
-            if (name === 'nation.getChiefCenter') return response(chiefCenter);
+            if (name === 'nation.getChiefCenter')
+                return response(
+                    recoveryClock
+                        ? {
+                              ...chiefCenter,
+                              turnTermMinutes: 60,
+                              chiefs: chiefCenter.chiefs.map((chief) => ({
+                                  ...chief,
+                                  turnTime: '2026-09-10T01:20:00Z',
+                              })),
+                          }
+                        : chiefCenter
+                );
             if (name === 'turns.reserved.getGeneral')
                 return response({ turns: generalTurns, revision: generalRevision, autorunLimit: 2403 });
             if (name === 'turns.reserved.getNation') return response({ turns: nationTurns, revision: nationRevision });
@@ -3341,3 +3365,133 @@ test('keeps the chief footer return button the same size as the top return butto
     const mobile = await measure();
     expect(mobile.bottom).toEqual(mobile.top);
 });
+
+const captureRecoveryControl = async (page: Page, selector: string, name: string) => {
+    const control = page.locator(selector).first();
+    await control.scrollIntoViewIfNeeded();
+    const read = () =>
+        control.evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return {
+                rect: rect.toJSON(),
+                color: style.color,
+                background: style.backgroundColor,
+                font: style.font,
+                outline: style.outline,
+                cursor: style.cursor,
+                html: el.outerHTML,
+                overflow: el.scrollWidth > el.clientWidth,
+            };
+        });
+    const normal = await read();
+    expect(normal.rect.width).toBeGreaterThan(0);
+    expect(normal.rect.x).toBeGreaterThanOrEqual(0);
+    expect(normal.rect.right).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+    await control.hover();
+    const hover = await read();
+    await control.focus();
+    const focus = await read();
+    await page.mouse.down();
+    const active = await read();
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+    await writeFile(test.info().outputPath(`${name}.json`), JSON.stringify({ normal, hover, focus, active }, null, 2));
+};
+
+for (const width of [1200, 500]) {
+    test(`recovery clock preference and quick switches at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 1000 });
+        await page.clock.setFixedTime(new Date('2026-09-10T02:00:00Z'));
+        const recoveryClock: NonNullable<Parameters<typeof install>[4]> = {
+            serverTime: '2026-09-10T01:00:00Z',
+            serverWallTime: '2026-09-10T02:00:00Z',
+            clockRunning: true,
+            turnEngineRunning: true,
+            clockRecovery: { startsAt: '2026-09-10T02:00:00Z', endsAt: '2026-09-10T03:00:00Z' },
+        };
+        await install(page, false, commandTable, 1, recoveryClock);
+        await page.goto(gamePath('/'));
+        const top = page.locator('.execution-status');
+        const clock = page.locator('[data-command-current-time]:visible').first();
+        await expect(top).toContainText('게임 시간');
+        await expect(top).toHaveCSS('color', 'rgb(255, 209, 128)');
+        const gameText = await clock.textContent();
+        await top.click();
+        await expect(top).toContainText('실제 시간');
+        await expect(top).toHaveCSS('color', 'rgb(165, 214, 167)');
+        await expect(clock).not.toHaveText(gameText!);
+        await expect(page.locator('[data-general-turn-time]:visible').first()).toContainText('02:10:00');
+        const editor = page.locator('[data-command-scope="general"]:visible').first();
+        await expect(editor).toContainText('02:40');
+        await expect(editor).toContainText('03:20');
+        await clock.focus();
+        await page.keyboard.press('Enter');
+        await expect(top).toContainText('게임 시간');
+        await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+        await clock.click();
+        await expect(top).toContainText('실제 시간');
+        await page.reload();
+        await expect(top).toContainText('실제 시간');
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({ path: test.info().outputPath(`recovery-main-${width}.png`), fullPage: true });
+        await writeFile(
+            test.info().outputPath(`recovery-main-${width}.json`),
+            JSON.stringify(
+                await top.evaluate((el) => {
+                    const rect = el.getBoundingClientRect();
+                    const style = getComputedStyle(el);
+                    return {
+                        text: el.textContent,
+                        rect: rect.toJSON(),
+                        color: style.color,
+                        font: style.font,
+                        html: el.outerHTML,
+                    };
+                }),
+                null,
+                2
+            )
+        );
+        await captureRecoveryControl(page, '.execution-status', `recovery-main-states-${width}`);
+        await page.goto(gamePath('/chief-center'));
+        const chiefClock = page.locator('[data-command-current-time]:visible').first();
+        await expect(chiefClock).toHaveText('11:00:00');
+        await chiefClock.click();
+        await expect(chiefClock).toHaveText('10:00:00');
+        const chief = page.locator('[data-command-scope="nation"]:visible').first();
+        await chief.getByRole('button', { name: '고급 모드', exact: true }).click();
+        await chiefClock.click();
+        await expect(chiefClock).toHaveText('11:00:00');
+        await page.screenshot({ path: test.info().outputPath(`recovery-chief-${width}.png`), fullPage: true });
+        await captureRecoveryControl(page, '[data-command-current-time]:visible', `recovery-chief-states-${width}`);
+        // At the end boundary, 1x clicks cannot change the preference.
+        recoveryClock.clockRecovery = null;
+        recoveryClock.serverTime = '2026-09-10T03:00:00Z';
+        recoveryClock.serverWallTime = '2026-09-10T03:00:00Z';
+        await page.clock.setFixedTime(new Date('2026-09-10T03:00:00Z'));
+        await expect(chiefClock).toBeDisabled();
+        await expect(chiefClock).toHaveText('12:00:00');
+        await chiefClock.evaluate((element: HTMLButtonElement) => element.click());
+        await expect(chiefClock).toHaveAttribute('title', '실제 시간 기준');
+        await page.goto(gamePath('/my-settings'));
+        const setting = page.getByRole('radiogroup', { name: '가속 시 시간 표시 기준' });
+        await expect(setting.getByRole('radio', { name: '실제 시간 기준', exact: true })).toBeChecked();
+        await setting.getByRole('radio', { name: '게임 시간 기준', exact: true }).check();
+        await page.screenshot({ path: test.info().outputPath(`recovery-settings-${width}.png`), fullPage: true });
+        await captureRecoveryControl(
+            page,
+            '[aria-label="가속 시 시간 표시 기준"]',
+            `recovery-settings-states-${width}`
+        );
+        await page.reload();
+        await expect(setting.getByRole('radio', { name: '게임 시간 기준', exact: true })).toBeChecked();
+        await page.goto(gamePath('/'));
+        await expect(top).toHaveCSS('color', 'rgb(0, 255, 255)');
+        await expect(top).toBeDisabled();
+        recoveryClock.turnEngineRunning = false;
+        await page.reload();
+        await expect(top).toHaveCSS('color', 'rgb(255, 0, 255)');
+        await expect(clock).toBeDisabled();
+    });
+}

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { useClockDisplayRefresh } from './composables/useClockDisplayRefresh';
 import { RouterView } from 'vue-router';
 import GameServerConnectionNotice from './components/ui/GameServerConnectionNotice.vue';
 import GameFeedbackLayer from './components/ui/GameFeedbackLayer.vue';
 import { useDeploymentVersionNotice } from './composables/useDeploymentVersionNotice';
 
 useDeploymentVersionNotice();
+useClockDisplayRefresh();
 </script>
 
 <template>

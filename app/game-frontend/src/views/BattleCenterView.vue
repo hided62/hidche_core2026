@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatGameTime } = useClockDisplay();
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -130,7 +132,7 @@ const selectedGeneral = computed(() => {
 
 const formatGeneralLabel = (general: GeneralEntry): string => {
     const name = general.officerLevel > 4 ? `*${general.name}*` : general.name;
-    const time = formatServerDateTime(general.turnTime, { format: 'hourMinute', fallback: '--:--' });
+    const time = formatGameTime(general.turnTime, { format: 'hourMinute', fallback: '--:--' });
     if (orderBy.value === 'recentWar') {
         return `${name} (${formatServerDateTime(general.recentWar, { format: 'hourMinute', fallback: '--:--' })})`;
     }

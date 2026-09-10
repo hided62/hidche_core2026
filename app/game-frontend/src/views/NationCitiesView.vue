@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatGameTime } = useClockDisplay();
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -700,7 +701,7 @@ onMounted(async () => {
                                         </template>
                                     </td>
                                     <td>{{ general.killTurn }}</td>
-                                    <td>{{ formatServerDateTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
+                                    <td>{{ formatGameTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
                                 </tr>
                             </tbody>
                         </table>

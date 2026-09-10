@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router';
 
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { useSessionStore } from '../stores/session';
-import { formatSeoulDateTime } from '../utils/legacyDateTime';
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatSeoulDateTime } = useClockDisplay();
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';

@@ -1,5 +1,8 @@
 import { trpcJsonBodyHttpClientOptions } from '@sammo-ts/common/http/trpcTransport';
 import { REALTIME_ACCESS_GRANT_HEADER } from '@sammo-ts/common/realtime/types';
+import { observable } from '@trpc/server/observable';
+import { receiveClockSample } from '../composables/useClockDisplay';
+import type { ServerClockProjectionInput } from './serverClockProjection';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@sammo-ts/game-api';
 import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
@@ -25,6 +28,24 @@ const getGameToken = (): string | null => {
 
 export const trpc = createTRPCProxyClient<AppRouter>({
     links: [
+        () =>
+            ({ op, next }) =>
+                observable((observer) =>
+                    next(op).subscribe({
+                        next(value) {
+                            if (op.path === 'lobby.info' && 'data' in value.result && value.result.data) {
+                                receiveClockSample(
+                                    value.result.data as ServerClockProjectionInput & {
+                                        turnEngineRunning?: boolean | null;
+                                    }
+                                );
+                            }
+                            observer.next(value);
+                        },
+                        error: (error) => observer.error(error),
+                        complete: () => observer.complete(),
+                    })
+                ),
         httpBatchLink({
             url: gameFrontendRuntimeConfig.gameApiUrl,
             ...trpcJsonBodyHttpClientOptions,

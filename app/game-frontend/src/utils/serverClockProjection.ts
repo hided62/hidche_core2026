@@ -10,6 +10,7 @@ export type ServerClockProjectionInput = {
 export type SampledServerClock = {
     serverTimeMs: number;
     sampledClientTimeMs: number;
+    serverWallTimeMs?: number;
     clockMode: 'realtime' | 'manual';
     startDelayMs: number | null;
     recoveryStartDelayMs?: number;
@@ -49,6 +50,7 @@ export const sampleServerClock = (
     return {
         serverTimeMs,
         sampledClientTimeMs,
+        ...(wallSample !== null ? { serverWallTimeMs: wallSample } : {}),
         clockMode: input.clockMode ?? 'realtime',
         startDelayMs,
         ...(wallSample !== null && recoveryStart !== null && recoveryEnd !== null && recoveryEnd > recoveryStart
@@ -92,4 +94,26 @@ export const projectServerClock = (sample: SampledServerClock, clientTimeMs = Da
 export const millisecondsUntilNextMinute = (time: Date): number => {
     const remainder = ((time.getTime() % 60_000) + 60_000) % 60_000;
     return remainder === 0 ? 60_000 : 60_000 - remainder;
+};
+
+// 복구 종료 좌표를 기준으로 역산한다. 종료 이후의 턴에는 2배속을 적용하지 않는다.
+export const projectRecoveryTime = (sample: SampledServerClock | null, gameTime: Date): Date => {
+    if (
+        !sample ||
+        sample.clockMode === 'manual' ||
+        sample.startDelayMs === null ||
+        sample.serverWallTimeMs === undefined ||
+        sample.recoveryStartDelayMs === undefined ||
+        sample.recoveryEndDelayMs === undefined
+    )
+        return gameTime;
+    const endDelay = sample.recoveryEndDelayMs;
+    const endGame = projectServerClock(sample, sample.sampledClientTimeMs + Math.max(0, endDelay)).time.getTime();
+    const endWall = sample.serverWallTimeMs + endDelay;
+    const span = endDelay - sample.recoveryStartDelayMs;
+    const startGame = endGame - 2 * span;
+    const target = gameTime.getTime();
+    // 이전 기록은 이 복구 창으로 실제 발생 시각을 알 수 없으므로 그대로 둔다.
+    if (target < startGame) return gameTime;
+    return new Date(Math.ceil(target <= endGame ? endWall - (endGame - target) / 2 : endWall + target - endGame));
 };

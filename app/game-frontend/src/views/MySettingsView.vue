@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { mode: clockDisplayMode } = useClockDisplay();
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { trpc } from '../utils/trpc';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
@@ -145,6 +147,18 @@ onBeforeUnmount(() => {
                             <label><input v-model="screenMode" type="radio" value="auto" />자동</label>
                             <label><input v-model="screenMode" type="radio" value="500px" />500px</label>
                             <label><input v-model="screenMode" type="radio" value="1000px" />1000px</label>
+                        </div>
+                    </div>
+
+                    <div class="screen-mode-row">
+                        <span
+                            >가속 시 시간 표시 기준<br /><small
+                                >이 기기에 저장하며, 2배속 중에는 시계를 눌러 바꿀 수 있습니다.</small
+                            ></span
+                        >
+                        <div class="button-group" role="radiogroup" aria-label="가속 시 시간 표시 기준">
+                            <label><input v-model="clockDisplayMode" type="radio" value="game" />게임 시간 기준</label>
+                            <label><input v-model="clockDisplayMode" type="radio" value="real" />실제 시간 기준</label>
                         </div>
                     </div>
 

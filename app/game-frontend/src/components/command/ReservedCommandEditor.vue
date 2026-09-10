@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../../composables/useClockDisplay';
+const { accelerated, label: clockLabel, toggle: toggleClock, mode: clockDisplayMode } = useClockDisplay();
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
@@ -382,7 +384,18 @@ const clickOutsideMenu = (event: Event) => {
                     ><span>{{ props.title }}</span>
                 </div>
                 <button type="button" @click="editMode = !editMode">{{ editMode ? '일반 모드' : '고급 모드' }}</button>
-                <div class="clock" data-command-current-time>{{ props.currentTime }}</div>
+                <button
+                    type="button"
+                    class="clock"
+                    data-command-current-time
+                    :class="{ 'clock--real': accelerated && clockDisplayMode === 'real' }"
+                    :disabled="!accelerated"
+                    :title="accelerated ? `${clockLabel} · 클릭하여 변경` : clockLabel"
+                    :aria-label="`현재 시각 · ${clockLabel}`"
+                    @click="toggleClock"
+                >
+                    {{ props.currentTime }}
+                </button>
                 <details class="legacy-menu">
                     <summary>반복</summary>
                     <div class="menu-items">
@@ -881,9 +894,16 @@ const clickOutsideMenu = (event: Event) => {
     place-items: center;
     padding: 4px;
 }
-.clock {
+.control-pad > .clock {
     background: #345c85;
     font-variant-numeric: tabular-nums;
+}
+.clock:disabled {
+    opacity: 1;
+    cursor: default;
+}
+.control-pad > .clock--real {
+    background: #386b45;
 }
 .legacy-menu {
     position: relative;

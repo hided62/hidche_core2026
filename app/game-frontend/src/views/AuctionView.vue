@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatGameTime } = useClockDisplay();
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -42,8 +44,8 @@ const resolveErrorMessage = (value: unknown): string => {
 const formatNumber = (value: number | null | undefined): string => (value ?? 0).toLocaleString();
 const displayCode = (value: string | null | undefined): string =>
     !value || /^\d+$/u.test(value) ? '-' : value.replace(/^che_(?:event_)?/u, '');
-const cutDateTime = (value: string | null | undefined, showSecond = false): string => {
-    return formatServerDateTime(value, {
+const cutDateTime = (value: string | null | undefined, showSecond = false, gameTime = true): string => {
+    return (gameTime ? formatGameTime : formatServerDateTime)(value, {
         format: showSecond ? 'monthDayTimeSeconds' : 'monthDayTime',
         fallback: '-',
     });
@@ -413,7 +415,7 @@ onMounted(() => {
                 <div v-for="bid in uniqueDetail.bids" :key="bid.id" class="bid-row">
                     <span :class="{ 'is-me': bid.isCaller }">{{ bid.bidderName }}</span>
                     <span class="tnum">{{ formatNumber(bid.amount) }}</span>
-                    <time class="tnum">{{ cutDateTime(bid.eventAt) }}</time>
+                    <time class="tnum">{{ cutDateTime(bid.eventAt, false, false) }}</time>
                 </div>
                 <template v-if="uniqueDetail.auction.status === 'OPEN'">
                     <h3 class="subsection-title bg1">입찰하기</h3>

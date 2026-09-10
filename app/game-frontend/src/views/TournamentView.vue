@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatGameTime } = useClockDisplay();
 import { storeToRefs } from 'pinia';
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
@@ -55,7 +56,7 @@ const matchesAt = (stage: number) =>
         .sort((a, b) => a.roundIndex - b.roundIndex);
 const nameOf = (id?: number) => (id ? (participantsById.value.get(id)?.name ?? `#${id}`) : '-');
 const openingTime = computed(() =>
-    formatServerDateTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
+    formatGameTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
 );
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)

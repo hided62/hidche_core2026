@@ -1,13 +1,8 @@
 <script setup lang="ts">
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { resolveTournamentStageName } from '../../utils/tournamentStatus';
-import {
-    millisecondsUntilNextMinute,
-    projectServerClock,
-    sampleServerClock,
-    type SampledServerClock,
-} from '../../utils/serverClockProjection';
+import { receiveClockSample, useClockDisplay } from '../../composables/useClockDisplay';
 
 const props = defineProps<{
     tournamentStage: number;
@@ -33,99 +28,53 @@ const props = defineProps<{
 }>();
 
 const tournamentStatus = computed(() => resolveTournamentStageName(props.tournamentStage));
-const currentServerTime = ref('기록 없음');
-const hasServerClock = ref(false);
-const recovering = ref(false);
-const turnEngineStopped = computed(() => props.turnEngineRunning === false);
-const turnEngineStatusUnknown = computed(() => typeof props.turnEngineRunning !== 'boolean');
+const { time, accelerated: recovering, mode, label, toggle, engineRunning } = useClockDisplay();
+const currentServerTime = computed(() =>
+    formatServerDateTime(time.value, { format: 'monthDayTime', fallback: '기록 없음' })
+);
+const hasServerClock = computed(() => time.value !== null);
+const turnEngineStopped = computed(() => engineRunning.value === false);
+const turnEngineStatusUnknown = computed(() => typeof engineRunning.value !== 'boolean');
 const serverClockTitle = computed(() => {
     if (!hasServerClock.value) return '서버 시각을 아직 받지 못했습니다.';
     if (turnEngineStopped.value) return '턴 엔진이 정지하여 현재 시각 보정을 멈췄습니다.';
     if (turnEngineStatusUnknown.value) return '턴 엔진 진행 상태를 확인하지 못했습니다.';
-    return undefined;
+    return recovering.value ? `${label.value} · 클릭하여 변경` : label.value;
 });
-
-let serverClockSample: SampledServerClock | null = null;
-let serverClockTimer: ReturnType<typeof setTimeout> | undefined;
-
-const updateServerClock = () => {
-    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
-    serverClockTimer = undefined;
-    if (serverClockSample === null) {
-        currentServerTime.value = '기록 없음';
-        hasServerClock.value = false;
-        return;
-    }
-
-    const now = Date.now();
-    const projection = projectServerClock(serverClockSample, now);
-    recovering.value = projection.rate === 2;
-    currentServerTime.value = formatServerDateTime(projection.time, {
-        format: 'monthDayTime',
-        fallback: '기록 없음',
-    });
-    hasServerClock.value = true;
-    if (props.turnEngineRunning !== true) return;
-
-    const nextDelays: number[] = [];
-    if (serverClockSample.clockMode !== 'manual' && serverClockSample.startDelayMs !== null) {
-        const untilStartMs = serverClockSample.startDelayMs - projection.clientElapsedMs;
-        nextDelays.push(
-            untilStartMs > 0 ? untilStartMs : millisecondsUntilNextMinute(projection.time) / projection.rate
-        );
-    }
-    for (const boundary of [serverClockSample.recoveryStartDelayMs, serverClockSample.recoveryEndDelayMs]) {
-        if (boundary !== undefined && boundary > projection.clientElapsedMs)
-            nextDelays.push(boundary - projection.clientElapsedMs);
-    }
-    if (nextDelays.length === 0) return;
-    serverClockTimer = setTimeout(updateServerClock, Math.max(1, Math.min(...nextDelays)));
-};
-
 watch(
-    () =>
-        [
-            props.serverTime,
-            props.serverWallTime,
-            props.clockMode,
-            props.clockRunning,
-            props.clockStartsAt,
-            props.clockRecovery,
-        ] as const,
-    ([serverTime, serverWallTime, clockMode, clockRunning, clockStartsAt, clockRecovery]) => {
-        serverClockSample = sampleServerClock({
-            serverTime,
-            serverWallTime,
-            clockMode,
-            clockRunning,
-            clockStartsAt,
-            clockRecovery,
-        });
-        updateServerClock();
-    },
+    () => [
+        props.serverTime,
+        props.serverWallTime,
+        props.clockMode,
+        props.clockRunning,
+        props.clockStartsAt,
+        props.clockRecovery,
+    ],
+    () => receiveClockSample(props),
     { immediate: true }
 );
-watch(() => props.turnEngineRunning, updateServerClock);
-
-onUnmounted(() => {
-    if (serverClockTimer !== undefined) clearTimeout(serverClockTimer);
-});
 </script>
 
 <template>
     <section class="front-status" aria-label="접속 현황과 국가 방침">
         <div class="activity-status" aria-label="현재 시각, 토너먼트와 설문 진행 현황">
-            <div
+            <button
+                type="button"
+                :disabled="!recovering || turnEngineStopped"
                 class="status-row execution-status"
                 :class="{
+                    'execution-status--game': recovering && mode === 'game',
+                    'execution-status--real': recovering && mode === 'real',
                     'execution-status--empty': !hasServerClock,
                     'execution-status--stopped': hasServerClock && turnEngineStopped,
                     'execution-status--unknown': hasServerClock && turnEngineStatusUnknown,
                 }"
                 :title="serverClockTitle"
+                @click="toggle"
             >
-                현재 시각: {{ currentServerTime }}<span v-if="recovering"> · 복구 2배속</span>
-            </div>
+                현재 시각: {{ currentServerTime
+                }}<span v-if="recovering"> · 2배속 · {{ mode === 'real' ? '실제 시간' : '게임 시간' }}</span>
+            </button>
             <div class="status-row tournament-status">
                 <RouterLink to="/tournament">
                     <span class="tournament-label">토너먼트: </span>{{ tournamentStatus }}
@@ -208,7 +157,29 @@ onUnmounted(() => {
 }
 
 .execution-status {
+    background: transparent;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    font: inherit;
+    cursor: pointer;
     color: cyan;
+}
+
+.execution-status > span {
+    display: block;
+    white-space: nowrap;
+    font-size: 12px;
+}
+.execution-status:disabled {
+    opacity: 1;
+    cursor: default;
+}
+.execution-status--game {
+    color: #ffd180;
+}
+.execution-status--real {
+    color: #a5d6a7;
 }
 
 .execution-status--empty {

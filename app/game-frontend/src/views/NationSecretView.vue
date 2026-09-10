@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
+import { useClockDisplay } from '../composables/useClockDisplay';
+const { formatTime: formatGameTime } = useClockDisplay();
 import { computed, onMounted, ref } from 'vue';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
@@ -332,7 +333,7 @@ onMounted(load);
                             >
                         </td>
                         <td>{{ general.killTurn }}</td>
-                        <td>{{ formatServerDateTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
+                        <td>{{ formatGameTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
                     </tr>
                 </tbody>
             </table>

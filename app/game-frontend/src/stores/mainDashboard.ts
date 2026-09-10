@@ -1,3 +1,4 @@
+import { receiveClockEngineState } from '../composables/useClockDisplay';
 import { computed, ref, toRaw, watch } from 'vue';
 import { defineStore } from 'pinia';
 import {
@@ -557,6 +558,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const applyTurnEngineRunning = (turnEngineRunning: boolean | null | undefined) => {
         if (turnEngineRunning === undefined || !lobbyInfo.value) return;
+        receiveClockEngineState(turnEngineRunning);
         lobbyInfo.value = structurallyShare(lobbyInfo.value, {
             ...lobbyInfo.value,
             turnEngineRunning,
