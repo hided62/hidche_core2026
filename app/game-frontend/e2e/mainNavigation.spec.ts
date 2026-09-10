@@ -4393,10 +4393,12 @@ test('all main Lumen button families share the rounded pressed geometry', async 
         [
             '당기기',
             page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '당기기' }),
+            { radius: '5.25px 0px 0px 5.25px' },
         ],
         [
             '미루기',
             page.locator('[data-main-target="commands"] .bottom-actions').getByRole('button', { name: '미루기' }),
+            { radius: '5.25px 0px 0px 5.25px' },
         ],
         [
             '펼치기',
@@ -4457,7 +4459,7 @@ test('all main Lumen button families share the rounded pressed geometry', async 
             filter: 'none',
         });
         if (label === '당기기' || label === '미루기') {
-            expect(base.width, `${label} fills its menu column`).toBeCloseTo(base.parentWidth, 2);
+            expect(base.width, `${label} leaves room for the split button`).toBeCloseTo(base.parentWidth - 28, 2);
         }
 
         await control.focus();
@@ -4702,7 +4704,7 @@ test('mobile main Lumen button families keep the same state geometry without ove
         await expect(control).toHaveClass(/legacy-button/u);
         await expect(control).toHaveCSS(
             'border-radius',
-            index === 7 ? '0px 5.25px 5.25px 0px' : index === 8 ? '5.25px 0px 0px 5.25px' : '5.25px'
+            index === 7 ? '0px 5.25px 5.25px 0px' : [4, 5, 8].includes(index) ? '5.25px 0px 0px 5.25px' : '5.25px'
         );
         await expect(control).toHaveCSS('border-bottom-width', '4px');
     }

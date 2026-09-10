@@ -701,38 +701,38 @@ const clickOutsideMenu = (event: Event) => {
                 </div>
 
                 <div v-if="!props.compact" class="bottom-actions">
-                    <details class="legacy-menu bottom-shift-menu">
-                        <summary class="legacy-button legacy-button--secondary" role="button">당기기</summary>
-                        <div class="menu-items">
-                            <button
-                                v-for="amount in props.maxShiftTurn"
-                                :key="amount"
-                                type="button"
-                                @click="
-                                    emit('shift', -amount);
-                                    clickOutsideMenu($event);
-                                "
+                    <div v-for="direction in [-1, 1]" :key="direction" class="bottom-shift-control">
+                        <button
+                            class="legacy-button legacy-button--secondary shift-main"
+                            type="button"
+                            :title="direction < 0 ? '1턴 당기기' : '1턴 미루기'"
+                            @click="emit('shift', direction)"
+                        >
+                            {{ direction < 0 ? '당기기' : '미루기' }}
+                        </button>
+                        <details class="legacy-menu bottom-shift-menu">
+                            <summary
+                                class="legacy-button legacy-button--secondary"
+                                role="button"
+                                :aria-label="direction < 0 ? '당길 턴 수 선택' : '미룰 턴 수 선택'"
                             >
-                                {{ amount }}턴
-                            </button>
-                        </div>
-                    </details>
-                    <details class="legacy-menu bottom-shift-menu">
-                        <summary class="legacy-button legacy-button--secondary" role="button">미루기</summary>
-                        <div class="menu-items">
-                            <button
-                                v-for="amount in props.maxShiftTurn"
-                                :key="amount"
-                                type="button"
-                                @click="
-                                    emit('shift', amount);
-                                    clickOutsideMenu($event);
-                                "
-                            >
-                                {{ amount }}턴
-                            </button>
-                        </div>
-                    </details>
+                                <span aria-hidden="true">▾</span>
+                            </summary>
+                            <div class="menu-items">
+                                <button
+                                    v-for="amount in props.maxShiftTurn"
+                                    :key="amount"
+                                    type="button"
+                                    @click="
+                                        emit('shift', direction * amount);
+                                        clickOutsideMenu($event);
+                                    "
+                                >
+                                    {{ amount }}턴
+                                </button>
+                            </div>
+                        </details>
+                    </div>
                     <button class="legacy-button legacy-button--secondary" type="button" @click="expanded = !expanded">
                         {{ expanded ? '접기' : '펼치기' }}
                     </button>
@@ -1098,8 +1098,29 @@ const clickOutsideMenu = (event: Event) => {
     gap: 4px;
     padding-top: 3px;
 }
+.bottom-shift-control {
+    display: flex;
+    min-width: 0;
+}
+.shift-main {
+    flex: 1;
+    min-width: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.bottom-shift-menu {
+    flex: 0 0 28px;
+}
 .bottom-shift-menu > summary {
     width: 100%;
+    padding-inline: 0;
+    border-left: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+.bottom-shift-menu .menu-items {
+    left: auto;
+    right: 0;
 }
 .command-picker {
     position: absolute;

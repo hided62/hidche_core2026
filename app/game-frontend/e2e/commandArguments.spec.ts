@@ -987,6 +987,20 @@ const install = async (
             if (name === 'messages.getContacts') return response({ nation: [] });
             if (name === 'board.getAccess') return response({ canMeeting: false, canSecret: false });
             if (name === 'tournament.getState') return response({ stage: 0 });
+            if (name === 'turns.reserved.shiftGeneral') {
+                const input = (body as Record<string, { generalId: number; amount: number; expectedRevision: number }>)[
+                    String(names.indexOf(name))
+                ];
+                expect(route.request().method()).toBe('POST');
+                expect(input.generalId).toBe(generalId);
+                expect(input.expectedRevision).toBe(generalRevision);
+                expect(
+                    Number.isInteger(input.amount) && Math.abs(input.amount) >= 1 && Math.abs(input.amount) <= 6
+                ).toBe(true);
+                requests.push(input);
+                generalRevision += 1;
+                return response({ ok: true, revision: generalRevision, turns: generalTurns, autorunLimit: 2403 });
+            }
             if (name === 'turns.reserved.setGeneralBulk') {
                 requests.push(body);
                 if (rejectGeneral) return errorResponse(name, '대상 도시를 선택할 수 없습니다.');
@@ -1018,6 +1032,80 @@ const install = async (
     });
     return requests;
 };
+
+for (const width of [1200, 500]) {
+    test(`split turn shift applies one turn or the chosen count in both modes at ${width}px`, async ({
+        page,
+    }, testInfo) => {
+        const requests = await install(page);
+        const shifts = () =>
+            requests.filter((entry) => typeof entry === 'object' && entry !== null && 'amount' in entry);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/');
+        const editor = page.locator('[data-command-scope="general"]:visible');
+        const evidence: unknown[] = [];
+        for (const advanced of [false, true]) {
+            if (advanced) await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+            for (const [index, label] of ['당기기', '미루기'].entries()) {
+                const direction = index === 0 ? -1 : 1;
+                const control = editor.locator('.bottom-shift-control').nth(index);
+                const main = control.getByRole('button', { name: label, exact: true });
+                const menu = control.locator('details');
+                const toggle = menu.locator('summary');
+                const before = shifts().length;
+                await main.click();
+                await expect.poll(() => shifts().length).toBe(before + 1);
+                expect(shifts().at(-1)).toMatchObject({ amount: direction });
+                await expect(menu).not.toHaveAttribute('open');
+                await toggle.focus();
+                await page.keyboard.press('Enter');
+                await expect(menu).toHaveAttribute('open');
+                expect(shifts().length).toBe(before + 1);
+                await expect(menu.locator('.menu-items > button')).toHaveText([
+                    '1턴',
+                    '2턴',
+                    '3턴',
+                    '4턴',
+                    '5턴',
+                    '6턴',
+                ]);
+                const geometry = await control.evaluate((element) => {
+                    const main = element.querySelector('button')!;
+                    const toggle = element.querySelector('summary')!;
+                    const menu = element.querySelector('.menu-items')!;
+                    return {
+                        main: main.getBoundingClientRect().toJSON(),
+                        toggle: toggle.getBoundingClientRect().toJSON(),
+                        menu: menu.getBoundingClientRect().toJSON(),
+                        style: { radius: getComputedStyle(main).borderRadius, font: getComputedStyle(main).fontFamily },
+                        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    };
+                });
+                expect(geometry.main.right).toBeCloseTo(geometry.toggle.left, 1);
+                expect(geometry.menu.right).toBeLessThanOrEqual(width);
+                expect(geometry.menu.left).toBeGreaterThanOrEqual(0);
+                expect(geometry.overflow).toBeLessThanOrEqual(0);
+                evidence.push({ advanced, label, geometry });
+                await page.screenshot({
+                    path: testInfo.outputPath(`split-${advanced}-${index}-${width}.png`),
+                    fullPage: true,
+                });
+                await menu.getByRole('button', { name: '6턴', exact: true }).click();
+                await expect.poll(() => shifts().length).toBe(before + 2);
+                expect(shifts().at(-1)).toMatchObject({ amount: direction * 6 });
+                await expect(menu).not.toHaveAttribute('open');
+                await main.click();
+                await expect.poll(() => shifts().length).toBe(before + 3);
+                expect(shifts().at(-1)).toMatchObject({ amount: direction });
+            }
+        }
+        await writeFile(testInfo.outputPath('split-evidence.json'), JSON.stringify(evidence, null, 2));
+        await writeFile(
+            testInfo.outputPath('split-editor.html'),
+            await editor.evaluate((element) => element.outerHTML)
+        );
+    });
+}
 
 test('offers 12 repeat turns and six shift turns for general turns while keeping the chief range', async ({ page }) => {
     await install(page);
