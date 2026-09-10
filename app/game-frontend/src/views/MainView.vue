@@ -89,6 +89,7 @@ const {
     tournamentType,
     surveyNotice,
     privateMessageNotice,
+    diplomacyMessageNotice,
     messageDraftText,
     targetMailbox,
     mailboxGroups,
@@ -168,6 +169,7 @@ const formatRecord = (entry: { text: string; createdAt?: string | Date }, append
 };
 
 let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+let diplomacyMessageNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 let privateMessageNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 watch(surveyNotice, (notice) => {
     if (surveyNoticeTimer) {
@@ -187,6 +189,15 @@ watch(privateMessageNotice, (notice) => {
         privateMessageNoticeTimer = setTimeout(() => dashboard.dismissPrivateMessageNotice(), 10 * 60_000);
     }
 });
+watch(diplomacyMessageNotice, (notice) => {
+    if (diplomacyMessageNoticeTimer) {
+        clearTimeout(diplomacyMessageNoticeTimer);
+        diplomacyMessageNoticeTimer = null;
+    }
+    if (notice) {
+        diplomacyMessageNoticeTimer = setTimeout(() => dashboard.dismissDiplomacyMessageNotice(), 10 * 60_000);
+    }
+});
 onUnmounted(() => {
     if (surveyNoticeTimer) {
         clearTimeout(surveyNoticeTimer);
@@ -194,6 +205,7 @@ onUnmounted(() => {
     if (privateMessageNoticeTimer) {
         clearTimeout(privateMessageNoticeTimer);
     }
+    if (diplomacyMessageNoticeTimer) clearTimeout(diplomacyMessageNoticeTimer);
     dashboard.stopRealtime();
     window.removeEventListener('storage', handleMobilePanelStorage);
     document.removeEventListener(MOBILE_MAIN_PANEL_ORDER_CHANGED_EVENT, reloadMobilePanelOrder);
@@ -251,6 +263,13 @@ const acknowledgePrivateMessageNotice = async (moveToMessage: boolean) => {
     if (!moveToMessage) return;
     await nextTick();
     document.querySelector('.PrivateTalk > .stickyAnchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const acknowledgeDiplomacyMessageNotice = async (moveToMessage: boolean) => {
+    if (!(await dashboard.acknowledgeDiplomacyMessageNotice())) return;
+    if (!moveToMessage) return;
+    await nextTick();
+    document.querySelector('.DiplomacyTalk > .stickyAnchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 const handleNavigationAction = (action: NonNullable<MainNavigationLink['action']>) => {
@@ -346,6 +365,32 @@ watch(
             <div class="private-message-notice-actions">
                 <button type="button" @click="acknowledgePrivateMessageNotice(true)">보러가기</button>
                 <button type="button" @click="acknowledgePrivateMessageNotice(false)">이미읽음</button>
+            </div>
+        </aside>
+
+        <aside
+            v-if="diplomacyMessageNotice"
+            class="private-message-notice diplomacy-message-notice"
+            :class="{ 'diplomacy-message-notice-stacked': privateMessageNotice }"
+            role="status"
+            aria-live="polite"
+            data-testid="diplomacy-message-notice"
+        >
+            <div class="private-message-notice-title">
+                <strong>새로운 외교 메시지</strong>
+                <button
+                    type="button"
+                    class="private-message-notice-close"
+                    aria-label="외교 메시지 알림 닫기"
+                    @click="dashboard.dismissDiplomacyMessageNotice"
+                >
+                    ×
+                </button>
+            </div>
+            <p>새로운 외교 메시지가 도착했습니다.</p>
+            <div class="private-message-notice-actions">
+                <button type="button" @click="acknowledgeDiplomacyMessageNotice(true)">보러가기</button>
+                <button type="button" @click="acknowledgeDiplomacyMessageNotice(false)">이미읽음</button>
             </div>
         </aside>
 
@@ -871,6 +916,10 @@ button {
     line-height: 1.3;
 }
 
+.diplomacy-message-notice-stacked {
+    top: 180px;
+}
+
 .private-message-notice-title {
     display: flex;
     min-height: 35px;
@@ -1137,8 +1186,12 @@ button {
     }
 
     .private-message-notice {
-        z-index: 90;
+        z-index: 1080;
         top: 16px;
+    }
+
+    .diplomacy-message-notice-stacked {
+        top: 180px;
     }
 
     .layout-mobile [data-main-target='world-history'] {

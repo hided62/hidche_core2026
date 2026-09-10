@@ -130,6 +130,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const tournamentType = ref<TournamentType | null>(null);
     const surveyNotice = ref<NonNullable<FrontStatus['latestVote']> | null>(null);
     const privateMessageNotice = ref<PrivateMessageNotice | null>(null);
+    const diplomacyMessageNotice = ref<PrivateMessageNotice | null>(null);
+    let dismissedDiplomacyMessageId = 0;
     let dismissedPrivateMessageId = 0;
     let lastGeneralRecordId = 0;
     let lastWorldHistoryId = 0;
@@ -351,6 +353,39 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         privateMessageNotice.value = null;
     };
 
+    const reconcileDiplomacyMessageNotice = (nextMessages: MessageBundle | null) => {
+        const viewerGeneralId = general.value?.id;
+        if (!nextMessages || !viewerGeneralId || nextMessages.permission < 3) {
+            diplomacyMessageNotice.value = null;
+            return;
+        }
+        const newestIncomingId = nextMessages.diplomacy
+            .filter(
+                (message) =>
+                    message.src.nationId !== nextMessages.nationId &&
+                    !message.option?.invalid &&
+                    !message.option?.permissionRedacted
+            )
+            .reduce((latest, message) => Math.max(latest, message.id), 0);
+        const latestReadId = nextMessages.latestRead.diplomacy;
+        if (dismissedDiplomacyMessageId <= latestReadId) dismissedDiplomacyMessageId = 0;
+        if (newestIncomingId <= latestReadId || newestIncomingId <= dismissedDiplomacyMessageId) {
+            diplomacyMessageNotice.value = null;
+            return;
+        }
+        if (diplomacyMessageNotice.value?.messageId !== newestIncomingId) {
+            diplomacyMessageNotice.value = { messageId: newestIncomingId };
+        }
+    };
+
+    const dismissDiplomacyMessageNotice = () => {
+        dismissedDiplomacyMessageId = Math.max(
+            dismissedDiplomacyMessageId,
+            diplomacyMessageNotice.value?.messageId ?? 0
+        );
+        diplomacyMessageNotice.value = null;
+    };
+
     const mergeRecentRecords = (current: RecentRecord[], incoming: RecentRecord[]): RecentRecord[] => {
         const merged = new Map(current.map((entry) => [entry.id, entry]));
         for (const entry of incoming) {
@@ -370,6 +405,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         surveyNotice.value = null;
         privateMessageNotice.value = null;
         dismissedPrivateMessageId = 0;
+        diplomacyMessageNotice.value = null;
+        dismissedDiplomacyMessageId = 0;
     };
 
     const applyRecentRecords = (records: Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>) => {
@@ -448,10 +485,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         if (patch.messages !== undefined) {
             messages.value = structurallyShare(messages.value, patch.messages);
             reconcilePrivateMessageNotice(messages.value);
+            reconcileDiplomacyMessageNotice(messages.value);
         } else if (patch.contextSnapshot !== undefined || patch.general !== undefined) {
             // Main data is fetched concurrently, so the message bundle can arrive
             // before the authenticated general context needed to identify senders.
             reconcilePrivateMessageNotice(messages.value);
+            reconcileDiplomacyMessageNotice(messages.value);
         }
         if (patch.messageContacts !== undefined) {
             messageContacts.value = structurallyShare(messageContacts.value, patch.messageContacts);
@@ -688,6 +727,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             worldMap.value = structurallyShare(worldMap.value, map);
             messages.value = structurallyShare(messages.value, messageData);
             reconcilePrivateMessageNotice(messages.value);
+            reconcileDiplomacyMessageNotice(messages.value);
             messageContacts.value = structurallyShare(messageContacts.value, contacts);
             reservedGeneralTurns.value = structurallyShare<unknown>(
                 reservedGeneralTurns.value,
@@ -960,6 +1000,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     },
                 };
                 reconcilePrivateMessageNotice(messages.value);
+                reconcileDiplomacyMessageNotice(messages.value);
             }
             return true;
         } catch (err) {
@@ -972,6 +1013,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         const messageId = privateMessageNotice.value?.messageId;
         if (!messageId) return false;
         return readLatestMessage('private', messageId);
+    };
+
+    const acknowledgeDiplomacyMessageNotice = async (): Promise<boolean> => {
+        const messageId = diplomacyMessageNotice.value?.messageId;
+        if (!messageId) return false;
+        return readLatestMessage('diplomacy', messageId);
     };
 
     const deleteMessage = async (messageId: number) => {
@@ -1399,6 +1446,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         tournamentType,
         surveyNotice,
         privateMessageNotice,
+        diplomacyMessageNotice,
         messageDraftText,
         targetMailbox,
         mailboxGroups,
@@ -1409,6 +1457,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         stopRealtime,
         dismissSurveyNotice,
         dismissPrivateMessageNotice,
+        dismissDiplomacyMessageNotice,
+        acknowledgeDiplomacyMessageNotice,
         acknowledgePrivateMessageNotice,
         loadMainData,
         refreshMessages,

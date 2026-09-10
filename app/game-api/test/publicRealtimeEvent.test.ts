@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { resolveNationPermission } from '../src/router/nation/shared.js';
 
 import { createEmptyRealtimeReadModelChanges, type RealtimeEvent } from '@sammo-ts/common';
 import { MESSAGE_MAILBOX_NATIONAL_BASE } from '@sammo-ts/logic';
@@ -287,4 +288,29 @@ describe('public realtime event privacy boundary', () => {
             },
         });
     });
+});
+
+describe('diplomatic notification recipient roles', () => {
+    it.each([
+        ['군주', 12, 'normal', {}, true],
+        ['외교권자', 1, 'ambassador', {}, true],
+        ['조언자', 1, 'auditor', {}, true],
+        ['일반 장수', 1, 'normal', {}, false],
+        ['수뇌', 11, 'normal', {}, false],
+        ['외교 금지', 1, 'ambassador', { noAmbassador: 1 }, false],
+    ] as const)(
+        '%s receives only eligible nation diplomacy invalidations',
+        (_, officerLevel, permission, penalty, allowed) => {
+            const canReadDiplomacy =
+                resolveNationPermission({ nationId: 2, officerLevel, meta: { permission }, penalty }, {}, false) >= 3;
+            expect(canReadDiplomacy).toBe(allowed);
+            const event: RealtimeEvent = { type: 'messagesChanged', mailboxes: [], diplomacyMailboxes: [9002] };
+            expect(toPublicRealtimeEvent(event, [{ ...viewer, canReadDiplomacy }])).toEqual(
+                allowed ? { type: 'messagesInvalidated', refreshGrant } : null
+            );
+            expect(
+                toPublicRealtimeEvent({ ...event, diplomacyMailboxes: [9003] }, [{ ...viewer, canReadDiplomacy }])
+            ).toBeNull();
+        }
+    );
 });

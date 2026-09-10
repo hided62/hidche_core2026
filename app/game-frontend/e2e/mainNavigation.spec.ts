@@ -6418,3 +6418,128 @@ for (const viewport of [
         await page.screenshot({ path: testInfo.outputPath('npc-message-icons.png'), fullPage: true });
     });
 }
+
+for (const role of [
+    { name: '군주', officerLevel: 12, permission: 4 },
+    { name: '외교권자', officerLevel: 1, permission: 4 },
+    { name: '조언자', officerLevel: 1, permission: 3 },
+    { name: '일반 장수', officerLevel: 1, permission: 0 },
+]) {
+    for (const width of [1200, 390]) {
+        test(`diplomacy arrival notice ${role.name} ${width}`, async ({ page }, testInfo) => {
+            const state: NavigationFixture = {
+                ...role,
+                nationLevel: 3,
+                stage: 0,
+                npcMode: 1,
+                latestVote: null,
+                generalMeCalls: 0,
+                operations: [],
+                messages: { ...emptyMessages(role.permission), nationId: 1 },
+            };
+            await installRealtimeHarness(page);
+            await installFixture(page, state);
+            await page.setViewportSize({ width, height: 900 });
+            await waitForMain(page);
+            await waitForMainRealtime(page);
+            const notice = page.getByTestId('diplomacy-message-notice');
+            const message = (id: number, sourceNation = 2, option: Record<string, unknown> | null = null) => ({
+                ...privateMessage(id, 9),
+                msgType: 'diplomacy',
+                src: { ...privateMessage(id, 9).src, nationId: sourceNation },
+                text: id === 50 ? '외교 문서가 도착했습니다.' : '불가침 제의 서신',
+                option,
+            });
+            state.messages = { ...emptyMessages(role.permission), nationId: 1, diplomacy: [message(49, 1)] };
+            await emitMessagesInvalidation(page);
+            await expect(notice).toHaveCount(0);
+            for (const id of [50, 51]) {
+                state.messages = {
+                    ...emptyMessages(role.permission),
+                    nationId: 1,
+                    diplomacy: [message(id, 2, id === 51 ? { action: 'noAggression' } : null)],
+                };
+                const before = state.operations.filter((op) => op === 'messages.getRecent').length;
+                await emitMessagesInvalidation(page);
+                await expect
+                    .poll(() => state.operations.filter((op) => op === 'messages.getRecent').length)
+                    .toBeGreaterThan(before);
+                if (role.permission < 3) {
+                    await expect(notice).toHaveCount(0);
+                    continue;
+                }
+                await expect(notice).toContainText('새로운 외교 메시지가 도착했습니다.');
+                await emitMessagesInvalidation(page);
+                await expect(notice).toHaveCount(1);
+                const titleVisible = await notice.locator('strong').evaluate((el) => {
+                    const r = el.getBoundingClientRect();
+                    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+                    return hit === el || el.contains(hit);
+                });
+                expect(titleVisible).toBe(true);
+
+                await testInfo.attach(`diplomacy-${id}.png`, {
+                    body: await notice.screenshot(),
+                    contentType: 'image/png',
+                });
+                const geometry = await notice.evaluate((el) => {
+                    const r = el.getBoundingClientRect();
+                    return {
+                        x: r.x,
+                        y: r.y,
+                        width: r.width,
+                        height: r.height,
+                        font: getComputedStyle(el).font,
+                        html: el.outerHTML,
+                    };
+                });
+                expect(geometry.x).toBeGreaterThanOrEqual(0);
+                expect(geometry.x + geometry.width).toBeLessThanOrEqual(width);
+                await testInfo.attach(`diplomacy-${id}.json`, {
+                    body: JSON.stringify(geometry),
+                    contentType: 'application/json',
+                });
+                await notice.getByRole('button', { name: id === 50 ? '이미읽음' : '보러가기' }).click();
+                await expect(notice).toHaveCount(0);
+                await expect
+                    .poll(() =>
+                        state.trpcRequests?.some(
+                            ({ operations, body }) =>
+                                operations.includes('messages.readLatest') &&
+                                JSON.stringify(body).includes('"type":"diplomacy"') &&
+                                JSON.stringify(body).includes(`"messageId":${id}`)
+                        )
+                    )
+                    .toBe(true);
+            }
+            if (role.permission >= 3) {
+                state.messages = {
+                    ...emptyMessages(role.permission),
+                    nationId: 1,
+                    private: [privateMessage(60, 9)],
+                    diplomacy: [message(60)],
+                };
+                await emitMessagesInvalidation(page);
+                await expect(notice).toBeVisible();
+                const privateNotice = page.getByTestId('private-message-notice');
+                await expect(privateNotice).toBeVisible();
+                const first = await privateNotice.boundingBox();
+                const second = await notice.boundingBox();
+                expect(second!.y).toBeGreaterThan(first!.y + first!.height);
+                await notice.getByRole('button', { name: '외교 메시지 알림 닫기' }).click();
+                await emitMessagesInvalidation(page);
+                await expect(notice).toHaveCount(0);
+                state.messages = { ...emptyMessages(role.permission), nationId: 1, diplomacy: [message(61)] };
+                await emitMessagesInvalidation(page);
+                await expect(notice).toBeVisible();
+                state.messages = {
+                    ...emptyMessages(2),
+                    nationId: 1,
+                    diplomacy: [message(61, 2, { permissionRedacted: true })],
+                };
+                await emitMessagesInvalidation(page);
+                await expect(notice).toHaveCount(0);
+            }
+        });
+    }
+}
