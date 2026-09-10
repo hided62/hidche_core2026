@@ -365,6 +365,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 (message) =>
                     message.src.nationId !== nextMessages.nationId &&
                     !message.option?.invalid &&
+                    !message.option?.used &&
                     !message.option?.permissionRedacted
             )
             .reduce((latest, message) => Math.max(latest, message.id), 0);

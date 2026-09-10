@@ -128,64 +128,69 @@ describe('messages router missing-flow compatibility', () => {
         expect(result.canRespondDiplomacy).toBe(false);
     });
 
-    it('redacts recent and old diplomacy content below secret permission 3', async () => {
-        const diplomacyRow = {
-            id: 19,
-            mailbox: 9001,
-            type: 'diplomacy',
-            src: 9002,
-            dest: 9001,
-            time: new Date(),
-            valid_until: new Date('9999-12-31T00:00:00Z'),
-            message: {
-                src: {
-                    generalId: 8,
-                    generalName: '외교관',
-                    nationId: 2,
-                    nationName: '촉',
-                    color: '#000000',
-                    icon: '',
+    it.each([null, 'RESOLVED'])(
+        'redacts recent and old diplomacy content below secret permission 3 (%s)',
+        async (actionStatus) => {
+            const diplomacyRow = {
+                id: 19,
+                action_status: actionStatus,
+                expires_game_tick: null,
+                mailbox: 9001,
+                type: 'diplomacy',
+                src: 9002,
+                dest: 9001,
+                time: new Date(),
+                valid_until: new Date('9999-12-31T00:00:00Z'),
+                message: {
+                    src: {
+                        generalId: 8,
+                        generalName: '외교관',
+                        nationId: 2,
+                        nationName: '촉',
+                        color: '#000000',
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: 0,
+                        generalName: '',
+                        nationId: 1,
+                        nationName: '위',
+                        color: '#ffffff',
+                        icon: '',
+                    },
+                    text: '보이면 안 되는 외교 본문',
+                    option: { action: 'noAggression' },
                 },
-                dest: {
-                    generalId: 0,
-                    generalName: '',
-                    nationId: 1,
-                    nationName: '위',
-                    color: '#ffffff',
-                    icon: '',
+            };
+            const queryRaw = vi.fn(async () => [diplomacyRow]);
+            const { caller } = buildContext({
+                $queryRaw: queryRaw,
+                nation: {
+                    findMany: vi.fn(async () => []),
+                    findUnique: vi.fn(async () => ({ meta: {} })),
                 },
-                text: '보이면 안 되는 외교 본문',
-                option: { action: 'noAggression' },
-            },
-        };
-        const queryRaw = vi.fn(async () => [diplomacyRow]);
-        const { caller } = buildContext({
-            $queryRaw: queryRaw,
-            nation: {
-                findMany: vi.fn(async () => []),
-                findUnique: vi.fn(async () => ({ meta: {} })),
-            },
-        });
+            });
 
-        const recent = await caller.messages.getRecent({ generalId: general.id });
-        const old = await caller.messages.getOld({
-            generalId: general.id,
-            type: 'diplomacy',
-            to: 20,
-        });
+            const recent = await caller.messages.getRecent({ generalId: general.id });
+            const old = await caller.messages.getOld({
+                generalId: general.id,
+                type: 'diplomacy',
+                to: 20,
+            });
 
-        expect(recent.permission).toBe(2);
-        expect(recent.diplomacy[0]).toMatchObject({
-            text: '조회 권한이 없는 외교 메시지입니다.',
-            option: { action: 'noAggression', permissionRedacted: true },
-        });
-        expect(recent.diplomacy[0]?.option).not.toHaveProperty('invalid');
-        expect(old.diplomacy[0]).toMatchObject({
-            text: '조회 권한이 없는 외교 메시지입니다.',
-            option: { action: 'noAggression', permissionRedacted: true },
-        });
-        expect(old.diplomacy[0]?.option).not.toHaveProperty('invalid');
-    });
+            expect(recent.permission).toBe(2);
+            expect(recent.diplomacy[0]).toMatchObject({
+                text: '조회 권한이 없는 외교 메시지입니다.',
+                option: { action: 'noAggression', permissionRedacted: true },
+            });
+            expect(recent.diplomacy[0]?.option).not.toHaveProperty('invalid');
+            expect(old.diplomacy[0]).toMatchObject({
+                text: '조회 권한이 없는 외교 메시지입니다.',
+                option: { action: 'noAggression', permissionRedacted: true },
+            });
+            expect(old.diplomacy[0]?.option).not.toHaveProperty('invalid');
+        }
+    );
 
     it('forces a non-diplomat foreign nation target back to the owned nation mailbox', async () => {
         const queryRaw = vi.fn(async () => [{ id: 51 }]);

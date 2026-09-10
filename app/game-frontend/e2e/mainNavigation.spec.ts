@@ -6545,3 +6545,97 @@ for (const role of [
         });
     }
 }
+
+for (const width of [1200, 390]) {
+    test(`message lifecycle states preserve body and prevent stale actions ${width}`, async ({ page }, testInfo) => {
+        const makeMessage = (
+            id: number,
+            option: Record<string, unknown>,
+            text = '210년 1월까지 불가침을 제의합니다.'
+        ) => ({
+            ...privateMessage(id, 9),
+            msgType: 'diplomacy',
+            src: { ...privateMessage(id, 9).src, nationId: 2 },
+            text,
+            option: { action: 'noAggression', ...option },
+        });
+        const state: NavigationFixture = {
+            officerLevel: 1,
+            permission: 4,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            latestVote: null,
+            generalMeCalls: 0,
+            operations: [],
+            messages: {
+                ...emptyMessages(4),
+                nationId: 1,
+                diplomacy: [
+                    makeMessage(801, { actionState: 'expired', used: true }),
+                    makeMessage(802, { actionState: 'resolved', used: true }),
+                    makeMessage(803, { invalid: true }, '삭제된 메시지입니다.'),
+                    makeMessage(
+                        804,
+                        { actionState: 'expired', used: true, permissionRedacted: true },
+                        '조회 권한이 없는 외교 메시지입니다.'
+                    ),
+                    makeMessage(805, { actionState: 'expired', used: true, action: 'stopWar' }, '종전을 제의합니다.'),
+                    makeMessage(806, { actionState: 'unavailable', used: true }),
+                ],
+            },
+        };
+        await installFixture(page, state);
+        await page.setViewportSize({ width, height: 900 });
+        await waitForMain(page);
+        const mobileButton = page.getByRole('button', { name: '메시지', exact: true });
+        if (await mobileButton.isVisible()) await mobileButton.click();
+        const expected = [
+            [801, '만료된 불가침메시지입니다'],
+            [802, '처리 완료된 메시지입니다'],
+            [803, '삭제된 메시지입니다'],
+            [804, '조회 권한이 없는 외교 메시지입니다.'],
+            [805, '만료된 종전 제의 메시지입니다'],
+            [806, '더 이상 응답할 수 없는 메시지입니다'],
+        ] as const;
+        for (const [id, label] of expected) {
+            const plate = page.locator(`.msg-plate[data-id="${id}"]:visible`).first();
+            await expect(plate).toContainText(label);
+            await expect(plate.locator('.message-response')).toHaveCount(0);
+            if ([801, 802, 806].includes(id)) await expect(plate).toContainText('210년 1월까지 불가침을 제의합니다.');
+            if (id !== 803) await expect(plate).not.toContainText('삭제된 메시지입니다');
+            if (id === 804) await expect(plate.locator('.message-action-status')).toHaveCount(0);
+        }
+        await expect(page.getByTestId('diplomacy-message-notice')).toHaveCount(0);
+        await page.reload();
+        if (await mobileButton.isVisible()) await mobileButton.click();
+        await expect(page.locator('.msg-plate[data-id="801"]:visible').first()).toContainText(
+            '만료된 불가침메시지입니다'
+        );
+        await page.evaluate(() => document.fonts.ready);
+        const plates = page.locator('.DiplomacyTalk .msg-plate:visible');
+        const geometry = await plates.evaluateAll((elements) =>
+            elements.map((el) => {
+                const r = el.getBoundingClientRect();
+                return {
+                    id: el.getAttribute('data-id'),
+                    width: r.width,
+                    height: r.height,
+                    clientHeight: el.clientHeight,
+                    scrollHeight: el.scrollHeight,
+                    font: getComputedStyle(el).font,
+                    html: el.outerHTML,
+                };
+            })
+        );
+        expect(geometry.length).toBeGreaterThanOrEqual(6);
+        expect(geometry.every((item) => item.height >= 64 && item.scrollHeight <= item.clientHeight)).toBe(true);
+        await writeFile(testInfo.outputPath('lifecycle-geometry.json'), JSON.stringify(geometry, null, 2));
+        await page
+            .locator('.msg-plate[data-id="801"]:visible')
+            .first()
+            .screenshot({ path: testInfo.outputPath('expired-message.png') });
+        await page.screenshot({ path: testInfo.outputPath('lifecycle-page.png'), fullPage: true });
+        expect(state.operations.filter((op) => op === 'messages.respond')).toHaveLength(0);
+    });
+}

@@ -56,6 +56,26 @@ const destination = computed<MessageTarget>(
 
 const invalid = computed(() => props.message.option?.invalid === true);
 const permissionRedacted = computed(() => props.message.option?.permissionRedacted === true);
+const actionState = computed(() => props.message.option?.actionState);
+const actionUnavailable = computed(
+    () => props.message.option?.used === true || (actionState.value != null && actionState.value !== 'pending')
+);
+const actionStatusText = computed(() => {
+    if (invalid.value || permissionRedacted.value || !actionUnavailable.value) return null;
+    if (actionState.value === 'expired') {
+        switch (props.message.option?.action) {
+            case 'noAggression':
+                return '만료된 불가침메시지입니다';
+            case 'stopWar':
+                return '만료된 종전 제의 메시지입니다';
+            case 'scout':
+                return '만료된 등용 권유 메시지입니다';
+            default:
+                return '만료된 메시지입니다';
+        }
+    }
+    return actionState.value === 'resolved' ? '처리 완료된 메시지입니다' : '더 이상 응답할 수 없는 메시지입니다';
+});
 const hasAction = computed(() => typeof props.message.option?.action === 'string');
 const nationDirection = computed(() => {
     if (props.message.src.nationId === destination.value.nationId) {
@@ -275,10 +295,11 @@ onBeforeUnmount(() => {
                 ]"
             >
                 <strong v-if="permissionRedacted" class="permission-redacted-label">권한 제한</strong>
-                {{ invalid ? '삭제된 메시지입니다' : message.text }}
+                {{ permissionRedacted ? message.text : invalid ? '삭제된 메시지입니다' : message.text }}
+                <div v-if="actionStatusText" class="message-action-status">{{ actionStatusText }}</div>
             </div>
 
-            <div v-if="hasAction && !invalid" class="message-response">
+            <div v-if="hasAction && !invalid && !permissionRedacted && !actionUnavailable" class="message-response">
                 <button
                     class="prompt-yes legacy-button legacy-button--primary"
                     type="button"

@@ -57,10 +57,17 @@ const formatMessageTime = (value: Date): string => {
 const toMessageView = (row: MessageRow, currentGameTick: bigint | null): MessageView => {
     const payload = parsePayload(row.message);
     const actionStatus = typeof row.action_status === 'string' ? row.action_status : null;
-    const actionUnavailable =
-        actionStatus !== null &&
-        (actionStatus !== 'PENDING' ||
-            (row.expires_game_tick !== null && currentGameTick !== null && row.expires_game_tick <= currentGameTick));
+    // 제의 종료는 본문 삭제가 아니다. 저장된 종료 상태를 기한 경과보다 우선한다.
+    const actionState =
+        actionStatus === null
+            ? null
+            : actionStatus === 'PENDING'
+              ? row.expires_game_tick !== null && currentGameTick !== null && row.expires_game_tick <= currentGameTick
+                  ? 'expired'
+                  : 'pending'
+              : actionStatus === 'RESOLVED'
+                ? 'resolved'
+                : 'unavailable';
     return {
         id: row.id,
         msgType: row.type,
@@ -68,8 +75,8 @@ const toMessageView = (row: MessageRow, currentGameTick: bigint | null): Message
         dest: row.type === 'public' ? null : payload.dest,
         text: payload.text,
         option:
-            actionUnavailable && payload.option && typeof payload.option === 'object'
-                ? { ...payload.option, used: true, invalid: true }
+            actionState !== null && payload.option && typeof payload.option === 'object'
+                ? { ...payload.option, actionState, used: actionState !== 'pending' }
                 : (payload.option ?? null),
         time: formatMessageTime(new Date(row.created_at_wall ?? row.time)),
     };
