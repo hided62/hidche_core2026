@@ -994,6 +994,7 @@ for (const width of [1365, 1101, 800, 390, 320]) {
             elements.map((element) => {
                 const rect = element.getBoundingClientRect();
                 const selectors = [
+                    '.general-identity-icon',
                     '.general-identity-name',
                     '.bracket-core-stat',
                     '.bracket-odds',
@@ -1010,6 +1011,7 @@ for (const width of [1365, 1101, 800, 390, 320]) {
                         selector,
                         rect: el.getBoundingClientRect().toJSON(),
                         font: style.font,
+                        fontSize: Number.parseFloat(style.fontSize),
                         color: style.color,
                         scrollWidth: el.scrollWidth,
                         clientWidth: el.clientWidth,
@@ -1019,7 +1021,22 @@ for (const width of [1365, 1101, 800, 390, 320]) {
             })
         );
         for (const card of geometry) {
+            const iconRect = card.fields.find((field) => field.selector === '.general-identity-icon')!.rect;
+            expect(iconRect.width).toBe(width > 1100 ? 64 : 40);
+            expect(iconRect.height).toBe(iconRect.width);
             for (const field of card.fields) {
+                if (
+                    [
+                        '.general-identity-name',
+                        '.bracket-core-stat',
+                        '.bracket-odds',
+                        '.bracket-my-bet',
+                        '.bracket-return',
+                    ].includes(field.selector)
+                ) {
+                    expect(field.rect.left).toBeGreaterThanOrEqual(iconRect.right + 5);
+                    expect(field.fontSize).toBeGreaterThanOrEqual(width > 1100 ? 14 : 13);
+                }
                 expect(field.rect.left).toBeGreaterThanOrEqual(card.rect.left - 1);
                 expect(field.rect.right).toBeLessThanOrEqual(card.rect.right + 1);
                 expect(field.rect.top).toBeGreaterThanOrEqual(card.rect.top - 1);
@@ -1060,11 +1077,9 @@ for (const width of [1365, 1101, 800, 390, 320]) {
         );
         await page.screenshot({ path: testInfo.outputPath('inline-before.png'), fullPage: true });
         await page.screenshot({ path: testInfo.outputPath('inline-viewport.png') });
-        const iconTrigger = cards.first().locator('[data-rich-tooltip]');
-        await iconTrigger.hover();
-        const tooltipImage = page.locator('.tippy-box[data-state="visible"] img');
-        await expect(tooltipImage).toBeVisible();
-        const icon = await tooltipImage.evaluate((image: HTMLImageElement) => ({
+        const candidateImage = cards.first().locator('.general-identity-icon');
+        await expect(candidateImage).toBeVisible();
+        const icon = await candidateImage.evaluate((image: HTMLImageElement) => ({
             rect: image.getBoundingClientRect().toJSON(),
             naturalWidth: image.naturalWidth,
             naturalHeight: image.naturalHeight,
@@ -1072,8 +1087,8 @@ for (const width of [1365, 1101, 800, 390, 320]) {
         }));
         expect(icon.naturalWidth).toBeGreaterThan(0);
         expect(icon.naturalHeight).toBeGreaterThan(0);
+        expect(icon.objectFit).toBe('cover');
         await writeFile(testInfo.outputPath('inline-icon.json'), JSON.stringify(icon, null, 2));
-        await page.keyboard.press('Escape');
         const buttons = bracket.locator('.bracket-bet-button');
         const firstButton = buttons.first();
         await firstButton.hover();

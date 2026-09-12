@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import GeneralIdentity from '../ui/GeneralIdentity.vue';
-import RichTooltip from '../ui/RichTooltip.vue';
 import {
     buildTournamentBracket,
     resolveTournamentCoreStat,
@@ -49,7 +48,7 @@ const roundColumns = computed(() => [
 ]);
 const desktopX = computed(() => (props.bettingMode ? [180, 480, 690, 895, 1100] : [110, 355, 600, 845, 1090]));
 const cardWidth = 190;
-const desktopSlotHeight = computed(() => (props.bettingMode ? 154 : 88));
+const desktopSlotHeight = computed(() => (props.bettingMode ? 184 : 88));
 const desktopCanvasHeight = computed(() => desktopSlotHeight.value * 16);
 const slotY = (columnIndex: number, slotIndex: number) => {
     const slotHeight = desktopSlotHeight.value * 2 ** columnIndex;
@@ -159,39 +158,30 @@ const mobilePairs = computed(() => {
                             top: `${slotY(columnIndex, slotIndex)}px`,
                         }"
                     >
-                        <span
-                            v-if="columnIndex === 0 && bettingMode && slot.id !== null"
-                            class="bracket-candidate-identity"
-                        >
-                            <RichTooltip placement="right" :max-width="180" :test-id="`candidate-icon-${slot.id}`">
-                                <GeneralIdentity :name="slot.name" :hide-icon="true" :npc-state="slot.npcState" />
-                                <template #content>
-                                    <GeneralIdentity
-                                        :name="slot.name"
-                                        :picture="slot.picture"
-                                        :image-server="slot.imageServer"
-                                        :npc-state="slot.npcState"
-                                    />
-                                </template>
-                            </RichTooltip>
-                        </span>
                         <GeneralIdentity
-                            v-else
+                            :class="{ 'bracket-candidate-identity': columnIndex === 0 && bettingMode }"
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
                             :npc-state="slot.npcState"
-                        />
-                        <div v-if="columnIndex === 0 && bettingMode" class="bracket-bet-summary">
-                            <small v-if="coreStat(slot)" class="bracket-core-stat">
-                                {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
-                            </small>
-                            <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
-                            <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small>
-                            <small class="bracket-return"
-                                >예상 환수 금{{ (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR') }}</small
-                            >
-                        </div>
+                        >
+                            <template v-if="columnIndex === 0 && bettingMode" #details>
+                                <span class="bracket-bet-summary">
+                                    <small v-if="coreStat(slot)" class="bracket-core-stat">
+                                        {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
+                                    </small>
+                                    <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
+                                    <small class="bracket-my-bet"
+                                        >내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small
+                                    >
+                                    <small class="bracket-return"
+                                        >예상 환수 금{{
+                                            (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR')
+                                        }}</small
+                                    >
+                                </span>
+                            </template>
+                        </GeneralIdentity>
                         <slot
                             v-if="columnIndex === 0 && bettingOpen && slot.id !== null"
                             name="bet-controls"
@@ -238,43 +228,30 @@ const mobilePairs = computed(() => {
                         }"
                         :data-general-id="slot.id ?? undefined"
                     >
-                        <span
-                            v-if="activeMobileRound === 0 && bettingMode && slot.id !== null"
-                            class="bracket-candidate-identity"
-                        >
-                            <RichTooltip
-                                placement="bottom"
-                                :max-width="180"
-                                :test-id="`mobile-candidate-icon-${slot.id}`"
-                            >
-                                <GeneralIdentity :name="slot.name" :hide-icon="true" :npc-state="slot.npcState" />
-                                <template #content>
-                                    <GeneralIdentity
-                                        :name="slot.name"
-                                        :picture="slot.picture"
-                                        :image-server="slot.imageServer"
-                                        :npc-state="slot.npcState"
-                                    />
-                                </template>
-                            </RichTooltip>
-                        </span>
                         <GeneralIdentity
-                            v-else
+                            :class="{ 'bracket-candidate-identity': activeMobileRound === 0 && bettingMode }"
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
                             :npc-state="slot.npcState"
-                        />
-                        <div v-if="activeMobileRound === 0 && bettingMode" class="bracket-bet-summary">
-                            <small v-if="coreStat(slot)" class="bracket-core-stat">
-                                {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
-                            </small>
-                            <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
-                            <small class="bracket-my-bet">내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small>
-                            <small class="bracket-return"
-                                >예상 환수 금{{ (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR') }}</small
-                            >
-                        </div>
+                        >
+                            <template v-if="activeMobileRound === 0 && bettingMode" #details>
+                                <span class="bracket-bet-summary">
+                                    <small v-if="coreStat(slot)" class="bracket-core-stat">
+                                        {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
+                                    </small>
+                                    <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
+                                    <small class="bracket-my-bet"
+                                        >내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small
+                                    >
+                                    <small class="bracket-return"
+                                        >예상 환수 금{{
+                                            (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR')
+                                        }}</small
+                                    >
+                                </span>
+                            </template>
+                        </GeneralIdentity>
                         <slot
                             v-if="activeMobileRound === 0 && bettingOpen && slot.id !== null"
                             name="bet-controls"
@@ -354,7 +331,7 @@ const mobilePairs = computed(() => {
 }
 .desktop-bracket-name.betting-candidate {
     width: 28.3333%;
-    min-height: 140px;
+    min-height: 176px;
     align-content: center;
     gap: 5px;
     padding: 5px 6px;
@@ -400,30 +377,34 @@ const mobilePairs = computed(() => {
     justify-content: flex-start;
 }
 .bracket-candidate-identity {
-    display: flex;
+    --sammo-general-icon-size: 64px;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
     min-width: 0;
-    min-height: 24px;
-    align-items: center;
-    padding-right: 0;
+    gap: 8px;
+    align-items: start;
     text-align: left;
 }
-.bracket-candidate-identity :deep(.rich-tooltip-trigger) {
-    display: block;
-    min-width: 0;
+.bracket-candidate-identity :deep(.general-identity-copy) {
+    gap: 3px;
 }
-.betting-candidate .bracket-candidate-identity :deep(.general-identity-name) {
+.bracket-candidate-identity :deep(.general-identity-name) {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
     overflow-wrap: anywhere;
+    font-size: 16px;
+    line-height: 20px;
+    font-weight: 700;
 }
 .bracket-bet-summary {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     min-width: 0;
     align-items: center;
-    gap: 3px 7px;
-    white-space: nowrap;
+    gap: 2px 7px;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .bracket-core-stat,
 .bracket-odds,
@@ -431,8 +412,8 @@ const mobilePairs = computed(() => {
     display: block;
     min-width: 0;
     color: skyblue;
-    font-size: 11px;
-    line-height: 12px;
+    font-size: 14px;
+    line-height: 18px;
 }
 .bracket-core-stat {
     color: #fff;
@@ -451,8 +432,8 @@ const mobilePairs = computed(() => {
     grid-column: 1 / -1;
     text-align: left;
     color: cyan;
-    font-size: 11px;
-    line-height: 14px;
+    font-size: 14px;
+    line-height: 18px;
     white-space: normal;
     overflow-wrap: anywhere;
 }
@@ -468,6 +449,26 @@ const mobilePairs = computed(() => {
     margin-top: auto;
 }
 @media (max-width: 1100px) {
+    .bracket-candidate-identity {
+        --sammo-general-icon-size: 40px;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 6px;
+    }
+    .bracket-candidate-identity :deep(.general-identity-name) {
+        font-size: 14px;
+        line-height: 18px;
+    }
+    .bracket-bet-summary {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .bracket-core-stat,
+    .bracket-odds,
+    .bracket-my-bet,
+    .bracket-return {
+        font-size: 13px;
+        line-height: 18px;
+        text-align: left;
+    }
     .inline-betting-bracket .desktop-bracket {
         display: none;
     }
