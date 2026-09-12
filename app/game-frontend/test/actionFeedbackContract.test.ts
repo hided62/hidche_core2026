@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 const migratedViewNames = [
     'AuctionView.vue',
-    'BettingView.vue',
+    // Tournament betting reports each result in its candidate card; Chromium covers that contract.
     'InheritView.vue',
     'NationBettingView.vue',
     'NationStratFinanView.vue',

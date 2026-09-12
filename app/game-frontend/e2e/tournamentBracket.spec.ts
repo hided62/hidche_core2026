@@ -198,6 +198,8 @@ const installFixture = async (
         joinedGroupId?: number;
         emptyFinalGroups?: boolean;
         realtimeState?: { tournamentStage: number; totalAmount: number };
+        betFailure?: { message: string | null };
+        betDelayMs?: number;
         onOperation?: (operation: string, headers: Record<string, string>) => void;
     } = {}
 ) => {
@@ -216,6 +218,9 @@ const installFixture = async (
         await route.fulfill({ status: 200, contentType: 'image/jpeg', body: await readReferenceIcon('default.jpg') });
     });
     await page.route(gameTrpcRoute, async (route) => {
+        if (operationNames(route).includes('tournament.placeBet') && options.betDelayMs) {
+            await new Promise((resolve) => setTimeout(resolve, options.betDelayMs));
+        }
         const results = operationNames(route).map((operation) => {
             options.onOperation?.(operation, route.request().headers());
             if (operation === 'auth.status') return response({ ok: true });
@@ -277,16 +282,45 @@ const installFixture = async (
             if (operation === 'tournament.getBettingSummary') {
                 return response({
                     totals: Object.fromEntries(
-                        participants.slice(0, 16).map((participant, index) => [participant.id, 100 + index * 10])
+                        participants
+                            .slice(0, 16)
+                            .map((participant, index) => [
+                                participant.id,
+                                100 +
+                                    index * 10 +
+                                    placedBets
+                                        .filter((bet) => bet.targetId === participant.id)
+                                        .reduce((sum, bet) => sum + bet.amount, 0),
+                            ])
                     ),
-                    myTotals: { 1: 120, 2: 40 },
-                    totalAmount: options.realtimeState?.totalAmount ?? 2800,
-                    myAmount: 160,
+                    myTotals: Object.fromEntries(
+                        participants
+                            .slice(0, 16)
+                            .map((participant) => [
+                                participant.id,
+                                (participant.id === 1 ? 120 : participant.id === 2 ? 40 : 0) +
+                                    placedBets
+                                        .filter((bet) => bet.targetId === participant.id)
+                                        .reduce((sum, bet) => sum + bet.amount, 0),
+                            ])
+                    ),
+                    totalAmount:
+                        (options.realtimeState?.totalAmount ?? 2800) +
+                        placedBets.reduce((sum, bet) => sum + bet.amount, 0),
+                    myAmount: 160 + placedBets.reduce((sum, bet) => sum + bet.amount, 0),
                 });
             }
             if (operation === 'tournament.placeBet') {
                 const input = findBetInput(route.request().postDataJSON());
                 if (!input) throw new Error('베팅 요청에서 targetId와 amount를 찾을 수 없습니다.');
+                if (options.betFailure?.message)
+                    return {
+                        error: {
+                            message: options.betFailure.message,
+                            code: -32600,
+                            data: { code: 'BAD_REQUEST', httpStatus: 400, path: operation },
+                        },
+                    };
                 placedBets.push(input);
                 return response({ ok: true });
             }
@@ -809,8 +843,7 @@ test('betting realtime refresh is shared across tabs and preserves local interac
         expect(follower.getByRole('tab', { name: '전력전' })).toBeVisible(),
     ]);
     await follower.getByRole('tab', { name: '통솔전' }).click();
-    await follower.getByRole('button', { name: '관우에게 베팅하기' }).click();
-    await follower.getByRole('dialog', { name: '베팅하기' }).getByLabel('베팅 금액').selectOption('50');
+    await follower.locator('.mobile-bracket').getByLabel('관우 베팅 금액', { exact: true }).fill('50');
 
     await expect
         .poll(async () => {
@@ -873,8 +906,7 @@ test('betting realtime refresh is shared across tabs and preserves local interac
     await expect(page.locator('.section-title small')).toContainText('전체 금액 : 3333');
     await expect(follower.locator('.section-title small')).toContainText('전체 금액 : 3333');
     await expect(follower.getByRole('tab', { name: '통솔전' })).toHaveAttribute('aria-selected', 'true');
-    await expect(follower.getByRole('dialog', { name: '베팅하기' })).toBeVisible();
-    await expect(follower.getByRole('dialog', { name: '베팅하기' }).getByLabel('베팅 금액')).toHaveValue('50');
+    await expect(follower.locator('.mobile-bracket').getByLabel('관우 베팅 금액', { exact: true })).toHaveValue('50');
     expect(operations.filter(({ operation }) => operation === 'tournament.getSnapshot')).toHaveLength(before.snapshot);
     expect(operations.filter(({ operation }) => operation === 'tournament.getRankings')).toHaveLength(before.rankings);
     expect(
@@ -910,8 +942,7 @@ test('betting realtime refresh is shared across tabs and preserves local interac
     expect(operations.filter(({ operation }) => operation === 'tournament.getRankings')).toHaveLength(
         recoveryBefore.rankings + 1
     );
-    await expect(follower.getByRole('dialog', { name: '베팅하기' })).toBeVisible();
-    await expect(follower.getByRole('dialog', { name: '베팅하기' }).getByLabel('베팅 금액')).toHaveValue('50');
+    await expect(follower.locator('.mobile-bracket').getByLabel('관우 베팅 금액', { exact: true })).toHaveValue('50');
 });
 
 test('tournament and betting close only their script-opened popup window', async ({ page }, testInfo) => {
@@ -938,156 +969,6 @@ test('tournament and betting close only their script-opened popup window', async
     }
 });
 
-test('mobile betting cards prioritize readable values and retain the amount draft', async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const { placedBets } = await installFixture(page, { tournamentStage: 6 });
-    await page.goto('betting');
-
-    await expect(page.locator('.candidate-table')).toHaveCount(0);
-    const betButtons = page.locator('.mobile-bracket .bracket-bet-button:visible');
-    await expect(betButtons).toHaveCount(16);
-    await expect(page.locator('.betting-bracket .bracket-core-stat').first()).toHaveText('종합 240');
-    await expect(page.locator('.betting-bracket .bracket-my-bet').first()).toHaveText('내 투자 금120');
-
-    const firstCard = page.locator('.mobile-bracket-name[data-general-id="1"]');
-    const firstBetButton = page.getByRole('button', { name: '관우에게 베팅하기' });
-    await expect(firstCard.locator('.general-identity-icon:visible')).toHaveCount(0);
-    const layout = await firstCard.evaluate((card) => {
-        const own = card.getBoundingClientRect();
-        const button = card.querySelector<HTMLElement>('.bracket-bet-button')!.getBoundingClientRect();
-        const fields = [
-            '.general-identity-name',
-            '.bracket-core-stat',
-            '.bracket-odds',
-            '.bracket-my-bet',
-            '.bracket-bet-button',
-        ].map((selector) => card.querySelector<HTMLElement>(selector)!.getBoundingClientRect());
-        const overlaps = fields.flatMap((rect, index) =>
-            fields
-                .slice(index + 1)
-                .map(
-                    (other) =>
-                        Math.min(rect.right, other.right) > Math.max(rect.left, other.left) &&
-                        Math.min(rect.bottom, other.bottom) > Math.max(rect.top, other.top)
-                )
-        );
-        return {
-            topOffset: button.top - own.top,
-            rightOffset: own.right - button.right,
-            contained: button.top >= own.top && button.right <= own.right && button.bottom <= own.bottom,
-            allFieldsContained: fields.every(
-                (rect) =>
-                    rect.left >= own.left && rect.right <= own.right && rect.top >= own.top && rect.bottom <= own.bottom
-            ),
-            overlaps,
-            cardHeight: own.height,
-        };
-    });
-    expect(layout.topOffset).toBeGreaterThanOrEqual(2);
-    expect(layout.topOffset).toBeLessThanOrEqual(6);
-    expect(layout.rightOffset).toBeGreaterThanOrEqual(2);
-    expect(layout.rightOffset).toBeLessThanOrEqual(6);
-    expect(layout.contained).toBe(true);
-    expect(layout.allFieldsContained).toBe(true);
-    expect(layout.overlaps.every((overlap) => !overlap)).toBe(true);
-    expect(layout.cardHeight).toBeGreaterThanOrEqual(92);
-    const longNameMetrics = await page
-        .locator('[data-rich-tooltip="mobile-candidate-icon-16"] .general-identity-name')
-        .evaluate((element) => ({
-            clientWidth: element.clientWidth,
-            scrollWidth: element.scrollWidth,
-            whiteSpace: getComputedStyle(element).whiteSpace,
-            overflow: getComputedStyle(element).overflow,
-            textOverflow: getComputedStyle(element).textOverflow,
-        }));
-    expect(longNameMetrics.scrollWidth).toBeLessThanOrEqual(longNameMetrics.clientWidth);
-    expect(longNameMetrics).toMatchObject({ whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip' });
-
-    const iconTrigger = firstCard.locator('[data-rich-tooltip="mobile-candidate-icon-1"]');
-    await iconTrigger.hover();
-    const iconTooltip = page.locator('.tippy-box[data-state="visible"]');
-    await expect(iconTooltip).toContainText('관우');
-    await expect(iconTooltip.locator('.general-identity-icon')).toBeVisible();
-    await page.keyboard.press('Escape');
-
-    const returnTrigger = firstCard.locator('[data-rich-tooltip="mobile-candidate-return-1"]');
-    await returnTrigger.hover();
-    await expect(page.locator('.tippy-box[data-state="visible"]')).toContainText(
-        '현재 배당 28.00 × 내 투자 금120 = 금3,360'
-    );
-
-    await firstBetButton.hover();
-    await expect(firstBetButton).toHaveCSS('filter', 'brightness(1.25)');
-    await firstBetButton.focus();
-    await expect(firstBetButton).toBeFocused();
-    await firstBetButton.click();
-    const dialog = page.getByRole('dialog', { name: '베팅하기' });
-    await expect(dialog).toBeVisible();
-    const dialogGeometry = await dialog.evaluate((element) => ({
-        dialog: element.getBoundingClientRect().toJSON(),
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        documentScrollWidth: document.documentElement.scrollWidth,
-        position: getComputedStyle(element).position,
-    }));
-    expect(
-        Math.abs(dialogGeometry.dialog.left + dialogGeometry.dialog.width / 2 - dialogGeometry.viewportWidth / 2)
-    ).toBeLessThanOrEqual(1);
-    expect(
-        Math.abs(dialogGeometry.dialog.top + dialogGeometry.dialog.height / 2 - dialogGeometry.viewportHeight / 2)
-    ).toBeLessThanOrEqual(1);
-    expect(dialogGeometry.dialog.left).toBeGreaterThanOrEqual(0);
-    expect(dialogGeometry.dialog.right).toBeLessThanOrEqual(dialogGeometry.viewportWidth);
-    expect(dialogGeometry.dialog.top).toBeGreaterThanOrEqual(0);
-    expect(dialogGeometry.dialog.bottom).toBeLessThanOrEqual(dialogGeometry.viewportHeight);
-    expect(dialogGeometry.documentScrollWidth).toBeLessThanOrEqual(dialogGeometry.viewportWidth);
-    expect(dialogGeometry.position).toBe('fixed');
-    await writeFile(testInfo.outputPath('mobile-betting-dialog.json'), `${JSON.stringify(dialogGeometry, null, 2)}\n`);
-    await dialog.screenshot({ path: testInfo.outputPath('mobile-betting-dialog.png') });
-    await page.screenshot({ path: testInfo.outputPath('mobile-betting-dialog-viewport.png') });
-    await expect(dialog.getByText('배당 28.00')).toBeVisible();
-    await expect(dialog.getByText('예상 환수금 280')).toBeVisible();
-    await dialog.getByLabel('베팅 금액').selectOption('100');
-    await expect(dialog.getByText('예상 환수금 2,800')).toBeVisible();
-    await persistScreenshot(
-        page,
-        'tournament-betting-dialog-mobile',
-        testInfo.outputPath('betting-dialog-mobile.webp')
-    );
-    await dialog.getByRole('button', { name: '취소' }).click();
-    await page.getByRole('button', { name: '장료에게 베팅하기' }).click();
-    await expect(dialog.getByLabel('베팅 금액')).toHaveValue('100');
-    await dialog.getByRole('button', { name: '베팅 등록' }).click();
-    await expect(dialog).not.toBeVisible();
-    await expect(page.locator('[data-testid="game-toast"][data-feedback-kind="success"]')).toContainText(
-        '베팅이 등록되었습니다.'
-    );
-    expect(placedBets).toEqual([{ targetId: 2, amount: 100 }]);
-    await page.getByRole('button', { name: '조운에게 베팅하기' }).click();
-    await expect(dialog.getByLabel('베팅 금액')).toHaveValue('100');
-    await dialog.getByRole('button', { name: '취소' }).click();
-
-    await expect(page.getByRole('tablist', { name: '토너먼트 랭킹 종목 선택' })).toBeVisible();
-    await expect(page.locator('.ranking-table:visible')).toHaveCount(1);
-    await page.getByRole('tab', { name: '통솔전' }).click();
-    await expect(page.getByRole('tab', { name: '통솔전' })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('.ranking-table:visible thead')).toContainText('통 솔 전');
-
-    const identity = await page
-        .locator('.ranking-table:visible .general-identity')
-        .first()
-        .evaluate((element) => {
-            const icon = element.querySelector('img')!.getBoundingClientRect();
-            const name = element.querySelector<HTMLElement>('.general-identity-name')!.getBoundingClientRect();
-            return { iconWidth: icon.width, iconHeight: icon.height, iconRight: icon.right, nameLeft: name.left };
-        });
-    expect(identity.iconWidth).toBe(64);
-    expect(identity.iconHeight).toBe(64);
-    expect(identity.nameLeft).toBeGreaterThanOrEqual(identity.iconRight - 1);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    await persistScreenshot(page, 'tournament-ranking-mobile', testInfo.outputPath('tournament-ranking-mobile.webp'));
-});
-
 test('betting bracket shows intelligence for debate tournament candidates', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await installFixture(page, { tournamentType: 3, tournamentStage: 6 });
@@ -1099,64 +980,176 @@ test('betting bracket shows intelligence for debate tournament candidates', asyn
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('desktop betting widens icon-free candidate cards while rankings keep dedicated icons', async ({
-    page,
-}, testInfo) => {
-    await page.setViewportSize({ width: 1365, height: 900 });
-    await installFixture(page, { tournamentStage: 6 });
-    await page.goto('betting');
-
-    await expect(page.locator('.candidate-table')).toHaveCount(0);
-    await expect(page.locator('.desktop-bracket .bracket-bet-button:visible')).toHaveCount(16);
-    await expect(page.locator('.ranking-table:visible')).toHaveCount(4);
-    const firstCandidate = page.locator('.desktop-bracket-name.betting-candidate[data-general-id="1"]');
-    await expect(firstCandidate.locator('.general-identity-icon:visible')).toHaveCount(0);
-    await expect(page.locator('.ranking-table:visible .general-identity-icon').first()).toHaveCSS('width', '64px');
-    await expect(page.locator('.ranking-table:visible .general-identity-icon').first()).toHaveCSS('height', '64px');
-    const candidateGeometry = await firstCandidate.evaluate((card) => {
-        const rect = card.getBoundingClientRect();
-        return { width: rect.width, height: rect.height };
+for (const width of [1365, 1101, 800, 390, 320]) {
+    test(`inline individual betting needs exactly 16 submissions at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        const { placedBets } = await installFixture(page, { tournamentStage: 6 });
+        await page.goto('betting');
+        const bracket = page.locator(width > 1100 ? '.desktop-bracket' : '.mobile-bracket');
+        const cards = bracket.locator('.betting-candidate');
+        await expect(cards).toHaveCount(16);
+        await expect(page.locator('dialog')).toHaveCount(0);
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await cards.evaluateAll((elements) =>
+            elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                const selectors = [
+                    '.general-identity-name',
+                    '.bracket-core-stat',
+                    '.bracket-odds',
+                    '.bracket-my-bet',
+                    '.bracket-return',
+                    'input',
+                    'select',
+                    '.bracket-bet-button',
+                ];
+                const fields = selectors.map((selector) => {
+                    const el = element.querySelector<HTMLElement>(selector)!;
+                    const style = getComputedStyle(el);
+                    return {
+                        selector,
+                        rect: el.getBoundingClientRect().toJSON(),
+                        font: style.font,
+                        color: style.color,
+                        scrollWidth: el.scrollWidth,
+                        clientWidth: el.clientWidth,
+                    };
+                });
+                return { rect: rect.toJSON(), fields };
+            })
+        );
+        for (const card of geometry) {
+            for (const field of card.fields) {
+                expect(field.rect.left).toBeGreaterThanOrEqual(card.rect.left - 1);
+                expect(field.rect.right).toBeLessThanOrEqual(card.rect.right + 1);
+                expect(field.rect.top).toBeGreaterThanOrEqual(card.rect.top - 1);
+                expect(field.rect.bottom).toBeLessThanOrEqual(card.rect.bottom + 1);
+                expect(field.scrollWidth).toBeLessThanOrEqual(field.clientWidth + 1);
+                if (['input', 'select', '.bracket-bet-button'].includes(field.selector))
+                    expect(field.rect.height).toBeGreaterThanOrEqual(44);
+            }
+            for (let index = 0; index < card.fields.length; index++) {
+                const a = card.fields[index].rect;
+                for (const field of card.fields.slice(index + 1)) {
+                    const b = field.rect;
+                    expect(
+                        Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1 &&
+                            Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1
+                    ).toBe(false);
+                }
+            }
+        }
+        if (width > 1100) {
+            const containment = await bracket.evaluate((element) => {
+                const bounds = element.getBoundingClientRect();
+                return [...element.querySelectorAll('.desktop-bracket-name')].every((card) => {
+                    const rect = card.getBoundingClientRect();
+                    return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+                });
+            });
+            expect(containment).toBe(true);
+            expect(geometry[0].rect.width).toBeGreaterThan(300);
+            for (let index = 1; index < geometry.length; index++)
+                expect(geometry[index].rect.top).toBeGreaterThanOrEqual(geometry[index - 1].rect.bottom);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        await writeFile(testInfo.outputPath('inline-geometry.json'), JSON.stringify(geometry, null, 2));
+        await writeFile(
+            testInfo.outputPath('inline-dom.html'),
+            await page.locator('#tournament-betting-container').evaluate((el) => el.outerHTML)
+        );
+        await page.screenshot({ path: testInfo.outputPath('inline-before.png'), fullPage: true });
+        await page.screenshot({ path: testInfo.outputPath('inline-viewport.png') });
+        const iconTrigger = cards.first().locator('[data-rich-tooltip]');
+        await iconTrigger.hover();
+        const tooltipImage = page.locator('.tippy-box[data-state="visible"] img');
+        await expect(tooltipImage).toBeVisible();
+        const icon = await tooltipImage.evaluate((image: HTMLImageElement) => ({
+            rect: image.getBoundingClientRect().toJSON(),
+            naturalWidth: image.naturalWidth,
+            naturalHeight: image.naturalHeight,
+            objectFit: getComputedStyle(image).objectFit,
+        }));
+        expect(icon.naturalWidth).toBeGreaterThan(0);
+        expect(icon.naturalHeight).toBeGreaterThan(0);
+        await writeFile(testInfo.outputPath('inline-icon.json'), JSON.stringify(icon, null, 2));
+        await page.keyboard.press('Escape');
+        const buttons = bracket.locator('.bracket-bet-button');
+        const firstButton = buttons.first();
+        await firstButton.hover();
+        await expect(firstButton).toHaveCSS('filter', 'brightness(1.25)');
+        await firstButton.focus();
+        await expect(firstButton).toBeFocused();
+        // One click per candidate; no target-selection, dialog, confirmation or batch action.
+        for (let index = 0; index < 16; index++) {
+            await buttons.nth(index).click();
+            await expect.poll(() => placedBets.length).toBe(index + 1);
+            await expect(cards.nth(index).getByRole('status')).toHaveText('10금 베팅 완료');
+        }
+        expect(placedBets).toEqual(geometry.map((_, index) => ({ targetId: index + 1, amount: 10 })));
+        await expect(cards.first().locator('.bracket-my-bet')).toHaveText('내 투자 금130');
+        await expect(cards.first().locator('.bracket-odds')).toHaveText('배당 26.91');
+        await expect(cards.first().locator('.bracket-return')).toHaveText('예상 환수 금3,498');
+        await expect(page.getByText('남은 한도 680금')).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath('inline-after.png'), fullPage: true });
     });
-    expect(candidateGeometry.width).toBeGreaterThanOrEqual(210);
-    expect(candidateGeometry.height).toBeGreaterThanOrEqual(92);
-    const firstCardCorner = await page
-        .locator('.desktop-bracket-name.betting-target[data-general-id="1"]')
-        .evaluate((card) => {
-            const own = card.getBoundingClientRect();
-            const button = card.querySelector<HTMLElement>('.bracket-bet-button')!.getBoundingClientRect();
-            return {
-                topOffset: button.top - own.top,
-                rightOffset: own.right - button.right,
-                contained: button.top >= own.top && button.right <= own.right && button.bottom <= own.bottom,
-            };
-        });
-    expect(firstCardCorner.topOffset).toBeGreaterThanOrEqual(2);
-    expect(firstCardCorner.topOffset).toBeLessThanOrEqual(4);
-    expect(firstCardCorner.rightOffset).toBeGreaterThanOrEqual(2);
-    expect(firstCardCorner.rightOffset).toBeLessThanOrEqual(4);
-    expect(firstCardCorner.contained).toBe(true);
-    const firstBetButton = page.getByRole('button', { name: '관우에게 베팅하기' });
-    await firstBetButton.click();
-    const dialog = page.getByRole('dialog', { name: '베팅하기' });
-    await expect(dialog).toBeVisible();
-    const dialogGeometry = await dialog.evaluate((element) => ({
-        dialog: element.getBoundingClientRect().toJSON(),
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        position: getComputedStyle(element).position,
-    }));
-    expect(
-        Math.abs(dialogGeometry.dialog.left + dialogGeometry.dialog.width / 2 - dialogGeometry.viewportWidth / 2)
-    ).toBeLessThanOrEqual(1);
-    expect(
-        Math.abs(dialogGeometry.dialog.top + dialogGeometry.dialog.height / 2 - dialogGeometry.viewportHeight / 2)
-    ).toBeLessThanOrEqual(1);
-    expect(dialogGeometry.position).toBe('fixed');
-    await writeFile(testInfo.outputPath('desktop-betting-dialog.json'), `${JSON.stringify(dialogGeometry, null, 2)}\n`);
-    await dialog.screenshot({ path: testInfo.outputPath('desktop-betting-dialog.png') });
-    await page.screenshot({ path: testInfo.outputPath('desktop-betting-dialog-viewport.png') });
-    await dialog.getByRole('button', { name: '취소' }).click();
-    await expect(dialog).toBeHidden();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1365);
-    await persistScreenshot(page, 'tournament-ranking-desktop', testInfo.outputPath('tournament-ranking-desktop.webp'));
+}
+
+for (const width of [1365, 390]) {
+    test(`inline amount presets, defaults, errors and repeated bets at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        const betFailure = { message: null as string | null };
+        const { placedBets } = await installFixture(page, { tournamentStage: 6, betFailure, betDelayMs: 200 });
+        await page.goto('betting');
+        const bracket = page.locator(width > 1100 ? '.desktop-bracket' : '.mobile-bracket');
+        const first = bracket.locator('.betting-candidate').first();
+        const second = bracket.locator('.betting-candidate').nth(1);
+        const input = first.getByRole('spinbutton');
+        await expect(input).toHaveValue('10');
+        await page.getByLabel('기본 지정 금액').selectOption('20');
+        await expect(input).toHaveValue('20');
+        await first.getByRole('combobox').selectOption('50');
+        await expect(input).toHaveValue('50');
+        await expect(second.getByRole('spinbutton')).toHaveValue('20');
+        await input.fill('37');
+        await page.getByRole('button', { name: '갱신', exact: true }).click();
+        await expect(input).toHaveValue('37');
+        for (const invalid of ['', '9', '10.5', '841']) {
+            await input.fill(invalid);
+            await expect(first.getByRole('button', { name: '관우에게 베팅하기' })).toBeDisabled();
+        }
+        expect(placedBets).toHaveLength(0);
+        await input.fill('37');
+        betFailure.message = '금이 부족합니다.';
+        await first.getByRole('button').click();
+        await expect(first.getByRole('status')).toHaveText('금이 부족합니다.');
+        await expect(input).toHaveValue('37');
+        expect(placedBets).toHaveLength(0);
+        await page.screenshot({ path: testInfo.outputPath('inline-error.png') });
+        betFailure.message = null;
+        await first.getByRole('button').click();
+        await expect(first.getByRole('button')).toBeDisabled();
+        await first.getByRole('button').dispatchEvent('click');
+        await expect(second.getByRole('button')).toBeEnabled();
+        await expect(first.getByRole('status')).toHaveText('37금 베팅 완료');
+        await expect(first.getByRole('button')).toBeEnabled();
+        await first.getByRole('button').click();
+        await expect.poll(() => placedBets.length).toBe(2);
+        expect(placedBets).toEqual([
+            { targetId: 1, amount: 37 },
+            { targetId: 1, amount: 37 },
+        ]);
+        await expect(first.locator('.bracket-my-bet')).toHaveText('내 투자 금194');
+        await second.getByRole('spinbutton').fill('766');
+        await second.getByRole('button').click();
+        await expect(page.getByText('남은 한도 0금')).toBeVisible();
+        await expect(bracket.locator('.bracket-bet-button:enabled')).toHaveCount(0);
+    });
+}
+
+test('closed betting keeps investment and return visible without submit controls', async ({ page }) => {
+    await installFixture(page, { tournamentStage: 7 });
+    await page.goto('betting');
+    await expect(page.locator('.inline-bet')).toHaveCount(0);
+    await expect(page.locator('.desktop-bracket .bracket-return').first()).toHaveText('예상 환수 금3,360');
 });

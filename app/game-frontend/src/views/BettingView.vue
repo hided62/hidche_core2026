@@ -2,25 +2,29 @@
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { storeToRefs } from 'pinia';
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import TournamentPageHeader from '../components/tournament/TournamentPageHeader.vue';
 import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
-import { useGameFeedback } from '../composables/useGameFeedback';
 import { useTournamentPagesStore } from '../stores/tournamentPages';
 import type { TournamentBracketSlot } from '../utils/tournamentBracket';
 import { trpc } from '../utils/trpc';
 
 const tournamentPages = useTournamentPagesStore();
 const { snapshot, betting: summary, rankings, loading, error } = storeToRefs(tournamentPages);
-const selectedAmount = ref(10);
-const selectedTarget = ref<TournamentBracketSlot | null>(null);
-const betDialog = ref<HTMLDialogElement | null>(null);
-const betAmountSelect = ref<HTMLSelectElement | null>(null);
-const placingBet = ref(false);
-const betError = ref<string | null>(null);
+const defaultAmount = ref<number | string>(10);
+const amounts = ref<Record<number, number | string>>({});
+const pendingBets = ref<Record<number, number>>({});
+const betMessages = ref<Record<number, { text: string; error: boolean }>>({});
+const presetAmounts = [10, 20, 50, 100, 200, 500, 1000];
 const activeRankingPrefix = ref('tt');
-const { success: showSuccessToast } = useGameFeedback();
+const amountFor = (id: number): number | string => amounts.value[id] ?? defaultAmount.value;
+const remainingAmount = computed(() => Math.max(0, 1000 - myAmount.value));
+const availableAmount = computed(() =>
+    Math.max(0, remainingAmount.value - Object.values(pendingBets.value).reduce((sum, amount) => sum + amount, 0))
+);
+const validAmount = (amount: number | string): boolean =>
+    typeof amount === 'number' && Number.isInteger(amount) && amount >= 10 && amount <= availableAmount.value;
 const typeNames = ['전력전', '통솔전', '일기토', '설전'];
 const stageNames = [
     '경기 없음',
@@ -48,22 +52,9 @@ const totalAmount = computed(() => summary.value?.totalAmount ?? 0);
 const myAmount = computed(() => summary.value?.myAmount ?? 0);
 const betTotals = computed(() => summary.value?.totals as Record<number, number> | undefined);
 const myBetTotals = computed(() => summary.value?.myTotals as Record<number, number> | undefined);
-const ratio = (id: number) => {
-    const totals = summary.value?.totals as Record<number, number> | undefined;
-    const amount = totals?.[id] ?? 0;
-    return amount ? (totalAmount.value / amount).toFixed(2) : '0';
-};
 const openingTime = computed(() =>
     formatGameTime(snapshot.value?.state?.nextAt, { format: 'hourMinute', fallback: '--:--' })
 );
-const selectedRatio = computed(() => {
-    const targetId = selectedTarget.value?.id;
-    return targetId === null || targetId === undefined ? '0' : ratio(targetId);
-});
-const selectedExpectedReturn = computed(() => {
-    const numericRatio = Number(selectedRatio.value);
-    return Number.isFinite(numericRatio) ? Math.round(selectedAmount.value * numericRatio) : 0;
-});
 const bettingOpen = computed(() => {
     const state = snapshot.value?.state;
     if (!state || state.stage !== 6) return false;
@@ -71,32 +62,21 @@ const bettingOpen = computed(() => {
     return new Date(state.bettingCloseAt).getTime() > Date.now();
 });
 
-const openBetDialog = async (target: TournamentBracketSlot) => {
-    if (target.id === null || !bettingOpen.value) return;
-    selectedTarget.value = target;
-    betError.value = null;
-    await nextTick();
-    betDialog.value?.showModal();
-    betAmountSelect.value?.focus();
-};
-const closeBetDialog = () => {
-    betDialog.value?.close();
-};
-const placeBet = async () => {
-    const targetId = selectedTarget.value?.id;
-    if (targetId === null || targetId === undefined || placingBet.value) return;
-    const amount = selectedAmount.value;
-    betError.value = null;
-    placingBet.value = true;
+const placeBet = async (target: TournamentBracketSlot) => {
+    const targetId = target.id;
+    if (targetId === null || pendingBets.value[targetId] || !bettingOpen.value) return;
+    const amount = amountFor(targetId);
+    if (!validAmount(amount) || typeof amount !== 'number') return;
+    delete betMessages.value[targetId];
+    pendingBets.value[targetId] = amount;
     try {
         await trpc.tournament.placeBet.mutate({ targetId, amount });
-        showSuccessToast('베팅이 등록되었습니다.');
+        betMessages.value[targetId] = { text: `${amount.toLocaleString('ko-KR')}금 베팅 완료`, error: false };
         await load();
-        closeBetDialog();
     } catch (value) {
-        betError.value = errorText(value);
+        betMessages.value[targetId] = { text: errorText(value), error: true };
     } finally {
-        placingBet.value = false;
+        delete pendingBets.value[targetId];
     }
 };
 </script>
@@ -125,6 +105,22 @@ const placeBet = async () => {
             <small>(전체 금액 : {{ totalAmount }} / 내 투자 금액 : {{ myAmount }})</small>
         </section>
 
+        <section class="bet-settings bg0" aria-label="베팅 금액 설정">
+            <label
+                >기본 금액
+                <input v-model.number="defaultAmount" type="number" min="10" max="1000" step="1" inputmode="numeric" />
+            </label>
+            <select v-model.number="defaultAmount" aria-label="기본 지정 금액">
+                <option v-if="!presetAmounts.includes(Number(defaultAmount))" :value="defaultAmount">직접 입력</option>
+                <option v-for="amount in presetAmounts" :key="amount" :value="amount">{{ amount }}금</option>
+            </select>
+            <span>남은 한도 {{ remainingAmount.toLocaleString('ko-KR') }}금</span>
+            <small
+                >각 장수에게 추가할 금액입니다. 예상 환수금은 해당 장수 우승 시 금액이며, 최종 배당에 따라
+                달라집니다.</small
+            >
+        </section>
+
         <TournamentBracket
             class="bg0 betting-bracket"
             :participants="snapshot?.participants ?? []"
@@ -137,61 +133,62 @@ const placeBet = async () => {
             :show-legend="false"
             :betting-open="bettingOpen"
             :betting-mode="true"
-            @request-bet="openBetDialog"
-        />
-
-        <dialog
-            ref="betDialog"
-            class="bet-dialog viewport-centered-dialog"
-            aria-labelledby="bet-dialog-title"
-            @close="selectedTarget = null"
         >
-            <form v-if="selectedTarget" class="bet-dialog-content" @submit.prevent="placeBet">
-                <header>
-                    <h2 id="bet-dialog-title">베팅하기</h2>
-                    <button type="button" aria-label="베팅 창 닫기" :disabled="placingBet" @click="closeBetDialog">
-                        ×
-                    </button>
-                </header>
-                <GeneralIdentity
-                    :name="selectedTarget.name"
-                    :picture="selectedTarget.picture"
-                    :image-server="selectedTarget.imageServer"
-                    :npc-state="selectedTarget.npcState"
-                />
-                <label class="bet-amount-field">
-                    <span>베팅 금액</span>
-                    <select ref="betAmountSelect" v-model.number="selectedAmount" :disabled="placingBet">
-                        <option :value="10">금10</option>
-                        <option :value="20">금20</option>
-                        <option :value="50">금50</option>
-                        <option :value="100">금100</option>
-                        <option :value="200">금200</option>
-                        <option :value="500">금500</option>
-                        <option :value="1000">최대 금1000</option>
-                    </select>
-                </label>
-                <output class="bet-return-preview" aria-live="polite">
-                    <span class="ratio-color">배당 {{ selectedRatio }}</span>
-                    <span aria-hidden="true">×</span>
-                    <span class="gold-color">금{{ selectedAmount }}</span>
-                    <span aria-hidden="true">=</span>
-                    <strong class="return-color"
-                        >예상 환수금 {{ selectedExpectedReturn.toLocaleString('ko-KR') }}</strong
+            <template #bet-controls="{ candidate: slot }">
+                <form v-if="slot.id !== null" class="inline-bet" @submit.prevent="placeBet(slot)">
+                    <input
+                        :value="amountFor(slot.id)"
+                        type="number"
+                        min="10"
+                        :max="remainingAmount"
+                        step="1"
+                        inputmode="numeric"
+                        :aria-label="`${slot.name} 베팅 금액`"
+                        :disabled="Boolean(pendingBets[slot.id])"
+                        @input="
+                            amounts[slot.id] =
+                                ($event.target as HTMLInputElement).value === ''
+                                    ? ''
+                                    : Number(($event.target as HTMLInputElement).value)
+                        "
+                    />
+                    <select
+                        :value="presetAmounts.includes(Number(amountFor(slot.id))) ? amountFor(slot.id) : ''"
+                        :aria-label="`${slot.name} 지정 금액`"
+                        :disabled="Boolean(pendingBets[slot.id])"
+                        @change="amounts[slot.id] = Number(($event.target as HTMLSelectElement).value)"
                     >
-                </output>
-                <p class="bet-preview-note">
-                    현재 배당 기준 예상값이며, 베팅 상황에 따라 최종 배당은 달라질 수 있습니다.
-                </p>
-                <p v-if="betError" class="bet-dialog-error" role="alert">{{ betError }}</p>
-                <footer>
-                    <button type="button" :disabled="placingBet" @click="closeBetDialog">취소</button>
-                    <button type="submit" class="bet-submit" :disabled="placingBet">
-                        {{ placingBet ? '등록 중...' : '베팅 등록' }}
+                        <option value="" disabled>직접 입력</option>
+                        <option
+                            v-for="amount in presetAmounts"
+                            :key="amount"
+                            :value="amount"
+                            :disabled="amount > availableAmount"
+                        >
+                            {{ amount }}금
+                        </option>
+                    </select>
+                    <button
+                        type="submit"
+                        class="bracket-bet-button"
+                        :aria-label="`${slot.name}에게 베팅하기`"
+                        :disabled="Boolean(pendingBets[slot.id]) || !validAmount(amountFor(slot.id))"
+                    >
+                        {{ pendingBets[slot.id] ? '등록 중' : '베팅' }}
                     </button>
-                </footer>
-            </form>
-        </dialog>
+                    <small class="bet-message" :class="{ 'bet-error': betMessages[slot.id]?.error }" role="status">
+                        {{
+                            betMessages[slot.id]?.text ??
+                            (!validAmount(amountFor(slot.id)) && !pendingBets[slot.id]
+                                ? availableAmount < 10
+                                    ? '베팅 한도 부족'
+                                    : `10~${availableAmount}금 입력`
+                                : '')
+                        }}
+                    </small>
+                </form>
+            </template>
+        </TournamentBracket>
 
         <div class="legacy-table-signature" hidden>
             <table v-for="tableIndex in 6" :key="tableIndex">
@@ -351,16 +348,6 @@ const placeBet = async () => {
     color: orange;
     font-size: 14px;
 }
-.ratio-color {
-    color: skyblue;
-}
-.expected,
-.return-color {
-    color: cyan;
-}
-.gold-color {
-    color: orange;
-}
 select {
     width: 100%;
     min-height: 27px;
@@ -391,84 +378,76 @@ select:disabled {
     cursor: not-allowed;
     opacity: 0.5;
 }
-.bet-dialog {
-    width: min(420px, calc(100vw - 24px));
-    max-width: none;
-    padding: 0;
-    border: 1px solid #8d713d;
-    border-radius: 8px;
-    color: #fff;
-    background: #3a2118 var(--sammo-texture-walnut);
-    box-shadow: 0 18px 56px rgb(0 0 0 / 75%);
+.bet-settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    text-align: left;
 }
-.bet-dialog::backdrop {
-    background: rgb(0 0 0 / 72%);
-}
-.bet-dialog-content {
-    display: grid;
-    gap: 14px;
-    padding: 16px;
-}
-.bet-dialog-content header,
-.bet-dialog-content footer {
+.bet-settings label {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
 }
-.bet-dialog-content h2 {
-    margin: 0;
-    color: #ffd25e;
-    font-size: 20px;
+.bet-settings input,
+.bet-settings select {
+    width: 90px;
 }
-.bet-dialog-content header button {
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    font-size: 22px;
-}
-.bet-dialog-content :deep(.general-identity) {
-    justify-content: flex-start;
-    text-align: left;
-}
-.bet-amount-field {
-    display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-    text-align: left;
-}
-.bet-return-preview {
-    display: grid;
-    grid-template-columns: auto auto auto auto minmax(0, 1fr);
-    align-items: center;
-    gap: 7px;
-    padding: 12px;
-    border: 1px solid #66563c;
-    background: rgb(0 0 0 / 28%);
-    font-variant-numeric: tabular-nums;
-}
-.bet-preview-note,
-.bet-dialog-error {
-    margin: 0;
-    text-align: left;
-    font-size: 12px;
-}
-.bet-preview-note {
+.bet-settings small {
+    flex-basis: 100%;
     color: #c9c1b2;
 }
-.bet-dialog-error {
-    color: #ff8080;
+.inline-bet {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 80px 64px;
+    gap: 4px;
+    width: 100%;
 }
-.bet-dialog-content footer {
-    justify-content: flex-end;
+.inline-bet input,
+.inline-bet select,
+.inline-bet button,
+.bet-settings input,
+.bet-settings select {
+    box-sizing: border-box;
+    min-width: 0;
+    height: 44px;
+    margin: 0;
+    padding: 4px;
+    border: 1px solid #8d713d;
+    border-radius: 3px;
+    color: #fff;
+    background: #201610;
+    font-size: 16px;
 }
-.bet-dialog-content footer button {
-    min-width: 80px;
-}
-.bet-dialog-content .bet-submit {
-    border-color: #9a7632;
+.inline-bet .bracket-bet-button {
     background: #59400e;
+    font-weight: 700;
+}
+.inline-bet input:focus-visible,
+.bet-settings input:focus-visible {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
+}
+.bet-message {
+    grid-column: 1 / -1;
+    min-height: 16px;
+    font-size: 11px;
+    line-height: 16px;
+    color: #b8e6ac;
+    overflow-wrap: anywhere;
+}
+.bet-message.bet-error {
+    color: #ff9e9e;
+}
+@media (max-width: 1100px) {
+    .inline-bet {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .inline-bet .bracket-bet-button {
+        grid-column: 1 / -1;
+    }
 }
 .ranking-title {
     min-height: 50px;
@@ -546,12 +525,6 @@ select:disabled {
     .section-title,
     .ranking-title {
         font-size: 20px;
-    }
-    .bet-return-preview {
-        grid-template-columns: auto auto auto;
-    }
-    .bet-return-preview .return-color {
-        grid-column: 1 / -1;
     }
     .ranking-placeholder {
         display: none;
