@@ -1,3 +1,4 @@
+import { persistGeneralAccessScores, persistGeneralUpdates } from './generalBatchPersistence.js';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import {
     acquireGameSchemaAdvisoryXactLock,
@@ -1791,32 +1792,26 @@ export const createDatabaseTurnHooks = async (
             }
 
             await Promise.all([
-                ...generals
-                    .filter((general) => !createdIds.has(general.id))
-                    .map((general) =>
-                        prisma.general.update({
-                            where: { id: general.id },
-                            data: buildGeneralUpdate(general),
-                        })
-                    ),
-                ...generals
-                    .filter(
-                        (general) =>
-                            typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
-                    )
-                    .map((general) =>
-                        prisma.generalAccessLog.upsert({
-                            where: { generalId: general.id },
-                            update: {
-                                refreshScoreTotal: Math.floor(general.refreshScoreTotal ?? 0),
-                            },
-                            create: {
-                                generalId: general.id,
-                                userId: general.userId ?? null,
-                                refreshScoreTotal: Math.floor(general.refreshScoreTotal ?? 0),
-                            },
-                        })
-                    ),
+                persistGeneralUpdates(
+                    prisma,
+                    generals
+                        .filter((general) => !createdIds.has(general.id))
+                        .map((general) => ({ id: general.id, data: buildGeneralUpdate(general) }))
+                ),
+                persistGeneralAccessScores(
+                    prisma,
+                    generals
+                        .filter(
+                            (general) =>
+                                typeof general.refreshScoreTotal === 'number' &&
+                                Number.isFinite(general.refreshScoreTotal)
+                        )
+                        .map((general) => ({
+                            generalId: general.id,
+                            userId: general.userId ?? null,
+                            refreshScoreTotal: Math.floor(general.refreshScoreTotal ?? 0),
+                        }))
+                ),
                 ...cities.map((city) =>
                     prisma.city.update({
                         where: { id: city.id },

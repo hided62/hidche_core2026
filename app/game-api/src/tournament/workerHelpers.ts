@@ -696,31 +696,38 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
     return fallback;
 };
 
-export const seedNpcBets = async (options: {
+const buildNpcBettingPlan = async (options: {
     prisma: TournamentPrismaClient;
     store: TournamentStore;
     state: TournamentState;
     baseSeed: string;
-    daemonTransport: TurnDaemonTransport;
-}): Promise<void> => {
-    const { prisma, store, state, baseSeed, daemonTransport } = options;
+}): Promise<TournamentBetEntry[]> => {
+    const { prisma, store, state, baseSeed } = options;
     const existing = await store.getBettingEntries();
-    if (existing.length > 0) {
-        return;
-    }
+    const existingBettors = new Set(existing.map((entry) => entry.generalId));
 
     const matches = await store.getMatches();
     const candidateIds = Array.from(
-        new Set(matches.filter((match) => match.stage === 7).flatMap((match) => [match.attackerId, match.defenderId]))
+        new Set(
+            matches
+                .filter((match) => match.stage === 7)
+                .flatMap((match) => [match.attackerId, match.defenderId])
+                .filter((id) => id > 0)
+        )
     );
     if (candidateIds.length === 0) {
-        return;
+        return [];
     }
 
     const worldState = await prisma.worldState.findFirst();
     const config = asRecord(worldState?.config ?? {});
     const constValues = asRecord(config.const ?? config);
-    const startYear = resolveNumber(constValues, ['startYear', 'startyear'], state.openYear);
+    const scenarioMeta = asRecord(asRecord(worldState?.meta).scenarioMeta);
+    const startYear = resolveNumber(
+        scenarioMeta,
+        ['startYear'],
+        resolveNumber(constValues, ['startYear', 'startyear'], state.openYear)
+    );
     const currentYear = worldState?.currentYear ?? state.openYear;
     const betGold = Math.max(10, Math.floor((3 + currentYear - startYear) * 0.334) * 10);
 
@@ -733,9 +740,10 @@ export const seedNpcBets = async (options: {
     });
     const npcBetList = npcList
         .map((entry) => asRecord(entry))
-        .filter((entry) => typeof entry.id === 'number' && typeof entry.gold === 'number');
+        .filter((entry) => typeof entry.id === 'number' && typeof entry.gold === 'number')
+        .sort((left, right) => (left.id as number) - (right.id as number));
     if (npcBetList.length === 0) {
-        return;
+        return [];
     }
 
     const rng = createTournamentRng(baseSeed, {
@@ -748,27 +756,52 @@ export const seedNpcBets = async (options: {
         extraSeed: `OpenBettingTournament:${state.bettingId ?? 'none'}`,
     });
 
-    const entries = [...existing];
+    const entries: TournamentBetEntry[] = [];
     for (const npc of npcBetList) {
         const targetId = rng.choice(candidateIds);
-        entries.push({ generalId: npc.id as number, targetId, amount: betGold });
+        if (!existingBettors.has(npc.id as number)) {
+            entries.push({ generalId: npc.id as number, targetId, amount: betGold });
+        }
+    }
+    return entries;
+};
+
+export const seedNpcBets = async (options: {
+    prisma: TournamentPrismaClient;
+    store: TournamentStore;
+    state: TournamentState;
+    baseSeed: string;
+    daemonTransport: TurnDaemonTransport;
+}): Promise<void> => {
+    const { store, state, daemonTransport } = options;
+    // Persist the selected pool, amounts and targets before any resource command.
+    // A retry must not reselect after a debit changes an NPC's eligibility.
+    const plan = state.npcBettingPlan ?? (await buildNpcBettingPlan(options));
+    if (plan.length === 0) {
+        return;
+    }
+    if (!state.npcBettingPlan) {
+        const storedState = await store.getState();
+        if (!storedState) {
+            throw new Error('Tournament state missing while preparing NPC bets.');
+        }
+        await store.setState({ ...storedState, npcBettingPlan: plan });
     }
 
+    const requestPrefix = `tournament:${state.bettingId ?? `${state.openYear}:${state.openMonth}:${state.type}`}:npc-bet`;
     await daemonTransport.sendCommand({
         type: 'adjustGeneralResources',
+        requestId: `${requestPrefix}:resources`,
         reason: 'tournamentNpcBet',
-        adjustments: npcBetList.map((npc) => ({
-            generalId: npc.id as number,
-            goldDelta: -betGold,
-        })),
+        adjustments: plan.map((entry) => ({ generalId: entry.generalId, goldDelta: -entry.amount })),
     });
     await daemonTransport.sendCommand({
         type: 'adjustGeneralMeta',
+        requestId: `${requestPrefix}:meta`,
         reason: 'tournamentNpcBet',
-        adjustments: npcBetList.map((npc) => ({
-            generalId: npc.id as number,
-            metaDelta: { betgold: betGold },
-        })),
+        adjustments: plan.map((entry) => ({ generalId: entry.generalId, metaDelta: { betgold: entry.amount } })),
     });
-    await store.setBettingEntries(entries);
+    const existing = await store.getBettingEntries();
+    const existingBettors = new Set(existing.map((entry) => entry.generalId));
+    await store.setBettingEntries(existing.concat(plan.filter((entry) => !existingBettors.has(entry.generalId))));
 };

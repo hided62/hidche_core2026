@@ -174,6 +174,7 @@ describe('TournamentStore source revision', () => {
             ['bettingId', '123'],
             ['rewardSettled', 'yes'],
             ['bettingSettled', 1],
+            ['npcBettingPlan', [{ generalId: 3, targetId: 11, amount: '10' }]],
         ] as const) {
             await redis.set(keys.stateKey, JSON.stringify({ ...canonicalState, [field]: value }));
             await expect(store.getState(), field).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
@@ -239,5 +240,4 @@ describe('TournamentStore source revision', () => {
         await redis.set(keys.matchesKey, JSON.stringify([{ ...match, lastEnergy: { attacker: '90', defender: 0 } }]));
         await expect(store.getMatches()).rejects.toBeInstanceOf(CorruptTournamentProjectionError);
     });
-
 });

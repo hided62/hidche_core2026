@@ -28,6 +28,14 @@ export class CorruptTournamentProjectionError extends Error {
     }
 }
 
+const zTournamentBet = z
+    .object({
+        generalId: z.number().int(),
+        targetId: z.number().int(),
+        amount: z.number(),
+    })
+    .passthrough();
+
 const zTournamentState = z
     .object({
         stage: z.number().int(),
@@ -46,6 +54,7 @@ const zTournamentState = z
         bettingCloseTick: z.number().int().safe().optional(),
         winnerId: z.number().int().optional(),
         bettingSettled: z.boolean().optional(),
+        npcBettingPlan: z.array(zTournamentBet).optional(),
         rewardSettled: z.boolean().optional(),
         participantsLockedAt: z.string().optional(),
         lastError: z.string().optional(),
@@ -108,14 +117,6 @@ const zTournamentMatch = z
             })
             .passthrough()
             .optional(),
-    })
-    .passthrough();
-
-const zTournamentBet = z
-    .object({
-        generalId: z.number().int(),
-        targetId: z.number().int(),
-        amount: z.number(),
     })
     .passthrough();
 

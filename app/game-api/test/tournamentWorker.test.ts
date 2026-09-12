@@ -17,6 +17,7 @@ import {
     buildBettingPayouts,
     resolveBettingCloseAt,
     resolveNextAt,
+    seedNpcBets,
 } from '../src/tournament/workerHelpers.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 
@@ -149,6 +150,7 @@ const createPrismaMock = (options: {
     }>;
     baseSeed?: string;
     currentYear?: number;
+    startYear?: number;
 }) => {
     const applicants = options.applicants ?? [];
     const npcs = options.npcs ?? [];
@@ -169,7 +171,11 @@ const createPrismaMock = (options: {
                     if (isRecord(npcState) && typeof npcState.gte === 'number') {
                         const gold = isRecord(where.gold) ? where.gold : null;
                         if (isRecord(gold) && typeof gold.gte === 'number') {
-                            return npcBetting;
+                            const minimumGold = gold.gte;
+                            const minimumNpcState = npcState.gte;
+                            return npcBetting.filter(
+                                (entry) => entry.gold >= minimumGold && entry.npcState >= minimumNpcState
+                            );
                         }
                         return npcs;
                     }
@@ -180,8 +186,8 @@ const createPrismaMock = (options: {
         },
         worldState: {
             findFirst: async () => ({
-                meta: { hiddenSeed: options.baseSeed ?? 'seed' },
-                config: { const: { startYear: 1 } },
+                meta: { hiddenSeed: options.baseSeed ?? 'seed', scenarioMeta: { startYear: options.startYear ?? 1 } },
+                config: { const: {} },
                 currentYear: options.currentYear ?? 1,
             }),
         },
@@ -401,6 +407,150 @@ describe('tournament worker (in-memory)', () => {
             winnerId: 15,
             lastEnergy: { attacker: -90, defender: -92 },
         });
+    });
+
+    it.each([
+        [200, 200, 10],
+        [201, 200, 10],
+        [203, 200, 20],
+        [210, 200, 40],
+        [230, 200, 110],
+    ])('seeds Ref opening bets in year %i from scenario year %i (%i gold)', async (currentYear, startYear, amount) => {
+        const store = new TournamentStore(new MemoryRedis(), buildTournamentKeys('npc-opening'));
+        const state = createTournamentState({ stage: 5, openYear: currentYear, bettingId: 123 });
+        await store.setState(state);
+        await store.setMatches([
+            { id: 1, stage: 7, roundIndex: 0, attackerId: 11, defenderId: 12 },
+            { id: 2, stage: 7, roundIndex: 1, attackerId: -1, defenderId: 13 },
+        ]);
+        // Existing user bets must not suppress the opening NPC pool.
+        await store.setBettingEntries([{ generalId: 90, targetId: 11, amount: 100 }]);
+        const npcBetting = [0, 1, 2, 3, 4, 5, 6].map((npcState) => ({
+            id: npcState + 1,
+            name: `NPC${npcState}`,
+            leadership: 50,
+            strength: 50,
+            intel: 50,
+            meta: {},
+            npcState,
+            gold: 500 + amount,
+        }));
+        npcBetting.push({ ...npcBetting[2]!, id: 80, gold: 499 + amount });
+        const prisma = createPrismaMock({ npcBetting, currentYear, startYear });
+        const commands: TurnDaemonCommand[] = [];
+        const daemonTransport: TurnDaemonTransport = {
+            ...createNoopDaemonTransport(),
+            sendCommand: async (command) => {
+                expect((await store.getState())?.stage).toBe(5);
+                commands.push(command);
+                return 'ok';
+            },
+        };
+        const opened = await applyPreBattleStage(store, prisma, state, 'opening-seed', daemonTransport);
+        expect(opened.stage).toBe(6);
+        const bets = await store.getBettingEntries();
+        expect(bets[0]).toEqual({ generalId: 90, targetId: 11, amount: 100 });
+        expect(bets.slice(1).map((bet) => bet.generalId)).toEqual([3, 4, 5, 6, 7]);
+        expect(bets.slice(1).every((bet) => bet.amount === amount && [11, 12, 13].includes(bet.targetId))).toBe(true);
+        expect(new Set(bets.slice(1).map((bet) => bet.targetId)).size).toBeGreaterThan(1);
+        expect(commands).toEqual([
+            {
+                type: 'adjustGeneralResources',
+                requestId: 'tournament:123:npc-bet:resources',
+                reason: 'tournamentNpcBet',
+                adjustments: [3, 4, 5, 6, 7].map((generalId) => ({ generalId, goldDelta: -amount })),
+            },
+            {
+                type: 'adjustGeneralMeta',
+                requestId: 'tournament:123:npc-bet:meta',
+                reason: 'tournamentNpcBet',
+                adjustments: [3, 4, 5, 6, 7].map((generalId) => ({ generalId, metaDelta: { betgold: amount } })),
+            },
+        ]);
+        await seedNpcBets({ prisma, store, state: opened, baseSeed: 'opening-seed', daemonTransport });
+        expect(await store.getBettingEntries()).toEqual(bets);
+        expect(commands).toHaveLength(2);
+        // A fresh projection with the same seed and DB inputs has the same choices.
+        await store.setBettingEntries([bets[0]!]);
+        await seedNpcBets({
+            prisma,
+            store,
+            state: opened,
+            baseSeed: 'opening-seed',
+            daemonTransport: createNoopDaemonTransport(),
+        });
+        expect(await store.getBettingEntries()).toEqual(bets);
+    });
+
+    it('retries an opening query failure without advancing stage or changing the betting identity', async () => {
+        const store = new TournamentStore(new MemoryRedis(), buildTournamentKeys('npc-opening-retry'));
+        const state = createTournamentState({ stage: 5 });
+        await store.setState(state);
+        await store.setMatches([{ id: 1, stage: 7, roundIndex: 0, attackerId: 11, defenderId: 12 }]);
+        const prisma = createPrismaMock({
+            npcBetting: [
+                { id: 3, name: 'n장', leadership: 50, strength: 50, intel: 50, meta: {}, npcState: 2, gold: 1000 },
+            ],
+        });
+        const findMany = prisma.general.findMany;
+        prisma.general.findMany = async () => {
+            throw new Error('query unavailable');
+        };
+        const transport = createNoopDaemonTransport();
+        await expect(applyPreBattleStage(store, prisma, state, 'seed', transport, () => 1000)).rejects.toThrow(
+            'query unavailable'
+        );
+        const retryState = (await store.getState())!;
+        expect(retryState).toMatchObject({ stage: 5, bettingId: 1000 });
+        expect(await store.getBettingEntries()).toEqual([]);
+        prisma.general.findMany = findMany;
+        const opened = await applyPreBattleStage(store, prisma, retryState, 'seed', transport, () => 2000);
+        expect(opened).toMatchObject({ stage: 6, bettingId: 1000 });
+        expect(await store.getBettingEntries()).toHaveLength(1);
+    });
+
+    it('reuses durable command identities after a partial enqueue failure', async () => {
+        const store = new TournamentStore(new MemoryRedis(), buildTournamentKeys('npc-enqueue-retry'));
+        const state = createTournamentState({ stage: 5, bettingId: 456 });
+        await store.setState(state);
+        await store.setMatches([{ id: 1, stage: 7, roundIndex: 0, attackerId: 11, defenderId: 12 }]);
+        const prisma = createPrismaMock({
+            npcBetting: [
+                { id: 3, name: 'n장', leadership: 50, strength: 50, intel: 50, meta: {}, npcState: 2, gold: 1000 },
+            ],
+        });
+        const commands: TurnDaemonCommand[] = [];
+        let fail = true;
+        const transport: TurnDaemonTransport = {
+            ...createNoopDaemonTransport(),
+            sendCommand: async (command) => {
+                commands.push(command);
+                if (command.type === 'adjustGeneralMeta' && fail) {
+                    fail = false;
+                    // The accepted debit may already have committed before retry.
+                    prisma.general.findMany = async () => [];
+                    throw new Error('enqueue unavailable');
+                }
+                return 'ok';
+            },
+        };
+        await expect(applyPreBattleStage(store, prisma, state, 'seed', transport)).rejects.toThrow(
+            'enqueue unavailable'
+        );
+        expect(await store.getState()).toMatchObject({
+            stage: 5,
+            npcBettingPlan: [{ generalId: 3, targetId: expect.any(Number), amount: 10 }],
+        });
+        expect(await store.getBettingEntries()).toEqual([]);
+        await applyPreBattleStage(store, prisma, (await store.getState())!, 'seed', transport);
+        expect(commands.slice(2)).toEqual(commands.slice(0, 2));
+        expect(commands.map((command) => command.requestId)).toEqual([
+            'tournament:456:npc-bet:resources',
+            'tournament:456:npc-bet:meta',
+            'tournament:456:npc-bet:resources',
+            'tournament:456:npc-bet:meta',
+        ]);
+        expect(await store.getBettingEntries()).toHaveLength(1);
     });
 
     it('runs all four tournament types and emits enough rank and NPC-betting commands for a top ten', async () => {

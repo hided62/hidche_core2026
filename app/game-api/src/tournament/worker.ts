@@ -465,8 +465,12 @@ export const applyPreBattleStage = async (
             bettingCloseAt: resolveBettingCloseAt(state),
             nextAt: resolveNextAt(state),
         };
-        await store.setState(nextState);
+        // Keep the opening identity across retries, but do not expose stage 6
+        // until its initial NPC bets have been written successfully.
+        await store.setState({ ...state, bettingId: nextState.bettingId });
         await seedNpcBets({ prisma, store, state: nextState, baseSeed, daemonTransport });
+        nextState.npcBettingPlan = undefined;
+        await store.setState(nextState);
         return nextState;
     }
 

@@ -17,6 +17,7 @@ export interface TournamentState {
     bettingCloseTick?: number;
     winnerId?: number;
     bettingSettled?: boolean;
+    npcBettingPlan?: TournamentBetEntry[];
     rewardSettled?: boolean;
     participantsLockedAt?: string;
     lastError?: string;
