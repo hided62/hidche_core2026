@@ -1124,6 +1124,7 @@ test('current-city exposes own general details to a member and admin fixture', a
     await go(page, 'current-city');
     await expect(page.locator('.generals')).toContainText('장수');
     await expect(page.locator('.generals')).toContainText('90');
+    await expect(page.locator('.general-icon')).toHaveJSProperty('naturalWidth', 64);
     const legacyGeometry = await page.evaluate(() => {
         const rect = (selector: string) => {
             const box = document.querySelector(selector)?.getBoundingClientRect();

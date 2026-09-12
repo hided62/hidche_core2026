@@ -257,7 +257,7 @@ const commandBrief = (command: ReservedCommand): string =>
                         :data-is-our-general="general.train !== null"
                         :data-general-wounded="general.injury"
                     >
-                        <td class="icon-cell">
+                        <td data-field="icon" class="icon-cell">
                             <img
                                 class="general-icon"
                                 width="64"
@@ -266,26 +266,28 @@ const commandBrief = (command: ReservedCommand): string =>
                                 @error="useDefaultGeneralIcon"
                             />
                         </td>
-                        <td :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</td>
-                        <td :class="{ wounded: general.injury !== 0 }">
+                        <td data-field="name" :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</td>
+                        <td data-field="lead" data-label="통" :class="{ wounded: general.injury !== 0 }">
                             {{ woundedStat(general.leadership, general.injury)
                             }}<span v-if="general.leadershipBonus" class="leadership-bonus"
                                 >+{{ general.leadershipBonus }}</span
                             >
                         </td>
-                        <td :class="{ wounded: general.injury !== 0 }">
+                        <td data-field="str" data-label="무" :class="{ wounded: general.injury !== 0 }">
                             {{ woundedStat(general.strength, general.injury) }}
                         </td>
-                        <td :class="{ wounded: general.injury !== 0 }">
+                        <td data-field="intel" data-label="지" :class="{ wounded: general.injury !== 0 }">
                             {{ woundedStat(general.intelligence, general.injury) }}
                         </td>
-                        <td>{{ formatOfficerLevelText(general.officerLevel) }}</td>
-                        <td>{{ defenceTrainText(general.defenceTrain) }}</td>
-                        <td>{{ general.crewTypeName ?? '?' }}</td>
-                        <td>{{ general.crew ?? '?' }}</td>
-                        <td>{{ general.train ?? '?' }}</td>
-                        <td>{{ general.atmos ?? '?' }}</td>
-                        <td class="turns" :class="{ 'turns--reserved': general.turns.length > 0 }">
+                        <td data-field="office" data-label="관직">
+                            {{ formatOfficerLevelText(general.officerLevel) }}
+                        </td>
+                        <td data-field="defence" data-label="守">{{ defenceTrainText(general.defenceTrain) }}</td>
+                        <td data-field="type" data-label="병종">{{ general.crewTypeName ?? '?' }}</td>
+                        <td data-field="crew" data-label="병사">{{ general.crew ?? '?' }}</td>
+                        <td data-field="train" data-label="훈">{{ general.train ?? '?' }}</td>
+                        <td data-field="atmos" data-label="사">{{ general.atmos ?? '?' }}</td>
+                        <td data-field="turns" class="turns" :class="{ 'turns--reserved': general.turns.length > 0 }">
                             <template v-if="general.turns.length">
                                 <span
                                     v-for="(turn, index) in general.turns"
@@ -470,11 +472,131 @@ const commandBrief = (command: ReservedCommand): string =>
     text-align: center;
     color: #ff7373;
 }
-@media (max-width: 700px) {
+/* 넓은 표의 모든 셀을 유지하고 초상/명령의 높이에 통계를 나란히 배치한다. */
+@media (max-width: 939.98px) {
     .city-page {
-        width: 1000px;
-        margin-top: 8px;
-        transform-origin: top left;
+        width: 500px;
+    }
+    .stats,
+    .stats tbody,
+    .generals,
+    .generals tbody {
+        display: block;
+    }
+    .stats colgroup,
+    .generals colgroup {
+        display: none;
+    }
+    .stats tr {
+        display: grid;
+        grid-template-columns: repeat(3, 40px minmax(0, 1fr));
+    }
+    .stats tr:first-child {
+        grid-template-columns: 1fr auto;
+    }
+    .stats tr:last-child {
+        grid-template-columns: 40px minmax(0, 1fr);
+    }
+    .stats td,
+    .stats th {
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        align-content: center;
+    }
+    .generals {
+        width: 500px;
+        margin: 8px 0 0;
+        transform: none;
+    }
+    .generals thead {
+        display: none;
+    }
+    .generals tbody tr {
+        display: grid;
+        grid-template-columns: 64px 62px 68px 40px 40px minmax(0, 1fr);
+        grid-template-areas:
+            'icon name name name name turns'
+            'icon lead str intel intel turns'
+            'icon office office defence defence turns'
+            'icon type crew train atmos turns';
+        height: auto;
+        border: 1px solid gray;
+        border-bottom: 0;
+    }
+    .generals tbody tr:last-child {
+        border-bottom: 1px solid gray;
+    }
+    .generals tbody td {
+        min-width: 0;
+        padding: 0 2px;
+        border: 0;
+        line-height: 18.2px;
+        overflow-wrap: anywhere;
+        align-content: center;
+    }
+    .generals tbody td[data-label]::before {
+        content: attr(data-label);
+        margin-right: 3px;
+        font-size: 11px;
+        color: #bbb;
+    }
+    .generals [data-field='train'],
+    .generals [data-field='atmos'],
+    .generals [data-field='crew'] {
+        padding-inline: 1px;
+    }
+    .generals [data-field='train']::before,
+    .generals [data-field='atmos']::before,
+    .generals [data-field='crew']::before {
+        margin-right: 2px;
+    }
+    .generals td.turns--reserved {
+        line-height: 1.3;
+    }
+    .generals .icon-cell {
+        height: auto;
+    }
+    .generals td.turns {
+        border-left: 1px solid gray;
+        padding-inline: 4px;
+        text-align: left;
+    }
+    .generals [data-field='icon'] {
+        grid-area: icon;
+    }
+    .generals [data-field='name'] {
+        grid-area: name;
+    }
+    .generals [data-field='lead'] {
+        grid-area: lead;
+    }
+    .generals [data-field='str'] {
+        grid-area: str;
+    }
+    .generals [data-field='intel'] {
+        grid-area: intel;
+    }
+    .generals [data-field='office'] {
+        grid-area: office;
+    }
+    .generals [data-field='defence'] {
+        grid-area: defence;
+    }
+    .generals [data-field='type'] {
+        grid-area: type;
+    }
+    .generals [data-field='crew'] {
+        grid-area: crew;
+    }
+    .generals [data-field='train'] {
+        grid-area: train;
+    }
+    .generals [data-field='atmos'] {
+        grid-area: atmos;
+    }
+    .generals [data-field='turns'] {
+        grid-area: turns;
     }
 }
 </style>

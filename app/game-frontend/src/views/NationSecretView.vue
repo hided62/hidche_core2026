@@ -241,9 +241,10 @@ onMounted(load);
                         v-for="general in generals"
                         :key="general.id"
                         :data-general-id="general.id"
+                        :class="{ 'has-commands': general.npcState < 2 && general.reservedCommands.length > 0 }"
                         :data-npc-state="general.npcState"
                     >
-                        <td>
+                        <td data-field="name">
                             <DirectoryTooltip
                                 :title="`부상 · ${injuryInfo(general.injury).text}`"
                                 :description="injuryDescription(general)"
@@ -259,9 +260,9 @@ onMounted(load);
                                     }"
                                     >{{ displayName(general) }}</span
                                 > </DirectoryTooltip
-                            ><br />Lv {{ general.experienceLevel }}
+                            ><br /><span class="general-level">Lv {{ general.experienceLevel }}</span>
                         </td>
-                        <td>
+                        <td data-field="stats" data-label="통/무/지">
                             <DirectoryTooltip
                                 title="통솔 부상"
                                 :description="
@@ -311,16 +312,16 @@ onMounted(load);
                                 }}</span></DirectoryTooltip
                             >
                         </td>
-                        <td>{{ general.troopName ?? '-' }}</td>
-                        <td>{{ general.gold }}</td>
-                        <td>{{ general.rice }}</td>
-                        <td>{{ general.cityName ?? '-' }}</td>
-                        <td>{{ general.defenceTrainText }}</td>
-                        <td>{{ general.crewTypeName }}</td>
-                        <td>{{ general.crew }}</td>
-                        <td>{{ general.train }}</td>
-                        <td>{{ general.atmos }}</td>
-                        <td class="turns">
+                        <td data-field="troop" data-label="부대">{{ general.troopName ?? '-' }}</td>
+                        <td data-field="gold" data-label="금">{{ general.gold }}</td>
+                        <td data-field="rice" data-label="쌀">{{ general.rice }}</td>
+                        <td data-field="city" data-label="도시">{{ general.cityName ?? '-' }}</td>
+                        <td data-field="defence" data-label="守">{{ general.defenceTrainText }}</td>
+                        <td data-field="type" data-label="병종">{{ general.crewTypeName }}</td>
+                        <td data-field="crew" data-label="병사">{{ general.crew }}</td>
+                        <td data-field="train" data-label="훈">{{ general.train }}</td>
+                        <td data-field="atmos" data-label="사">{{ general.atmos }}</td>
+                        <td data-field="turns" class="turns">
                             <template v-if="general.npcState >= 2">NPC 장수</template
                             ><template v-else
                                 ><div
@@ -332,8 +333,10 @@ onMounted(load);
                                 </div></template
                             >
                         </td>
-                        <td>{{ general.killTurn }}</td>
-                        <td>{{ formatGameTime(general.turnTime, { format: 'minuteSecond' }) }}</td>
+                        <td data-field="kill" data-label="삭">{{ general.killTurn }}</td>
+                        <td data-field="time" data-label="턴">
+                            {{ formatGameTime(general.turnTime, { format: 'minuteSecond' }) }}
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -519,6 +522,205 @@ th,
     }
     .list :is(th, td):nth-child(14) {
         width: 22px;
+    }
+}
+
+/* 500px에서는 명령을 숨기지 않고 그 옆 높이를 통계에 사용한다.
+ * 예약이 없는 장수는 전체 폭 2행으로 배치해 빈 명령 칸 때문에 길어지지 않는다. */
+@media (max-width: 939.98px) {
+    .secret-page {
+        width: 500px;
+        margin: 0 auto;
+    }
+    .layout,
+    .list {
+        width: 500px;
+        margin-inline: 0;
+    }
+    .summary,
+    .summary tbody {
+        display: block;
+    }
+    .summary tr {
+        display: grid;
+        grid-template-columns: 106px 144px 106px 144px;
+    }
+    .summary th,
+    .summary td {
+        box-sizing: border-box;
+        width: auto;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .list,
+    .list thead,
+    .list tbody {
+        display: block;
+    }
+    .list thead tr {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .list thead th:not(:has(button)) {
+        display: none;
+    }
+    .list thead button {
+        width: 100%;
+        min-height: 28px;
+    }
+    .list :is(th, td):nth-child(n) {
+        width: auto;
+    }
+    .list tbody tr {
+        display: grid;
+        grid-template-columns: repeat(100, minmax(0, 1fr));
+        height: auto;
+        border: 1px solid gray;
+        border-top: 0;
+    }
+    .list tbody tr.has-commands {
+        grid-template-columns: 64px 70px 70px 70px minmax(0, 1fr);
+        grid-template-areas:
+            'name name stats stats turns'
+            'troop troop city city turns'
+            'gold gold rice rice turns'
+            'type crew train atmos turns'
+            'defence kill time time turns';
+    }
+    .list tbody td {
+        min-width: 0;
+        padding: 0 2px;
+        border: 0;
+        font-size: 14px;
+        line-height: 18.2px;
+        overflow-wrap: anywhere;
+        align-content: center;
+    }
+    .list tbody td[data-label]::before {
+        content: attr(data-label);
+        margin-right: 3px;
+        font-size: 11px;
+        color: #bbb;
+    }
+    .list tbody td[data-field='name'] br {
+        display: none;
+    }
+    .general-level {
+        margin-left: 4px;
+    }
+    .list tbody .turns {
+        font-size: 11px;
+        line-height: 1.3;
+        border-left: 1px solid gray;
+        padding-inline: 4px;
+        text-align: left;
+    }
+    .list [data-field='name'] {
+        grid-area: name;
+    }
+    .list [data-field='stats'] {
+        grid-area: stats;
+    }
+    .list [data-field='troop'] {
+        grid-area: troop;
+    }
+    .list [data-field='gold'] {
+        grid-area: gold;
+    }
+    .list [data-field='rice'] {
+        grid-area: rice;
+    }
+    .list [data-field='city'] {
+        grid-area: city;
+    }
+    .list [data-field='defence'] {
+        grid-area: defence;
+    }
+    .list [data-field='type'] {
+        grid-area: type;
+    }
+    .list [data-field='crew'] {
+        grid-area: crew;
+    }
+    .list [data-field='train'] {
+        grid-area: train;
+    }
+    .list [data-field='atmos'] {
+        grid-area: atmos;
+    }
+    .list [data-field='turns'] {
+        grid-area: turns;
+    }
+    .list [data-field='kill'] {
+        grid-area: kill;
+    }
+    .list [data-field='time'] {
+        grid-area: time;
+    }
+    /* 예약이 없으면 서로 다른 열폭을 가진 2행을 100등분 grid 위에 놓는다.
+     * 첫 행: 이름/능력/부대/도시/NPC, 둘째 행: 자원/병력/훈사/턴. */
+    .list tbody tr:not(.has-commands) td {
+        grid-area: auto;
+        padding-inline: 1px;
+    }
+    .list tbody tr:not(.has-commands) td::before {
+        margin-right: 2px;
+    }
+    .list tbody tr:not(.has-commands) [data-field='name'] {
+        grid-row: 1;
+        grid-column: 1 / span 27;
+    }
+    .list tbody tr:not(.has-commands) [data-field='stats'] {
+        grid-row: 1;
+        grid-column: 28 / span 28;
+    }
+    .list tbody tr:not(.has-commands) [data-field='troop'] {
+        grid-row: 1;
+        grid-column: 56 / span 18;
+    }
+    .list tbody tr:not(.has-commands) [data-field='city'] {
+        grid-row: 1;
+        grid-column: 74 / span 12;
+    }
+    .list tbody tr:not(.has-commands) [data-field='turns'] {
+        grid-row: 1;
+        grid-column: 86 / span 15;
+    }
+    .list tbody tr:not(.has-commands) [data-field='gold'] {
+        grid-row: 2;
+        grid-column: 1 / span 19;
+    }
+    .list tbody tr:not(.has-commands) [data-field='rice'] {
+        grid-row: 2;
+        grid-column: 20 / span 16;
+    }
+    .list tbody tr:not(.has-commands) [data-field='defence'] {
+        grid-row: 2;
+        grid-column: 36 / span 7;
+    }
+    .list tbody tr:not(.has-commands) [data-field='type'] {
+        grid-row: 2;
+        grid-column: 43 / span 11;
+    }
+    .list tbody tr:not(.has-commands) [data-field='crew'] {
+        grid-row: 2;
+        grid-column: 54 / span 14;
+    }
+    .list tbody tr:not(.has-commands) [data-field='train'] {
+        grid-row: 2;
+        grid-column: 68 / span 8;
+    }
+    .list tbody tr:not(.has-commands) [data-field='atmos'] {
+        grid-row: 2;
+        grid-column: 76 / span 8;
+    }
+    .list tbody tr:not(.has-commands) [data-field='kill'] {
+        grid-row: 2;
+        grid-column: 84 / span 6;
+    }
+    .list tbody tr:not(.has-commands) [data-field='time'] {
+        grid-row: 2;
+        grid-column: 90 / span 11;
     }
 }
 </style>
