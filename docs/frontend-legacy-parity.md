@@ -125,12 +125,17 @@ the selected radio option so the user can retry.
 `app/game-frontend/e2e/infoMobileLayout.spec.ts` verifies the intentional Core
 500px layouts for `/nation/secret` and `/current-city`. Both keep every visible
 cell, command and image from the desktop dataset. Statistics share vertical space
-with reserved commands; current-city portraits remain 64px. Empty reservation
-cells in the secret list use a shorter full-width two-row layout.
+with reserved commands; current-city portraits remain 64px. Both lists reserve
+166px of the 500px table for commands and 332px for information (plus borders).
+Secret rows use the same four-line field positions for players, NPCs and empty
+reservations. Long content wraps without truncation.
 
 The fixture measures 100 generals with five-command and NPC rows at CSS viewport
 widths 1000, 500, 501 and 800. The mixed-list height must stay below 1.5 times the
-same desktop list, and page height below 1.55 times; idle lists stay below 1.8 times.
+same desktop list, and page height below 1.55 times. Idle current-city lists stay
+below 1.8 times; ordinary idle secret rows stay below 76px and the 100-row fixture
+below 7600px. The secret idle limit replaces the old NPC-specific two-row limit
+to preserve consistent field positions, as requested in the follow-up review.
 These limits apply to the deterministic fixture, not arbitrary-length user text.
 It also verifies exact cell text preservation, no horizontal overflow, sorting,
 injury tooltip interaction, city selection, empty lists, doubled text, and actual

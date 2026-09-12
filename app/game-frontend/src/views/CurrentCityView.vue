@@ -514,7 +514,7 @@ const commandBrief = (command: ReservedCommand): string =>
     }
     .generals tbody tr {
         display: grid;
-        grid-template-columns: 64px 62px 68px 40px 40px minmax(0, 1fr);
+        grid-template-columns: 64px 74px 90px 52px 52px 166px;
         grid-template-areas:
             'icon name name name name turns'
             'icon lead str intel intel turns'
@@ -539,6 +539,7 @@ const commandBrief = (command: ReservedCommand): string =>
         content: attr(data-label);
         margin-right: 3px;
         font-size: 11px;
+        line-height: 1;
         color: #bbb;
     }
     .generals [data-field='train'],

@@ -241,7 +241,6 @@ onMounted(load);
                         v-for="general in generals"
                         :key="general.id"
                         :data-general-id="general.id"
-                        :class="{ 'has-commands': general.npcState < 2 && general.reservedCommands.length > 0 }"
                         :data-npc-state="general.npcState"
                     >
                         <td data-field="name">
@@ -525,8 +524,7 @@ th,
     }
 }
 
-/* 500px에서는 명령을 숨기지 않고 그 옆 높이를 통계에 사용한다.
- * 예약이 없는 장수는 전체 폭 2행으로 배치해 빈 명령 칸 때문에 길어지지 않는다. */
+/* 장수 종류와 예약 유무에 관계없이 정보 2/3, 명령 1/3의 같은 배치를 사용한다. */
 @media (max-width: 939.98px) {
     .secret-page {
         width: 500px;
@@ -573,19 +571,15 @@ th,
     }
     .list tbody tr {
         display: grid;
-        grid-template-columns: repeat(100, minmax(0, 1fr));
+        grid-template-columns: repeat(12, minmax(0, 1fr)) 166px;
+        grid-template-areas:
+            'name name name name name name stats stats stats stats stats stats turns'
+            'troop troop troop troop troop troop city city city city defence defence turns'
+            'gold gold gold gold gold rice rice rice rice time time time turns'
+            'type type type crew crew crew train train atmos atmos kill kill turns';
         height: auto;
         border: 1px solid gray;
         border-top: 0;
-    }
-    .list tbody tr.has-commands {
-        grid-template-columns: 64px 70px 70px 70px minmax(0, 1fr);
-        grid-template-areas:
-            'name name stats stats turns'
-            'troop troop city city turns'
-            'gold gold rice rice turns'
-            'type crew train atmos turns'
-            'defence kill time time turns';
     }
     .list tbody td {
         min-width: 0;
@@ -600,6 +594,7 @@ th,
         content: attr(data-label);
         margin-right: 3px;
         font-size: 11px;
+        line-height: 1;
         color: #bbb;
     }
     .list tbody td[data-field='name'] br {
@@ -656,71 +651,6 @@ th,
     }
     .list [data-field='time'] {
         grid-area: time;
-    }
-    /* 예약이 없으면 서로 다른 열폭을 가진 2행을 100등분 grid 위에 놓는다.
-     * 첫 행: 이름/능력/부대/도시/NPC, 둘째 행: 자원/병력/훈사/턴. */
-    .list tbody tr:not(.has-commands) td {
-        grid-area: auto;
-        padding-inline: 1px;
-    }
-    .list tbody tr:not(.has-commands) td::before {
-        margin-right: 2px;
-    }
-    .list tbody tr:not(.has-commands) [data-field='name'] {
-        grid-row: 1;
-        grid-column: 1 / span 27;
-    }
-    .list tbody tr:not(.has-commands) [data-field='stats'] {
-        grid-row: 1;
-        grid-column: 28 / span 28;
-    }
-    .list tbody tr:not(.has-commands) [data-field='troop'] {
-        grid-row: 1;
-        grid-column: 56 / span 18;
-    }
-    .list tbody tr:not(.has-commands) [data-field='city'] {
-        grid-row: 1;
-        grid-column: 74 / span 12;
-    }
-    .list tbody tr:not(.has-commands) [data-field='turns'] {
-        grid-row: 1;
-        grid-column: 86 / span 15;
-    }
-    .list tbody tr:not(.has-commands) [data-field='gold'] {
-        grid-row: 2;
-        grid-column: 1 / span 19;
-    }
-    .list tbody tr:not(.has-commands) [data-field='rice'] {
-        grid-row: 2;
-        grid-column: 20 / span 16;
-    }
-    .list tbody tr:not(.has-commands) [data-field='defence'] {
-        grid-row: 2;
-        grid-column: 36 / span 7;
-    }
-    .list tbody tr:not(.has-commands) [data-field='type'] {
-        grid-row: 2;
-        grid-column: 43 / span 11;
-    }
-    .list tbody tr:not(.has-commands) [data-field='crew'] {
-        grid-row: 2;
-        grid-column: 54 / span 14;
-    }
-    .list tbody tr:not(.has-commands) [data-field='train'] {
-        grid-row: 2;
-        grid-column: 68 / span 8;
-    }
-    .list tbody tr:not(.has-commands) [data-field='atmos'] {
-        grid-row: 2;
-        grid-column: 76 / span 8;
-    }
-    .list tbody tr:not(.has-commands) [data-field='kill'] {
-        grid-row: 2;
-        grid-column: 84 / span 6;
-    }
-    .list tbody tr:not(.has-commands) [data-field='time'] {
-        grid-row: 2;
-        grid-column: 90 / span 11;
     }
 }
 </style>

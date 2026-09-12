@@ -233,6 +233,8 @@ const measure = async (page: Page, root: string, table: string, name: string) =>
                 rows: rows.map((row) => ({
                     rect: rect(row),
                     cells: Array.from(row.querySelectorAll('td'), (cell) => ({
+                        field: cell.dataset.field,
+                        gridArea: getComputedStyle(cell).gridArea,
                         rect: rect(cell),
                         text: cell.innerText.replace(/\s+/g, ''),
                         scrollWidth: cell.scrollWidth,
@@ -287,6 +289,17 @@ for (const [route, root, table] of [
             expect(mobile.rows.map((row) => row.cells.map((cell) => cell.text))).toEqual(
                 desktop.rows.map((row) => row.cells.map((cell) => cell.text))
             );
+            // Every general shares the same columns, including NPCs and empty reservations.
+            for (const row of mobile.rows) {
+                const turns = row.cells.find((cell) => cell.field === 'turns')!;
+                expect(turns.rect.width).toBeCloseTo(166, 0);
+                for (const [index, cell] of row.cells.entries()) {
+                    const reference = mobile.rows[0]!.cells[index]!;
+                    expect(cell.gridArea).toBe(reference.gridArea);
+                    expect(cell.rect.x).toBeCloseTo(reference.rect.x, 1);
+                    expect(cell.rect.width).toBeCloseTo(reference.rect.width, 1);
+                }
+            }
             for (const row of mobile.rows)
                 for (const cell of row.cells) {
                     expect(cell.rect.width).toBeGreaterThan(0);
@@ -378,7 +391,14 @@ test('idle and empty information lists stay compact; doubled text wraps without 
         const desktop = await measure(page, root, table, `idle-${route.replace('/', '-')}-1000`);
         await page.setViewportSize({ width: 500, height: 900 });
         const mobile = await measure(page, root, table, `idle-${route.replace('/', '-')}-500`);
-        expect(mobile.table.height / desktop.table.height).toBeLessThan(1.8);
+        if (route === 'nation/secret') {
+            // The uniform four-line layout intentionally replaces the former NPC-only two-line layout.
+            // Bound the ordinary row directly; desktop idle rows have no command height to share.
+            for (const row of mobile.rows.slice(1)) expect(row.rect.height).toBeLessThan(76);
+            expect(mobile.table.height).toBeLessThan(7600);
+        } else {
+            expect(mobile.table.height / desktop.table.height).toBeLessThan(1.8);
+        }
         expect(mobile.document.width).toBe(500);
         await page.unroute(gameTrpcRoute);
         await install(page);
