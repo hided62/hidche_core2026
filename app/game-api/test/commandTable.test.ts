@@ -211,9 +211,18 @@ describe('buildTurnCommandTable', () => {
             che_의병모집: '3턴',
             che_피장파장: '2턴',
         });
-        expect(table.general.flatMap(({ values }) => values)).not.toContainEqual(
-            expect.objectContaining({ turnDurationText: expect.any(String) })
-        );
+        expect(
+            Object.fromEntries(
+                table.general
+                    .flatMap(({ values }) => values)
+                    .filter(({ turnDurationText }) => turnDurationText)
+                    .map(({ key, turnDurationText }) => [key, turnDurationText])
+            )
+        ).toEqual({
+            che_은퇴: '2턴',
+            che_내정특기초기화: '2턴',
+            che_전투특기초기화: '2턴',
+        });
         const generalCosts = Object.fromEntries(
             table.general.flatMap(({ values }) => values.map(({ key, costText }) => [key, costText]))
         );
@@ -245,7 +254,7 @@ describe('buildTurnCommandTable', () => {
                 availableGeneralCommand: {
                     개인: ['휴식'],
                     내정: ['che_물자조달'],
-                    군사: ['cr_맹훈련'],
+                    군사: ['cr_맹훈련', 'che_전투태세'],
                 },
                 availableChiefCommand: {
                     휴식: ['휴식'],
@@ -264,7 +273,9 @@ describe('buildTurnCommandTable', () => {
             '휴식',
             'che_물자조달',
             'cr_맹훈련',
+            'che_전투태세',
         ]);
+        expect(findCommand(table, 'che_전투태세')).toMatchObject({ turnDurationText: '4턴' });
         expect(
             Object.fromEntries(table.nation.flatMap(({ values }) => values.map(({ key, costText }) => [key, costText])))
         ).toMatchObject({
@@ -309,10 +320,12 @@ describe('buildTurnCommandTable', () => {
         });
 
         expect(findCommand(table, 'che_내정특기초기화')).toMatchObject({
+            turnDurationText: '2턴',
             possible: true,
             status: 'available',
         });
         expect(findCommand(table, 'che_전투특기초기화')).toMatchObject({
+            turnDurationText: '2턴',
             possible: false,
             status: 'blocked',
             reason: '1턴 더 기다려야 합니다',

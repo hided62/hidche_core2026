@@ -825,7 +825,6 @@ const buildGroups = (
     entries: CommandEntry[],
     ctx: ConstraintContext,
     view: StateView,
-    includeTurnDuration = false,
     env: CommandEnv,
     scope: 'general' | 'nation',
     currentYearMonth: number
@@ -840,7 +839,8 @@ const buildGroups = (
             baseAvailability.status === 'blocked' || baseAvailability.status === 'unknown'
                 ? baseAvailability
                 : (evaluateCooldown(entry.definition, scope, ctx, view, currentYearMonth) ?? baseAvailability);
-        const turnDurationText = includeTurnDuration ? getTurnDurationText(entry.definition) : undefined;
+        // 개인·국가 모두 실행 정의의 준비 턴과 마지막 실행 턴을 표시한다.
+        const turnDurationText = getTurnDurationText(entry.definition);
         const costText = getCommandCostText(entry, ctx, view, env);
         const value: TurnCommandAvailability = {
             key: entry.definition.key,
@@ -951,7 +951,6 @@ export const buildTurnCommandTable = async (options: {
             projectCommandGroups(generalEntries, generalGroups ?? REF_GENERAL_COMMAND_GROUPS),
             ctx,
             view,
-            false,
             env,
             'general',
             currentYearMonth
@@ -960,7 +959,6 @@ export const buildTurnCommandTable = async (options: {
             projectCommandGroups(nationEntries, nationGroups ?? REF_NATION_COMMAND_GROUPS),
             ctx,
             view,
-            true,
             env,
             'nation',
             currentYearMonth

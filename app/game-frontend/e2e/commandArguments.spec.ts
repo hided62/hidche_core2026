@@ -1514,6 +1514,65 @@ test('shows speciality reset cooldowns and reserves special user commands from t
     await picker.screenshot({ path: test.info().outputPath('special-user-commands-mobile-500.png') });
 });
 
+test('shows general command durations from metadata on desktop and mobile', async ({ page }) => {
+    const requests = await install(page, false, {
+        general: [
+            {
+                category: '개인',
+                values: [
+                    buildSimpleCommand('che_휴식', '휴식'),
+                    buildSimpleCommand('che_내정특기초기화', '내정 특기 초기화', '2턴'),
+                    buildSimpleCommand('che_전투특기초기화', '전투 특기 초기화', '2턴'),
+                    buildSimpleCommand('che_전투태세', '전투태세', '4턴'),
+                    buildSimpleCommand('fixture_future', '미래 명령', '7턴'),
+                    buildSimpleCommand('fixture_dynamic', '대상별 명령', '1+거리×2턴'),
+                ],
+            },
+        ],
+        nation: [],
+        inputOptions,
+    });
+    for (const width of [1200, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(gamePath('/'));
+        await page.reload();
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await expect(picker.locator('.command-duration')).toHaveText(['/2턴', '/2턴', '/4턴', '/7턴', '/1+거리×2턴']);
+        await expect(
+            picker.getByRole('button', { name: '휴식', exact: true }).locator('.command-duration')
+        ).toHaveCount(0);
+        await page.evaluate(() => document.fonts.ready);
+        const reset = picker.getByRole('button', { name: '내정 특기 초기화 /2턴', exact: true });
+        await reset.hover();
+        await reset.focus();
+        await expect(reset).toBeFocused();
+        await page.mouse.down();
+        await expect(reset.locator('.command-duration')).toBeVisible();
+        const geometry = await picker.locator('.command-item').evaluateAll((buttons) =>
+            buttons.map((button) => ({
+                text: button.textContent,
+                rect: button.getBoundingClientRect().toJSON(),
+                overflow: button.scrollWidth - button.clientWidth,
+                fontSize: getComputedStyle(button).fontSize,
+            }))
+        );
+        expect(geometry.every(({ overflow, rect }) => overflow <= 0 && rect.height >= 35)).toBe(true);
+        expect(await picker.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        await writeFile(test.info().outputPath(`general-duration-${width}.json`), JSON.stringify(geometry, null, 2));
+        await writeFile(
+            test.info().outputPath(`general-duration-${width}.html`),
+            await picker.evaluate((element) => element.outerHTML)
+        );
+        await picker.screenshot({ path: test.info().outputPath(`general-duration-${width}.png`) });
+        await page.mouse.up();
+        await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
+            '내정 특기 초기화'
+        );
+    }
+    expect(JSON.stringify(requests)).toContain('"action":"che_내정특기초기화","args":{}');
+});
+
 test('shows every Ref chief command in the exact category and command order', async ({ page }) => {
     await install(page, false, refChiefCommandTable);
     await page.setViewportSize({ width: 1200, height: 900 });
