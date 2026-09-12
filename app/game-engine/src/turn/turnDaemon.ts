@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createRuntimePauseGate } from './runtimePauseGate.js';
 
 import { loadActionModuleBundle, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
 import {
@@ -716,6 +717,7 @@ const createTurnDaemonRuntimeWithLease = async (
     let stopClockProjectionWorker = () => {};
     let applyClockProjection: DatabaseTurnHooks['applyClockProjection'] | undefined;
     let synchronizeClockAuthority: DatabaseTurnHooks['synchronizeClockAuthority'] | undefined;
+    let prepareClockRecovery: DatabaseTurnHooks['prepareRealtimeRecovery'] | undefined;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const monthlyActionModules = await loadActionModuleBundle(
@@ -941,11 +943,16 @@ const createTurnDaemonRuntimeWithLease = async (
             onRunError: async (error) => {
                 await dbHooks.hooks.onRunError?.(error);
                 await gatewayGate?.markPaused(error);
+                if (!turnDaemonLease?.isLost() && world.getGameClockState().phase === 'RUNNING') {
+                    // 같은 command batch의 다음 가입도 정지된 시각을 보게 한다.
+                    await dbHooks.prepareRealtimeRecovery({ paused: true });
+                }
             },
         };
         takeCommittedReadModelChangeReceipt = dbHooks.takeCommittedReadModelChangeReceipt;
         applyClockProjection = dbHooks.applyClockProjection;
         synchronizeClockAuthority = dbHooks.synchronizeClockAuthority;
+        prepareClockRecovery = dbHooks.prepareRealtimeRecovery;
         close = async () => {
             if (auctionBidder) {
                 await auctionBidder.close();
@@ -1060,7 +1067,6 @@ const createTurnDaemonRuntimeWithLease = async (
         maxGenerals: 200,
         catchUpCap: 1,
     };
-    let lastObservedGatewayPause: boolean | null = null;
 
     const lifecycle = new TurnDaemonLifecycle(
         {
@@ -1071,23 +1077,18 @@ const createTurnDaemonRuntimeWithLease = async (
             stateStore,
             processor,
             hooks,
-            pauseGate: async () => {
-                if (turnDaemonLease?.isLost()) {
-                    // 만료된 owner는 재개 명령도 처리할 수 없다. 현재 runtime을
-                    // 끝내 PM2가 새 owner와 DB snapshot으로 시작하도록 한다.
-                    throw turnDaemonLease.getLossError();
-                }
-                const gatewayPaused = (await pauseGate?.()) ?? false;
-                const phase = world.getGameClockState().phase;
-                const phaseNeedsSync = gatewayPaused
-                    ? phase !== 'SUSPENDED'
-                    : phase === 'SUSPENDED' || phase === 'RECONCILING';
-                if (synchronizeClockAuthority && (lastObservedGatewayPause !== gatewayPaused || phaseNeedsSync)) {
-                    await synchronizeClockAuthority();
-                }
-                lastObservedGatewayPause = gatewayPaused;
-                return gatewayPaused;
-            },
+            pauseGate: createRuntimePauseGate({
+                assertLease: () => {
+                    if (turnDaemonLease?.isLost()) throw turnDaemonLease.getLossError();
+                },
+                shouldPause: async () => (await pauseGate?.()) ?? false,
+                getPhase: () => world.getGameClockState().phase,
+                isExplicitlyPaused: () => gatewayGate?.isExplicitlyPaused() ?? false,
+                prepareRecovery: async (recoveryOptions) => {
+                    await prepareClockRecovery?.(recoveryOptions);
+                },
+                synchronize: async () => synchronizeClockAuthority?.(),
+            }),
             commandHandler,
             commandResponder: options.controlQueue ? undefined : (databaseCommandQueue ?? undefined),
             // The exclusive fixture runner aborts the entire in-memory runtime

@@ -4,6 +4,7 @@ import { GameClock, GAME_TICKS_PER_TURN as T, readTurnRecovery } from '@sammo-ts
 import {
     createGamePostgresConnector,
     readTurnRuntimeReady,
+    readInputEventClockCoordinate,
     createRedisConnector,
     GENERAL_ACCESS_PERSISTENCE_LOCK,
     CLOCK_OPERATION_PERSISTENCE_LOCK,
@@ -15,6 +16,8 @@ import {
 
 import { reconcileClockSuspension, startClockSuspension } from '../src/turn/clockReconciliation.js';
 import { applyNextClockProjection } from '../src/turn/clockProjectionOutbox.js';
+import { createRuntimePauseGate } from '../src/turn/runtimePauseGate.js';
+import { resolveJoinTurnTime } from '../src/turn/joinCreateGeneralService.js';
 import { prepareRealtimeRecovery } from '../src/turn/prepareRealtimeRecovery.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
@@ -258,6 +261,85 @@ describeIntegration('durable clock reconciliation', () => {
             const world = await db.worldState.findFirstOrThrow();
             expect(world.clockPhase).toBe(delay < 360 ? 'RUNNING' : 'RECONCILING');
             expect(readTurnRecovery(world) === null).toBe(delay < 360);
+        } finally {
+            await lease.close();
+        }
+    });
+
+    it('freezes joins in a live PAUSED gate and applies outage recovery only once', async () => {
+        const profile = 'live-pause-join';
+        const base = new Date('2026-09-11T23:00:00Z');
+        await db.worldState.create({
+            data: {
+                scenarioCode: profile,
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 60,
+                clockBaseTime: base,
+                clockTick: 0n,
+                lastTurnTick: 0n,
+                clockMode: 'realtime',
+                clockPhase: 'RUNNING',
+                clockWallAnchor: new Date(Date.now() - 115 * 60_000),
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
+            },
+        });
+        const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, { profile, heartbeat: false });
+        try {
+            const token = (await lease.acquire())!;
+            await lease.markClockReady();
+            const authority = {
+                kind: 'DAEMON' as const,
+                profileName: profile,
+                ownerId: token.ownerId,
+                fencingEpoch: token.fencingEpoch,
+            };
+            let phase: 'RUNNING' | 'SUSPENDED' = 'RUNNING';
+            const gate = createRuntimePauseGate({
+                assertLease: () => {},
+                shouldPause: async () => true,
+                isExplicitlyPaused: () => true,
+                getPhase: () => phase,
+                prepareRecovery: async (options) => {
+                    await prepareRealtimeRecovery(db, authority, options);
+                    phase = 'SUSPENDED';
+                },
+                synchronize: async () => {},
+            });
+            const beforePause = await db.$transaction((tx) => readInputEventClockCoordinate(tx));
+            expect(beforePause.gameTick).toBeGreaterThan(BigInt(100 * T));
+            await gate();
+            const accepted = await db.$transaction((tx) => readInputEventClockCoordinate(tx));
+            expect(accepted.gameTick).toBe(0n);
+            const pausedWorld = await db.worldState.findFirstOrThrow();
+            const draws = [26, 753000];
+            const turnTime = resolveJoinTurnTime(
+                { nextRangeInt: () => draws.shift()! },
+                pausedWorld,
+                accepted.gameAt,
+                base,
+                undefined
+            );
+            expect(turnTime.toISOString()).toBe('2026-09-11T23:00:26.753Z');
+            await db.general.create({
+                data: { id: 768, name: 'pause-join', turnTick: BigInt(26_753 * 600), turnTime },
+            });
+            await gate();
+            expect(await db.clockSuspension.count()).toBe(1);
+            const suspension = await db.clockSuspension.findFirstOrThrow();
+            const plan = await reconcileClockSuspension({
+                db,
+                authority,
+                suspensionId: suspension.id,
+                testResumeWallAt: new Date(suspension.cutWallAt.getTime() + 115 * 60_000),
+            });
+            expect(plan.shiftTicks).toBe(108 * T);
+            const joined = await db.general.findUniqueOrThrow({ where: { id: 768 } });
+            expect(joined.turnTime.toISOString()).toBe('2026-09-12T00:48:26.753Z');
+            expect(joined.turnTick! - BigInt(plan.alignedTick)).toBe(BigInt(26_753 * 600));
+            await reconcileClockSuspension({ db, authority, suspensionId: suspension.id });
+            expect((await db.general.findUniqueOrThrow({ where: { id: 768 } })).turnTime).toEqual(joined.turnTime);
         } finally {
             await lease.close();
         }

@@ -354,9 +354,7 @@ async function handleJoinCreateGeneral(
         throw new Error('joinCreateGeneral requires an authoritative daemon processing game tick.');
     }
     const acceptedAt = ctx.world.gameTickToDate(processingGameTick);
-    const turnScheduleAt = ctx.world.gameTickToDate(
-        ctx.world.getGameClockState().phase === 'PREOPEN' ? Math.max(0, processingGameTick) : processingGameTick
-    );
+    const turnScheduleAt = ctx.world.getInitialGeneralTurnTime(processingGameTick);
     try {
         return {
             type: 'joinCreateGeneral',
@@ -475,9 +473,7 @@ async function handleSelectPoolCreate(
     }
     const acceptedAt = ctx.world.gameTickToDate(processingGameTick);
     // 선택 생성도 접수/RNG의 음수 tick과 실제 최초 턴의 오픈 하한을 분리한다.
-    const turnScheduleAt = ctx.world.gameTickToDate(
-        ctx.world.getGameClockState().phase === 'PREOPEN' ? Math.max(0, processingGameTick) : processingGameTick
-    );
+    const turnScheduleAt = ctx.world.getInitialGeneralTurnTime(processingGameTick);
     try {
         return {
             type: 'selectPoolCreate',

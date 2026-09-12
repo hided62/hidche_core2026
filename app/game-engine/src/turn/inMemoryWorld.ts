@@ -920,6 +920,19 @@ export class InMemoryTurnWorld {
         return clock.now(wallNow);
     }
 
+    getInitialGeneralTurnTime(processingGameTick: number): Date {
+        const clock = this.getGameClock();
+        const tick =
+            clock.phase === 'PREOPEN'
+                ? Math.max(0, processingGameTick)
+                : clock.phase === 'SUSPENDED' || clock.phase === 'COMPLETED'
+                  ? clock.tick
+                  : processingGameTick;
+        // 오류 정지 직전에 접수된 가입도 정지된 시각보다 미래에 배치하지 않는다.
+        // 접수 tick 자체는 RNG/감사 원장의 좌표로 보존한다.
+        return clock.tickToDate(tick);
+    }
+
     dateToGameTick(date: Date): number {
         return this.getGameClock().dateToTick(date);
     }

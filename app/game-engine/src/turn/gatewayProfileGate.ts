@@ -14,6 +14,7 @@ export interface GatewayProfileGateOptions {
 
 export interface GatewayProfileGate {
     shouldPause(): Promise<boolean>;
+    isExplicitlyPaused(): boolean;
     markPaused(error?: unknown): Promise<void>;
     close(): Promise<void>;
 }
@@ -30,12 +31,14 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
     const prisma = connector.prisma;
     let lastCheckedAt = 0;
     let cachedPause = false;
+    let cachedStatus: GatewayProfileStatus | null = null;
 
     const loadStatus = async (): Promise<boolean> => {
         try {
             const profile = await prisma.gatewayProfile.findUnique({
                 where: { profileName: options.profileName },
             });
+            cachedStatus = (profile?.status as GatewayProfileStatus | undefined) ?? null;
             if (!profile) {
                 return false;
             }
@@ -46,6 +49,7 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
     };
 
     return {
+        isExplicitlyPaused: () => cachedStatus === 'PAUSED',
         // 게이트웨이 프로필 상태를 읽어 턴 실행을 멈춰야 하는지 판단한다.
         async shouldPause(): Promise<boolean> {
             const now = performance.now();
@@ -57,6 +61,9 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
             return cachedPause;
         },
         async markPaused(error?: unknown): Promise<void> {
+            cachedPause = true;
+            cachedStatus = 'PAUSED';
+            lastCheckedAt = performance.now();
             const failure = error ? describeRuntimeError(error) : null;
             const message = failure?.message ?? null;
             try {

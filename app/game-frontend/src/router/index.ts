@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
 import { useSessionStore } from '../stores/session';
 import { trpc } from '../utils/trpc';
+import { installRouteNavigation } from '../utils/routeNavigation';
 
 const MainView = () => import('../views/MainView.vue');
 const PublicView = () => import('../views/PublicView.vue');
@@ -388,6 +389,8 @@ const router = createRouter({
     history: createWebHistory(gameFrontendRuntimeConfig.appBasePath),
     routes,
 });
+
+installRouteNavigation(router);
 
 router.beforeEach(async (to) => {
     const session = useSessionStore();

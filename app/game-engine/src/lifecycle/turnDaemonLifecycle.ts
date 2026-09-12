@@ -142,11 +142,12 @@ export class TurnDaemonLifecycle {
     private async runLoop(): Promise<void> {
         await this.initializeState();
         while (!this.stopping) {
+            // 정지 시계 동기화보다 먼저 claim하면 가입에 벽시계 경과가 섞인다.
+            const gatePaused = (await this.pauseGate?.()) ?? false;
             await this.drainCommands();
             if (this.stopping) {
                 break;
             }
-            const gatePaused = (await this.pauseGate?.()) ?? false;
             if (this.errorPaused && !gatePaused) {
                 this.errorPaused = false;
                 this.status.lastError = undefined;

@@ -239,6 +239,20 @@ describe('runtime clock shift', () => {
         expect(world.getGameClockState().wallAnchor).toEqual(resumedAt);
     });
 
+    it.each(['SUSPENDED', 'COMPLETED'] as const)('keeps a queued join within the frozen %s clock', (phase) => {
+        const base = new Date('2026-09-11T23:00:00Z');
+        const world = buildWorld({
+            clockBaseTime: base,
+            clockTick: 0,
+            clockMode: 'realtime',
+            clockPhase: phase,
+            clockWallAnchor: base,
+            lastTurnTick: 0,
+        });
+        expect(world.getInitialGeneralTurnTime(103 * 36_000_000)).toEqual(base);
+        expect(world.getInitialGeneralTurnTime(-36_000_000)).toEqual(base);
+    });
+
     it('keeps runnable general scheduling at the future opening anchor during PREOPEN', () => {
         const gameBase = new Date('2026-07-30T10:00:00.000Z');
         const openAt = new Date('2026-09-02T23:30:00.000Z');
@@ -254,6 +268,7 @@ describe('runtime clock shift', () => {
 
         expect(world.getGameNow(preopenAt).getTime()).toBeLessThan(gameBase.getTime());
         expect(world.getRunnableGameNow(preopenAt)).toEqual(gameBase);
+        expect(world.getInitialGeneralTurnTime(-36_000_000)).toEqual(gameBase);
         expect(world.getRunnableGameNow(openAt)).toEqual(gameBase);
         expect(world.promotePreopenAtOpening(openAt)).toBe(true);
         expect(world.getRunnableGameNow(new Date(openAt.getTime() + 60_000))).toEqual(

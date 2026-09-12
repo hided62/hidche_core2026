@@ -6639,3 +6639,124 @@ for (const width of [1200, 390]) {
         expect(state.operations.filter((op) => op === 'messages.respond')).toHaveLength(0);
     });
 }
+
+for (const viewport of [
+    { name: 'desktop', width: 1280, height: 900 },
+    { name: 'mobile', width: 390, height: 844 },
+]) {
+    for (const target of [
+        { id: 'finance', chunk: 'NationStratFinanView', path: '/nation/finance' },
+        { id: 'nation-cities', chunk: 'NationCitiesView', path: '/nation/cities' },
+    ]) {
+        test(`recovers a stalled and failed ${target.id} navigation on ${viewport.name}`, async ({
+            page,
+        }, testInfo) => {
+            test.skip(!productionBundle, 'Tests actual production dynamic import failure.');
+            await page.setViewportSize(viewport);
+            const state: NavigationFixture = {
+                officerLevel: 12,
+                permission: 4,
+                nationLevel: 3,
+                stage: 0,
+                npcMode: 1,
+                generalMeCalls: 0,
+                operations: [],
+            };
+            await installRealtimeHarness(page);
+            await installFixture(page, state);
+            await page.route(`**${basePath}/api/trpc/**`, async (route) => {
+                const ops = operationNames(route);
+                if (!ops.some((op) => ['nation.getStratFinan', 'nation.getCityOverview'].includes(op))) {
+                    await route.fallback();
+                    return;
+                }
+                const result = ops.map((op) =>
+                    response(
+                        op === 'nation.getStratFinan'
+                            ? {
+                                  editable: true,
+                                  nationMsg: '',
+                                  scoutMsg: '',
+                                  nationId: 1,
+                                  officerLevel: 12,
+                                  year: 185,
+                                  month: 1,
+                                  nationsList: [],
+                                  gold: 1000,
+                                  rice: 1000,
+                                  income: { gold: { city: 100, war: 0 }, rice: { city: 100, wall: 0 } },
+                                  outcome: 0,
+                                  policy: { rate: 20, bill: 100, secretLimit: 3, blockScout: false, blockWar: false },
+                                  warSettingCnt: { remain: 5, inc: 2, max: 10 },
+                              }
+                            : {
+                                  me: { officerLevel: 12 },
+                                  nation: { name: '검증국', color: '#008000' },
+                                  cities: [],
+                                  generals: [],
+                              }
+                    )
+                );
+                await route.fulfill({
+                    contentType: 'application/json',
+                    body: JSON.stringify(result.length === 1 ? result[0] : result),
+                });
+            });
+            await page.goto('./');
+            const link = page.locator(`a[data-navigation-id="${target.id}"]:visible`).first();
+            await expect(link).toBeVisible();
+            let release: () => void = () => {};
+            const hold = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            let blocked = false;
+            await page.route(`**/${target.chunk}-*.js`, async (route) => {
+                if (blocked) {
+                    await route.continue();
+                    return;
+                }
+                blocked = true;
+                await hold;
+                await route.abort('failed');
+            });
+            const pageErrors: string[] = [];
+            page.on('pageerror', (error) => pageErrors.push(error.message));
+            await link.click();
+            const notice = page.getByTestId('game-navigation-notice');
+            await expect(notice).toContainText('화면을 여는 중');
+            await expect(notice).toContainText('시간이 걸리고', { timeout: 12_000 });
+            expect(new URL(page.url()).pathname).toBe(`${basePath}/`);
+            release();
+            await expect(notice).toContainText('화면을 불러오지 못했습니다');
+            await expect(notice.locator('a')).toHaveAttribute('href', `${basePath}${target.path}`);
+            await page.evaluate(() => document.fonts.ready);
+            const geometry = await notice.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    position: style.position,
+                    color: style.color,
+                    background: style.backgroundColor,
+                };
+            });
+            expect(geometry.x).toBeGreaterThanOrEqual(0);
+            expect(geometry.x + geometry.width).toBeLessThanOrEqual(viewport.width);
+            await page.screenshot({ path: testInfo.outputPath('navigation-failed.png') });
+            await writeFile(
+                testInfo.outputPath('navigation.json'),
+                JSON.stringify({ geometry, pageErrors, url: page.url(), viewport })
+            );
+            await writeFile(testInfo.outputPath('navigation.html'), await page.content());
+            await notice.locator('a').click();
+            await expect(page).toHaveURL(new RegExp(`${target.path}$`));
+            await expect(notice).toBeHidden();
+            await expect(page.locator('main')).toContainText(target.id === 'finance' ? '내무부' : '세 력 도 시');
+            expect(pageErrors).toEqual([]);
+            await page.screenshot({ path: testInfo.outputPath('navigation-recovered.png') });
+        });
+    }
+}

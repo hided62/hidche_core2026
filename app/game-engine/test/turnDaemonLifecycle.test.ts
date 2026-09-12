@@ -19,13 +19,15 @@ describe('TurnDaemonLifecycle', () => {
         const now = new Date('2026-09-09T17:30:00Z');
         const error = new TurnDaemonLeaseLostError('che:default');
         const processor = { run: vi.fn() };
+        const queue = new InMemoryControlQueue();
+        const drain = vi.spyOn(queue, 'drain');
         const onRunError = vi.fn(async () => {
             if (reportFails) throw new Error('gateway unavailable');
         });
         const lifecycle = new TurnDaemonLifecycle(
             {
                 clock: new ManualClock(now.getTime()),
-                controlQueue: new InMemoryControlQueue(),
+                controlQueue: queue,
                 processor,
                 getNextTickTime: (value) => addMinutes(value, 5),
                 stateStore: {
@@ -45,6 +47,7 @@ describe('TurnDaemonLifecycle', () => {
         await expect(lifecycle.start()).rejects.toBe(error);
         expect(onRunError).toHaveBeenCalledExactlyOnceWith(error);
         expect(processor.run).not.toHaveBeenCalled();
+        expect(drain).not.toHaveBeenCalled();
         expect(lifecycle.getStatus()).toMatchObject({ state: 'stopping', paused: true, lastError: error.message });
     });
 
