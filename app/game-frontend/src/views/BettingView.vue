@@ -12,13 +12,12 @@ import { trpc } from '../utils/trpc';
 
 const tournamentPages = useTournamentPagesStore();
 const { snapshot, betting: summary, rankings, loading, error } = storeToRefs(tournamentPages);
-const defaultAmount = ref<number | string>(10);
 const amounts = ref<Record<number, number | string>>({});
 const pendingBets = ref<Record<number, number>>({});
 const betMessages = ref<Record<number, { text: string; error: boolean }>>({});
 const presetAmounts = [10, 20, 50, 100, 200, 500, 1000];
 const activeRankingPrefix = ref('tt');
-const amountFor = (id: number): number | string => amounts.value[id] ?? defaultAmount.value;
+const amountFor = (id: number): number | string => amounts.value[id] ?? 10;
 const remainingAmount = computed(() => Math.max(0, 1000 - myAmount.value));
 const availableAmount = computed(() =>
     Math.max(0, remainingAmount.value - Object.values(pendingBets.value).reduce((sum, amount) => sum + amount, 0))
@@ -105,15 +104,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
             <small>(전체 금액 : {{ totalAmount }} / 내 투자 금액 : {{ myAmount }})</small>
         </section>
 
-        <section class="bet-settings bg0" aria-label="베팅 금액 설정">
-            <label
-                >기본 금액
-                <input v-model.number="defaultAmount" type="number" min="10" max="1000" step="1" inputmode="numeric" />
-            </label>
-            <select v-model.number="defaultAmount" aria-label="기본 지정 금액">
-                <option v-if="!presetAmounts.includes(Number(defaultAmount))" :value="defaultAmount">직접 입력</option>
-                <option v-for="amount in presetAmounts" :key="amount" :value="amount">{{ amount }}금</option>
-            </select>
+        <section class="bet-budget bg0" aria-label="베팅 한도">
             <span>남은 한도 {{ remainingAmount.toLocaleString('ko-KR') }}금</span>
             <small
                 >각 장수에게 추가할 금액입니다. 예상 환수금은 해당 장수 우승 시 금액이며, 최종 배당에 따라
@@ -378,7 +369,7 @@ select:disabled {
     cursor: not-allowed;
     opacity: 0.5;
 }
-.bet-settings {
+.bet-budget {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -386,16 +377,7 @@ select:disabled {
     padding: 8px;
     text-align: left;
 }
-.bet-settings label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.bet-settings input,
-.bet-settings select {
-    width: 90px;
-}
-.bet-settings small {
+.bet-budget small {
     flex-basis: 100%;
     color: #c9c1b2;
 }
@@ -407,9 +389,7 @@ select:disabled {
 }
 .inline-bet input,
 .inline-bet select,
-.inline-bet button,
-.bet-settings input,
-.bet-settings select {
+.inline-bet button {
     box-sizing: border-box;
     min-width: 0;
     height: 44px;
@@ -425,8 +405,7 @@ select:disabled {
     background: #59400e;
     font-weight: 700;
 }
-.inline-bet input:focus-visible,
-.bet-settings input:focus-visible {
+.inline-bet input:focus-visible {
     outline: 2px solid #f39c12;
     outline-offset: 1px;
 }

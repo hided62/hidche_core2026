@@ -1106,14 +1106,16 @@ for (const width of [1365, 390]) {
         const second = bracket.locator('.betting-candidate').nth(1);
         const input = first.getByRole('spinbutton');
         await expect(input).toHaveValue('10');
-        await page.getByLabel('기본 지정 금액').selectOption('20');
-        await expect(input).toHaveValue('20');
+        await expect(page.locator('input[type=number]:visible')).toHaveCount(16);
+        await expect(page.getByRole('region', { name: '베팅 한도' }).getByRole('spinbutton')).toHaveCount(0);
         await first.getByRole('combobox').selectOption('50');
         await expect(input).toHaveValue('50');
-        await expect(second.getByRole('spinbutton')).toHaveValue('20');
+        await expect(second.getByRole('spinbutton')).toHaveValue('10');
         await input.fill('37');
+        await second.getByRole('spinbutton').fill('23');
         await page.getByRole('button', { name: '갱신', exact: true }).click();
         await expect(input).toHaveValue('37');
+        await expect(second.getByRole('spinbutton')).toHaveValue('23');
         for (const invalid of ['', '9', '10.5', '841']) {
             await input.fill(invalid);
             await expect(first.getByRole('button', { name: '관우에게 베팅하기' })).toBeDisabled();
