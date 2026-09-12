@@ -50,7 +50,7 @@ const generals = computed(() =>
 );
 const closeWindow = () => window.close();
 const displayName = (general: { name: string; npcState: number }) =>
-    general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+    general.npcState > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const injuryInfo = (injury: number) => generalInjuryPresentation(injury);
 const injuryDescription = (general: Result['generals'][number]): string =>
     general.injury > 0 ? `부상 ${general.injury}% · ${injuryInfo(general.injury).text}` : '';
@@ -312,12 +312,12 @@ onMounted(load);
                             >
                         </td>
                         <td data-field="troop" data-label="부대">{{ general.troopName ?? '-' }}</td>
-                        <td data-field="gold" data-label="금">{{ general.gold }}</td>
-                        <td data-field="rice" data-label="쌀">{{ general.rice }}</td>
+                        <td data-field="gold" data-label="금">{{ general.gold.toLocaleString('ko-KR') }}</td>
+                        <td data-field="rice" data-label="쌀">{{ general.rice.toLocaleString('ko-KR') }}</td>
                         <td data-field="city" data-label="도시">{{ general.cityName ?? '-' }}</td>
                         <td data-field="defence" data-label="守">{{ general.defenceTrainText }}</td>
                         <td data-field="type" data-label="병종">{{ general.crewTypeName }}</td>
-                        <td data-field="crew" data-label="병사">{{ general.crew }}</td>
+                        <td data-field="crew" data-label="병사">{{ general.crew.toLocaleString('ko-KR') }}</td>
                         <td data-field="train" data-label="훈">{{ general.train }}</td>
                         <td data-field="atmos" data-label="사">{{ general.atmos }}</td>
                         <td data-field="turns" class="turns">
@@ -571,12 +571,12 @@ th,
     }
     .list tbody tr {
         display: grid;
-        grid-template-columns: repeat(12, minmax(0, 1fr)) 166px;
+        grid-template-columns: repeat(24, minmax(0, 1fr)) 166px;
         grid-template-areas:
-            'name name name name name name stats stats stats stats stats stats turns'
-            'troop troop troop troop troop troop city city city city defence defence turns'
-            'gold gold gold gold gold rice rice rice rice time time time turns'
-            'type type type crew crew crew train train atmos atmos kill kill turns';
+            'name name name name name name name name name name name name stats stats stats stats stats stats stats stats stats stats stats stats turns'
+            'troop troop troop troop troop troop troop troop troop troop troop troop city city city city city city city city defence defence defence defence turns'
+            'gold gold gold gold gold gold gold gold gold rice rice rice rice rice rice rice rice rice time time time time time time turns'
+            'type type type type type type crew crew crew crew crew crew train train train train train atmos atmos atmos kill kill kill kill turns';
         height: auto;
         border: 1px solid gray;
         border-top: 0;
@@ -601,7 +601,11 @@ th,
         display: none;
     }
     .general-level {
-        margin-left: 4px;
+        margin-left: 3px;
+        font-size: 11px;
+        line-height: 1;
+        color: #bbb;
+        white-space: nowrap;
     }
     .list tbody .turns {
         font-size: 11px;
@@ -636,6 +640,22 @@ th,
     }
     .list [data-field='crew'] {
         grid-area: crew;
+    }
+    /* 같은 척도의 훈련·사기는 한 쌍으로 읽되 원래 데이터 셀과 값을 보존한다. */
+    .list tbody td[data-field='train'] {
+        text-align: right;
+        padding-right: 0;
+    }
+    .list tbody td[data-field='train']::before {
+        content: '훈/사';
+    }
+    .list tbody td[data-field='atmos'] {
+        text-align: left;
+        padding-left: 0;
+    }
+    .list tbody td[data-field='atmos']::before {
+        content: '/';
+        margin-inline: 3px;
     }
     .list [data-field='train'] {
         grid-area: train;

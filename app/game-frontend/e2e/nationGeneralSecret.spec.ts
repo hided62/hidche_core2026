@@ -126,12 +126,12 @@ const npcColorStates = [0, 1, 2, 4, 5, 6] as const;
 const npcColorGenerals = npcColorStates.map((npcState) => ({
     ...general,
     id: 100 + npcState,
-    name: `색상장수${npcState}`,
+    name: `${({ 4: 'ⓖ', 5: '㉥', 6: 'ⓤ' } as Record<number, string>)[npcState] ?? ''}색상장수${npcState}`,
     npcState,
 }));
 const npcColorSecretGenerals = npcColorStates.map((npcState) => ({
     id: 100 + npcState,
-    name: `색상장수${npcState}`,
+    name: `${({ 4: 'ⓖ', 5: '㉥', 6: 'ⓤ' } as Record<number, string>)[npcState] ?? ''}색상장수${npcState}`,
     npcState,
     injury: 0,
     baseStats: { leadership: 70, strength: 60, intelligence: 50 },
@@ -292,6 +292,9 @@ test('NPC general names use the complete Ref palette in secret and nation lists 
             for (const npcState of npcColorStates) {
                 const name = table.locator(`[data-npc-state="${npcState}"] [data-general-name]`);
                 await expect(name).toBeVisible();
+                if (npcState === 4) await expect(name).toHaveText('ⓖ색상장수4');
+                if (npcState === 5) await expect(name).toHaveText('㉥색상장수5');
+                if (npcState === 6) await expect(name).toHaveText('ⓤ색상장수6');
                 if (npcState === 0) {
                     expect(await name.evaluate((element) => (element as HTMLElement).style.color)).toBe('');
                 } else {

@@ -128,7 +128,12 @@ cell, command and image from the desktop dataset. Statistics share vertical spac
 with reserved commands; current-city portraits remain 64px. Both lists reserve
 166px of the 500px table for commands and 332px for information (plus borders).
 Secret rows use the same four-line field positions for players, NPCs and empty
-reservations. Long content wraps without truncation.
+reservations. Long content wraps without truncation. Gold and rice have equal
+widths; training and morale form a compact `훈/사 value / value` pair in both
+views. The secret level stays visible as secondary 11px text. Existing decorated
+NPC names, including volunteer `ⓖ` and `ⓤ`, are not prefixed with an extra `ⓝ`.
+Crew, gold and rice values use Korean-locale thousands separators in both modes;
+redacted current-city crew values remain `?`.
 
 The fixture measures 100 generals with five-command and NPC rows at CSS viewport
 widths 1000, 500, 501 and 800. The mixed-list height must stay below 1.5 times the

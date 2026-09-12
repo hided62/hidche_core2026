@@ -234,6 +234,7 @@ const measure = async (page: Page, root: string, table: string, name: string) =>
                     rect: rect(row),
                     cells: Array.from(row.querySelectorAll('td'), (cell) => ({
                         field: cell.dataset.field,
+                        label: getComputedStyle(cell, '::before').content,
                         gridArea: getComputedStyle(cell).gridArea,
                         rect: rect(cell),
                         text: cell.innerText.replace(/\s+/g, ''),
@@ -276,6 +277,12 @@ for (const [route, root, table] of [
         await page.setViewportSize({ width: 1000, height: 900 });
         await page.goto(route);
         const desktop = await measure(page, root, table, `${route.replace('/', '-')}-1000`);
+        const firstGeneral = page.locator(`${table} tbody tr`).first();
+        await expect(firstGeneral.locator('[data-field="crew"]')).toHaveText('12,345');
+        if (route === 'nation/secret') {
+            await expect(firstGeneral.locator('[data-field="gold"]')).toHaveText('123,456,789');
+            await expect(firstGeneral.locator('[data-field="rice"]')).toHaveText('234,567');
+        }
         for (const width of [500, 501, 800]) {
             await page.setViewportSize({ width, height: 900 });
             const mobile = await measure(page, root, table, `${route.replace('/', '-')}-${width}`);
@@ -293,6 +300,18 @@ for (const [route, root, table] of [
             for (const row of mobile.rows) {
                 const turns = row.cells.find((cell) => cell.field === 'turns')!;
                 expect(turns.rect.width).toBeCloseTo(166, 0);
+                const train = row.cells.find((cell) => cell.field === 'train')!;
+                const atmos = row.cells.find((cell) => cell.field === 'atmos')!;
+                expect(train.label).toBe('"훈/사"');
+                expect(atmos.label).toBe('"/"');
+                expect(train.rect.y).toBe(atmos.rect.y);
+                expect(train.rect.x + train.rect.width).toBeCloseTo(atmos.rect.x, 1);
+                if (route === 'nation/secret') {
+                    const gold = row.cells.find((cell) => cell.field === 'gold')!;
+                    const rice = row.cells.find((cell) => cell.field === 'rice')!;
+                    expect(gold.rect.width).toBeCloseTo(rice.rect.width, 1);
+                    expect(gold.rect.y).toBe(rice.rect.y);
+                }
                 for (const [index, cell] of row.cells.entries()) {
                     const reference = mobile.rows[0]!.cells[index]!;
                     expect(cell.gridArea).toBe(reference.gridArea);

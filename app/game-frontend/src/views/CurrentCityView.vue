@@ -284,7 +284,7 @@ const commandBrief = (command: ReservedCommand): string =>
                         </td>
                         <td data-field="defence" data-label="守">{{ defenceTrainText(general.defenceTrain) }}</td>
                         <td data-field="type" data-label="병종">{{ general.crewTypeName ?? '?' }}</td>
-                        <td data-field="crew" data-label="병사">{{ general.crew ?? '?' }}</td>
+                        <td data-field="crew" data-label="병사">{{ show(general.crew) }}</td>
                         <td data-field="train" data-label="훈">{{ general.train ?? '?' }}</td>
                         <td data-field="atmos" data-label="사">{{ general.atmos ?? '?' }}</td>
                         <td data-field="turns" class="turns" :class="{ 'turns--reserved': general.turns.length > 0 }">
@@ -589,6 +589,22 @@ const commandBrief = (command: ReservedCommand): string =>
     }
     .generals [data-field='crew'] {
         grid-area: crew;
+    }
+    /* 같은 척도의 훈련·사기는 한 쌍으로 읽되 원래 데이터 셀과 값을 보존한다. */
+    .generals tbody td[data-field='train'] {
+        text-align: right;
+        padding-right: 0;
+    }
+    .generals tbody td[data-field='train']::before {
+        content: '훈/사';
+    }
+    .generals tbody td[data-field='atmos'] {
+        text-align: left;
+        padding-left: 0;
+    }
+    .generals tbody td[data-field='atmos']::before {
+        content: '/';
+        margin-inline: 3px;
     }
     .generals [data-field='train'] {
         grid-area: train;
