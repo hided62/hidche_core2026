@@ -870,8 +870,22 @@ export class InMemoryTurnWorld {
                     `database ${input.baseTime.toISOString()}.`
             );
         }
+        // Gateway가 같은 clock lock 아래 DB의 오픈 phase를 먼저 전환할 수 있다.
+        // 메모리의 가오픈을 따라잡되, 턴 처리나 일정 변경을 오픈으로 오인하지 않는다.
+        const openingTransition =
+            current.phase === 'PREOPEN' &&
+            input.phase === 'RUNNING' &&
+            current.mode === 'realtime' &&
+            input.mode === 'realtime' &&
+            current.tick === 0 &&
+            input.tick === 0 &&
+            current.lastTurnTick === 0 &&
+            current.wallAnchor.getTime() === input.wallAnchor.getTime() &&
+            current.recovery === null &&
+            input.recovery === null;
         const validTransition =
             current.phase === input.phase ||
+            openingTransition ||
             (current.phase === 'RUNNING' && input.phase === 'SUSPENDED') ||
             (current.phase === 'RECONCILING' && input.phase === 'RUNNING');
         if (!validTransition) {

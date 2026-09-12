@@ -6,6 +6,7 @@ import {
     readTurnRuntimeReady,
     createRedisConnector,
     GENERAL_ACCESS_PERSISTENCE_LOCK,
+    CLOCK_OPERATION_PERSISTENCE_LOCK,
     GamePrisma,
     acquireGameSchemaAdvisoryXactLock,
     type GamePrismaClient,
@@ -15,6 +16,8 @@ import {
 import { reconcileClockSuspension, startClockSuspension } from '../src/turn/clockReconciliation.js';
 import { applyNextClockProjection } from '../src/turn/clockProjectionOutbox.js';
 import { prepareRealtimeRecovery } from '../src/turn/prepareRealtimeRecovery.js';
+import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { DatabaseTurnDaemonLease } from '../src/lifecycle/databaseTurnDaemonLease.js';
 
 const databaseUrl = process.env.CLOCK_RECONCILIATION_DATABASE_URL;
@@ -65,6 +68,139 @@ describeIntegration('durable clock reconciliation', () => {
 
     beforeEach(async () => {
         await clean();
+    });
+
+    it('serializes Gateway opening with daemon sync and keeps the opening cursor intact', async () => {
+        const baseTime = new Date('2026-09-12T00:00:00Z');
+        const row = await db.worldState.create({
+            data: {
+                scenarioCode: 'opening-sync',
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 60,
+                clockBaseTime: baseTime,
+                clockWallAnchor: baseTime,
+                clockTick: 0n,
+                lastTurnTick: 0n,
+                clockMode: 'realtime',
+                clockPhase: 'PREOPEN',
+                clockRevision: 3n,
+                deadlineGeneration: 5n,
+            },
+        });
+        const world = new InMemoryTurnWorld(
+            {
+                id: row.id,
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 60,
+                lastTurnTime: baseTime,
+                clockBaseTime: baseTime,
+                clockWallAnchor: baseTime,
+                clockTick: 0,
+                lastTurnTick: 0,
+                clockMode: 'realtime',
+                clockPhase: 'PREOPEN',
+                clockRevision: 3,
+                deadlineGeneration: 5,
+                meta: {},
+            },
+            {
+                generals: [],
+                cities: [],
+                nations: [],
+                troops: [],
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+                map: {
+                    id: 'opening',
+                    name: 'opening',
+                    cities: [],
+                    defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
+                },
+                scenarioConfig: {
+                    stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                    iconPath: '',
+                    map: {},
+                    const: {},
+                    environment: { mapName: 'test', unitSet: 'default' },
+                },
+            },
+            { schedule: { entries: [{ startMinute: 0, tickMinutes: 1 }] } }
+        );
+        const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, {
+            profile: 'opening-sync',
+            heartbeat: false,
+        });
+        expect(await lease.acquire()).not.toBeNull();
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world, { turnDaemonLease: lease });
+        let releaseOpening!: () => void;
+        let openingLocked!: () => void;
+        const release = new Promise<void>((resolve) => {
+            releaseOpening = resolve;
+        });
+        const locked = new Promise<void>((resolve) => {
+            openingLocked = resolve;
+        });
+        const opening = db.$transaction(
+            async (tx) => {
+                await acquireGameSchemaAdvisoryXactLock(tx, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                await tx.worldState.update({ where: { id: row.id }, data: { clockPhase: 'RUNNING' } });
+                openingLocked();
+                await release;
+            },
+            { timeout: 10_000 }
+        );
+        let sync: Promise<boolean> | undefined;
+        try {
+            await locked;
+            sync = hooks.synchronizeClockAuthority();
+            // 실제 별도 connection의 advisory lock 대기를 관찰한 뒤에만 DB 오픈을 commit한다.
+            const deadline = Date.now() + 5_000;
+            let waiting = false;
+            while (!waiting && Date.now() < deadline) {
+                const rows = await db.$queryRaw<Array<{ waiting: boolean }>>(GamePrisma.sql`
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_locks held JOIN pg_locks pending
+                          ON held.locktype = pending.locktype AND held.database = pending.database
+                         AND held.classid = pending.classid AND held.objid = pending.objid
+                         AND held.objsubid = pending.objsubid
+                        JOIN pg_stat_activity activity ON activity.pid = held.pid
+                        WHERE held.locktype = 'advisory' AND held.granted AND NOT pending.granted
+                          AND activity.datname = current_database()
+                    ) AS waiting
+                `);
+                waiting = rows[0]?.waiting ?? false;
+                if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            expect(waiting).toBe(true);
+            expect(world.getGameClockState().phase).toBe('PREOPEN');
+            releaseOpening();
+            await opening;
+            await expect(sync).resolves.toBe(true);
+            await expect(hooks.synchronizeClockAuthority()).resolves.toBe(false);
+            expect(world.getGameClockState()).toMatchObject({
+                phase: 'RUNNING',
+                tick: 0,
+                lastTurnTick: 0,
+                revision: 3,
+                deadlineGeneration: 5,
+                baseTime,
+                wallAnchor: baseTime,
+            });
+            expect(await db.worldState.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+                clockPhase: 'RUNNING',
+                clockTick: 0n,
+                lastTurnTick: 0n,
+                clockRevision: 3n,
+            });
+        } finally {
+            releaseOpening();
+            await Promise.allSettled([opening, ...(sync ? [sync] : [])]);
+            await hooks.close();
+            await lease.close();
+        }
     });
 
     it('accepts partial starts while rejecting incomplete and off-boundary DB windows', async () => {

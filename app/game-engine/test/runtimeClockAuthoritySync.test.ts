@@ -7,7 +7,7 @@ import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn
 
 const baseTime = new Date('2026-09-03T10:00:00.000Z');
 
-const buildWorld = (phase: 'RUNNING' | 'SUSPENDED' = 'RUNNING'): InMemoryTurnWorld => {
+const buildWorld = (phase: 'PREOPEN' | 'RUNNING' | 'SUSPENDED' = 'RUNNING'): InMemoryTurnWorld => {
     const general = {
         id: 1,
         name: 'clock-sync-general',
@@ -83,6 +83,59 @@ const buildDb = (worldState: Record<string, unknown>, ledgers: unknown[] = []): 
     }) as unknown as GamePrisma.TransactionClient;
 
 describe('runtime clock authority synchronization', () => {
+    const openingSnapshot = () => ({
+        id: 1,
+        clockBaseTime: baseTime,
+        clockTick: 0n,
+        clockMode: 'realtime',
+        clockWallAnchor: baseTime,
+        lastTurnTick: 0n,
+        clockPhase: 'RUNNING',
+        clockRevision: 3n,
+        deadlineGeneration: 5n,
+    });
+
+    it('adopts the Gateway opening once without changing schedules or consuming ticks', async () => {
+        const world = buildWorld('PREOPEN');
+        const general = structuredClone(world.getGeneralById(1));
+        const db = buildDb(openingSnapshot());
+
+        await expect(synchronizeRuntimeClockAuthorityUnderHeldLock(db, world)).resolves.toBe(true);
+        expect(world.getGameClockState()).toMatchObject({ phase: 'RUNNING', tick: 0, revision: 3 });
+        expect(world.getGeneralById(1)).toEqual(general);
+        expect(db.clockSuspension.findMany).not.toHaveBeenCalled();
+        await expect(synchronizeRuntimeClockAuthorityUnderHeldLock(db, world)).resolves.toBe(false);
+    });
+
+    it.each([
+        { clockTick: 1n },
+        { clockMode: 'manual' },
+        { clockWallAnchor: new Date(baseTime.getTime() + 1) },
+        { clockRecoveryStartTick: 0n, clockRecoveryEndTick: 36_000_000n, clockRecoveryStartWallAt: baseTime },
+        { lastTurnTick: 1n },
+        { clockBaseTime: new Date(baseTime.getTime() + 1) },
+        { deadlineGeneration: 6n },
+        { clockRevision: 4n },
+        { clockPhase: 'SUSPENDED' },
+        { clockPhase: 'COMPLETED' },
+    ])('rejects an opening with incompatible durable coordinates: %#', async (patch) => {
+        const world = buildWorld('PREOPEN');
+        const before = world.getGameClockState();
+        await expect(
+            synchronizeRuntimeClockAuthorityUnderHeldLock(buildDb({ ...openingSnapshot(), ...patch }), world)
+        ).rejects.toThrow();
+        expect(world.getGameClockState()).toEqual(before);
+    });
+
+    it('rejects reversing a completed opening back to PREOPEN', async () => {
+        await expect(
+            synchronizeRuntimeClockAuthorityUnderHeldLock(
+                buildDb({ ...openingSnapshot(), clockPhase: 'PREOPEN' }),
+                buildWorld('RUNNING')
+            )
+        ).rejects.toThrow(/phase mismatch/);
+    });
+
     it('adopts a maintenance suspension cut without advancing the game schedule', async () => {
         const world = buildWorld('RUNNING');
         const cutWallAt = new Date('2026-09-03T10:02:00.000Z');
