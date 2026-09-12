@@ -6760,3 +6760,79 @@ for (const viewport of [
         });
     }
 }
+
+test('main nation and general cards fill their panels without increasing overflow', async ({ page }, testInfo) => {
+    await installFixture(page, {
+        officerLevel: 1,
+        permission: 0,
+        nationLevel: 1,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+    });
+    const selector = '[data-main-target="nation"] > .panel-body, [data-main-target="general"] > .panel-body';
+    for (const width of [1200, 500, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await waitForMain(page);
+        await page.evaluate(() => document.fonts.ready);
+        const measure = () =>
+            page.locator(selector).evaluateAll((bodies) => ({
+                documentWidth: document.documentElement.scrollWidth,
+                panels: bodies.map((body) => {
+                    const panel = body.parentElement!;
+                    const card = body.firstElementChild!;
+                    const panelRect = panel.getBoundingClientRect();
+                    const cardRect = card.getBoundingClientRect();
+                    const style = getComputedStyle(body);
+                    return {
+                        target: panel.getAttribute('data-main-target'),
+                        panel: panelRect.toJSON(),
+                        card: cardRect.toJSON(),
+                        padding: style.padding,
+                        paddingLeft: style.paddingLeft,
+                        paddingRight: style.paddingRight,
+                        paddingTop: style.paddingTop,
+                        paddingBottom: style.paddingBottom,
+                        leftInset: cardRect.left - panelRect.left,
+                        rightInset: panelRect.right - cardRect.right,
+                        overflow: card.scrollWidth - card.clientWidth,
+                        text: card.textContent,
+                    };
+                }),
+            }));
+        const oldPadding = await page.addStyleTag({ content: `${selector} { padding-inline: 6px !important; }` });
+        const before = await measure();
+        await page.screenshot({ path: testInfo.outputPath(`info-${width}-before.png`), fullPage: true });
+        await oldPadding.evaluate((element) => element.parentNode?.removeChild(element));
+        const after = await measure();
+        expect(after.documentWidth).toBe(before.documentWidth);
+        expect(after.documentWidth).toBeLessThanOrEqual(Math.max(width, 500));
+        expect(after.panels).toHaveLength(2);
+        for (const [index, panel] of after.panels.entries()) {
+            expect(panel.paddingLeft).toBe('0px');
+            expect(panel.paddingRight).toBe('0px');
+            expect(panel.paddingTop).toBe('6px');
+            expect(panel.paddingBottom).toBe('6px');
+            expect(panel.leftInset).toBe(0);
+            expect(panel.rightInset).toBe(0);
+            expect(panel.card.width).toBeCloseTo(before.panels[index]!.card.width + 12, 5);
+            expect(panel.panel.height).toBe(before.panels[index]!.panel.height);
+            expect(panel.text).toBe(before.panels[index]!.text);
+            expect(panel.overflow).toBe(0);
+        }
+        const strategic = page.locator('[data-nation-basic-card] .strategic');
+        await strategic.hover();
+        await expect(strategic.getByRole('tooltip')).toBeVisible();
+        await strategic.focus();
+        await expect(strategic.getByRole('tooltip')).toBeVisible();
+        await page.mouse.move(0, 0);
+        await strategic.blur();
+        await page.screenshot({ path: testInfo.outputPath(`info-${width}-after.png`), fullPage: true });
+        await writeFile(testInfo.outputPath(`info-${width}.json`), JSON.stringify({ before, after }, null, 2));
+        await writeFile(
+            testInfo.outputPath(`info-${width}.html`),
+            await page.locator('main').evaluate((element) => element.outerHTML)
+        );
+    }
+});

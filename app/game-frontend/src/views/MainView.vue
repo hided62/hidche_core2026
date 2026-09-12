@@ -1039,6 +1039,11 @@ button {
     display: none;
 }
 
+[data-main-target='nation'] :deep(.panel-body),
+[data-main-target='general'] :deep(.panel-body) {
+    padding-inline: 0;
+}
+
 [data-main-target='map'] :deep(.panel-body),
 [data-main-target='city'] :deep(.panel-body) {
     padding: 0;
