@@ -29,6 +29,7 @@ const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 type NavigationFixture = {
+    decoratedNpcChiefs?: boolean;
     officerLevel: number;
     permission: number;
     nationLevel: number;
@@ -546,8 +547,16 @@ const generalContext = (state: NavigationFixture) => ({
         techLevel: 0,
         techLimited: false,
         topChiefs: {
-            12: { id: 1, name: '군주', npcState: 0 },
-            11: { id: 2, name: '참모', npcState: 1 },
+            12: {
+                id: 1,
+                name: state.decoratedNpcChiefs ? 'ⓖ의병군주' : '군주',
+                npcState: state.decoratedNpcChiefs ? 4 : 0,
+            },
+            11: {
+                id: 2,
+                name: state.decoratedNpcChiefs ? 'ⓤ중립참모' : '참모',
+                npcState: state.decoratedNpcChiefs ? 6 : 1,
+            },
         },
         impossibleStrategicCommands: [{ name: '수몰', remainingTurns: 2, availableYear: 190, availableMonth: 5 }],
     },
@@ -6834,5 +6843,41 @@ test('main nation and general cards fill their panels without increasing overflo
             testInfo.outputPath(`info-${width}.html`),
             await page.locator('main').evaluate((element) => element.outerHTML)
         );
+    }
+});
+
+test('NPC prefixes stay single in the main nation card', async ({ page }, testInfo) => {
+    await installFixture(page, {
+        officerLevel: 5,
+        permission: 2,
+        nationLevel: 3,
+        stage: 0,
+        npcMode: 1,
+        generalMeCalls: 0,
+        operations: [],
+        decoratedNpcChiefs: true,
+        validMapImages: true,
+    });
+    for (const width of [1200, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        await waitForMain(page);
+        const card = page.locator('[data-nation-basic-card]');
+        await expect(card.getByText('ⓖ의병군주', { exact: true })).toBeVisible();
+        await expect(card.getByText('ⓤ중립참모', { exact: true })).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        await testInfo.attach(`npc-prefix-dom-${width}`, {
+            contentType: 'application/json',
+            body: JSON.stringify(
+                await page.locator('[data-nation-basic-card]').evaluateAll((elements) =>
+                    elements.map((element) => ({
+                        html: element.outerHTML,
+                        rect: element.getBoundingClientRect().toJSON(),
+                        fontSize: getComputedStyle(element).fontSize,
+                        color: getComputedStyle(element).color,
+                    }))
+                )
+            ),
+        });
+        await card.screenshot({ path: testInfo.outputPath(`npc-main-prefix-${width}.png`) });
     }
 });

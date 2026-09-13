@@ -28,7 +28,7 @@ const emit = defineEmits<{
 const nameColor = computed(() => (props.npcState !== null ? getNpcColor(props.npcState) : undefined));
 const displayName = computed(() => {
     const name = props.name ?? '-';
-    return (props.npcState ?? 0) > 0 && !/^[ⓜⓝ]/u.test(name) ? `ⓝ${name}` : name;
+    return (props.npcState ?? 0) > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(name) ? `ⓝ${name}` : name;
 });
 
 const handleClick = () => {

@@ -51,7 +51,7 @@ const props = defineProps<{
 const number = (value: number): string => value.toLocaleString('ko-KR');
 const displayChiefName = (chief: NationChief | undefined): string => {
     if (!chief) return '-';
-    return chief.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(chief.name) ? `ⓝ${chief.name}` : chief.name;
+    return chief.npcState > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(chief.name) ? `ⓝ${chief.name}` : chief.name;
 };
 </script>
 

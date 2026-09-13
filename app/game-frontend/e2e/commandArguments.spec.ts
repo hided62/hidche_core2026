@@ -847,7 +847,8 @@ const install = async (
         clockRunning: boolean;
         clockRecovery: { startsAt: string; endsAt: string } | null;
         turnEngineRunning: boolean;
-    }
+    },
+    decoratedNpcChiefs = false
 ) => {
     const requests: unknown[] = [];
     const currentGeneralContext = {
@@ -982,7 +983,18 @@ const install = async (
                                   turnTime: '2026-09-10T01:20:00Z',
                               })),
                           }
-                        : chiefCenter
+                        : decoratedNpcChiefs
+                          ? {
+                                ...chiefCenter,
+                                chiefs: chiefCenter.chiefs.map((chief, index) => ({
+                                    ...chief,
+                                    name: ['ⓖ의병', 'ⓤ중립', 'ⓞ특수', 'ⓧ기타', '㉥부대장', 'ⓜ인재', 'ⓝ장수', '사용자'][
+                                        index
+                                    ]!,
+                                    npcState: [4, 6, 9, 7, 5, 3, 2, 0][index]!,
+                                })),
+                            }
+                          : chiefCenter
                 );
             if (name === 'turns.reserved.getGeneral')
                 return response({ turns: generalTurns, revision: generalRevision, autorunLimit: 2403 });
@@ -3554,3 +3566,38 @@ for (const width of [1200, 500]) {
         await expect(clock).toBeDisabled();
     });
 }
+
+test('NPC prefixes stay single in chief command cards', async ({ page }, testInfo) => {
+    await install(page, false, commandTable, 1, undefined, true);
+    for (const width of [1200, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(gamePath('/chief-center'));
+        const names = page.locator('.chief-card .chief-name, .chief-card .compact-name');
+        // Desktop uses the editor for the current officer; mobile includes that officer in the overview.
+        await expect(names).toHaveText([
+            'ⓖ의병',
+            'ⓤ중립',
+            'ⓞ특수',
+            'ⓧ기타',
+            '㉥부대장',
+            'ⓜ인재',
+            'ⓝ장수',
+            ...(width === 500 ? ['사용자'] : []),
+        ]);
+        await page.evaluate(() => document.fonts.ready);
+        await testInfo.attach(`npc-prefix-dom-${width}`, {
+            contentType: 'application/json',
+            body: JSON.stringify(
+                await page.locator('.chief-card').evaluateAll((elements) =>
+                    elements.map((element) => ({
+                        html: element.outerHTML,
+                        rect: element.getBoundingClientRect().toJSON(),
+                        fontSize: getComputedStyle(element).fontSize,
+                        color: getComputedStyle(element).color,
+                    }))
+                )
+            ),
+        });
+        await page.screenshot({ path: testInfo.outputPath(`npc-chief-prefix-${width}.png`), fullPage: true });
+    }
+});

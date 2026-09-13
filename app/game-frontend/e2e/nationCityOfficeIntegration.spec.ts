@@ -160,8 +160,8 @@ const overviewFixture = (state: FixtureState) => ({
         },
         {
             id: 22,
-            name: '조홍',
-            npcState: 2,
+            name: 'ⓖ조홍',
+            npcState: 4,
             officerLevel: 1,
             cityId: 2,
             officerCity: 0,
@@ -222,7 +222,7 @@ const secretFixture = () => ({
         secretGeneral(21, '장료', 1, {
             stats: { leadership: 80, strength: 70, intelligence: 50 },
         }),
-        secretGeneral(22, '조홍', 2, { npcState: 2, reservedCommands: [] }),
+        secretGeneral(22, 'ⓖ조홍', 2, { npcState: 4, reservedCommands: [] }),
     ],
 });
 
@@ -464,4 +464,30 @@ test('암행부 권한 거부는 도시 기밀 행과 인사부 연동을 열지
     await expect(page.locator('.city-user-table')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '인사부 연동' })).toHaveCount(0);
     expect(state.appointmentInputs).toEqual([]);
+});
+
+test('NPC prefixes stay single in city names and linked secret rows', async ({ page }, testInfo) => {
+    await install(page, { role: 'head', appointed: false, appointmentInputs: [] });
+    for (const width of [1200, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('nation/cities');
+        await expect(page.locator('.general-list').getByText('ⓖ조홍', { exact: true })).toHaveCount(1);
+        await page.getByRole('button', { name: '암행부 연동' }).click();
+        await expect(page.locator('[data-general-id="22"] .secret-name-cell > span').first()).toHaveText('ⓖ조홍');
+        await page.evaluate(() => document.fonts.ready);
+        await testInfo.attach(`npc-prefix-dom-${width}`, {
+            contentType: 'application/json',
+            body: JSON.stringify(
+                await page.locator('.nation-cities-page').evaluateAll((elements) =>
+                    elements.map((element) => ({
+                        html: element.outerHTML,
+                        rect: element.getBoundingClientRect().toJSON(),
+                        fontSize: getComputedStyle(element).fontSize,
+                        color: getComputedStyle(element).color,
+                    }))
+                )
+            ),
+        });
+        await page.screenshot({ path: testInfo.outputPath(`npc-city-prefix-${width}.png`), fullPage: true });
+    }
 });

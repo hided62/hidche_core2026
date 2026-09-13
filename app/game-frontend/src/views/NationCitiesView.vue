@@ -69,9 +69,9 @@ const generalsForCity = (cityId: number) =>
 const secretGeneralsForCity = (cityId: number) =>
     sortGeneralsByTypeThenName(secretData.value?.generals.filter((general) => general.cityId === cityId) ?? []);
 const displayGeneralName = (general: Result['generals'][number]) =>
-    general.npcState > 0 && !/^[ⓜⓝ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+    general.npcState > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const displaySecretGeneralName = (general: SecretGeneral) =>
-    general.npcState > 0 && !/^[ⓜⓝ㉥]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
+    general.npcState > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const generalCount = (cityId: number) =>
     data.value?.generals.filter((general) => general.cityId === cityId).length ?? 0;
 const cities = computed(() => {
