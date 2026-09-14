@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { onClickOutside, useElementSize, useMediaQuery, useMouseInElement } from '@vueuse/core';
+import { onClickOutside, useElementSize, useEventListener, useMediaQuery, useMouseInElement } from '@vueuse/core';
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import MapCityBasic from './MapCityBasic.vue';
 import MapCityDetail from './MapCityDetail.vue';
@@ -143,7 +143,6 @@ const {
     showCityName,
     detailMode: storeDetailMode,
     singleTapNavigation,
-    hoveredCityId,
     selectedCityId: storeSelectedCityId,
 } = storeToRefs(mapStore);
 const hasTouchInput = useMediaQuery('(any-pointer: coarse)');
@@ -561,6 +560,9 @@ const detailProps = computed(() =>
         : {}
 );
 
+const hoveredCityId = ref<number | null>(null);
+const touchPreviewCityId = ref<number | null>(null);
+
 const hoveredCity = computed(() => {
     if (!hoveredCityId.value) {
         return null;
@@ -581,10 +583,11 @@ const tooltipPosition = computed(() => {
     const mapPixelWidth = BASE_MAP_WIDTH * mapScale.value;
     const mapPixelHeight = BASE_MAP_HEIGHT * mapScale.value;
     const tooltipHeight = tooltipElement.value?.offsetHeight ?? TOOLTIP_FALLBACK_HEIGHT;
-    const left = elementX.value + width + offset > mapPixelWidth ? elementX.value - width - 5 : elementX.value + offset;
-    const belowTop = elementY.value + TOOLTIP_VERTICAL_OFFSET;
-    const top =
-        belowTop + tooltipHeight > mapPixelHeight ? elementY.value - tooltipHeight - TOOLTIP_VERTICAL_OFFSET : belowTop;
+    const x = touchPreviewCityId.value ? (hoveredCity.value?.x ?? elementX.value) : elementX.value;
+    const y = touchPreviewCityId.value ? (hoveredCity.value?.y ?? elementY.value) : elementY.value;
+    const left = x + width + offset > mapPixelWidth ? x - width - 5 : x + offset;
+    const belowTop = y + TOOLTIP_VERTICAL_OFFSET;
+    const top = belowTop + tooltipHeight > mapPixelHeight ? y - tooltipHeight - TOOLTIP_VERTICAL_OFFSET : belowTop;
     return {
         left: `${Math.max(0, left)}px`,
         top: `${Math.max(0, top)}px`,
@@ -592,10 +595,9 @@ const tooltipPosition = computed(() => {
 });
 
 const setHoveredCity = (cityId: number | null) => {
-    mapStore.setHoveredCity(cityId);
+    if (touchPreviewCityId.value !== null) return;
+    hoveredCityId.value = cityId;
 };
-
-const touchPreviewCityId = ref<number | null>(null);
 
 const clearTouchPreview = () => {
     touchPreviewCityId.value = null;
@@ -612,13 +614,28 @@ const toggleMapOptions = () => {
 
 onClickOutside(mapControls, closeMapOptions);
 
+// 맵 인스턴스별 패널을 유지하고, 도시 이외의 다음 입력에서 닫는다.
+useEventListener(
+    document,
+    'pointerdown',
+    (event) => {
+        const target = event.target;
+        const city = target instanceof Element ? target.closest('.city-base, .map-city') : null;
+        if (!city || !mapArea.value?.contains(city)) clearTouchPreview();
+    },
+    { capture: true }
+);
+useEventListener(document, 'keydown', (event) => {
+    if (event.key === 'Escape') clearTouchPreview();
+});
+
 const touchCity = (cityId: number, event: TouchEvent) => {
-    if (touchPreviewCityId.value !== cityId) {
-        touchPreviewCityId.value = cityId;
-        setHoveredCity(cityId);
-        if (!isSelectionMap.value && !singleTapNavigation.value) {
-            event.preventDefault();
-        }
+    const activate = isSelectionMap.value || singleTapNavigation.value || touchPreviewCityId.value === cityId;
+    touchPreviewCityId.value = cityId;
+    hoveredCityId.value = cityId;
+    if (activate && !props.readonly && event.currentTarget instanceof HTMLElement) {
+        // 기존 RouterLink/button 경로를 한 번 실행하여 선택과 이동 계약을 보존한다.
+        event.currentTarget.click();
     }
 };
 

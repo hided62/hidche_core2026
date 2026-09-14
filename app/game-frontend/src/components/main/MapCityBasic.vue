@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { RouterLink } from 'vue-router';
+import { useMapCityTouch } from '../../composables/useMapCityTouch';
 interface MapCityView {
     id: number;
     name: string;
@@ -40,24 +41,10 @@ const selectCity = () => {
     if (!props.readonly) emit('select', props.city.id);
 };
 
-let touchOnTrack = false;
-
-const touchstart = () => {
-    touchOnTrack = true;
-};
-
-const touchmove = () => {
-    touchOnTrack = false;
-};
-
-const touchend = (event: TouchEvent) => {
-    if (touchOnTrack) {
-        event.stopPropagation();
-        emit('touch', props.city.id, event);
-        return;
-    }
-    emit('touchleave');
-};
+const { touchstart, touchmove, touchend, touchcancel } = useMapCityTouch(
+    (event) => emit('touch', props.city.id, event),
+    () => emit('touchleave')
+);
 </script>
 
 <template>
@@ -89,6 +76,7 @@ const touchend = (event: TouchEvent) => {
         @touchstart="touchstart"
         @touchmove="touchmove"
         @touchend="touchend"
+        @touchcancel="touchcancel"
         @click.stop="selectCity"
     >
         <div class="city-dot" :style="{ backgroundColor: props.city.color, width: `${size}px`, height: `${size}px` }">
@@ -117,6 +105,7 @@ const touchend = (event: TouchEvent) => {
     font-size: 0.65rem;
     color: rgba(232, 221, 196, 0.8);
     cursor: pointer;
+    touch-action: manipulation;
     text-decoration: none;
     padding: 0;
     border: 0;

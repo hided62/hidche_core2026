@@ -2439,6 +2439,74 @@ test('touch command maps select city and nation on the first tap without changin
             path: testInfo.outputPath('main-map-current-city-static-highlight-mobile.png'),
         });
 
+        const mainMap = mobilePage.locator('[data-main-target="map"]');
+        const city = mainMap.locator('.city-base').nth(1);
+        await city.scrollIntoViewIfNeeded();
+        const beforeTap = await city.boundingBox();
+        await city.tap();
+        await expect(mainMap.locator('.map-tooltip')).toBeVisible();
+        await mobilePage.waitForTimeout(700);
+        expect(await city.boundingBox()).toEqual(beforeTap);
+        // 실제 Chromium touchMove를 포함한 손떨림도 두 번째 탭으로 처리한다.
+        const box = await city.boundingBox();
+        if (!box) throw new Error('Missing city geometry');
+        const cdp = await context.newCDPSession(mobilePage);
+        const point = { x: box.x + box.width / 2, y: box.y + box.height / 2, id: 0 };
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+        await cdp.send('Input.dispatchTouchEvent', {
+            type: 'touchMove',
+            touchPoints: [{ ...point, x: point.x + 4, y: point.y + 2 }],
+        });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect(mobilePage).toHaveURL(/current-city\?cityId=2$/u);
+        await mobilePage.goto('/');
+        await city.tap();
+        const dragBox = await city.boundingBox();
+        if (!dragBox) throw new Error('Missing drag geometry');
+        const dragStart = { x: dragBox.x + dragBox.width / 2, y: dragBox.y + dragBox.height / 2, id: 0 };
+        const scrollBeforeDrag = await mobilePage.evaluate(() => window.scrollY);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [dragStart] });
+        for (let step = 1; step <= 5; step += 1) {
+            await cdp.send('Input.dispatchTouchEvent', {
+                type: 'touchMove',
+                touchPoints: [{ ...dragStart, y: dragStart.y - step * 20 }],
+            });
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect(mainMap.locator('.map-tooltip')).toHaveCount(0);
+        await expect(mobilePage).toHaveURL(/\/$/u);
+        await expect.poll(() => mobilePage.evaluate(() => window.scrollY)).toBeGreaterThan(scrollBeforeDrag);
+        await expect
+            .poll(async () => {
+                const y = await mobilePage.evaluate(() => window.scrollY);
+                await mobilePage.waitForTimeout(100);
+                return (await mobilePage.evaluate(() => window.scrollY)) - y;
+            })
+            .toBe(0);
+        await city.tap();
+        await expect(mobilePage).toHaveURL(/\/$/u);
+        await expect(mainMap.locator('.map-tooltip')).toBeVisible();
+        await mainMap.screenshot({ path: testInfo.outputPath('main-map-after-scroll-first-tap.png') });
+        await writeFile(
+            testInfo.outputPath('main-touch-geometry.json'),
+            JSON.stringify(
+                {
+                    beforeTap,
+                    scrollBeforeDrag,
+                    afterDrag: await mobilePage.evaluate(() => window.scrollY),
+                    map: await mainMap.evaluate((element) => ({
+                        rect: element.getBoundingClientRect().toJSON(),
+                        tooltip: element.querySelector('.map-tooltip')?.getBoundingClientRect().toJSON(),
+                        touchAction: getComputedStyle(element.querySelector('.city-base')!).touchAction,
+                    })),
+                },
+                null,
+                2
+            )
+        );
+        await cdp.detach();
+        await mobilePage.goto('/');
+
         await mobilePage.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
         await mobilePage.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
         let form = mobilePage.getByTestId('command-argument-form');
@@ -2447,6 +2515,22 @@ test('touch command maps select city and nation on the first tap without changin
         await commandMap.locator('.city-base').nth(1).tap();
         await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
         await expect(commandMap.locator('.city-base').nth(1)).toHaveClass(/selected/);
+        await expect(commandMap.locator('.map-tooltip .tooltip-title')).toContainText('허창');
+        await expect(commandMap.locator('.map-tooltip .tooltip-body')).toHaveText('적국');
+        await commandMap.locator('.city-base').nth(1).dispatchEvent('mouseleave');
+        await mobilePage.waitForTimeout(700);
+        await expect(commandMap.locator('.map-tooltip')).toBeVisible();
+        await expect(mobilePage.locator('[data-main-target="map"] .map-tooltip')).toHaveCount(0);
+        await commandMap.screenshot({
+            path: testInfo.outputPath(
+                `persistent-panel-${(await form.locator('#command-arg-destCityId').count()) ? 'personal' : 'chief'}.png`
+            ),
+        });
+        await commandMap.locator('.city-base').nth(1).tap();
+        await expect(commandMap.locator('.map-tooltip')).toBeVisible();
+        await commandMap.getByRole('button', { name: '지도 옵션', exact: true }).tap();
+        await expect(commandMap.locator('.map-tooltip')).toHaveCount(0);
+
         await expect(mobilePage).toHaveURL(/\/$/u);
 
         await mobilePage.goto(gamePath('/chief-center'));
@@ -2460,6 +2544,22 @@ test('touch command maps select city and nation on the first tap without changin
         await commandMap.locator('.city-base').nth(1).tap();
         await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
         await expect(commandMap.locator('.city-base').nth(1)).toHaveClass(/selected/);
+        await expect(commandMap.locator('.map-tooltip .tooltip-title')).toContainText('허창');
+        await expect(commandMap.locator('.map-tooltip .tooltip-body')).toHaveText('적국');
+        await commandMap.locator('.city-base').nth(1).dispatchEvent('mouseleave');
+        await mobilePage.waitForTimeout(700);
+        await expect(commandMap.locator('.map-tooltip')).toBeVisible();
+        await expect(mobilePage.locator('[data-main-target="map"] .map-tooltip')).toHaveCount(0);
+        await commandMap.screenshot({
+            path: testInfo.outputPath(
+                `persistent-panel-${(await form.locator('#command-arg-destCityId').count()) ? 'personal' : 'chief'}.png`
+            ),
+        });
+        await commandMap.locator('.city-base').nth(1).tap();
+        await expect(commandMap.locator('.map-tooltip')).toBeVisible();
+        await commandMap.getByRole('button', { name: '지도 옵션', exact: true }).tap();
+        await expect(commandMap.locator('.map-tooltip')).toHaveCount(0);
+
         await expect(mobilePage).toHaveURL(new RegExp(`${gamePath('/chief-center')}$`, 'u'));
         expect(await mobilePage.evaluate(() => localStorage.getItem('sam.toggleSingleTap'))).toBe('no');
 
