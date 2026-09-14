@@ -24,7 +24,7 @@ export interface NationTargetSource {
     id: number;
     name: string;
     color: string;
-    capitalName: string;
+    capitalName?: string;
     level: number;
     power: number;
     generalCount: number;
@@ -60,9 +60,6 @@ export const buildRefGeneralTargetOptions = (options: {
     const toOption = (entry: GeneralTargetSource, action?: string): TurnCommandOption => {
         const troopName = entry.troopId ? options.troopNames?.get(entry.troopId) : undefined;
         const cityName = options.cityNames.get(entry.cityId) ?? '재야';
-        const troopLabel = entry.troopId
-            ? `${troopName ?? `#${entry.troopId}`}${entry.troopId === entry.id ? ' (부대장)' : ''}`
-            : '부대 없음';
         const isTroopMember = Boolean(entry.troopId && entry.troopId !== entry.id);
         const isTroopExit = action === 'che_부대탈퇴지시';
         const availableNow = isTroopExit ? isTroopMember && entry.id !== options.actorId : undefined;
@@ -77,18 +74,12 @@ export const buildRefGeneralTargetOptions = (options: {
             entry.crew === undefined ? null : `병력 ${entry.crew.toLocaleString()}`,
             entry.train === undefined ? null : `훈련 ${entry.train.toLocaleString()}`,
             entry.atmos === undefined ? null : `사기 ${entry.atmos.toLocaleString()}`,
-            action === 'che_발령' || action === 'che_포상' || action === 'che_몰수'
-                ? null
-                : entry.troopId
-                  ? `탑승 부대 ${troopLabel}`
-                  : '탑승 부대 없음',
         ].filter((value): value is string => Boolean(value));
         // 발령 후보는 Ref처럼 능력치와 병력 준비 상태를 함께 비교한다.
         // 예약 요약에 쓰는 label은 그대로 두고, 같은 국가 후보의 상세 정보만 보강한다.
         const assignmentDetails =
             action === 'che_발령'
                 ? [
-                      entry.troopId ? `탑승 부대 ${troopLabel}` : '탑승 부대 없음',
                       [
                           entry.leadership === undefined ? null : `통솔 ${entry.leadership.toLocaleString()}`,
                           entry.strength === undefined ? null : `무력 ${entry.strength.toLocaleString()}`,
@@ -119,6 +110,12 @@ export const buildRefGeneralTargetOptions = (options: {
         return {
             value: entry.id,
             label,
+            targetNames: {
+                name: entry.name,
+                nationName: options.nationNames.get(entry.nationId) ?? null,
+                cityName: options.cityNames.get(entry.cityId) ?? null,
+                troopName: troopName ?? null,
+            },
             description: assignmentDetails ?? details.join(' · '),
             ...(availableNow === undefined ? {} : { availableNow }),
             ...(entry.gold === undefined ? {} : { gold: entry.gold }),
@@ -212,8 +209,9 @@ export const buildRefNationTargetOptions = (options: {
     const baseOptions = options.nations.map<TurnCommandOption>((entry) => ({
         value: entry.id,
         label: entry.name,
+        targetNames: { name: entry.name, capitalName: entry.capitalName ?? null },
         color: entry.color,
-        description: `수도 ${entry.capitalName} · 국력 ${entry.power.toLocaleString()} · 도시 ${entry.cityCount.toLocaleString()} · 장수 ${entry.generalCount.toLocaleString()}`,
+        description: `수도 ${entry.capitalName ?? '-'} · 국력 ${entry.power.toLocaleString()} · 도시 ${entry.cityCount.toLocaleString()} · 장수 ${entry.generalCount.toLocaleString()}`,
     }));
     const nationTargets: Record<string, TurnCommandOption[]> = {};
     for (const action of NATION_TARGET_COMMANDS) {
@@ -225,9 +223,10 @@ export const buildRefNationTargetOptions = (options: {
                 return {
                     value: entry.id,
                     label: entry.name,
+                    targetNames: { name: entry.name, capitalName: entry.capitalName ?? null },
                     color: entry.color,
                     availableNow: availability.available,
-                    description: `${availability.reason} · ${relation}${term} · 수도 ${entry.capitalName} · 국력 ${entry.power.toLocaleString()} · 도시 ${entry.cityCount.toLocaleString()} · 장수 ${entry.generalCount.toLocaleString()}`,
+                    description: `${availability.reason} · ${relation}${term} · 수도 ${entry.capitalName ?? '-'} · 국력 ${entry.power.toLocaleString()} · 도시 ${entry.cityCount.toLocaleString()} · 장수 ${entry.generalCount.toLocaleString()}`,
                     power: entry.power,
                 } as TurnCommandOption & { power: number };
             })

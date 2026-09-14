@@ -20,6 +20,14 @@ export type TurnCommandOptionValue = string | number;
 export interface TurnCommandOption {
     value: TurnCommandOptionValue;
     label: string;
+    /** 원본 이름. 없는 소속/부대/수도는 null이며 대체 문구는 화면에서 표시한다. */
+    targetNames?: {
+        name: string;
+        nationName?: string | null;
+        cityName?: string | null;
+        troopName?: string | null;
+        capitalName?: string | null;
+    };
     color?: string;
     description?: string;
     availableNow?: boolean;

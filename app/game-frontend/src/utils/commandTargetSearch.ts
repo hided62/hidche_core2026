@@ -1,3 +1,5 @@
+import type { CommandOption } from '../components/command/types';
+
 // Ref convertSearch초성: 원문, 두벌식 초성, 한글 초성, 두 단계 IME 겹자음 인덱스.
 const initials = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
 const keyboard = 'rRseEfaqQtTdwWczxvg';
@@ -45,3 +47,9 @@ export const matchesCommandTargetSearch = (index: readonly string[], query: stri
     const normalized = normalize(query);
     return index.some((text) => text.includes(normalized));
 };
+
+// 구 API 응답은 표시 이름까지만 검색한다. description은 결코 검색하지 않는다.
+export const buildCommandOptionSearchIndex = (option: Pick<CommandOption, 'label' | 'targetNames'>): string[] =>
+    (option.targetNames ? Object.values(option.targetNames) : [option.label])
+        .filter((name): name is string => typeof name === 'string' && Boolean(name.trim()))
+        .flatMap(buildCommandTargetSearchIndex);

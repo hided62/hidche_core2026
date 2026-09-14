@@ -46,6 +46,24 @@ describe('Ref command general targets', () => {
         }
     });
 
+    it('indexes genuine names even when named 없음, and excludes missing-name placeholders', () => {
+        const options = buildRefGeneralTargetOptions({
+            actorId: 1,
+            actorNationId: 0,
+            generals: [general({ name: '없음', nationId: 0, cityId: 0, troopId: 99 })],
+            nationNames: new Map(),
+            cityNames: new Map(),
+            troopNames: new Map(),
+        });
+        expect(options.generalTargets.che_증여?.[0]?.targetNames).toEqual({
+            name: '없음',
+            nationName: null,
+            cityName: null,
+            troopName: null,
+        });
+        expect(options.generalTargets.che_증여?.[0]?.description).not.toContain('없음');
+    });
+
     it('preserves the distinct Ref filters for gift, abdication, recruitment, and target-based joining', () => {
         expect(ids('che_증여')).toEqual([1, 2, 3]);
         expect(ids('che_선양')).toEqual([2, 3]);
@@ -88,7 +106,7 @@ describe('Ref command general targets', () => {
             rice: 200,
             crew: 900,
             troopId: 3,
-            description: expect.stringContaining('탑승 부대 청룡대'),
+            targetNames: { name: '부대원', nationName: '아국', cityName: '업', troopName: '청룡대' },
         });
         expect(detailed.generalTargets.che_발령?.map((entry) => entry.label)).toEqual([
             '본인 (업)',
@@ -96,13 +114,16 @@ describe('Ref command general targets', () => {
             '부대장 (업)',
         ]);
         expect(detailed.generalTargets.che_발령?.[1]?.description).toBe(
-            '탑승 부대 청룡대\n통솔 100 · 무력 95 · 지력 0\n병력 900 · 훈련 80 · 사기 70\n금 100 · 쌀 200'
+            '통솔 100 · 무력 95 · 지력 0\n병력 900 · 훈련 80 · 사기 70\n금 100 · 쌀 200'
         );
-        expect(detailed.generalTargets.che_발령?.[0]?.description).toBe(
-            '탑승 부대 없음\n병력 1,000\n금 5,000 · 쌀 4,000'
-        );
-        expect(detailed.generalTargets.che_발령?.[2]?.description).toContain('청룡대 (부대장)');
+        expect(detailed.generalTargets.che_발령?.[0]?.description).toBe('병력 1,000\n금 5,000 · 쌀 4,000');
+        expect(detailed.generalTargets.che_발령?.[2]?.targetNames?.troopName).toBe('청룡대');
         expect(detailed.generalTargets.che_증여?.[1]?.description).not.toContain('통솔');
+        expect(detailed.generalTargets.che_증여?.map((entry) => entry.targetNames)).toEqual([
+            { name: '본인', nationName: '아국', cityName: '업', troopName: null },
+            { name: '부대원', nationName: '아국', cityName: '업', troopName: '청룡대' },
+            { name: '부대장', nationName: '아국', cityName: '업', troopName: '청룡대' },
+        ]);
         expect(detailed.generalTargets.che_포상?.map((entry) => entry.label)).toEqual([
             '본인 (업)',
             '부대원 (업)',
@@ -169,6 +190,24 @@ describe('Ref nation target guidance', () => {
             adjacent: true,
         },
     ];
+
+    it('indexes real nation and capital names without missing-capital or diplomacy copy', () => {
+        const result = buildRefNationTargetOptions({
+            actorNationId: 1,
+            nations: nations.map((entry) => ({ ...entry, capitalName: undefined })),
+        });
+        expect(result.nations.map((entry) => entry.targetNames)).toEqual(
+            nations.map((entry) => ({ name: entry.name, capitalName: null }))
+        );
+        for (const options of Object.values(result.nationTargets)) {
+            for (const option of options) expect(option.targetNames).toEqual({ name: option.label, capitalName: null });
+        }
+        const populated = buildRefNationTargetOptions({ actorNationId: 1, nations });
+        expect(populated.nations[0]?.targetNames).toEqual({
+            name: nations[0]!.name,
+            capitalName: nations[0]!.capitalName,
+        });
+    });
 
     it('sorts the currently relevant relation first for each diplomacy command', () => {
         const result = buildRefNationTargetOptions({ actorNationId: 1, nations });

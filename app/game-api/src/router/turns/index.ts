@@ -365,7 +365,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
                 id: entry.id,
                 name: entry.name,
                 color: entry.color,
-                capitalName: entry.capitalCityId ? (cityById.get(entry.capitalCityId)?.name ?? '-') : '-',
+                capitalName: entry.capitalCityId ? cityById.get(entry.capitalCityId)?.name : undefined,
                 level: entry.level,
                 power: readGeneralMetaNumber(entry.meta, 'power') ?? 0,
                 generalCount: generalCountByNation.get(entry.id) ?? 0,
@@ -402,6 +402,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         cities: cities.map((entry) => ({
             value: entry.id,
             label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무주'})`,
+            targetNames: { name: entry.name, nationName: nationById.get(entry.nationId)?.name ?? null },
         })),
         nations: nationTargetOptions.nations,
         nationTargets: nationTargetOptions.nationTargets,

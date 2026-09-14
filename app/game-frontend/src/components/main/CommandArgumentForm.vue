@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, watch, type CSSProperties } from 'vue';
+import { commandTargetDescription } from '../../utils/commandTargetDescription';
 import { useStorage } from '@vueuse/core';
-import { buildCommandTargetSearchIndex, matchesCommandTargetSearch } from '../../utils/commandTargetSearch';
+import { buildCommandOptionSearchIndex, matchesCommandTargetSearch } from '../../utils/commandTargetSearch';
 import MapViewer from './MapViewer.vue';
 import NationColorSelect from './NationColorSelect.vue';
 import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
@@ -82,9 +83,7 @@ const targetIndexes = computed(
                 field.key,
                 optionsFor(field).map((option) => ({
                     option,
-                    index: [option.label, option.description ?? '']
-                        .filter(Boolean)
-                        .flatMap(buildCommandTargetSearchIndex),
+                    index: buildCommandOptionSearchIndex(option),
                 })),
             ])
         )
@@ -578,7 +577,7 @@ watch(
             <div
                 v-if="
                     field.kind === 'select' &&
-                    (selectedOptionFor(field)?.description || selectedOptionFor(field)?.color)
+                    (commandTargetDescription(commandKey, selectedOptionFor(field)) || selectedOptionFor(field)?.color)
                 "
                 class="option-detail"
                 :class="{ 'assignment-detail': commandKey === 'che_발령' && field.optionSource === 'generals' }"
@@ -589,7 +588,7 @@ watch(
                     :style="{ backgroundColor: selectedOptionFor(field)?.color }"
                     aria-hidden="true"
                 />
-                <span>{{ selectedOptionFor(field)?.description }}</span>
+                <span>{{ commandTargetDescription(commandKey, selectedOptionFor(field)) }}</span>
             </div>
             <div
                 v-if="searchEnabled && isSearchable(field)"
@@ -603,7 +602,7 @@ watch(
                     type="search"
                     inputmode="search"
                     enterkeyhint="done"
-                    placeholder="이름·정보 또는 초성"
+                    placeholder="이름 또는 초성"
                     autocomplete="off"
                     :spellcheck="false"
                     @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
@@ -653,7 +652,7 @@ watch(
                     <span class="target-state">{{
                         option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
                     }}</span>
-                    <small>{{ option.description }}</small>
+                    <small>{{ commandTargetDescription(commandKey, option) }}</small>
                 </button>
             </div>
         </div>

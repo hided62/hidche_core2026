@@ -2892,7 +2892,8 @@ for (const width of [1200, 500]) {
                 ? {
                       ...option,
                       label: `${longName} (업)`,
-                      description: option.description?.replace('청룡대', longTroop),
+                      description: option.description,
+                      targetNames: { ...option.targetNames!, name: longName, troopName: longTroop },
                   }
                 : option
         );
@@ -3660,6 +3661,10 @@ for (const width of [1200, 390]) {
             await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
             const generalSearch = form.locator('#command-search-destGeneralId');
             const citySearch = form.locator('#command-search-destCityId');
+            for (const query of ['ㅇㅇ', '없음', '통솔', '1,200']) {
+                await generalSearch.fill(query);
+                await expect(form.getByTestId('general-target-list').locator('button')).toHaveCount(0);
+            }
             await generalSearch.fill('ㅊㄹㄷ');
             await expect(form.getByTestId('general-target-list')).toContainText('청룡대');
             await generalSearch.fill('ㄱㅇ');
@@ -3722,3 +3727,47 @@ for (const width of [1200, 390]) {
         });
     });
 }
+
+test('gift search indexes nullable names without matching the displayed no-troop fallback', async ({
+    page,
+}, testInfo) => {
+    const targets = buildRefGeneralTargetOptions({
+        actorId: 1,
+        actorNationId: 1,
+        generals: [
+            { id: 1, name: '관우', nationId: 1, cityId: 1, troopId: 0, npcState: 0, officerLevel: 5 },
+            { id: 2, name: '원우', nationId: 1, cityId: 1, troopId: 0, npcState: 0, officerLevel: 5 },
+            { id: 3, name: '조조', nationId: 1, cityId: 1, troopId: 3, npcState: 0, officerLevel: 5 },
+        ],
+        nationNames: new Map([[1, '피곤']]),
+        cityNames: new Map([[1, '업']]),
+        troopNames: new Map([[3, '원위대']]),
+    });
+    await install(page, false, {
+        ...commandTable,
+        general: [{ category: '인사', values: [buildGeneralCommand('che_증여', '증여')] }],
+        inputOptions: { ...inputOptions, ...targets },
+    });
+    await page.goto(gamePath('/'));
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /증여/ }).click();
+    const form = picker.getByTestId('command-argument-form');
+    const results = form.getByTestId('general-target-list');
+    await expect(results.locator('button')).toHaveCount(3);
+    await expect(results.getByRole('button', { name: /관우/ })).toContainText('탑승 부대 없음');
+    await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+    const search = form.locator('input[type=search]');
+    await search.fill('ㅇㅇ');
+    await expect(results.locator('button strong')).toHaveText(['원우 (피곤 · 업)', '조조 (피곤 · 업)']);
+    await expect(form.locator('#command-arg-destGeneralId')).toHaveValue('1');
+    await form.screenshot({ path: testInfo.outputPath('gift-real-name-search.png') });
+    await writeFile(
+        testInfo.outputPath('gift-real-name-search.html'),
+        await form.evaluate((element) => element.outerHTML)
+    );
+    await search.fill('없음');
+    await expect(results.locator('button')).toHaveCount(0);
+    await search.fill('피곤');
+    await expect(results.locator('button')).toHaveCount(3);
+});
