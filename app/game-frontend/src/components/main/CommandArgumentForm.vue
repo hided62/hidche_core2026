@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch, type CSSProperties } from 'vue';
+import { computed, onBeforeUnmount, reactive, watch, type CSSProperties } from 'vue';
 import { commandTargetDescription } from '../../utils/commandTargetDescription';
 import { useStorage } from '@vueuse/core';
 import { buildCommandOptionSearchIndex, matchesCommandTargetSearch } from '../../utils/commandTargetSearch';
@@ -72,6 +72,41 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
 
 const searchEnabled = useStorage('sam.core.commandTargetSearch', false);
 const searchQueries = reactive<Record<string, string>>({});
+const searchDrafts = reactive<Record<string, string>>({});
+const searchTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const cancelSearchTimer = (key: string) => {
+    const timer = searchTimers.get(key);
+    if (timer !== undefined) clearTimeout(timer);
+    searchTimers.delete(key);
+};
+const flushSearch = (key: string) => {
+    cancelSearchTimer(key);
+    searchQueries[key] = searchDrafts[key] ?? '';
+};
+const updateSearchDraft = (key: string, event: Event) => {
+    searchDrafts[key] = (event.target as HTMLInputElement).value;
+    cancelSearchTimer(key);
+    // v-model은 한글 조합 중 input을 무시한다. 원본 input 값을 읽되 검색만 150ms 디바운스한다.
+    searchTimers.set(
+        key,
+        setTimeout(() => flushSearch(key), 150)
+    );
+};
+const clearFieldSearch = (key: string) => {
+    searchDrafts[key] = '';
+    flushSearch(key);
+};
+const onSearchKeydown = (key: string, event: KeyboardEvent) => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        flushSearch(key);
+        (event.target as HTMLInputElement).blur();
+    } else if (event.key === 'Escape') {
+        clearFieldSearch(key);
+        (event.target as HTMLInputElement).blur();
+    }
+};
 const isSearchable = (field: CommandInputField): boolean =>
     field.kind === 'select' && ['generals', 'cities', 'nations'].includes(field.optionSource ?? '');
 const hasSearchableFields = computed(() => props.fields.some(isSearchable));
@@ -105,8 +140,11 @@ const filteredTargets = computed(
 const visibleOptionsFor = (field: CommandInputField): CommandOption[] =>
     filteredTargets.value.get(field.key) ?? optionsFor(field);
 const clearSearchQueries = () => {
+    for (const key of searchTimers.keys()) cancelSearchTimer(key);
+    for (const key of Object.keys(searchDrafts)) delete searchDrafts[key];
     for (const key of Object.keys(searchQueries)) delete searchQueries[key];
 };
+onBeforeUnmount(clearSearchQueries);
 watch(searchEnabled, clearSearchQueries);
 watch(() => props.commandKey, clearSearchQueries);
 
@@ -598,23 +636,23 @@ watch(
                 <label :for="`command-search-${field.key}`">{{ field.label }} 검색</label>
                 <input
                     :id="`command-search-${field.key}`"
-                    v-model="searchQueries[field.key]"
+                    :value="searchDrafts[field.key] ?? ''"
                     type="search"
                     inputmode="search"
                     enterkeyhint="done"
                     placeholder="이름 또는 초성"
                     autocomplete="off"
                     :spellcheck="false"
-                    @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-                    @keydown.esc.stop="
-                        searchQueries[field.key] = '';
-                        ($event.target as HTMLInputElement).blur();
-                    "
+                    @input="updateSearchDraft(field.key, $event)"
+                    @compositionend="updateSearchDraft(field.key, $event)"
+                    @blur="flushSearch(field.key)"
+                    @keydown.enter="onSearchKeydown(field.key, $event)"
+                    @keydown.esc.stop="onSearchKeydown(field.key, $event)"
                 />
                 <button
                     type="button"
                     class="legacy-button legacy-button--secondary"
-                    @click="searchQueries[field.key] = ''"
+                    @click="clearFieldSearch(field.key)"
                 >
                     지우기
                 </button>
