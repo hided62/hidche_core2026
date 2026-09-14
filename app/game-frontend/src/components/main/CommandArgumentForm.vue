@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch, type CSSProperties } from 'vue';
+import { useStorage } from '@vueuse/core';
+import { buildCommandTargetSearchIndex, matchesCommandTargetSearch } from '../../utils/commandTargetSearch';
 import MapViewer from './MapViewer.vue';
 import NationColorSelect from './NationColorSelect.vue';
 import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
@@ -66,6 +68,48 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
     }
     return props.options[field.optionSource];
 };
+
+const searchEnabled = useStorage('sam.core.commandTargetSearch', false);
+const searchQueries = reactive<Record<string, string>>({});
+const isSearchable = (field: CommandInputField): boolean =>
+    field.kind === 'select' && ['generals', 'cities', 'nations'].includes(field.optionSource ?? '');
+const hasSearchableFields = computed(() => props.fields.some(isSearchable));
+// 후보나 정렬이 바뀔 때만 인덱스를 갱신하고 키 입력은 기존 인덱스를 검색한다.
+const targetIndexes = computed(
+    () =>
+        new Map(
+            props.fields.filter(isSearchable).map((field) => [
+                field.key,
+                optionsFor(field).map((option) => ({
+                    option,
+                    index: [option.label, option.description ?? '']
+                        .filter(Boolean)
+                        .flatMap(buildCommandTargetSearchIndex),
+                })),
+            ])
+        )
+);
+const filteredTargets = computed(
+    () =>
+        new Map(
+            [...targetIndexes.value].map(([key, entries]) => [
+                key,
+                entries
+                    .filter(
+                        (entry) =>
+                            !searchEnabled.value || matchesCommandTargetSearch(entry.index, searchQueries[key] ?? '')
+                    )
+                    .map((entry) => entry.option),
+            ])
+        )
+);
+const visibleOptionsFor = (field: CommandInputField): CommandOption[] =>
+    filteredTargets.value.get(field.key) ?? optionsFor(field);
+const clearSearchQueries = () => {
+    for (const key of Object.keys(searchQueries)) delete searchQueries[key];
+};
+watch(searchEnabled, clearSearchQueries);
+watch(() => props.commandKey, clearSearchQueries);
 
 const defaultValue = (field: CommandInputField): unknown => {
     if (field.kind === 'hidden') return field.constValue;
@@ -431,6 +475,15 @@ watch(
         <div v-if="resourceSummary.length" class="resource-summary" data-testid="command-resource-summary">
             <span v-for="entry in resourceSummary" :key="entry">{{ entry }}</span>
         </div>
+        <button
+            v-if="hasSearchableFields"
+            type="button"
+            class="legacy-button legacy-button--secondary target-search-toggle"
+            :aria-pressed="searchEnabled"
+            @click="searchEnabled = !searchEnabled"
+        >
+            {{ searchEnabled ? '검색 켜짐' : '검색 꺼짐' }}
+        </button>
         <div v-for="field in visibleFields" :key="field.key" class="argument-row">
             <label :for="`command-arg-${field.key}`">{{ field.label }}</label>
             <input
@@ -555,13 +608,52 @@ watch(
                 <span>{{ selectedOptionFor(field)?.description }}</span>
             </div>
             <div
-                v-if="showOptionCards(field)"
+                v-if="searchEnabled && isSearchable(field)"
+                class="target-search"
+                :data-testid="`target-search-${field.key}`"
+            >
+                <label :for="`command-search-${field.key}`">{{ field.label }} 검색</label>
+                <input
+                    :id="`command-search-${field.key}`"
+                    v-model="searchQueries[field.key]"
+                    type="search"
+                    inputmode="search"
+                    enterkeyhint="done"
+                    placeholder="이름·정보 또는 초성"
+                    autocomplete="off"
+                    :spellcheck="false"
+                    @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+                    @keydown.esc.stop="
+                        searchQueries[field.key] = '';
+                        ($event.target as HTMLInputElement).blur();
+                    "
+                />
+                <button
+                    type="button"
+                    class="legacy-button legacy-button--secondary"
+                    @click="searchQueries[field.key] = ''"
+                >
+                    지우기
+                </button>
+                <small role="status"
+                    >검색 결과 {{ visibleOptionsFor(field).length }}개 / {{ optionsFor(field).length }}개</small
+                >
+            </div>
+            <div
+                v-if="showOptionCards(field) || (searchEnabled && isSearchable(field))"
                 class="target-option-list"
                 :class="{ 'assignment-target-list': commandKey === 'che_발령' && field.optionSource === 'generals' }"
-                :data-testid="field.optionSource === 'nations' ? 'nation-target-list' : 'general-target-list'"
+                :data-testid="
+                    field.optionSource === 'nations'
+                        ? 'nation-target-list'
+                        : field.optionSource === 'cities'
+                          ? 'city-target-list'
+                          : 'general-target-list'
+                "
             >
+                <span v-if="!visibleOptionsFor(field).length" class="target-search-empty">검색 결과가 없습니다.</span>
                 <button
-                    v-for="option in optionsFor(field)"
+                    v-for="option in visibleOptionsFor(field)"
                     :key="String(option.value)"
                     type="button"
                     class="target-option"
@@ -586,6 +678,30 @@ watch(
 </template>
 
 <style scoped>
+.target-search-toggle {
+    margin: 6px 8px;
+}
+.target-search {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+}
+.target-search input {
+    flex: 1 1 140px;
+    width: 140px;
+    margin: 0;
+    font-size: 16px;
+}
+.target-search small {
+    flex-basis: 100%;
+}
+.target-search-empty {
+    padding: 8px;
+}
+
 .command-argument-form {
     border: 1px solid rgba(201, 164, 90, 0.35);
     font-size: 0.75rem;

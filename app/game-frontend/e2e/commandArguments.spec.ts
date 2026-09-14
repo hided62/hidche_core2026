@@ -3601,3 +3601,114 @@ test('NPC prefixes stay single in chief command cards', async ({ page }, testInf
         await page.screenshot({ path: testInfo.outputPath(`npc-chief-prefix-${width}.png`), fullPage: true });
     }
 });
+
+for (const width of [1200, 390]) {
+    test.describe(`target search viewport ${width}`, () => {
+        test.use({ isMobile: width < 500, hasTouch: width < 500 });
+        test(`target search preserves selection and searches Korean initials in both editors at ${width}px`, async ({
+            page,
+        }, testInfo) => {
+            const requests = await install(page);
+            await page.setViewportSize({ width, height: 900 });
+            await page.goto(gamePath('/'));
+            const initialScale = await page.evaluate(() => visualViewport?.scale);
+            await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+            let picker = page.getByTestId('command-picker');
+            await picker.getByRole('button', { name: /화계/ }).click();
+            let form = picker.getByTestId('command-argument-form');
+            const toggle = form.getByRole('button', { name: '검색 꺼짐', exact: true });
+            await expect(form.locator('input[type=search]')).toHaveCount(0);
+            await toggle.click();
+            let input = form.locator('input[type=search]');
+            await expect(input).not.toBeFocused();
+            await expect(input).toHaveCSS('font-size', '16px');
+            await input.fill('ㅎㅊ');
+            let results = form.getByTestId('city-target-list');
+            await expect(results.locator('button')).toHaveCount(1);
+            await expect(results).toContainText('허창');
+            await results.getByRole('button').click();
+            await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+            await input.fill('없는도시');
+            await expect(results).toContainText('검색 결과가 없습니다.');
+            await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+            await form.getByRole('button', { name: '지우기', exact: true }).click();
+            await expect(results.locator('button')).toHaveCount(3);
+            await input.fill('GC');
+            await expect(results.locator('button')).toHaveCount(1);
+            await input.press('Enter');
+            await expect(input).not.toBeFocused();
+            await expect(picker).toBeVisible();
+            await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+            await expect(input).toHaveCount(0);
+            await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+            await picker.getByRole('button', { name: '입력', exact: true }).click();
+            await expect.poll(() => JSON.stringify(requests)).toContain('"destCityId":2');
+
+            await page.goto(gamePath('/chief-center'));
+            await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+            picker = page.getByTestId('command-picker');
+            await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+            await picker.getByRole('button', { name: /발령/ }).click();
+            form = picker.getByTestId('command-argument-form');
+            await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+            const generalSearch = form.locator('#command-search-destGeneralId');
+            const citySearch = form.locator('#command-search-destCityId');
+            await generalSearch.fill('ㅊㄹㄷ');
+            await expect(form.getByTestId('general-target-list')).toContainText('청룡대');
+            await generalSearch.fill('ㄱㅇ');
+            await citySearch.fill('ㅎㅊ');
+            await expect(form.getByTestId('general-target-list').locator('button')).toHaveCount(1);
+            await expect(form.getByTestId('city-target-list').locator('button')).toHaveCount(1);
+            await form.getByTestId('general-target-list').getByRole('button').click();
+            await form.getByTestId('city-target-list').getByRole('button').click();
+            await expect(form.locator('#command-arg-destGeneralId')).toHaveValue('2');
+            await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+            await page.evaluate(() => document.fonts.ready);
+            const geometry = await form.evaluate((element) => ({
+                html: element.outerHTML,
+                inputs: [...element.querySelectorAll('input[type=search]')].map((input) => {
+                    const rect = input.getBoundingClientRect();
+                    return {
+                        x: rect.x,
+                        right: rect.right,
+                        width: rect.width,
+                        fontSize: getComputedStyle(input).fontSize,
+                    };
+                }),
+                viewport: { width: innerWidth, scale: visualViewport?.scale },
+            }));
+            expect(geometry.inputs.every((input) => input.x >= 0 && input.right <= geometry.viewport.width)).toBe(true);
+            expect(geometry.viewport.scale).toBe(initialScale);
+            await writeFile(testInfo.outputPath(`search-${width}.json`), JSON.stringify(geometry, null, 2));
+            await form.screenshot({ path: testInfo.outputPath(`search-${width}.png`) });
+            await picker.getByRole('button', { name: '입력', exact: true }).click();
+            await expect.poll(() => JSON.stringify(requests)).toContain('"destGeneralId":2,"destCityId":2');
+            await page.reload();
+            await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+            picker = page.getByTestId('command-picker');
+            await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
+            await picker.getByRole('button', { name: /선전포고/ }).click();
+            form = picker.getByTestId('command-argument-form');
+            await expect(form.getByRole('button', { name: '검색 켜짐', exact: true })).toHaveAttribute(
+                'aria-pressed',
+                'true'
+            );
+            input = form.locator('input[type=search]');
+            await expect(input).toHaveValue('');
+            await expect(input).not.toBeFocused();
+            await input.fill('ㅂㄱㅊㄱ');
+            results = form.getByTestId('nation-target-list');
+            await expect(results.locator('button')).toHaveCount(1);
+            await expect(results).toContainText('현재 불가');
+            await results.getByRole('button').click();
+            await expect(form.locator('#command-arg-destNationId')).toHaveValue('3');
+            await input.fill('적국');
+            await expect(results.locator('button')).toHaveCount(1);
+            await results.getByRole('button').click();
+            await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
+            await input.press('Escape');
+            await expect(input).toHaveValue('');
+            await expect(picker).toBeVisible();
+        });
+    });
+}
