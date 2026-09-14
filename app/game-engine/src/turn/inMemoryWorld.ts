@@ -1905,13 +1905,25 @@ export class InMemoryTurnWorld {
             schedule: this.schedule,
         });
 
-        const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
+        let nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
         if (!result.deleted?.general) {
             const resolvedGeneral = result.general ?? currentGeneral;
             const clock = this.getGameClock();
             const currentTurnTick = currentGeneral.turnTick ?? clock.dateToTick(currentGeneral.turnTime);
-            const nextTurnTick =
+            let nextTurnTick =
                 currentTurnTick + (clock.dateToTick(nextTurnAt) - clock.dateToTick(currentGeneral.turnTime));
+            const nextTurnTimeBase = readMetaNumber(resolvedGeneral.meta, 'nextTurnTimeBase');
+            if (nextTurnTimeBase !== null && nextTurnTimeBase >= 0) {
+                // Ref: addTurn → cutTurn → 새 offset. 기존 분·초를 더하지 않고
+                // 논리 월 경계에서 교체해야 다다음 턴과 로그가 일치한다.
+                // Date를 경유하면 난수의 sub-ms tick과 기존 tick 꼬리가 섞인다.
+                nextTurnTick =
+                    Math.floor(nextTurnTick / GAME_TICKS_PER_TURN) * GAME_TICKS_PER_TURN +
+                    Math.round(nextTurnTimeBase * clock.ticksPerSecond);
+                nextTurnAt = clock.tickToDate(nextTurnTick);
+                resolvedGeneral.meta = { ...resolvedGeneral.meta };
+                delete resolvedGeneral.meta.nextTurnTimeBase;
+            }
             const recentWarTimeChanged =
                 (resolvedGeneral.recentWarTime?.getTime() ?? null) !==
                 (currentGeneral.recentWarTime?.getTime() ?? null);

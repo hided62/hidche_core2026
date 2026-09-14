@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveResetTurnTimeBase } from '../src/router/inherit/index.js';
 
 describe('inherit reset turn time Ref compatibility', () => {
-    it('matches the Ref PHP deterministic seed, offset, and displayed minute', () => {
+    it('matches the Ref PHP deterministic seed, offset, and displayed minutes and seconds', () => {
         const result = resolveResetTurnTimeBase({
             hiddenSeed: 'hidden-seed',
             userId: 'user-7',
@@ -12,7 +12,7 @@ describe('inherit reset turn time Ref compatibility', () => {
         });
 
         expect(result.nextTurnTimeBase).toBeCloseTo(302.5143852464758, 12);
-        expect(result.nextTurnTimeLabel).toBe('00:05');
+        expect(result.nextTurnTimeLabel).toBe('05:02');
     });
 
     it('uses the prior pending base as the next deterministic seed input', () => {

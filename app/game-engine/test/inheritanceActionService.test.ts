@@ -214,6 +214,50 @@ describe('inheritance action service', () => {
         expect(createLog).toHaveBeenCalled();
     });
 
+    it('draws once per successful reset, chains pending seeds, and does not draw on insufficient points', async () => {
+        const draw = vi.spyOn(LiteHashDRBG.prototype, 'nextFloat1');
+        try {
+            const world = buildWorld({});
+            const { db } = buildDatabase();
+            const before = world.getGeneralById(1)!.turnTime;
+            const first = await execute(world, db, { action: 'resetTurnTime' });
+            const second = await execute(world, db, { action: 'resetTurnTime' });
+            if (!first.ok || !second.ok) throw new Error('Expected successful resets');
+            expect(draw).toHaveBeenCalledTimes(2);
+            expect(second.nextTurnTimeBase).not.toBe(first.nextTurnTimeBase);
+            expect(world.getGeneralById(1)!.turnTime).toEqual(before);
+            expect(world.getGeneralById(1)!.meta.nextTurnTimeBase).toBe(second.nextTurnTimeBase);
+            const failedDb = buildDatabase({ point: 0 });
+            await expect(execute(world, failedDb.db, { action: 'resetTurnTime' })).resolves.toMatchObject({
+                ok: false,
+                reason: '충분한 유산 포인트를 가지고 있지 않습니다.',
+            });
+            expect(draw).toHaveBeenCalledTimes(2);
+            expect(failedDb.createLog).not.toHaveBeenCalled();
+            expect(world.getGeneralById(1)!.meta.nextTurnTimeBase).toBe(second.nextTurnTimeBase);
+        } finally {
+            draw.mockRestore();
+        }
+    });
+
+    it('samples the whole turn interval reproducibly across fixed hidden seeds', async () => {
+        const offsets: number[] = [];
+        for (let seed = 0; seed < 64; seed++) {
+            const world = buildWorld({ worldMeta: { hiddenSeed: `reset-sample-${seed}` } });
+            const result = await execute(world, buildDatabase().db, { action: 'resetTurnTime' });
+            if (!result.ok || result.nextTurnTimeBase === undefined) throw new Error('Expected a sampled offset');
+            expect(result.nextTurnTimeBase).toBeGreaterThanOrEqual(0);
+            expect(result.nextTurnTimeBase).toBeLessThanOrEqual(3_600);
+            offsets.push(result.nextTurnTimeBase);
+        }
+        expect(new Set(offsets).size).toBe(64);
+        expect(new Set(offsets.map((offset) => Math.floor(offset / 900))).size).toBe(4);
+        const replay = await execute(buildWorld({ worldMeta: { hiddenSeed: 'reset-sample-0' } }), buildDatabase().db, {
+            action: 'resetTurnTime',
+        });
+        expect(replay).toMatchObject({ nextTurnTimeBase: offsets[0] });
+    });
+
     it('keeps free ResetStat at zero spend and uses the Ref-compatible fixed-seed bonus', async () => {
         const world = buildWorld({});
         const { db } = buildDatabase({ point: 0 });

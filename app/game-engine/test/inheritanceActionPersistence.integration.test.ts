@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { TurnDaemonCommand, TurnDaemonCommandResult } from '@sammo-ts/common';
+import { GAME_TICKS_PER_TURN, type TurnDaemonCommand, type TurnDaemonCommandResult } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import type { MapDefinition, ScenarioConfig, ScenarioMeta, TurnSchedule } from '@sammo-ts/logic';
 
@@ -55,6 +55,14 @@ const state: TurnWorldState = {
     currentMonth: 4,
     tickSeconds: 600,
     lastTurnTime: new Date('2026-08-24T00:00:00.000Z'),
+    clockBaseTime: new Date('2026-08-24T00:00:00.000Z'),
+    clockTick: 0,
+    lastTurnTick: 0,
+    clockMode: 'manual',
+    clockPhase: 'MANUAL',
+    clockWallAnchor: new Date('2026-08-24T00:00:00.000Z'),
+    clockRevision: 1,
+    deadlineGeneration: 1,
     meta: { hiddenSeed: 'inheritance-atomic-seed', season: 77, isunited: 0, scenarioMeta },
 };
 
@@ -183,6 +191,14 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
                 currentYear: state.currentYear,
                 currentMonth: state.currentMonth,
                 tickSeconds: state.tickSeconds,
+                clockBaseTime: state.clockBaseTime,
+                clockTick: 0n,
+                lastTurnTick: 0n,
+                clockMode: state.clockMode,
+                clockPhase: state.clockPhase,
+                clockWallAnchor: state.clockWallAnchor,
+                clockRevision: 1n,
+                deadlineGeneration: 1n,
                 config: JSON.parse(JSON.stringify(scenarioConfig)) as GamePrisma.InputJsonValue,
                 meta: state.meta as GamePrisma.InputJsonValue,
             },
@@ -427,5 +443,51 @@ integration('inheritance action PostgreSQL atomic persistence', () => {
             },
             inheritancePoints: { previous: 5_800 },
         });
+
+        const oldTurnTime = new Date('2026-08-24T00:17:43.123Z');
+        world.updateGeneral(actorGeneralId, { turnTime: oldTurnTime });
+        const resetCommand = buildCommand('reset-turn', { action: 'resetTurnTime' });
+        await createInputEvent(resetCommand);
+        const resetResult = await execute(resetCommand);
+        if (resetResult.type !== 'inheritanceAction' || !resetResult.ok || resetResult.nextTurnTimeBase === undefined) {
+            throw new Error('Expected a successful reset with its pending offset.');
+        }
+        const offset = resetResult.nextTurnTimeBase;
+        const label = `${String(Math.trunc(offset / 60)).padStart(2, '0')}:${String(Math.trunc(offset) % 60).padStart(2, '0')}`;
+        expect(resetResult.nextTurnTimeLabel).toBe(label);
+        await expect(
+            db.inheritanceLog.findFirstOrThrow({
+                where: { userId: actorUserId, text: { contains: '다다음 턴부터' } },
+            })
+        ).resolves.toMatchObject({ text: `1000 포인트로 턴 시간을 바꾸어 다다음 턴부터 ${label} 적용` });
+        const pending = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const pendingGeneral = pending.snapshot.generals.find((general) => general.id === actorGeneralId)!;
+        expect(pendingGeneral.turnTime).toEqual(oldTurnTime);
+        expect(pendingGeneral.meta.nextTurnTimeBase).toBe(offset);
+        expect(pendingGeneral.inheritancePoints?.previous).toBe(4_800);
+        // 저장한 pending을 새 world에서 실행하고 flush/reload한다.
+        const restarted = new InMemoryTurnWorld(pending.state, pending.snapshot, { schedule });
+        restarted.executeGeneralTurn(restarted.getGeneralById(actorGeneralId)!);
+        const expectedTick = 2 * GAME_TICKS_PER_TURN + Math.round((offset * GAME_TICKS_PER_TURN) / 600);
+        expect(restarted.getGeneralById(actorGeneralId)!.turnTick).toBe(expectedTick);
+        const restartedHooks = await createDatabaseTurnHooks(databaseUrl!, restarted);
+        try {
+            await restartedHooks.hooks.flushChanges!({
+                lastTurnTime: pending.state.lastTurnTime.toISOString(),
+                processedGenerals: 1,
+                processedTurns: 0,
+                durationMs: 0,
+                partial: false,
+            });
+            const applied = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+            const appliedGeneral = applied.snapshot.generals.find((general) => general.id === actorGeneralId)!;
+            expect(appliedGeneral.turnTick).toBe(expectedTick);
+            expect(appliedGeneral.meta.nextTurnTimeBase).toBeUndefined();
+            const resumed = new InMemoryTurnWorld(applied.state, applied.snapshot, { schedule });
+            resumed.executeGeneralTurn(resumed.getGeneralById(actorGeneralId)!);
+            expect(resumed.getGeneralById(actorGeneralId)!.turnTick).toBe(expectedTick + GAME_TICKS_PER_TURN);
+        } finally {
+            await restartedHooks.close();
+        }
     }, 30_000);
 });

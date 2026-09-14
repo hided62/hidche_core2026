@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
+import { describe, expect, it, vi } from 'vitest';
+import { GAME_TICKS_PER_TURN, LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
 import { finalizeLogEntry, type TurnSchedule } from '@sammo-ts/logic';
+
+import type { GamePrisma } from '@sammo-ts/infra';
+import { executeInheritanceAction } from '../src/turn/inheritanceActionService.js';
 
 import { rankMetaKey } from '../src/turn/rankData.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -281,6 +284,74 @@ describe('legacy general turn lifecycle', () => {
         expect(updated.meta.nextTurnTimeBase).toBeUndefined();
         expect(updated.turnTime.toISOString()).toBe('0200-01-01T00:10:30.000Z');
     });
+
+    it('applies the purchased and logged random offset on the second upcoming turn, then keeps it', async () => {
+        const generalTurnTime = new Date('0200-01-01T00:07:43.000Z');
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([
+                makeGeneral({
+                    userId: 'user-7',
+                    turnTime: generalTurnTime,
+                    meta: { killturn: 24, nextTurnTimeBase: 123_456 },
+                }),
+            ]),
+            state: makeState({ hiddenSeed: 'hidden-seed' }),
+            schedule,
+            map,
+        });
+        const createLog = vi.fn(async () => ({}));
+        const db = {
+            $queryRaw: vi.fn(async () => [{ value: 100_000 }]),
+            inheritanceLog: { create: createLog },
+        } as unknown as GamePrisma.TransactionClient;
+        const result = await executeInheritanceAction({
+            db,
+            world: harness.world,
+            command: { type: 'inheritanceAction', userId: 'user-7', input: { action: 'resetTurnTime' } },
+            gameNow: start,
+        });
+        expect(result).toMatchObject({ ok: true, nextTurnTimeBase: 302.5143852464758, nextTurnTimeLabel: '05:02' });
+        expect(createLog).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ text: expect.stringContaining('다다음 턴부터 05:02 적용') }),
+            })
+        );
+        expect(harness.world.getGeneralById(1)!.turnTime).toEqual(generalTurnTime);
+        await harness.runOneTick();
+        const updated = harness.world.getGeneralById(1)!;
+        expect(updated.meta.nextTurnTimeBase).toBeUndefined();
+        expect(updated.turnTime.toISOString()).toBe('0200-01-01T00:15:02.514Z');
+        const expectedTick = GAME_TICKS_PER_TURN + Math.round((302.5143852464758 * GAME_TICKS_PER_TURN) / 600);
+        expect(updated.turnTick).toBe(expectedTick);
+        expect(updated.meta.inherit_lived_month).toBe(1);
+        await harness.runOneTick();
+        expect(harness.world.getGeneralById(1)!.turnTick).toBe(expectedTick + GAME_TICKS_PER_TURN);
+        expect(harness.world.getGeneralById(1)!.turnTime.toISOString()).toBe('0200-01-01T00:25:02.514Z');
+        expect(harness.world.getGeneralById(1)!.meta.inherit_lived_month).toBe(2);
+    });
+
+    it.each([0, 30, 599.999])(
+        'replaces a nonzero old offset with %s seconds at the logical boundary',
+        async (offset) => {
+            const harness = await createTurnTestHarness({
+                snapshot: makeSnapshot([
+                    makeGeneral({
+                        turnTime: new Date('0200-01-01T00:09:43.123Z'),
+                        turnTick: 34_987_381,
+                        meta: { killturn: 24, nextTurnTimeBase: offset },
+                    }),
+                ]),
+                state: makeState(),
+                schedule,
+                map,
+            });
+            await harness.runOneTick({ maxGenerals: 1 });
+            expect(harness.world.getGeneralById(1)!.turnTick).toBe(
+                GAME_TICKS_PER_TURN + Math.round((offset * GAME_TICKS_PER_TURN) / 600)
+            );
+            expect(harness.world.getGeneralById(1)!.meta.nextTurnTimeBase).toBeUndefined();
+        }
+    );
 
     it('detaches an expired possessed NPC instead of deleting its body', async () => {
         const harness = await createTurnTestHarness({

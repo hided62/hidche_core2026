@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -198,7 +198,7 @@ const installFixture = async (
             }
             if (name === 'inherit.resetTurnTime') {
                 resetTurnMutationCount += 1;
-                return response({ ok: true, nextTurnTimeBase: 302.5143852464758, nextTurnTimeLabel: '00:05' });
+                return response({ ok: true, nextTurnTimeBase: 302.5143852464758, nextTurnTimeLabel: '05:02' });
             }
             if (name === 'inherit.openUniqueAuction') {
                 uniqueAuctionRequests.push(requestBody);
@@ -252,8 +252,25 @@ test.describe('inheritance management legacy parity', () => {
         });
         await button.click();
 
-        await expect(item).toContainText('적용 시간: 00:05');
+        await expect(item).toContainText('적용 시간: 05:02');
         expect(fixture.resetTurnMutationCount()).toBe(1);
+        if (artifactRoot) {
+            await page.screenshot({ path: resolve(artifactRoot, 'inherit-reset-turn.png'), fullPage: true });
+            await writeFile(
+                resolve(artifactRoot, 'inherit-reset-turn.json'),
+                JSON.stringify(
+                    await item.evaluate((element) => ({
+                        text: element.textContent,
+                        html: element.outerHTML,
+                        rect: element.getBoundingClientRect().toJSON(),
+                        font: getComputedStyle(element).font,
+                        buttonDisabled: element.querySelector('button')?.disabled,
+                    })),
+                    null,
+                    2
+                )
+            );
+        }
     });
 
     test('matches the ref 1000px grid and computed styles on desktop and mobile', async ({ page }) => {

@@ -177,9 +177,9 @@ export const buildResetStatRandomBonus = (
 
 const formatTurnTimeBaseLabel = (value: number): string => {
     const wholeSeconds = Math.trunc(value);
-    const hours = String(Math.trunc(wholeSeconds / 3_600)).padStart(2, '0');
-    const minutes = String(Math.trunc((wholeSeconds % 3_600) / 60)).padStart(2, '0');
-    return `${hours}:${minutes}`;
+    const minutes = String(Math.trunc(wholeSeconds / 60)).padStart(2, '0');
+    const seconds = String(wholeSeconds % 60).padStart(2, '0');
+    return `${minutes}:${seconds}`;
 };
 
 const resolveResetTurnTimeBase = (options: {

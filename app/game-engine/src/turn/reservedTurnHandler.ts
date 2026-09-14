@@ -35,7 +35,6 @@ import {
     resolveUniqueConfig,
     readScenarioGeneralPoolClaim,
     rollUniqueLotteryDetailed,
-    getNextTurnAt,
     getBillByLevel,
     LEGACY_DEFAULT_MAX_LEVEL,
     orderLegacyActionLoggerFlush,
@@ -2196,7 +2195,7 @@ export const createReservedTurnHandler = async (options: {
                 aiDecisionDurationNs: generalAiDecisionDurationNs,
                 actionDurationNs: generalActionDurationNs,
             });
-            let nextTurnAt = 'nextTurnAt' in generalResult ? generalResult.nextTurnAt : undefined;
+            const nextTurnAt = 'nextTurnAt' in generalResult ? generalResult.nextTurnAt : undefined;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
 
             const worldMeta = asRecord(context.world.meta);
@@ -2239,13 +2238,6 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral.meta.autorun_limit =
                     joinYearMonth(context.world.currentYear, context.world.currentMonth) +
                     Math.trunc(autorunLimitMinutes / turnMinutes);
-            }
-
-            const nextTurnTimeBase = readMetaNumber(currentGeneral.meta, 'nextTurnTimeBase', -1);
-            if (nextTurnTimeBase >= 0) {
-                const alignedNextTurn = nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, context.schedule);
-                nextTurnAt = new Date(alignedNextTurn.getTime() + nextTurnTimeBase * 1000);
-                delete currentGeneral.meta.nextTurnTimeBase;
             }
 
             const explicitlyRetired = generalResult.actionKey === 'che_은퇴' && generalResult.completed;
