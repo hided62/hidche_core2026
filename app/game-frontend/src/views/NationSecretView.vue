@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { computed, onMounted, ref } from 'vue';
@@ -9,6 +11,8 @@ import DirectoryTooltip from '../components/directory/DirectoryTooltip.vue';
 import { getNpcColor } from '../utils/npcColor';
 import { generalInjuryPresentation } from '../utils/generalInjury';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 type Result = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
 type ReservedCommand = Result['generals'][number]['reservedCommands'][number];
 type Sort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -48,7 +52,6 @@ const generals = computed(() =>
         return b.troopId - a.troopId || a.id - b.id;
     })
 );
-const closeWindow = () => window.close();
 const displayName = (general: { name: string; npcState: number }) =>
     general.npcState > 0 && !/^[ⓜⓝⓖ㉥ⓤⓞⓧ]/u.test(general.name) ? `ⓝ${general.name}` : general.name;
 const injuryInfo = (injury: number) => generalInjuryPresentation(injury);
@@ -86,7 +89,9 @@ onMounted(load);
             <tbody>
                 <tr>
                     <td>
-                        암 행 부<br /><button class="close-button" type="button" @click="closeWindow">창 닫기</button>
+                        암 행 부<br /><button class="close-button" type="button" @click="exitPage">
+                            {{ pageExitLabel }}
+                        </button>
                     </td>
                 </tr>
                 <tr>
@@ -343,7 +348,9 @@ onMounted(load);
         <table class="layout legacy-bg0 footer">
             <tbody>
                 <tr>
-                    <td><button class="close-button" type="button" @click="closeWindow">창 닫기</button></td>
+                    <td>
+                        <button class="close-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
+                    </td>
                 </tr>
                 <tr>
                     <td class="legacy-banner">

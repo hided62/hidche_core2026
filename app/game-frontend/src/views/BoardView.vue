@@ -1,20 +1,22 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
+const { pageExitLabel, exitPage } = usePageExit();
+
 type BoardArticle = Awaited<ReturnType<typeof trpc.board.getArticles.query>>[number];
 
 const route = useRoute();
-const router = useRouter();
 const { error: showErrorToast } = useGameFeedback();
 const isSecretBoard = computed(() => route.name === 'board-secret');
 const title = computed(() => (isSecretBoard.value ? '기밀실' : '회의실'));
-const closeBoard = () => router.push('/');
 
 const loading = ref(false);
 const accessChecked = ref(false);
@@ -123,15 +125,20 @@ onMounted(() => {
 </script>
 
 <template>
-    <div v-if="accessChecked && !canAccess" class="legacy-raw-access-error" role="alert">{{ errorMessage }}</div>
+    <div v-if="accessChecked && !canAccess" class="legacy-raw-access-error">
+        <span role="alert">{{ errorMessage }}</span>
+        <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+            {{ pageExitLabel }}
+        </button>
+    </div>
     <main v-else id="container" class="legacy-board-page">
         <header class="top-back-bar bg0">
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button"
                 type="button"
-                @click="closeBoard"
+                @click="exitPage"
             >
-                돌아가기
+                {{ pageExitLabel }}
             </button>
             <div></div>
             <h1>{{ title }}</h1>
@@ -244,9 +251,9 @@ onMounted(() => {
                 <button
                     class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button"
                     type="button"
-                    @click="closeBoard"
+                    @click="exitPage"
                 >
-                    돌아가기
+                    {{ pageExitLabel }}
                 </button>
             </footer>
         </template>

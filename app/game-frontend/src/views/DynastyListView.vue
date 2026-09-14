@@ -1,26 +1,21 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
+const { pageExitLabel, exitPage } = usePageExit();
+
 type DynastyListPayload = Awaited<ReturnType<typeof trpc.dynasty.getList.query>>;
 
-const router = useRouter();
 const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<DynastyListPayload | null>(null);
 const selectedSource = ref<'current' | 'legacy'>(route.query.source === 'legacy' ? 'legacy' : 'current');
-
-const closePage = async (): Promise<void> => {
-    if (window.opener) {
-        window.close();
-        return;
-    }
-    await router.push('/');
-};
 
 const loadDynasty = async (): Promise<void> => {
     loading.value = true;
@@ -45,7 +40,7 @@ watch(selectedSource, loadDynasty);
                 <tr>
                     <td>
                         역 대 왕 조<br />
-                        <button class="native-button" type="button" @click="closePage">창 닫기</button><br />
+                        <button class="native-button" type="button" @click="exitPage">{{ pageExitLabel }}</button><br />
                     </td>
                 </tr>
             </tbody>
@@ -162,7 +157,9 @@ watch(selectedSource, loadDynasty);
         <table class="legacy-table legacy-bg0 footer-table spaced-table">
             <tbody>
                 <tr>
-                    <td><button class="native-button" type="button" @click="closePage">창 닫기</button><br /></td>
+                    <td>
+                        <button class="native-button" type="button" @click="exitPage">{{ pageExitLabel }}</button><br />
+                    </td>
                 </tr>
                 <tr>
                     <td class="banner">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD</td>

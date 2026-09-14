@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type HallOption = {
     sourceProfile: string;
@@ -39,7 +42,6 @@ type HallPayload = {
     sections: HallSection[];
 };
 
-const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const options = ref<HallOption[]>([]);
@@ -63,14 +65,6 @@ const selection = computed({
 });
 
 const imageUrl = (entry: HallEntry): string => resolveGeneralIconUrl(entry);
-
-const closePage = async (): Promise<void> => {
-    if (window.opener) {
-        window.close();
-        return;
-    }
-    await router.push('/');
-};
 
 const loadOptions = async (): Promise<void> => {
     try {
@@ -121,7 +115,7 @@ onMounted(loadOptions);
     <main id="container" class="legacy-hall-page legacy-bg0">
         <div class="legacy-hall-title">
             명 예 의 전 당<br />
-            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+            <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
         </div>
 
         <label class="archive-source">
@@ -189,7 +183,7 @@ onMounted(loadOptions);
         </section>
 
         <div class="legacy-hall-bottom">
-            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+            <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
         </div>
         <footer class="legacy-banner">
             삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import type { BattleSimRequestPayload, BattleSimResultPayload } from '@sammo-ts/game-api';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -11,6 +12,8 @@ import { compareGeneralTypeThenName } from '../utils/generalOrder';
 import type { BattleSimOptions, GeneralDraft, InheritBuff } from '../utils/battleSimulatorTypes';
 import { BattleSimulatorWorkerClient } from '../utils/battleSimulatorWorkerClient';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type GeneralExport = Omit<GeneralDraft, 'id'>;
 
@@ -1015,6 +1018,9 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
 <template>
     <main class="battle-simulator">
+        <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+            {{ pageExitLabel }}
+        </button>
         <!-- Ref renders several equivalent controls as input/button tags. Keep
              that DOM signature without duplicating the visible Vue controls. -->
         <div class="legacy-control-signature" hidden>

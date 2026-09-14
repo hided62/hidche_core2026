@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
@@ -8,6 +10,8 @@ import { getNpcColor } from '../utils/npcColor';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type Result = Awaited<ReturnType<typeof trpc.world.getCurrentCity.query>>;
 type General = Result['generals'][number];
@@ -95,9 +99,9 @@ const commandBrief = (command: ReservedCommand): string =>
                         도 시 정 보<br /><button
                             class="legacy-button legacy-button--navigation back-link"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>
@@ -313,9 +317,9 @@ const commandBrief = (command: ReservedCommand): string =>
                         <button
                             class="legacy-button legacy-button--navigation back-link"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>

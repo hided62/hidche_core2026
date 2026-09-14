@@ -1,3 +1,4 @@
+import { installAuxiliaryNavigation } from './utils/auxiliaryNavigation';
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
@@ -7,6 +8,7 @@ import { applyStoredCustomCss } from './utils/customCss';
 import { installImageAssetCssVariables } from './utils/imageAssets';
 import { installScreenModeViewport } from './utils/screenModeViewport';
 
+installAuxiliaryNavigation();
 installImageAssetCssVariables();
 installScreenModeViewport();
 applyStoredCustomCss();

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
@@ -15,6 +17,8 @@ import {
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import { formatLog } from '../utils/formatLog';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type BattleCenterResponse = Awaited<ReturnType<typeof trpc.nation.getBattleCenter.query>>;
 type GeneralEntry = BattleCenterResponse['generals'][number];
@@ -237,15 +241,13 @@ onMounted(() => {
 <template>
     <main class="ref-shell battle-page">
         <header class="battle-top legacy-bg0">
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button
-                    class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
-                    type="button"
-                    @click="navigate"
-                >
-                    창 닫기
-                </button>
-            </RouterLink>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
+                type="button"
+                @click="exitPage"
+            >
+                {{ pageExitLabel }}
+            </button>
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
                 @click="loadBattleCenter"
@@ -318,15 +320,13 @@ onMounted(() => {
             </div>
         </section>
         <footer class="battle-footer legacy-bg0">
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button
-                    class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
-                    type="button"
-                    @click="navigate"
-                >
-                    창 닫기
-                </button>
-            </RouterLink>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height battle-nav"
+                type="button"
+                @click="exitPage"
+            >
+                {{ pageExitLabel }}
+            </button>
         </footer>
     </main>
 </template>

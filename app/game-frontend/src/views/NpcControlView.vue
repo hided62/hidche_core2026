@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref, watch } from 'vue';
 
 import SortableStringList from '../components/ui/SortableStringList';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { npcPriorityHelp } from '../utils/npcPriorityHelp';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type NpcPolicyResponse = Awaited<ReturnType<typeof trpc.npc.getPolicy.query>>;
 type NationPolicy = NpcPolicyResponse['currentNationPolicy'];
@@ -363,9 +367,13 @@ const submitPriority = async (section: PrioritySectionKey) => {
 <template>
     <main id="npc-policy-page" class="npc-page">
         <nav class="top-back-bar legacy-bg0">
-            <RouterLink class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button" to="/"
-                >돌아가기</RouterLink
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height back-button"
+                type="button"
+                @click="exitPage"
             >
+                {{ pageExitLabel }}
+            </button>
             <strong>NPC 정책</strong>
         </nav>
 

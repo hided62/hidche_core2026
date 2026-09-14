@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
@@ -10,6 +12,8 @@ import { useSessionStore } from '../stores/session';
 import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { gameFrontendRuntimeConfig } from '../config/runtimeConfig';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
 const { error: showErrorToast, showDialog } = useGameFeedback();
@@ -340,7 +344,9 @@ onMounted(() => {
             <span>내 정 보</span>
             <div class="title-actions">
                 <div class="navigation-actions">
-                    <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
+                    <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                        {{ pageExitLabel }}
+                    </button>
                     <button class="legacy-button legacy-button--navigation" type="button" @click="() => loadPage()">
                         새로고침
                     </button>

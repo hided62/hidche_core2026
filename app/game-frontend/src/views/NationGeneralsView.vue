@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
 import { formatOfficerLevelText } from '../utils/nationFormat';
@@ -32,6 +33,8 @@ import {
     type NationGeneralSettingKey,
 } from '../utils/nationGeneralGrid';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getGeneralList.query>>;
 type General = Result['generals'][number];
@@ -218,7 +221,6 @@ const layout: LayoutItem[] = [
 const columnById = new Map(columns.map((column) => [column.id, column]));
 const data = ref<Result | null>(null);
 const commandTable = ref<CommandTable | null>(null);
-const router = useRouter();
 const error = ref('');
 const loading = ref(false);
 const viewMenuOpen = ref(false);
@@ -709,9 +711,9 @@ onBeforeUnmount(() => {
             <span class="left-actions">
                 <button
                     class="legacy-button legacy-button--navigation legacy-button--fixed-height top-button nation-button"
-                    @click="router.push('/')"
+                    @click="exitPage"
                 >
-                    돌아가기
+                    {{ pageExitLabel }}
                 </button>
                 <button
                     class="legacy-button legacy-button--navigation legacy-button--fixed-height top-button nation-button"

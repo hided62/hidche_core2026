@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 
 import MapViewer from '../components/main/MapViewer.vue';
 import { formatLog } from '../utils/formatLog';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type YearbookRange = Awaited<ReturnType<typeof trpc.yearbook.getRange.query>>;
 type MapLayout = Awaited<ReturnType<typeof trpc.public.getMapLayout.query>>;
@@ -26,7 +30,6 @@ type HistoryData = {
     globalAction: string[];
 };
 
-const router = useRouter();
 const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -60,14 +63,6 @@ const availableYearMonths = computed(() => {
     }
     return values;
 });
-
-const closePage = async (): Promise<void> => {
-    if (window.opener) {
-        window.close();
-        return;
-    }
-    await router.push('/');
-};
 
 const loadHistory = async (): Promise<void> => {
     if (selectedYearMonth.value === null) {
@@ -140,9 +135,9 @@ onMounted(async () => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
                 type="button"
-                @click="closePage"
+                @click="exitPage"
             >
-                창 닫기
+                {{ pageExitLabel }}
             </button>
             <span class="settings-menu">
                 <button
@@ -242,7 +237,9 @@ onMounted(async () => {
         </section>
 
         <footer class="yearbook-footer">
-            <button class="legacy-button legacy-button--navigation" type="button" @click="closePage">창 닫기</button>
+            <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                {{ pageExitLabel }}
+            </button>
         </footer>
         <div class="dropdown-compat-buttons" aria-hidden="true">
             <button type="button" tabindex="-1" /><button type="button" tabindex="-1" />

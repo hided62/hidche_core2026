@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
@@ -8,6 +10,8 @@ import { formatNationLevelText, formatOfficerLevelText } from '../utils/nationFo
 import { getNpcColor } from '../utils/npcColor';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type Directory = Awaited<ReturnType<typeof trpc.world.getNationDirectory.query>>;
 type Nation = Directory[number];
@@ -58,7 +62,6 @@ const displayAmbassadorName = (nation: Nation, name: string) => {
     return general ? displayGeneralName(general) : name;
 };
 
-const closeWindow = () => window.close();
 const officerLevelAt = (row: number, column: number, columns: number) => 13 - ((row - 1) * columns + column);
 
 const positionGeneralPreview = async (): Promise<void> => {
@@ -165,8 +168,8 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        세 력 일 람<br /><button class="legacy-button" type="button" @click="closeWindow">
-                            창 닫기
+                        세 력 일 람<br /><button class="legacy-button" type="button" @click="exitPage">
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>
@@ -400,7 +403,9 @@ onBeforeUnmount(() => {
         <table class="directory-table title-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><button class="legacy-button" type="button" @click="closeWindow">창 닫기</button></td>
+                    <td>
+                        <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
+                    </td>
                 </tr>
                 <tr>
                     <td>

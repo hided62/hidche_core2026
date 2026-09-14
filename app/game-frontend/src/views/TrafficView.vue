@@ -1,16 +1,18 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type TrafficData = Awaited<ReturnType<typeof trpc.public.getTraffic.query>>;
 
 const data = ref<TrafficData | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
-const router = useRouter();
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) {
@@ -73,7 +75,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         트 래 픽 정 보<br />
-                        <button class="legacy-close" type="button" @click="router.push('/')">돌아가기</button>
+                        <button class="legacy-close" type="button" @click="exitPage">{{ pageExitLabel }}</button>
                     </td>
                 </tr>
             </tbody>
@@ -198,7 +200,9 @@ onMounted(() => {
         <table class="legacy-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><button class="legacy-close" type="button" @click="router.push('/')">돌아가기</button></td>
+                    <td>
+                        <button class="legacy-close" type="button" @click="exitPage">{{ pageExitLabel }}</button>
+                    </td>
                 </tr>
                 <tr>
                     <td class="banner">

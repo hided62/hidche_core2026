@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { onMounted, ref } from 'vue';
 
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
 import { getNpcColor } from '../utils/npcColor';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type NpcList = Awaited<ReturnType<typeof trpc.public.getNpcList.query>>;
 type NpcListSort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -40,7 +44,6 @@ const load = async () => {
     }
 };
 
-const closeWindow = () => window.close();
 const updateSort = (value: number): void => {
     sort.value = value as NpcListSort;
 };
@@ -63,7 +66,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         빙 의 일 람<br />
-                        <button class="legacy-close" type="button" @click="closeWindow">창닫기</button>
+                        <button class="legacy-close" type="button" @click="exitPage">{{ pageExitLabel }}</button>
                     </td>
                 </tr>
                 <tr>
@@ -226,7 +229,9 @@ onMounted(() => {
         <table class="legacy-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><button class="legacy-close" type="button" @click="closeWindow">창닫기</button></td>
+                    <td>
+                        <button class="legacy-close" type="button" @click="exitPage">{{ pageExitLabel }}</button>
+                    </td>
                 </tr>
                 <tr>
                     <td class="banner">

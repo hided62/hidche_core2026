@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type Result = Awaited<ReturnType<typeof trpc.world.getGlobalInfo.query>>;
 type Layout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
@@ -12,8 +15,6 @@ const layout = ref<Layout | null>(null);
 const error = ref('');
 const matrixElement = ref<HTMLTableElement | null>(null);
 const matrixHeight = ref<number | null>(null);
-const router = useRouter();
-const goBack = () => router.push('/');
 const state = (value: number) => ({ 0: '★', 1: '▲', 2: '', 7: '@' })[value] ?? 'ㆍ';
 const stateClass = (value: number) => `state-${value}`;
 const nationMap = computed(() => new Map(data.value?.nations.map((nation) => [nation.id, nation]) ?? []));
@@ -56,9 +57,9 @@ onMounted(async () => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height"
                 type="button"
-                @click="goBack"
+                @click="exitPage"
             >
-                돌아가기</button
+                {{ pageExitLabel }}</button
             ><strong>중원 정보</strong>
         </header>
         <p v-if="error" class="error">{{ error }}</p>
@@ -157,9 +158,9 @@ onMounted(async () => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height"
                 type="button"
-                @click="goBack"
+                @click="exitPage"
             >
-                돌아가기
+                {{ pageExitLabel }}
             </button>
         </footer>
         <button class="legacy-compat-button" type="button" tabindex="-1" aria-hidden="true" />

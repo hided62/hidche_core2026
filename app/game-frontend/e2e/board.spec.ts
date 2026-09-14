@@ -209,6 +209,22 @@ const installApi = async (page: Page, state: BoardFixture) => {
                 });
                 return response({ id: 22 });
             }
+            if (operation === 'dashboard.getContextBundleDelta') {
+                const snapshot = (data: unknown, revision: string) => ({
+                    kind: 'snapshot',
+                    revision,
+                    sourceRevision: revision,
+                    data,
+                });
+                return response({
+                    context: snapshot(generalContext, 'board-context'),
+                    commandTable: snapshot({ general: [], nation: [] }, 'board-commands'),
+                    boardAccess: snapshot(
+                        { permission: state.permission, canMeeting: state.canMeeting, canSecret: state.canSecret },
+                        'board-access'
+                    ),
+                });
+            }
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMapLayout') {
                 return response({ mapName: 'che', cityList: [], regionMap: {}, levelMap: {} });
@@ -498,7 +514,8 @@ test('denies direct secret-room rendering and disables its in-game menu for an o
     expect(state.requests).not.toContain('board.getArticles');
 
     state.requests.length = 0;
-    await page.goto('');
+    await page.getByRole('button', { name: '돌아가기', exact: true }).click();
+    await expect(page).toHaveURL(new URL(gamePath('/'), page.url()).href);
     const nationMenu = page.locator('.main-nation-menu').first();
     await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', gamePath('/board'));
     await expect(nationMenu.locator('[data-navigation-id="secret-board"]')).toHaveAttribute('aria-disabled', 'true');

@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 import LegacyGeneralProgress from '../components/ui/LegacyGeneralProgress.vue';
 import GeneralInformationPanel from '../components/main/GeneralInformationPanel.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type TroopList = Awaited<ReturnType<typeof trpc.troop.getList.query>>;
 type Troop = TroopList['troops'][number];
@@ -25,7 +28,6 @@ const dialogKind = ref<DialogKind>(null);
 const dialogTroopId = ref(0);
 const popupMember = ref<Member | null>(null);
 const popupTop = ref(0);
-const router = useRouter();
 const { success: showSuccessToast, error: showErrorToast, confirm: showConfirm } = useGameFeedback();
 
 const me = computed(() => data.value?.me ?? null);
@@ -185,9 +187,9 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height legacyNavButton backLink"
                 type="button"
-                @click="router.push('/')"
+                @click="exitPage"
             >
-                돌아가기
+                {{ pageExitLabel }}
             </button>
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height legacyNavButton reloadButton"
@@ -335,9 +337,9 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacyNavButton backLink"
                 type="button"
-                @click="router.push('/')"
+                @click="exitPage"
             >
-                돌아가기
+                {{ pageExitLabel }}
             </button>
             <div></div>
         </footer>

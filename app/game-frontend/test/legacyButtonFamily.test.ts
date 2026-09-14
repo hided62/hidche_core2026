@@ -33,13 +33,13 @@ void describe('shared Lumen button family', () => {
             nationGenerals,
             /legacy-button legacy-button--info legacy-button--fixed-height top-button columns-button/u
         );
-        for (const label of ['돌아가기', '갱신', '보기 모드⌄', '열 선택⌄']) {
+        for (const label of ['pageExitLabel', '갱신', '보기 모드⌄', '열 선택⌄']) {
             assert.match(nationGenerals, new RegExp(label, 'u'));
         }
-        for (const label of ['토너먼트', '베팅장', '창 닫기']) {
+        for (const label of ['토너먼트', '베팅장', 'pageExitLabel']) {
             assert.match(tournamentHeader, new RegExp(`legacy-button[\\s\\S]{0,260}${label}`, 'u'));
         }
-        assert.match(tournamentHeader, /const closeWindow = \(\): void => window\.close\(\)/u);
+        assert.match(tournamentHeader, /@click="exitPage"/u);
         assert.doesNotMatch(tournamentHeader, /custom to="\/"/u);
         assert.match(reservedEditor, /legacy-button legacy-button--info legacy-button--fixed-height select-command/u);
         assert.match(reservedEditor, /명령 선택 ▾/u);

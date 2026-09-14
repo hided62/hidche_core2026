@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { storeToRefs } from 'pinia';
@@ -9,6 +11,8 @@ import GeneralIdentity from '../components/ui/GeneralIdentity.vue';
 import { useTournamentPagesStore } from '../stores/tournamentPages';
 import type { TournamentBracketSlot } from '../utils/tournamentBracket';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 const tournamentPages = useTournamentPagesStore();
 const { snapshot, betting: summary, rankings, loading, error } = storeToRefs(tournamentPages);
@@ -266,11 +270,9 @@ const placeBet = async (target: TournamentBracketSlot) => {
             ㆍ소지금 500원 이하일땐 베팅이 불가능합니다.
         </section>
         <footer class="betting-footer bg0">
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="legacy-button legacy-button--navigation close-button" type="button" @click="navigate">
-                    창 닫기
-                </button>
-            </RouterLink>
+            <button class="legacy-button legacy-button--navigation close-button" type="button" @click="exitPage">
+                {{ pageExitLabel }}
+            </button>
             <small>
                 삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com) / Credit
             </small>

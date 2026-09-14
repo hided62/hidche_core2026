@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandTable } from '../components/command/types';
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
@@ -13,6 +14,8 @@ import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { cityLevelMap, regionMap } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getCityOverview.query>>;
 type SecretResult = Awaited<ReturnType<typeof trpc.nation.getSecretGeneralList.query>>;
@@ -45,7 +48,6 @@ const extraSort = ref<
     | 'generalCount'
     | null
 >(null);
-const router = useRouter();
 const { error: showErrorToast, info: showInfoToast, success: showSuccessToast } = useGameFeedback();
 const sortOptions = [
     '기본',
@@ -303,9 +305,9 @@ onMounted(async () => {
                         세 력 도 시<br /><button
                             class="legacy-button legacy-button--navigation back-button"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>
@@ -716,9 +718,9 @@ onMounted(async () => {
                         <button
                             class="legacy-button legacy-button--navigation back-button"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>

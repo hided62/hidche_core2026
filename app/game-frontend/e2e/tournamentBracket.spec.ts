@@ -536,7 +536,7 @@ test('join refresh shows the assigned preliminary group immediately with accessi
 
     const refresh = page.getByRole('button', { name: '갱신' });
     const join = page.getByRole('button', { name: '참가' });
-    const close = page.getByRole('button', { name: '창 닫기' }).first();
+    const close = page.getByRole('button', { name: '돌아가기' }).first();
     await expect(join).toBeEnabled();
     await expect(page.getByText('조별 예선 순위')).toBeVisible();
     await expect(page.getByText('조별 본선 순위')).toHaveCount(0);
@@ -797,7 +797,7 @@ test('tournament and betting pages expose same-row navigation tabs beside close'
     const navigation = page.getByRole('tablist', { name: '토너먼트와 베팅장 이동' });
     const tournamentTab = navigation.getByRole('tab', { name: '토너먼트' });
     const bettingTab = navigation.getByRole('tab', { name: '베팅장' });
-    const close = page.getByRole('button', { name: '창 닫기' }).first();
+    const close = page.getByRole('button', { name: '돌아가기' }).first();
     await expect(tournamentTab).toHaveAttribute('aria-selected', 'true');
 
     const headerCenters = await Promise.all(
@@ -945,29 +945,7 @@ test('betting realtime refresh is shared across tabs and preserves local interac
     await expect(follower.locator('.mobile-bracket').getByLabel('관우 베팅 금액', { exact: true })).toHaveValue('50');
 });
 
-test('tournament and betting close only their script-opened popup window', async ({ page }, testInfo) => {
-    const baseURL = testInfo.project.use.baseURL;
-    expect(typeof baseURL).toBe('string');
-    await page.goto('about:blank');
-
-    for (const route of ['tournament', 'betting'] as const) {
-        const popupPromise = page.waitForEvent('popup');
-        await page.evaluate(() => window.open('about:blank', '_blank', 'noopener'));
-        const popup = await popupPromise;
-        await installFixture(popup, { tournamentStage: route === 'betting' ? 6 : 1 });
-        await popup.goto(new URL(route, baseURL as string).href);
-
-        await expect(popup.getByRole('button', { name: '창 닫기' }).first()).toBeVisible();
-        expect(await popup.evaluate(() => window.opener)).toBeNull();
-
-        const closed = popup.waitForEvent('close');
-        await popup.getByRole('button', { name: '창 닫기' }).first().click();
-        await closed;
-
-        expect(page.isClosed()).toBe(false);
-        expect(page.url()).toBe('about:blank');
-    }
-});
+// Actual main-link popup closure and tab counts are covered in mainNavigation.spec.ts.
 
 test('betting bracket shows intelligence for debate tournament candidates', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref } from 'vue';
 
 import {
@@ -19,6 +21,8 @@ import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type Archive = Awaited<ReturnType<typeof trpc.archive.myPastPlays.query>>;
 type ArchiveSeason = Archive['seasons'][number] & {
@@ -233,7 +237,7 @@ onMounted(() => {
         <header class="title-row legacy-bg1">
             <h1>내 지난 플레이 보기</h1>
             <nav>
-                <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+                <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
                 <button class="legacy-button" type="button" :disabled="loading" @click="loadArchive">새로고침</button>
             </nav>
         </header>

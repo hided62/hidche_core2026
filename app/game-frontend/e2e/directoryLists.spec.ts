@@ -807,7 +807,7 @@ test('nation directory reuses only the public general-directory row on hover and
         expect(await foreignTrigger.getAttribute('aria-expanded')).toBe('true');
         expect(await foreignTrigger.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('dashed');
 
-        await page.getByRole('button', { name: '창 닫기' }).first().focus();
+        await page.getByRole('button', { name: '돌아가기' }).first().focus();
         await expect(preview).toHaveCount(0);
 
         if (artifactRoot) {

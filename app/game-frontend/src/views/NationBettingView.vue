@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref } from 'vue';
 
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type BettingListItem = {
     id: number;
@@ -333,15 +337,13 @@ onMounted(() => {
 <template>
     <main id="nation-betting-container" class="nation-betting-page legacy-bg0">
         <header class="legacy-top-bar">
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button
-                    class="legacy-button legacy-button--navigation legacy-button--fixed-height"
-                    type="button"
-                    @click="navigate"
-                >
-                    돌아가기
-                </button>
-            </RouterLink>
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height"
+                type="button"
+                @click="exitPage"
+            >
+                {{ pageExitLabel }}
+            </button>
             <div></div>
             <h1>국가 베팅장</h1>
             <div></div>
@@ -441,7 +443,9 @@ onMounted(() => {
         </section>
 
         <footer class="betting-footer">
-            <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
+            <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                {{ pageExitLabel }}
+            </button>
         </footer>
     </main>
 </template>

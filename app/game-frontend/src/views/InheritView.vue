@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 import { useGameFeedback } from '../composables/useGameFeedback';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type InheritStatus = Awaited<ReturnType<typeof trpc.inherit.getStatus.query>>;
 type InheritLog = Awaited<ReturnType<typeof trpc.inherit.getLogs.query>>[number];
@@ -452,9 +456,13 @@ onMounted(() => {
 
 <template>
     <header class="top-back-bar legacy-bg0">
-        <RouterLink class="top-button legacy-button legacy-button--navigation legacy-button--fixed-height" to="/"
-            >돌아가기</RouterLink
+        <button
+            class="top-button legacy-button legacy-button--navigation legacy-button--fixed-height"
+            type="button"
+            @click="exitPage"
         >
+            {{ pageExitLabel }}
+        </button>
         <strong>유산 관리</strong>
         <button
             class="top-button legacy-button legacy-button--navigation legacy-button--fixed-height"

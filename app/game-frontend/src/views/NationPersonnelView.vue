@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 
@@ -12,6 +13,8 @@ import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { trpc } from '../utils/trpc';
 import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type PersonnelResponse = Awaited<ReturnType<typeof trpc.nation.getPersonnelInfo.query>>;
 type GeneralEntry = PersonnelResponse['generals'][number];
@@ -41,7 +44,6 @@ const selectionContext = ref<SelectionContext | null>(null);
 const kickTargetId = ref(0);
 const ambassadorSelection = ref<number[]>([]);
 const auditorSelection = ref<number[]>([]);
-const router = useRouter();
 const { success: showSuccessToast, error: showErrorToast, confirm: showConfirm } = useGameFeedback();
 
 const resolveErrorMessage = (value: unknown): string =>
@@ -311,9 +313,9 @@ onMounted(() => void loadPersonnel());
                         인 사 부<br /><button
                             class="legacy-button legacy-button--navigation"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>
@@ -569,12 +571,8 @@ onMounted(() => void loadPersonnel());
                 <tbody>
                     <tr>
                         <td>
-                            <button
-                                class="legacy-button legacy-button--navigation"
-                                type="button"
-                                @click="router.push('/')"
-                            >
-                                돌아가기
+                            <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                                {{ pageExitLabel }}
                             </button>
                         </td>
                     </tr>

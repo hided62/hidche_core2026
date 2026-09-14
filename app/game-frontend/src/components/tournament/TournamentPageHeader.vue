@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { usePageExit } from '../../composables/usePageExit';
+
+const { pageExitLabel, exitPage } = usePageExit();
+
 defineProps<{
     activePage: 'tournament' | 'betting';
     title: string;
 }>();
-
-const closeWindow = (): void => window.close();
 </script>
 
 <template>
@@ -40,9 +42,9 @@ const closeWindow = (): void => window.close();
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
                 type="button"
-                @click="closeWindow"
+                @click="exitPage"
             >
-                창 닫기
+                {{ pageExitLabel }}
             </button>
         </div>
     </header>

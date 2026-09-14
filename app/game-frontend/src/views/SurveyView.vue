@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref } from 'vue';
 
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type VoteListResponse = Awaited<ReturnType<typeof trpc.vote.getVoteList.query>>;
 type VoteDetail = Awaited<ReturnType<typeof trpc.vote.getVoteDetail.query>>;
@@ -24,7 +28,6 @@ const myComment = ref('');
 const newVoteTitle = ref('');
 const newVoteOptionsText = ref('');
 const newVoteMultipleOptions = ref(1);
-const closeWindow = (): void => window.close();
 const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 
 const getErrorMessage = (error: unknown): string => {
@@ -208,9 +211,9 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height back_btn"
                 type="button"
-                @click="closeWindow"
+                @click="exitPage"
             >
-                창 닫기
+                {{ pageExitLabel }}
             </button>
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height reload_btn"
@@ -408,9 +411,9 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height back_btn"
                 type="button"
-                @click="closeWindow"
+                @click="exitPage"
             >
-                창 닫기
+                {{ pageExitLabel }}
             </button>
         </footer>
     </main>

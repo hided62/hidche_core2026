@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import RichTooltip from '../components/ui/RichTooltip.vue';
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type RankEntry = {
     id: number;
@@ -43,21 +46,12 @@ type BestGeneralPayload = {
     uniqueItems: UniqueItemSection[];
 };
 
-const router = useRouter();
 const viewMode = ref<'user' | 'npc'>('user');
 const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<BestGeneralPayload | null>(null);
 
 const imageUrl = (entry: { picture: string | null; imageServer: number }): string => resolveGeneralIconUrl(entry);
-
-const closePage = async (): Promise<void> => {
-    if (window.opener) {
-        window.close();
-        return;
-    }
-    await router.push('/');
-};
 
 const refresh = async (): Promise<void> => {
     loading.value = true;
@@ -84,7 +78,7 @@ watch(viewMode, () => {
     <main id="best-general-container" class="legacy-ranking-page legacy-bg0">
         <div class="legacy-ranking-title">
             명 장 일 람<br />
-            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+            <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
         </div>
 
         <div class="view-selector" role="group" aria-label="장수 유형">
@@ -175,7 +169,7 @@ watch(viewMode, () => {
         </section>
 
         <div class="legacy-ranking-bottom">
-            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+            <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
         </div>
         <footer class="legacy-banner">
             삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /

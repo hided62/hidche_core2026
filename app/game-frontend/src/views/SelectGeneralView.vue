@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -9,6 +10,8 @@ const { formatTime: formatSeoulDateTime } = useClockDisplay();
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type Reservation = Awaited<ReturnType<typeof trpc.join.getSelectionPool.mutate>>;
@@ -235,6 +238,10 @@ async function loadPage(): Promise<void> {
 }
 
 const goBack = (): void => {
+    if (hasGeneral.value) {
+        exitPage();
+        return;
+    }
     if (window.history.length > 1) {
         router.back();
         return;
@@ -260,7 +267,9 @@ onBeforeUnmount(() => {
     <main class="select-pool-page legacy-bg0">
         <header class="page-title with-border">
             장 수 선 택<br />
-            <button class="legacy-button" type="button" @click="goBack">돌아가기</button>
+            <button class="legacy-button" type="button" @click="goBack">
+                {{ hasGeneral ? pageExitLabel : '돌아가기' }}
+            </button>
         </header>
 
         <table v-if="serverInfo" class="server-info-table legacy-bg0">
@@ -479,7 +488,9 @@ onBeforeUnmount(() => {
 
         <footer class="page-footer">
             <div class="footer-back with-border">
-                <button class="legacy-button" type="button" @click="goBack">돌아가기</button>
+                <button class="legacy-button" type="button" @click="goBack">
+                    {{ hasGeneral ? pageExitLabel : '돌아가기' }}
+                </button>
             </div>
             <div class="footer-banner with-border">
                 <small>

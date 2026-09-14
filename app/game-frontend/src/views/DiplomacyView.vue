@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { EditorContent, useEditor } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
@@ -6,11 +8,12 @@ import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
-import { useRouter } from 'vue-router';
 import { trpc } from '../utils/trpc';
 import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type DiplomacyResponse = Awaited<ReturnType<typeof trpc.diplomacy.getLetters.query>>;
 type DiplomacyLetter = DiplomacyResponse['letters'][number];
@@ -19,7 +22,6 @@ const loading = ref(false);
 const errorMessage = ref<string | null>(null);
 const data = ref<DiplomacyResponse | null>(null);
 const historyOpen = ref<Record<number, boolean>>({});
-const router = useRouter();
 
 const editable = computed(() => (data.value?.permission ?? 0) >= 4);
 
@@ -263,9 +265,9 @@ onBeforeUnmount(() => {
                         외 교 부<br /><button
                             class="legacy-button legacy-button--navigation"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>
@@ -634,8 +636,8 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        <button class="legacy-button legacy-button--navigation" type="button" @click="router.push('/')">
-                            돌아가기</button
+                        <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                            {{ pageExitLabel }}</button
                         ><br /><br />
                         삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com)
                         /

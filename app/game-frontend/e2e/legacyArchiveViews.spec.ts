@@ -273,6 +273,8 @@ test('왕조 일람과 상세는 현재 profile의 이전 서버 기록만 조�
     expect(state.dynastyRequests.some((request) => request.includes('legacy'))).toBe(true);
     expect(state.dynastyRequests.every((request) => !request.includes('sourceProfile'))).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('dynasty-detail-profile-scope-desktop.png'), fullPage: true });
+    await page.getByRole('button', { name: '돌아가기', exact: true }).last().click();
+    await expect(page).toHaveURL(new URL('./', testInfo.project.use.baseURL as string).href);
 });
 
 test('연감 국가 라벨은 밝은 배경에 검정, 어두운 배경에 흰 글자를 사용한다', async ({ page }, testInfo) => {

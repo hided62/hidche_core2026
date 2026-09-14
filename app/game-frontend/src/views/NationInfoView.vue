@@ -1,14 +1,16 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { formatLog } from '../utils/formatLog';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { formatNationLevelText } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
 
+const { pageExitLabel, exitPage } = usePageExit();
+
 type Result = Awaited<ReturnType<typeof trpc.nation.getNationInfo.query>>;
 const data = ref<Result | null>(null);
-const router = useRouter();
 const error = ref('');
 const number = (value: number) => value.toLocaleString('ko-KR');
 const diff = (value: number) => `${value > 0 ? '+' : ''}${number(value)}`;
@@ -31,9 +33,9 @@ onMounted(async () => {
                         세 력 정 보<br /><button
                             class="legacy-button legacy-button--navigation"
                             type="button"
-                            @click="router.push('/')"
+                            @click="exitPage"
                         >
-                            돌아가기
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>
@@ -119,8 +121,8 @@ onMounted(async () => {
             <tbody>
                 <tr>
                     <td>
-                        <button class="legacy-button legacy-button--navigation" type="button" @click="router.push('/')">
-                            돌아가기
+                        <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                            {{ pageExitLabel }}
                         </button>
                     </td>
                 </tr>

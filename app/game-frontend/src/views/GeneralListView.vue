@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import GeneralDirectoryTable from '../components/directory/GeneralDirectoryTable.vue';
 import LegacySortControls from '../components/ui/LegacySortControls.vue';
@@ -13,6 +14,8 @@ import {
     type GeneralDirectorySortKey,
 } from '../utils/generalDirectorySort';
 import { trpc } from '../utils/trpc';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 const sortOptions: Array<{ value: GeneralDirectorySortKey; label: string }> = [
     { value: 0, label: '이름' },
@@ -38,7 +41,6 @@ const sourceGenerals = ref<GeneralDirectoryGeneral[]>([]);
 const sortCriteria = ref<GeneralDirectorySortCriterion[]>([]);
 const loading = ref(false);
 const error = ref('');
-const router = useRouter();
 const { info: showInfoToast } = useGameFeedback();
 
 const generals = computed(() => sortGeneralDirectory(sourceGenerals.value, sortCriteria.value));
@@ -81,7 +83,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         장 수 일 람<br />
-                        <button class="legacy-button" type="button" @click="router.push('/')">창 닫기</button>
+                        <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
                         <button
                             class="legacy-button"
                             type="button"
@@ -118,7 +120,9 @@ onMounted(() => {
         <table class="directory-table title-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><button class="legacy-button" type="button" @click="router.push('/')">창 닫기</button></td>
+                    <td>
+                        <button class="legacy-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
+                    </td>
                 </tr>
                 <tr>
                     <td><small>삼국지 모의전투 HiDCHe</small></td>

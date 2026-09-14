@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { storeToRefs } from 'pinia';
@@ -11,6 +13,8 @@ import { useTournamentPagesStore } from '../stores/tournamentPages';
 import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
 import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 const tournamentPages = useTournamentPagesStore();
 const { snapshot, betting, loading, error } = storeToRefs(tournamentPages);
@@ -354,11 +358,9 @@ const start = async () => {
         </section>
         <input type="hidden" name="tournamentAction" value="join" />
         <footer class="tournament-footer bg0">
-            <RouterLink v-slot="{ navigate }" custom to="/">
-                <button class="legacy-button legacy-button--navigation close-button" type="button" @click="navigate">
-                    창 닫기
-                </button>
-            </RouterLink>
+            <button class="legacy-button legacy-button--navigation close-button" type="button" @click="exitPage">
+                {{ pageExitLabel }}
+            </button>
             <small>
                 삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD(hided62@gmail.com) / Credit
             </small>

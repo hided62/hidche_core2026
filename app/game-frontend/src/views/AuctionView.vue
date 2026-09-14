@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
@@ -8,6 +10,8 @@ import { useRoute } from 'vue-router';
 import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
 import { useGameFeedback } from '../composables/useGameFeedback';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type AuctionOverview = Awaited<ReturnType<typeof trpc.auction.getOverview.query>>;
 type ResourceAuction = AuctionOverview['resourceAuctions'][number];
@@ -177,8 +181,6 @@ const bidUniqueAuction = (): Promise<void> =>
         showSuccessToast('입찰이 완료되었습니다.');
     });
 
-const closeWindow = (): void => window.close();
-
 watch(activeTab, (tab) => {
     error.value = null;
     if (tab === 'unique' && !selectedUnique.value && ongoingUnique.value[0]) {
@@ -201,9 +203,9 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
                 type="button"
-                @click="closeWindow"
+                @click="exitPage"
             >
-                창 닫기
+                {{ pageExitLabel }}
             </button>
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height reload-button"
@@ -499,9 +501,9 @@ onMounted(() => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height close-button"
                 type="button"
-                @click="closeWindow"
+                @click="exitPage"
             >
-                창 닫기
+                {{ pageExitLabel }}
             </button>
         </footer>
     </main>

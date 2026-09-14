@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { computed, onMounted, reactive, ref } from 'vue';
 
 import { trpc } from '../utils/trpc';
@@ -6,6 +8,8 @@ import { resolveDiplomacyInfo } from '../utils/diplomacy';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import LegacyHtmlEditor from '../components/ui/LegacyHtmlEditor.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type StratFinanResponse = Awaited<ReturnType<typeof trpc.nation.getStratFinan.query>>;
 type NationEntry = StratFinanResponse['nationsList'][number];
@@ -172,9 +176,13 @@ onMounted(() => void loadStratFinan());
 <template>
     <main id="finance-container" class="page-finance">
         <nav class="top-back-bar">
-            <RouterLink class="legacy-button legacy-button--navigation legacy-button--fixed-height" to="/"
-                >돌아가기</RouterLink
+            <button
+                class="legacy-button legacy-button--navigation legacy-button--fixed-height"
+                type="button"
+                @click="exitPage"
             >
+                {{ pageExitLabel }}
+            </button>
             <span />
             <strong>내무부</strong>
             <span />
@@ -451,7 +459,9 @@ onMounted(() => void loadStratFinan());
                 <input v-for="index in 4" :key="`compat-input-${index}`" type="hidden" />
             </div>
             <footer class="bottom-bar">
-                <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
+                <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                    {{ pageExitLabel }}
+                </button>
             </footer>
         </template>
     </main>

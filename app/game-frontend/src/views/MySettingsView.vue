@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { mode: clockDisplayMode } = useClockDisplay();
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -22,6 +24,8 @@ import {
     SCREEN_MODE_KEY,
     type ScreenMode,
 } from '../utils/screenModeViewport';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 const { success: showSuccessToast, error: showErrorToast } = useGameFeedback();
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
@@ -134,7 +138,9 @@ onBeforeUnmount(() => {
     <main id="interface-settings" class="legacy-page bg0 interface-settings-page">
         <div class="title-row">
             <span>환 경 설 정</span>
-            <RouterLink class="legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
+            <button class="legacy-button legacy-button--navigation" type="button" @click="exitPage">
+                {{ pageExitLabel }}
+            </button>
         </div>
 
         <section class="settings-grid">

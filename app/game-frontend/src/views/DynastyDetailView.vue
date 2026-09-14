@@ -1,16 +1,19 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 
 import { formatLog } from '../utils/formatLog';
 import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
 
+const { pageExitLabel, exitPage } = usePageExit();
+
 type DynastyDetailPayload = Awaited<ReturnType<typeof trpc.dynasty.getDetail.query>>;
 
 const route = useRoute();
-const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<DynastyDetailPayload | null>(null);
@@ -22,14 +25,6 @@ const emperorId = computed(() => {
     const parsed = Number(raw);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 });
-
-const closePage = async (): Promise<void> => {
-    if (window.opener) {
-        window.close();
-        return;
-    }
-    await router.push('/');
-};
 
 const loadDetail = async (): Promise<void> => {
     if (emperorId.value === null) {
@@ -62,7 +57,7 @@ onMounted(loadDetail);
                 <tr>
                     <td>
                         역 대 왕 조<br />
-                        <button class="native-button" type="button" @click="closePage">창 닫기</button>
+                        <button class="native-button" type="button" @click="exitPage">{{ pageExitLabel }}</button>
                         <span class="all-link">
                             <RouterLink
                                 :to="{ path: '/dynasty', query: source === 'legacy' ? { source: 'legacy' } : {} }"
@@ -290,7 +285,9 @@ onMounted(loadDetail);
         <table class="legacy-table legacy-bg0 footer-table">
             <tbody>
                 <tr>
-                    <td><button class="native-button" type="button" @click="closePage">창 닫기</button><br /></td>
+                    <td>
+                        <button class="native-button" type="button" @click="exitPage">{{ pageExitLabel }}</button><br />
+                    </td>
                 </tr>
                 <tr>
                     <td class="banner">삼국지 모의전투 HiDCHe / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD</td>

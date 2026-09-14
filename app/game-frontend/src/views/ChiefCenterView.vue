@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { usePageExit } from '../composables/usePageExit';
+
 import { useClockDisplay } from '../composables/useClockDisplay';
 const { formatTime: formatGameTime } = useClockDisplay();
 import { computed, onMounted, ref, watch } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
 import { addMinutes } from 'date-fns';
-import { useRouter } from 'vue-router';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
@@ -12,6 +13,8 @@ import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 import { formatReservedCommandBrief } from '../components/command/reservedCommandBrief';
 import type { CommandMapData, CommandMapLayout, CommandPatternEntry, CommandTable } from '../components/command/types';
+
+const { pageExitLabel, exitPage } = usePageExit();
 
 type ReservationCompletion = (success: boolean) => void;
 
@@ -91,7 +94,6 @@ const worldMap = ref<CommandMapData | null>(null);
 const mapLayout = ref<CommandMapLayout | null>(null);
 
 const selectedChiefLevel = ref<number | null>(null);
-const router = useRouter();
 
 const isMobile = useMediaQuery('(max-width: 1024px)');
 
@@ -330,9 +332,9 @@ const repeatTurns = async (amount: number) => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height chief-nav"
                 type="button"
-                @click="router.push('/')"
+                @click="exitPage"
             >
-                돌아가기
+                {{ pageExitLabel }}
             </button>
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height chief-nav"
@@ -465,9 +467,9 @@ const repeatTurns = async (amount: number) => {
             <button
                 class="legacy-button legacy-button--navigation legacy-button--fixed-height chief-nav"
                 type="button"
-                @click="router.push('/')"
+                @click="exitPage"
             >
-                돌아가기
+                {{ pageExitLabel }}
             </button>
         </footer>
     </main>

@@ -6,6 +6,9 @@ import { buildEquipmentTradeItemOptions, loadEquipmentTradeItemOrder } from '../
 import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
 import { ITEM_KEYS, loadItemModules } from '@sammo-ts/logic/items/index.js';
 
+// 브라우저 보조키로 생성한 탭까지 검증하므로 경량 headless shell 대신 전체 Chromium을 사용한다.
+test.use({ channel: 'chromium' });
+
 const response = (data: unknown) => ({ result: { data } });
 const runtimeNavigation = JSON.parse(
     await readFile(new URL('../../../resources/navigation.json', import.meta.url), 'utf8')
@@ -29,6 +32,7 @@ const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 type NavigationFixture = {
+    pageExitAudit?: boolean;
     decoratedNpcChiefs?: boolean;
     officerLevel: number;
     permission: number;
@@ -567,6 +571,7 @@ const generalContext = (state: NavigationFixture) => ({
 const installFixture = async (page: Page | BrowserContext, state: NavigationFixture) => {
     await page.addInitScript(
         ({ profile }) => {
+            if (!window.location.protocol.startsWith('http')) return;
             localStorage.setItem('sammo-game-token', 'ga_navigation');
             localStorage.setItem('sammo-game-profile', profile);
         },
@@ -838,6 +843,12 @@ const installFixture = async (page: Page | BrowserContext, state: NavigationFixt
                     winnerId: state.tournamentWinnerId,
                 });
             }
+            if (state.pageExitAudit) return errorResponse(operation, 'Navigation audit fixture: data unavailable');
+            if (operation === 'tournament.getRankings') return response([]);
+            if (operation === 'tournament.getSnapshot') return response({ state: null, participants: [], matches: [] });
+            if (operation === 'tournament.getBettingSummary')
+                return response({ totals: {}, myTotals: {}, totalAmount: 0, myAmount: 0 });
+            if (operation === 'tournament.getAdminStatus') return response({ ok: false });
             return response({ ok: true });
         });
         operations.forEach((operation, index) => {
@@ -6880,4 +6891,247 @@ test('NPC prefixes stay single in the main nation card', async ({ page }, testIn
         });
         await card.screenshot({ path: testInfo.outputPath(`npc-main-prefix-${width}.png`) });
     }
+});
+
+test.describe('page exit navigation', () => {
+    for (const width of [1000, 500]) {
+        test(`page exit policy distinguishes ordinary, modifier, copied and same-tab links at ${width}`, async ({
+            page,
+            context,
+        }, testInfo) => {
+            await page.setViewportSize({ width, height: 900 });
+            await installFixture(context, {
+                officerLevel: 12,
+                permission: 4,
+                nationLevel: 1,
+                stage: 0,
+                npcMode: 1,
+                generalMeCalls: 0,
+                operations: [],
+            });
+            await waitForMain(page);
+            const mainUrl = page.url();
+            const survey = page.locator('[data-menu-position="top"] [data-navigation-id="survey"]');
+            const href = await survey.getAttribute('href');
+            for (const method of ['control', 'middle', 'copy'] as const) {
+                const created = context.waitForEvent('page');
+                if (method === 'copy') {
+                    const copied = await context.newPage();
+                    await copied.goto(href!);
+                } else {
+                    await survey.click(method === 'control' ? { modifiers: ['Control'] } : { button: 'middle' });
+                }
+                const tab = await created;
+                await tab.bringToFront();
+                await tab.waitForLoadState('domcontentloaded');
+                await expect(tab).toHaveURL(`${basePath}/survey`);
+                await expect(tab.locator('.back_bar .back_btn')).toHaveText('돌아가기');
+                await tab.reload();
+                await expect(tab.locator('.bottom_bar .back_btn')).toHaveText('돌아가기');
+                expect(context.pages()).toHaveLength(2);
+                await tab.locator('.bottom_bar .back_btn').click();
+                await expect(tab).toHaveURL(mainUrl);
+                expect(context.pages()).toHaveLength(2);
+                await tab.close();
+            }
+            // The status title intentionally uses the current tab, unlike its menu entry.
+            await page.locator('.tournament-status a').click();
+            await expect(page).toHaveURL(`${basePath}/tournament`);
+            expect(context.pages()).toHaveLength(1);
+            await expect(page.getByRole('button', { name: '돌아가기', exact: true }).first()).toBeVisible();
+            await page.screenshot({ path: testInfo.outputPath(`same-tab-${width}.png`), fullPage: true });
+            await page.getByRole('button', { name: '돌아가기', exact: true }).last().click();
+            await expect(page).toHaveURL(mainUrl);
+            expect(context.pages()).toHaveLength(1);
+
+            // Retain the auxiliary identity through SPA navigation and a reload.
+            const opened = page.waitForEvent('popup');
+            await page.locator('[data-navigation-id="tournament"]').click();
+            const tab = await opened;
+            await expect(tab.getByRole('button', { name: '창 닫기', exact: true }).first()).toBeVisible();
+            await tab.getByRole('tab', { name: '베팅장', exact: true }).click();
+            await expect(tab).toHaveURL(`${basePath}/betting`);
+            await tab.reload();
+            await expect(tab.getByRole('button', { name: '창 닫기', exact: true }).last()).toBeVisible();
+            const closed = tab.waitForEvent('close');
+            await tab
+                .getByRole('button', { name: '창 닫기', exact: true })
+                .last()
+                .click()
+                .catch((error: unknown) => {
+                    if (!tab.isClosed()) throw error;
+                });
+            await closed;
+            expect(context.pages()).toHaveLength(1);
+            expect(page.url()).toBe(mainUrl);
+        });
+    }
+
+    const exitAuditEntries = [
+        'nation-betting',
+        'nation-list',
+        'general-list',
+        'best-general',
+        'yearbook',
+        'battle-simulator',
+        'hall-of-fame',
+        'dynasty',
+        'traffic',
+        'npc-list',
+        'survey',
+        'meeting',
+        'secret-board',
+        'troop',
+        'diplomacy',
+        'personnel',
+        'finance',
+        'chief-center',
+        'npc-control',
+        'nation-secret',
+        'tournament',
+        'tournament-menu',
+        'betting',
+        'nation-info',
+        'nation-cities',
+        'nation-generals',
+        'global-info',
+        'current-city',
+        'battle-center',
+        'inherit',
+        'my-page',
+        'auction-resource',
+        'auction-resource-menu',
+        'auction-unique',
+        'my-settings',
+    ];
+    for (const width of [1000, 500]) {
+        test(`all main page exits obey tab policy even when page data fails at ${width}`, async ({
+            page,
+            context,
+        }, testInfo) => {
+            test.setTimeout(180_000);
+            await page.setViewportSize({ width, height: 900 });
+            await installFixture(context, {
+                pageExitAudit: true,
+                officerLevel: 12,
+                permission: 4,
+                nationLevel: 1,
+                stage: 0,
+                npcMode: 1,
+                generalMeCalls: 0,
+                operations: [],
+            });
+            await waitForMain(page);
+            const mainUrl = page.url();
+            const evidence: unknown[] = [];
+            for (const id of exitAuditEntries) {
+                let link = page.locator(`[data-navigation-id="${id}"]`).first();
+                if (!(await link.isVisible())) {
+                    const group = ['tournament-menu', 'betting'].includes(id)
+                        ? 'tournament-betting'
+                        : ['auction-resource-menu', 'auction-unique'].includes(id)
+                          ? 'auction'
+                          : 'game-info';
+                    await page.locator(`[data-menu-id="${group}"]`).first().click();
+                }
+                link = page.locator(`[data-navigation-id="${id}"]`).first();
+                const href = await link.getAttribute('href');
+                const newTab = (await link.getAttribute('target')) === '_blank';
+                const opened = newTab ? page.waitForEvent('popup') : null;
+                await link.click();
+                const target = opened ? await opened : page;
+                await target.setViewportSize({ width, height: 900 });
+                await target.waitForURL(new URL(href!, mainUrl).href);
+                const exit = target.getByRole('button', { name: newTab ? '창 닫기' : '돌아가기', exact: true }).first();
+                await expect(exit, id).toBeVisible();
+                expect(context.pages(), id).toHaveLength(newTab ? 2 : 1);
+                await target.evaluate(() => document.fonts.ready);
+                await exit.focus();
+                await exit.hover();
+                evidence.push({
+                    id,
+                    href,
+                    newTab,
+                    width,
+                    ...(await exit.evaluate((el) => ({
+                        viewportWidth: window.innerWidth,
+                        rect: el.getBoundingClientRect().toJSON(),
+                        font: getComputedStyle(el).font,
+                        border: getComputedStyle(el).border,
+                        text: el.textContent,
+                    }))),
+                });
+                await target.screenshot({ path: testInfo.outputPath(`${id}-${width}.png`), fullPage: true });
+                await writeFile(
+                    testInfo.outputPath(`${id}-${width}.html`),
+                    await target.locator('#app').evaluate((el) => el.outerHTML)
+                );
+                if (newTab) {
+                    const closed = target.waitForEvent('close');
+                    await exit.click().catch((error: unknown) => {
+                        if (!target.isClosed()) throw error;
+                    });
+                    await closed;
+                    // Opening the original href from the browser does not inherit auxiliary identity.
+                    const direct = await context.newPage();
+                    await direct.setViewportSize({ width, height: 900 });
+                    await direct.goto(href!);
+                    const back = direct.getByRole('button', { name: '돌아가기', exact: true }).first();
+                    await expect(back, id).toBeVisible();
+                    await back.click();
+                    await expect(direct).toHaveURL(mainUrl);
+                    expect(context.pages()).toHaveLength(2);
+                    await direct.close();
+                } else {
+                    await exit.click();
+                    await expect(page).toHaveURL(mainUrl);
+                }
+                expect(context.pages(), id).toHaveLength(1);
+                expect(page.url(), id).toBe(mainUrl);
+            }
+            await writeFile(testInfo.outputPath(`exit-audit-${width}.json`), JSON.stringify(evidence, null, 2));
+        });
+    }
+
+    test('keyboard activation opens a closable tab and blocked popups use the current tab', async ({
+        page,
+        context,
+    }) => {
+        await installFixture(context, {
+            officerLevel: 0,
+            permission: 0,
+            nationLevel: 0,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+        });
+        await waitForMain(page);
+        const mainUrl = page.url();
+        const link = page.locator('[data-menu-position="top"] [data-navigation-id="survey"]');
+        await link.focus();
+        const opened = page.waitForEvent('popup');
+        await link.press('Enter');
+        const tab = await opened;
+        await expect(tab.getByRole('button', { name: '창 닫기', exact: true }).first()).toBeVisible();
+        expect(await tab.evaluate(() => document.referrer)).toBe('');
+        const closed = tab.waitForEvent('close');
+        await tab
+            .getByRole('button', { name: '창 닫기', exact: true })
+            .first()
+            .click()
+            .catch((error: unknown) => {
+                if (!tab.isClosed()) throw error;
+            });
+        await closed;
+        expect(context.pages()).toHaveLength(1);
+        await page.evaluate(() => {
+            window.open = () => null;
+        });
+        await link.click();
+        await expect(page).toHaveURL(`${basePath}/survey`);
+        await page.getByRole('button', { name: '돌아가기', exact: true }).first().click();
+        await expect(page).toHaveURL(mainUrl);
+        expect(context.pages()).toHaveLength(1);
+    });
 });
