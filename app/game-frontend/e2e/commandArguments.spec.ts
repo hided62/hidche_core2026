@@ -3815,7 +3815,7 @@ for (const width of [1200, 390]) {
             await results.getByRole('button').click();
             await expect(form.locator('#command-arg-destNationId')).toHaveValue('3');
             await input.fill('적국');
-            await expect(results.locator('button')).toHaveCount(1);
+            await expect(results.locator('button strong')).toHaveText(['적국']);
             await results.getByRole('button').click();
             await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
             await input.press('Escape');
@@ -3870,4 +3870,69 @@ test('gift search indexes nullable names without matching the displayed no-troop
     await expect(results.locator('button')).toHaveCount(0);
     await search.fill('피곤');
     await expect(results.locator('button')).toHaveCount(3);
+});
+
+test('search reflects an active Korean IME composition after debounce without committing it', async ({
+    page,
+}, testInfo) => {
+    const targets = buildRefGeneralTargetOptions({
+        actorId: 1,
+        actorNationId: 1,
+        generals: [
+            { id: 1, name: '선녀', nationId: 1, cityId: 1, troopId: 0, npcState: 0, officerLevel: 5 },
+            { id: 2, name: '손권', nationId: 1, cityId: 1, troopId: 0, npcState: 0, officerLevel: 5 },
+            { id: 3, name: '관우', nationId: 1, cityId: 1, troopId: 0, npcState: 0, officerLevel: 5 },
+        ],
+        nationNames: new Map([[1, '피곤']]),
+        cityNames: new Map([[1, '업']]),
+    });
+    await install(page, false, {
+        ...commandTable,
+        general: [{ category: '인사', values: [buildGeneralCommand('che_증여', '증여')] }],
+        inputOptions: { ...inputOptions, ...targets },
+    });
+    await page.goto(gamePath('/'));
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const picker = page.getByTestId('command-picker');
+    await picker.getByRole('button', { name: /증여/ }).click();
+    const form = picker.getByTestId('command-argument-form');
+    await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+    const input = form.locator('input[type=search]');
+    const results = form.getByTestId('general-target-list');
+    await input.focus();
+    await input.evaluate((element) => {
+        element.setAttribute('data-composition-ends', '0');
+        element.addEventListener('compositionend', () =>
+            element.setAttribute(
+                'data-composition-ends',
+                String(Number(element.getAttribute('data-composition-ends')) + 1)
+            )
+        );
+    });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.imeSetComposition', { text: 'ㅅ', selectionStart: 1, selectionEnd: 1 });
+    await expect(results.locator('button strong')).toHaveText(['선녀 (피곤 · 업)', '손권 (피곤 · 업)']);
+    await cdp.send('Input.imeSetComposition', { text: 'ㅅㄴ', selectionStart: 2, selectionEnd: 2 });
+    await expect(input).toHaveValue('ㅅㄴ');
+    await expect(results.locator('button strong')).toHaveText(['선녀 (피곤 · 업)']);
+    await expect(input).toBeFocused();
+    await expect(input).toHaveAttribute('data-composition-ends', '0');
+    // IME 확정 Enter를 검색창 닫기로 가로채지 않는다.
+    await input.dispatchEvent('keydown', { key: 'Enter', isComposing: true, keyCode: 229 });
+    await expect(input).toBeFocused();
+    await expect(input).toHaveAttribute('data-composition-ends', '0');
+    await form.screenshot({ path: testInfo.outputPath('active-ime-search.png') });
+    await writeFile(testInfo.outputPath('active-ime-search.html'), await form.evaluate((element) => element.outerHTML));
+    await cdp.send('Input.insertText', { text: 'ㅅㄴ' });
+    await expect(input).toHaveAttribute('data-composition-ends', '1');
+    await form.getByRole('button', { name: '지우기', exact: true }).click();
+    await expect(results.locator('button')).toHaveCount(3);
+    await input.fill('ㄱㅇ');
+    await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+    await page.waitForTimeout(250); // 예약된 디바운스가 OFF 이후 재적용되지 않는지 확인한다.
+    await expect(results.locator('button')).toHaveCount(3);
+    await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+    await expect(input).toHaveValue('');
+    await expect(results.locator('button')).toHaveCount(3);
+    await cdp.detach();
 });
