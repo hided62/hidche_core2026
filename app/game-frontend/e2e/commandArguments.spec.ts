@@ -3618,6 +3618,10 @@ for (const width of [1200, 390]) {
             let form = picker.getByTestId('command-argument-form');
             const toggle = form.getByRole('button', { name: '검색 꺼짐', exact: true });
             await expect(form.locator('input[type=search]')).toHaveCount(0);
+            await expect(form.getByTestId('city-target-list').locator('button')).toHaveCount(3);
+            await form.getByTestId('city-target-list').getByRole('button', { name: /허창/ }).click();
+            await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
+            await form.screenshot({ path: testInfo.outputPath(`search-off-${width}.png`) });
             await toggle.click();
             let input = form.locator('input[type=search]');
             await expect(input).not.toBeFocused();
@@ -3640,6 +3644,7 @@ for (const width of [1200, 390]) {
             await expect(picker).toBeVisible();
             await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
             await expect(input).toHaveCount(0);
+            await expect(results.locator('button')).toHaveCount(3);
             await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
             await picker.getByRole('button', { name: '입력', exact: true }).click();
             await expect.poll(() => JSON.stringify(requests)).toContain('"destCityId":2');
@@ -3650,6 +3655,8 @@ for (const width of [1200, 390]) {
             await picker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
             await picker.getByRole('button', { name: /발령/ }).click();
             form = picker.getByTestId('command-argument-form');
+            await expect(form.getByTestId('general-target-list').locator('button')).toHaveCount(3);
+            await expect(form.getByTestId('city-target-list').locator('button')).toHaveCount(3);
             await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
             const generalSearch = form.locator('#command-search-destGeneralId');
             const citySearch = form.locator('#command-search-destCityId');
@@ -3709,6 +3716,9 @@ for (const width of [1200, 390]) {
             await input.press('Escape');
             await expect(input).toHaveValue('');
             await expect(picker).toBeVisible();
+            await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+            await expect(input).toHaveCount(0);
+            await expect(results.locator('button')).toHaveCount(3);
         });
     });
 }

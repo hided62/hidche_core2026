@@ -363,22 +363,6 @@ const textFieldError = (field: CommandInputField): string => {
     return '';
 };
 
-const OPTION_CARD_COMMANDS = new Set([
-    'che_물자원조',
-    'che_불가침제의',
-    'che_선전포고',
-    'che_종전제의',
-    'che_불가침파기제의',
-    'che_포상',
-    'che_발령',
-    'che_몰수',
-    'che_부대탈퇴지시',
-]);
-const showOptionCards = (field: CommandInputField): boolean =>
-    field.kind === 'select' &&
-    Boolean(field.optionSource && ['nations', 'generals'].includes(field.optionSource)) &&
-    OPTION_CARD_COMMANDS.has(props.commandKey);
-
 const isValid = computed(() =>
     props.fields.every((field) => {
         const value = values[field.key];
@@ -640,7 +624,7 @@ watch(
                 >
             </div>
             <div
-                v-if="showOptionCards(field) || (searchEnabled && isSearchable(field))"
+                v-if="isSearchable(field)"
                 class="target-option-list"
                 :class="{ 'assignment-target-list': commandKey === 'che_발령' && field.optionSource === 'generals' }"
                 :data-testid="
