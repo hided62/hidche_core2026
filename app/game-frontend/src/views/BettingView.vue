@@ -143,22 +143,25 @@ const placeBet = async (target: TournamentBracketSlot) => {
                                     : Number(($event.target as HTMLInputElement).value)
                         "
                     />
-                    <select
-                        :value="presetAmounts.includes(Number(amountFor(slot.id))) ? amountFor(slot.id) : ''"
-                        :aria-label="`${slot.name} 지정 금액`"
-                        :disabled="Boolean(pendingBets[slot.id])"
-                        @change="amounts[slot.id] = Number(($event.target as HTMLSelectElement).value)"
-                    >
-                        <option value="" disabled>직접 입력</option>
-                        <option
-                            v-for="amount in presetAmounts"
-                            :key="amount"
-                            :value="amount"
-                            :disabled="amount > availableAmount"
+                    <span class="bet-preset">
+                        <span aria-hidden="true">▼</span>
+                        <select
+                            :value="presetAmounts.includes(Number(amountFor(slot.id))) ? amountFor(slot.id) : ''"
+                            :aria-label="`${slot.name} 지정 금액`"
+                            :disabled="Boolean(pendingBets[slot.id])"
+                            @change="amounts[slot.id] = Number(($event.target as HTMLSelectElement).value)"
                         >
-                            {{ amount }}금
-                        </option>
-                    </select>
+                            <option value="" disabled>직접 입력</option>
+                            <option
+                                v-for="amount in presetAmounts"
+                                :key="amount"
+                                :value="amount"
+                                :disabled="amount > availableAmount"
+                            >
+                                {{ amount }}금
+                            </option>
+                        </select>
+                    </span>
                     <button
                         type="submit"
                         class="bracket-bet-button"
@@ -277,6 +280,10 @@ const placeBet = async (target: TournamentBracketSlot) => {
 
 <style scoped>
 .betting-page {
+    --bet-font-title: 24px;
+    --bet-font-large: 16px;
+    --bet-font-normal: 14px;
+    --bet-font-small: 12px;
     width: 100%;
     max-width: 1200px;
     min-width: 0;
@@ -284,7 +291,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--bet-font-normal);
     line-height: 1.3;
     text-align: center;
 }
@@ -314,7 +321,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
     --legacy-button-height: 44px;
     min-width: 72px;
     padding: 10px 16px;
-    font-size: 14px;
+    font-size: var(--bet-font-normal);
 }
 .error {
     min-height: 32px;
@@ -324,7 +331,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
 .state {
     min-height: 42px;
     padding: 5px;
-    font-size: 24px;
+    font-size: var(--bet-font-title);
 }
 .state span {
     color: cyan;
@@ -333,11 +340,11 @@ const placeBet = async (target: TournamentBracketSlot) => {
     min-height: 50px;
     padding: 5px;
     color: limegreen;
-    font-size: 24px;
+    font-size: var(--bet-font-title);
 }
 .section-title small {
     color: orange;
-    font-size: 14px;
+    font-size: var(--bet-font-normal);
 }
 select {
     width: 100%;
@@ -383,7 +390,7 @@ select:disabled {
 }
 .inline-bet {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 80px 64px;
+    grid-template-columns: minmax(0, 1fr) 32px 48px;
     gap: 4px;
     width: 100%;
 }
@@ -399,9 +406,11 @@ select:disabled {
     border-radius: 3px;
     color: #fff;
     background: #201610;
-    font-size: 16px;
+    font-size: var(--bet-font-normal);
 }
 .inline-bet .bracket-bet-button {
+    position: static;
+    height: 44px;
     background: #59400e;
     font-weight: 700;
 }
@@ -411,8 +420,7 @@ select:disabled {
 }
 .bet-message {
     grid-column: 1 / -1;
-    min-height: 16px;
-    font-size: 11px;
+    font-size: var(--bet-font-small);
     line-height: 16px;
     color: #b8e6ac;
     overflow-wrap: anywhere;
@@ -420,19 +428,11 @@ select:disabled {
 .bet-message.bet-error {
     color: #ff9e9e;
 }
-@media (max-width: 1100px) {
-    .inline-bet {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-    .inline-bet .bracket-bet-button {
-        grid-column: 1 / -1;
-    }
-}
 .ranking-title {
     min-height: 50px;
     padding: 8px;
     color: yellow;
-    font-size: 24px;
+    font-size: var(--bet-font-title);
 }
 .ranking-placeholder {
     min-height: 40px;
@@ -450,7 +450,7 @@ select:disabled {
     width: 100%;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
-    font-size: 12px;
+    font-size: var(--bet-font-small);
     line-height: 14px;
 }
 .ranking-table th,
@@ -465,7 +465,7 @@ select:disabled {
 .ranking-table thead tr:first-child th {
     height: 18px;
     background: #000;
-    font-size: 18px;
+    font-size: var(--bet-font-large);
     line-height: 18px;
     font-weight: normal;
 }
@@ -496,14 +496,14 @@ select:disabled {
 @media (max-width: 800px) {
     .betting-page {
         max-width: 100%;
-        font-size: 13px;
+        font-size: var(--bet-font-normal);
     }
     .state {
-        font-size: 18px;
+        font-size: var(--bet-font-large);
     }
     .section-title,
     .ranking-title {
-        font-size: 20px;
+        font-size: var(--bet-font-title);
     }
     .ranking-placeholder {
         display: none;
@@ -531,7 +531,7 @@ select:disabled {
     .ranking-table {
         display: none;
         min-width: 390px;
-        font-size: 11px;
+        font-size: var(--bet-font-small);
     }
     .ranking-table.mobile-active {
         display: table;
@@ -548,5 +548,41 @@ select:disabled {
     .betting-footer small {
         white-space: normal;
     }
+}
+.betting-page small {
+    font-size: var(--bet-font-small);
+}
+.bet-preset {
+    position: relative;
+    display: grid;
+    place-items: center;
+}
+.bet-preset select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+.bet-preset {
+    box-shadow: inset 0 0 0 1px #8d713d;
+    border-radius: 3px;
+    background: #201610;
+}
+.bet-preset:focus-within {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
+}
+.bet-preset:has(select:disabled) {
+    opacity: 0.5;
+}
+.bet-message:empty {
+    display: none;
+}
+.betting-page :deep(.tournament-page-title) {
+    font-size: var(--bet-font-large);
+}
+.betting-page :deep(.tournament-page-header button) {
+    font-size: var(--bet-font-normal);
 }
 </style>

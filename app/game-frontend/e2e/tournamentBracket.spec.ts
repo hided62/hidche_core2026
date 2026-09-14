@@ -980,12 +980,12 @@ test('betting bracket shows intelligence for debate tournament candidates', asyn
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-for (const width of [1365, 1101, 800, 390, 320]) {
+for (const width of [1365, 1101, 940, 800, 500, 390, 320]) {
     test(`inline individual betting needs exactly 16 submissions at ${width}px`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 900 });
         const { placedBets } = await installFixture(page, { tournamentStage: 6 });
         await page.goto('betting');
-        const bracket = page.locator(width > 1100 ? '.desktop-bracket' : '.mobile-bracket');
+        const bracket = page.locator('.inline-betting-bracket .mobile-bracket');
         const cards = bracket.locator('.betting-candidate');
         await expect(cards).toHaveCount(16);
         await expect(page.locator('dialog')).toHaveCount(0);
@@ -1022,20 +1022,12 @@ for (const width of [1365, 1101, 800, 390, 320]) {
         );
         for (const card of geometry) {
             const iconRect = card.fields.find((field) => field.selector === '.general-identity-icon')!.rect;
-            expect(iconRect.width).toBe(width > 1100 ? 64 : 40);
+            expect(iconRect.width).toBe(64);
             expect(iconRect.height).toBe(iconRect.width);
             for (const field of card.fields) {
-                if (
-                    [
-                        '.general-identity-name',
-                        '.bracket-core-stat',
-                        '.bracket-odds',
-                        '.bracket-my-bet',
-                        '.bracket-return',
-                    ].includes(field.selector)
-                ) {
+                if (['.general-identity-name', '.bracket-core-stat'].includes(field.selector)) {
                     expect(field.rect.left).toBeGreaterThanOrEqual(iconRect.right + 5);
-                    expect(field.fontSize).toBeGreaterThanOrEqual(width > 1100 ? 14 : 13);
+                    expect(field.fontSize).toBe(field.selector === '.general-identity-name' ? 16 : 14);
                 }
                 expect(field.rect.left).toBeGreaterThanOrEqual(card.rect.left - 1);
                 expect(field.rect.right).toBeLessThanOrEqual(card.rect.right + 1);
@@ -1056,18 +1048,13 @@ for (const width of [1365, 1101, 800, 390, 320]) {
                 }
             }
         }
-        if (width > 1100) {
-            const containment = await bracket.evaluate((element) => {
-                const bounds = element.getBoundingClientRect();
-                return [...element.querySelectorAll('.desktop-bracket-name')].every((card) => {
-                    const rect = card.getBoundingClientRect();
-                    return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
-                });
-            });
-            expect(containment).toBe(true);
-            expect(geometry[0].rect.width).toBeGreaterThan(300);
-            for (let index = 1; index < geometry.length; index++)
-                expect(geometry[index].rect.top).toBeGreaterThanOrEqual(geometry[index - 1].rect.bottom);
+        const rows = new Set(geometry.map((card) => card.rect.top));
+        expect(rows.size).toBe(width >= 940 ? 4 : 8);
+        for (const card of geometry) {
+            const controls = card.fields.filter((field) =>
+                ['input', 'select', '.bracket-bet-button'].includes(field.selector)
+            );
+            expect(new Set(controls.map((field) => field.rect.top)).size).toBe(1);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
         await writeFile(testInfo.outputPath('inline-geometry.json'), JSON.stringify(geometry, null, 2));
@@ -1116,13 +1103,15 @@ for (const width of [1365, 390]) {
         const betFailure = { message: null as string | null };
         const { placedBets } = await installFixture(page, { tournamentStage: 6, betFailure, betDelayMs: 200 });
         await page.goto('betting');
-        const bracket = page.locator(width > 1100 ? '.desktop-bracket' : '.mobile-bracket');
+        const bracket = page.locator('.inline-betting-bracket .mobile-bracket');
         const first = bracket.locator('.betting-candidate').first();
         const second = bracket.locator('.betting-candidate').nth(1);
         const input = first.getByRole('spinbutton');
         await expect(input).toHaveValue('10');
         await expect(page.locator('input[type=number]:visible')).toHaveCount(16);
         await expect(page.getByRole('region', { name: '베팅 한도' }).getByRole('spinbutton')).toHaveCount(0);
+        await first.getByRole('combobox').click();
+        await page.keyboard.press('Escape');
         await first.getByRole('combobox').selectOption('50');
         await expect(input).toHaveValue('50');
         await expect(second.getByRole('spinbutton')).toHaveValue('10');
@@ -1164,9 +1153,27 @@ for (const width of [1365, 390]) {
     });
 }
 
-test('closed betting keeps investment and return visible without submit controls', async ({ page }) => {
+test('closed betting keeps investment and return visible without submit controls', async ({ page }, testInfo) => {
     await installFixture(page, { tournamentStage: 7 });
     await page.goto('betting');
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(() => document.fonts.ready);
     await expect(page.locator('.inline-bet')).toHaveCount(0);
-    await expect(page.locator('.desktop-bracket .bracket-return').first()).toHaveText('예상 환수 금3,360');
+    await expect(page.locator('.mobile-bracket .bracket-return').first()).toHaveText('예상 환수 금3,360');
+    for (const width of [1365, 500, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        const height = await page
+            .locator('.betting-candidate')
+            .first()
+            .evaluate((el) => el.getBoundingClientRect().height);
+        expect(height).toBeLessThan(width >= 940 ? 180 : 260);
+        await writeFile(
+            testInfo.outputPath(`closed-${width}-geometry.json`),
+            JSON.stringify({ width, cardHeight: height })
+        );
+        await page.screenshot({ path: testInfo.outputPath(`closed-${width}.png`), fullPage: true });
+        await page.getByRole('tab', { name: '8강', exact: true }).click();
+        await expect(page.getByRole('tabpanel', { name: '8강 대진' })).toBeVisible();
+        await page.getByRole('tab', { name: '16강', exact: true }).click();
+    }
 });

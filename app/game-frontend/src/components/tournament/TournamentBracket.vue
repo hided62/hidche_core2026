@@ -46,18 +46,18 @@ const roundColumns = computed(() => [
     bracket.value.final.slots,
     [bracket.value.champion],
 ]);
-const desktopX = computed(() => (props.bettingMode ? [180, 480, 690, 895, 1100] : [110, 355, 600, 845, 1090]));
+const desktopX = [110, 355, 600, 845, 1090];
 const cardWidth = 190;
-const desktopSlotHeight = computed(() => (props.bettingMode ? 184 : 88));
-const desktopCanvasHeight = computed(() => desktopSlotHeight.value * 16);
+const desktopSlotHeight = 88;
+const desktopCanvasHeight = computed(() => desktopSlotHeight * 16);
 const slotY = (columnIndex: number, slotIndex: number) => {
-    const slotHeight = desktopSlotHeight.value * 2 ** columnIndex;
+    const slotHeight = desktopSlotHeight * 2 ** columnIndex;
     return slotHeight / 2 + slotIndex * slotHeight;
 };
 const connections = computed(() =>
     roundColumns.value.slice(0, -1).flatMap((column, columnIndex) => {
-        const sourceX = desktopX.value[columnIndex]! + (props.bettingMode && columnIndex === 0 ? 170 : cardWidth / 2);
-        const targetX = desktopX.value[columnIndex + 1]! - cardWidth / 2;
+        const sourceX = desktopX[columnIndex]! + cardWidth / 2;
+        const targetX = desktopX[columnIndex + 1]! - cardWidth / 2;
         const jointX = (sourceX + targetX) / 2;
         return Array.from({ length: column.length / 2 }, (_, pairIndex) => {
             const upper = column[pairIndex * 2]!;
@@ -114,7 +114,7 @@ const mobilePairs = computed(() => {
         aria-label="토너먼트 대진표"
         tabindex="0"
     >
-        <div class="desktop-bracket">
+        <div v-if="!bettingMode" class="desktop-bracket">
             <div class="desktop-round-labels" aria-hidden="true">
                 <strong v-for="label in roundLabels" :key="label">{{ label }}</strong>
             </div>
@@ -150,7 +150,6 @@ const mobilePairs = computed(() => {
                         :class="{
                             advanced: slot.advanced,
                             'betting-target': columnIndex === 0 && bettingOpen && slot.id !== null,
-                            'betting-candidate': columnIndex === 0 && bettingMode,
                         }"
                         :data-general-id="slot.id ?? undefined"
                         :style="{
@@ -159,29 +158,11 @@ const mobilePairs = computed(() => {
                         }"
                     >
                         <GeneralIdentity
-                            :class="{ 'bracket-candidate-identity': columnIndex === 0 && bettingMode }"
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
                             :npc-state="slot.npcState"
-                        >
-                            <template v-if="columnIndex === 0 && bettingMode" #details>
-                                <span class="bracket-bet-summary">
-                                    <small v-if="coreStat(slot)" class="bracket-core-stat">
-                                        {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
-                                    </small>
-                                    <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
-                                    <small class="bracket-my-bet"
-                                        >내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small
-                                    >
-                                    <small class="bracket-return"
-                                        >예상 환수 금{{
-                                            (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR')
-                                        }}</small
-                                    >
-                                </span>
-                            </template>
-                        </GeneralIdentity>
+                        />
                         <slot
                             v-if="columnIndex === 0 && bettingOpen && slot.id !== null"
                             name="bet-controls"
@@ -236,22 +217,21 @@ const mobilePairs = computed(() => {
                             :npc-state="slot.npcState"
                         >
                             <template v-if="activeMobileRound === 0 && bettingMode" #details>
-                                <span class="bracket-bet-summary">
-                                    <small v-if="coreStat(slot)" class="bracket-core-stat">
-                                        {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
-                                    </small>
-                                    <small class="bracket-odds">배당 {{ odds(slot.id) }}</small>
-                                    <small class="bracket-my-bet"
-                                        >내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</small
-                                    >
-                                    <small class="bracket-return"
-                                        >예상 환수 금{{
-                                            (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR')
-                                        }}</small
-                                    >
+                                <span v-if="coreStat(slot)" class="bracket-core-stat">
+                                    {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
                                 </span>
                             </template>
                         </GeneralIdentity>
+                        <div v-if="activeMobileRound === 0 && bettingMode" class="bracket-bet-summary">
+                            <span class="bracket-total"
+                                >현재 베팅 금{{ (betTotals?.[slot.id ?? 0] ?? 0).toLocaleString('ko-KR') }}</span
+                            >
+                            <span class="bracket-odds">배당 {{ odds(slot.id) }}</span>
+                            <span class="bracket-my-bet">내 투자 금{{ myBet(slot.id).toLocaleString('ko-KR') }}</span>
+                            <span class="bracket-return"
+                                >예상 환수 금{{ (myExpectedReturn(slot.id) ?? 0).toLocaleString('ko-KR') }}</span
+                            >
+                        </div>
                         <slot
                             v-if="activeMobileRound === 0 && bettingOpen && slot.id !== null"
                             name="bet-controls"
@@ -329,13 +309,6 @@ const mobilePairs = computed(() => {
     color: #fff;
     padding: 1px 3px;
 }
-.desktop-bracket-name.betting-candidate {
-    width: 28.3333%;
-    min-height: 176px;
-    align-content: center;
-    gap: 5px;
-    padding: 5px 6px;
-}
 .betting-target {
     position: absolute;
 }
@@ -375,106 +348,6 @@ const mobilePairs = computed(() => {
 .mobile-bracket-name :deep(.general-identity) {
     width: 100%;
     justify-content: flex-start;
-}
-.bracket-candidate-identity {
-    --sammo-general-icon-size: 64px;
-    display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
-    min-width: 0;
-    gap: 8px;
-    align-items: start;
-    text-align: left;
-}
-.bracket-candidate-identity :deep(.general-identity-copy) {
-    gap: 3px;
-}
-.bracket-candidate-identity :deep(.general-identity-name) {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    font-size: 16px;
-    line-height: 20px;
-    font-weight: 700;
-}
-.bracket-bet-summary {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    min-width: 0;
-    align-items: center;
-    gap: 2px 7px;
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-.bracket-core-stat,
-.bracket-odds,
-.bracket-my-bet {
-    display: block;
-    min-width: 0;
-    color: skyblue;
-    font-size: 14px;
-    line-height: 18px;
-}
-.bracket-core-stat {
-    color: #fff;
-    text-align: left;
-}
-.bracket-odds {
-    text-align: right;
-}
-.bracket-my-bet {
-    grid-column: 1 / -1;
-    text-align: left;
-    color: orange;
-    font-variant-numeric: tabular-nums;
-}
-.bracket-return {
-    grid-column: 1 / -1;
-    text-align: left;
-    color: cyan;
-    font-size: 14px;
-    line-height: 18px;
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-.inline-betting-bracket .desktop-round-labels {
-    grid-template-columns: 30% 20% 20% 16.6667% 13.3333%;
-}
-.inline-betting-bracket .mobile-bracket-name.betting-candidate {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-.inline-betting-bracket .mobile-bracket-name.betting-candidate > :last-child {
-    margin-top: auto;
-}
-@media (max-width: 1100px) {
-    .bracket-candidate-identity {
-        --sammo-general-icon-size: 40px;
-        grid-template-columns: 40px minmax(0, 1fr);
-        gap: 6px;
-    }
-    .bracket-candidate-identity :deep(.general-identity-name) {
-        font-size: 14px;
-        line-height: 18px;
-    }
-    .bracket-bet-summary {
-        grid-template-columns: minmax(0, 1fr);
-    }
-    .bracket-core-stat,
-    .bracket-odds,
-    .bracket-my-bet,
-    .bracket-return {
-        font-size: 13px;
-        line-height: 18px;
-        text-align: left;
-    }
-    .inline-betting-bracket .desktop-bracket {
-        display: none;
-    }
-    .inline-betting-bracket .mobile-bracket {
-        display: block;
-    }
 }
 .mobile-bracket {
     display: none;
@@ -531,7 +404,7 @@ const mobilePairs = computed(() => {
     left: 50%;
     transform: translate(-50%, -50%);
     color: #ffd25e;
-    font-size: 11px;
+    font-size: 12px;
 }
 .tournament-bracket > p {
     margin: 8px 0 0;
@@ -548,6 +421,79 @@ const mobilePairs = computed(() => {
     .tournament-bracket > p {
         padding: 0 8px;
         font-size: 13px;
+    }
+}
+
+/* Betting uses the same paired cards at every viewport; rounds remain selectable. */
+.inline-betting-bracket {
+    font-size: var(--bet-font-normal, 14px);
+}
+.inline-betting-bracket .mobile-bracket {
+    display: block;
+}
+.inline-betting-bracket .mobile-round-list {
+    padding: 6px;
+}
+.inline-betting-bracket .mobile-round-list > article {
+    gap: 18px;
+    align-items: stretch;
+}
+.inline-betting-bracket .mobile-bracket-name {
+    overflow: visible;
+}
+.inline-betting-bracket .mobile-bracket-name.betting-candidate {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 6px;
+    padding: 6px;
+}
+.bracket-candidate-identity {
+    display: grid;
+    grid-template-columns: var(--sammo-general-icon-size) minmax(0, 1fr);
+    gap: 6px;
+    min-width: 0;
+    text-align: left;
+}
+.bracket-candidate-identity :deep(.general-identity-name) {
+    font-size: var(--bet-font-large, 16px);
+    font-weight: 700;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.bracket-core-stat {
+    color: #fff;
+    font-size: var(--bet-font-normal, 14px);
+}
+.bracket-bet-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 6px;
+    text-align: left;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+}
+.bracket-total,
+.bracket-odds {
+    color: skyblue;
+}
+.bracket-my-bet {
+    color: orange;
+}
+.bracket-return {
+    color: cyan;
+}
+.inline-betting-bracket .betting-candidate > :last-child {
+    margin-top: auto;
+}
+.inline-betting-bracket .mobile-round-tabs button {
+    font-size: inherit;
+}
+@media (min-width: 940px) {
+    .inline-betting-bracket .mobile-round-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 18px;
     }
 }
 </style>
