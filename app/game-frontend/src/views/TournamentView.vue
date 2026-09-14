@@ -13,7 +13,7 @@ import { trpc } from '../utils/trpc';
 import { resolveTournamentSectionVisibility, resolveTournamentStageName } from '../utils/tournamentStatus';
 
 const tournamentPages = useTournamentPagesStore();
-const { snapshot, loading, error } = storeToRefs(tournamentPages);
+const { snapshot, betting, loading, error } = storeToRefs(tournamentPages);
 type Snapshot = NonNullable<typeof snapshot.value>;
 const myGeneralId = ref(0);
 const adminEnabled = ref(false);
@@ -229,6 +229,8 @@ const start = async () => {
                 :matches="snapshot?.matches ?? []"
                 :winner-id="snapshot?.state?.winnerId"
                 :tournament-type="snapshot?.state?.type ?? 0"
+                :bet-totals="betting?.totals"
+                :total-bet="betting?.totalAmount ?? 0"
             />
 
             <section v-if="currentMatch" class="fight bg0" aria-label="현재 토너먼트 전투 로그">

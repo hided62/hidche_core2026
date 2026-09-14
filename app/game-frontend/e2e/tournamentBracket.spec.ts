@@ -1177,3 +1177,61 @@ test('closed betting keeps investment and return visible without submit controls
         await page.getByRole('tab', { name: '16강', exact: true }).click();
     }
 });
+
+for (const width of [1365, 801, 390, 320]) {
+    test(`tournament candidates show stat and live odds at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        const realtimeState = { tournamentStage: 7, totalAmount: 2800 };
+        await installFixture(page, { tournamentType: 3, tournamentStage: 7, realtimeState });
+        await page.goto('tournament');
+        await page.waitForLoadState('networkidle');
+        await page.evaluate(() => document.fonts.ready);
+        const bracket = page.locator(width > 800 ? '.desktop-bracket' : '.mobile-bracket');
+        const cards = bracket.locator(width > 800 ? '.desktop-bracket-name' : '.mobile-bracket-name');
+        await expect(cards.first().locator('.bracket-core-stat')).toHaveText('지력 80');
+        await expect(cards.first().locator('.bracket-odds')).toHaveText('배당 28.00');
+        const geometry = await cards.evaluateAll((elements) =>
+            elements.map((card) => ({
+                card: card.getBoundingClientRect().toJSON(),
+                fields: [
+                    ...card.querySelectorAll<HTMLElement>(
+                        '.general-identity-icon, .general-identity-name, .bracket-core-stat, .bracket-odds'
+                    ),
+                ].map((el) => ({
+                    className: el.className,
+                    rect: el.getBoundingClientRect().toJSON(),
+                    fontSize: getComputedStyle(el).fontSize,
+                    scrollWidth: el.scrollWidth,
+                    clientWidth: el.clientWidth,
+                })),
+            }))
+        );
+        for (const { card, fields } of geometry) {
+            for (const field of fields) {
+                expect(field.rect.left).toBeGreaterThanOrEqual(card.left);
+                expect(field.rect.right).toBeLessThanOrEqual(card.right);
+                expect(field.rect.top).toBeGreaterThanOrEqual(card.top);
+                expect(field.rect.bottom).toBeLessThanOrEqual(card.bottom);
+                if (field.className === 'general-identity-icon') expect(field.rect.width).toBe(64);
+                if (field.className === 'bracket-core-stat' || field.className === 'bracket-odds') {
+                    expect(field.fontSize).toBe('14px');
+                    expect(field.scrollWidth).toBeLessThanOrEqual(field.clientWidth + 1);
+                }
+            }
+        }
+        await writeFile(testInfo.outputPath('tournament-info-geometry.json'), JSON.stringify(geometry, null, 2));
+        await writeFile(testInfo.outputPath('tournament-info-dom.html'), await bracket.evaluate((el) => el.outerHTML));
+        await page.screenshot({ path: testInfo.outputPath('tournament-info.png'), fullPage: true });
+        if (width <= 800) {
+            for (const label of ['8강', '4강', '결승', '우승']) {
+                await bracket.getByRole('tab', { name: label, exact: true }).click();
+                await expect(cards.first().locator('.bracket-core-stat')).toHaveText('지력 80');
+                await expect(cards.first().locator('.bracket-odds')).toHaveText('배당 28.00');
+            }
+        }
+        realtimeState.totalAmount = 5600;
+        await page.getByRole('button', { name: '갱신', exact: true }).click();
+        await expect(cards.first().locator('.bracket-odds')).toHaveText('배당 56.00');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+}

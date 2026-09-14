@@ -81,7 +81,7 @@ const connections = computed(() =>
 );
 
 const odds = (id: number | null) => {
-    if (id === null) return '0';
+    if (id === null || props.betTotals === undefined) return '-';
     const amount = props.betTotals?.[id] ?? 0;
     if (!amount) return '∞';
     return (props.totalBet / amount).toFixed(2);
@@ -158,11 +158,19 @@ const mobilePairs = computed(() => {
                         }"
                     >
                         <GeneralIdentity
+                            class="bracket-info-identity"
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
                             :npc-state="slot.npcState"
-                        />
+                        >
+                            <template v-if="slot.id !== null" #details>
+                                <span v-if="coreStat(slot)" class="bracket-core-stat">
+                                    {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
+                                </span>
+                                <span class="bracket-odds">배당 {{ odds(slot.id) }}</span>
+                            </template>
+                        </GeneralIdentity>
                         <slot
                             v-if="columnIndex === 0 && bettingOpen && slot.id !== null"
                             name="bet-controls"
@@ -210,15 +218,21 @@ const mobilePairs = computed(() => {
                         :data-general-id="slot.id ?? undefined"
                     >
                         <GeneralIdentity
-                            :class="{ 'bracket-candidate-identity': activeMobileRound === 0 && bettingMode }"
+                            :class="{
+                                'bracket-candidate-identity': activeMobileRound === 0 && bettingMode,
+                                'bracket-info-identity': !bettingMode || activeMobileRound !== 0,
+                            }"
                             :name="slot.name"
                             :picture="slot.picture"
                             :image-server="slot.imageServer"
                             :npc-state="slot.npcState"
                         >
-                            <template v-if="activeMobileRound === 0 && bettingMode" #details>
+                            <template v-if="slot.id !== null" #details>
                                 <span v-if="coreStat(slot)" class="bracket-core-stat">
                                     {{ coreStat(slot)?.label }} {{ coreStat(slot)?.value }}
+                                </span>
+                                <span v-if="!bettingMode || activeMobileRound !== 0" class="bracket-odds">
+                                    배당 {{ odds(slot.id) }}
                                 </span>
                             </template>
                         </GeneralIdentity>
@@ -495,5 +509,17 @@ const mobilePairs = computed(() => {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px 18px;
     }
+}
+.bracket-info-identity :deep(.general-identity-name) {
+    font-size: 16px;
+    line-height: 18px;
+}
+.bracket-info-identity :deep(.general-identity-details) {
+    display: flex;
+    flex-direction: column;
+    font-size: 14px;
+    line-height: 18px;
+    text-align: left;
+    overflow-wrap: anywhere;
 }
 </style>
