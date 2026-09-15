@@ -346,7 +346,7 @@ small {
 
 .hall-nation,
 .hall-name {
-    font-size: 11px;
+    font-size: var(--sammo-font-size-hall-name);
 }
 
 .hall-name {
@@ -357,7 +357,7 @@ small {
 }
 
 .hall-name small {
-    font-size: 95%;
+    font-size: var(--sammo-font-size-hall-secondary);
 }
 
 .hall-value {

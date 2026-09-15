@@ -342,7 +342,7 @@ const mobilePairs = computed(() => {
     border-radius: 3px;
     color: #fff3cd;
     background: #59400e;
-    font: 700 11px/1 var(--sammo-font-sans);
+    font: 700 var(--sammo-font-size-bracket-bet-button)/1 var(--sammo-font-sans);
     cursor: pointer;
 }
 .bracket-bet-button:hover,
@@ -440,7 +440,7 @@ const mobilePairs = computed(() => {
 
 /* Betting uses the same paired cards at every viewport; rounds remain selectable. */
 .inline-betting-bracket {
-    font-size: var(--bet-font-normal, 14px);
+    font-size: var(--sammo-font-size-normal);
 }
 .inline-betting-bracket .mobile-bracket {
     display: block;
@@ -471,14 +471,14 @@ const mobilePairs = computed(() => {
     text-align: left;
 }
 .bracket-candidate-identity :deep(.general-identity-name) {
-    font-size: var(--bet-font-large, 16px);
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 700;
     white-space: normal;
     overflow-wrap: anywhere;
 }
 .bracket-core-stat {
     color: #fff;
-    font-size: var(--bet-font-normal, 14px);
+    font-size: var(--sammo-font-size-normal);
 }
 .bracket-bet-summary {
     display: grid;

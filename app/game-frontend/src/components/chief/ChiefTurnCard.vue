@@ -107,7 +107,7 @@ const handleClick = () => {
 
 .chief-card.compact {
     padding: 0;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-chief-compact-base);
 }
 
 .chief-header {
@@ -175,7 +175,7 @@ const handleClick = () => {
     height: 13px;
     min-height: 0;
     padding: 0 2px;
-    font-size: 0.55rem;
+    font-size: var(--sammo-font-size-chief-compact-row);
     line-height: 11px;
 }
 
@@ -183,7 +183,7 @@ const handleClick = () => {
     box-sizing: border-box;
     height: 20px;
     min-height: 0;
-    font-size: 0.65rem;
+    font-size: var(--sammo-font-size-chief-compact-header);
 }
 
 .compact-name,
@@ -210,7 +210,7 @@ const handleClick = () => {
 
 .chief-card.compact .chief-level,
 .chief-card.compact .chief-name {
-    font-size: 0.6rem;
+    font-size: var(--sammo-font-size-chief-compact-name);
 }
 
 .chief-row.rest {

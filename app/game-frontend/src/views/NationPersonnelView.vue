@@ -946,7 +946,7 @@ select {
         background-size: 48px 48px;
     }
     .chief-entry-copy strong {
-        font-size: 15px;
+        font-size: var(--sammo-font-size-personnel-mobile-name);
     }
     .chief-entry-copy small {
         font-size: var(--sammo-font-size-small);
@@ -958,7 +958,7 @@ select {
         line-height: 18px;
     }
     .personnel-lock-label {
-        font-size: 10px;
+        font-size: var(--sammo-font-size-personnel-mobile-lock);
     }
     .award-label {
         font-size: var(--sammo-font-size-small);

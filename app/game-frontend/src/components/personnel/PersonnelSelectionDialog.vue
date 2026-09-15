@@ -376,7 +376,7 @@ small {
     place-items: center;
     color: #d8be79;
     background: #25271f;
-    font: 700 24px/1 var(--sammo-font-sans);
+    font: 700 var(--sammo-font-size-title)/1 var(--sammo-font-sans);
 }
 .personnel-picker-card-body,
 .personnel-picker-card-title,

@@ -139,7 +139,7 @@ The game UI uses four starting sizes from `assets/styles/tokens.css`:
 
 | Token suffix (`--sammo-font-size-`) | CSS size | Role |
 | --- | --- | --- |
-| `small` | 12px | Compact controls, metadata, secondary labels |
+| `small` | `normal × 12 / 14` (12px) | Compact controls, metadata, secondary labels |
 | `normal` | 14px | Body, tables, ordinary controls |
 | `emphasis` | 16px | Emphasized names and section labels |
 | `title` | 24px | Page and major section headings |
@@ -193,3 +193,20 @@ before their fonts are enlarged. The `typographyPolicy.spec.ts` fixture tests
 protect the safe main labels, personnel breakpoints, dense chief rows, NPC
 length branches, and battle log ratios. They use mocked read responses and do
 not constitute live game or public deployment verification.
+
+
+### Relative small tier and exception variables (2026-09-15)
+
+`small` is `calc(var(--sammo-font-size-normal) * 12 / 14)`. The reference is the
+14px normal tier, not the immediate parent. An 80% declaration on nested `small`
+elements would shrink repeatedly and would yield 12.8px inside a 16px parent;
+the token keeps UI metadata at 12px regardless of nesting.
+
+The retained exceptions are also named in `tokens.css`: `nation-card`,
+`chief-compact-{base,row,header,name}`, `hall-{name,secondary}`,
+`personnel-mobile-{name,lock}`, `bracket-bet-button`, and `war-{name,crew}`
+(all with the `--sammo-font-size-` prefix). Their values preserve the previous
+rendering, including rem/em/% semantics. Zero-sized hidden markers and arbitrary
+user HTML remain content contracts. The betting page and bracket now reference
+the shared tier variables directly instead of the redundant `--bet-font-*` aliases.
+The historical deferral reasons above describe the original 12px proposal.

@@ -832,7 +832,7 @@ const repeatTurns = async (amount: number) => {
     padding: 0;
     gap: 0;
     text-align: center;
-    font-size: 0.55rem;
+    font-size: var(--sammo-font-size-chief-compact-row);
     line-height: 11.25px !important;
 }
 .chief-overview :deep(.chief-card.compact .chief-header) {
@@ -859,7 +859,7 @@ const repeatTurns = async (amount: number) => {
     width: 12px;
     height: 155px;
     color: #fff;
-    font-size: 0.55rem;
+    font-size: var(--sammo-font-size-chief-compact-row);
     line-height: 11.25px;
     text-align: center;
 }
