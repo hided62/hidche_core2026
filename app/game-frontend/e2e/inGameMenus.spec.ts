@@ -61,6 +61,7 @@ const readGeneralSummaryRows = async (summary: Locator) =>
 
 type FixtureState = {
     permission: 'head' | 'member';
+    battleTenured?: boolean;
     myset: number;
     scenarioEffect?: string | null;
     instantRetreatEnabled?: boolean;
@@ -295,7 +296,7 @@ const battleCenter = (state: FixtureState) => ({
     me: {
         id: 7,
         officerLevel: state.permission === 'head' ? 9 : 1,
-        permissionLevel: state.permission === 'head' ? 2 : 0,
+        permissionLevel: state.battleTenured ? 1 : state.permission === 'head' ? 2 : 0,
     },
     nation: { id: 1, name: '위', color: '#777777', level: 3 },
     currentYear: 185,
@@ -344,7 +345,7 @@ const battleCenter = (state: FixtureState) => ({
         {
             id: 8,
             name: '다른장수',
-            npcState: 2,
+            npcState: state.battleTenured ? 0 : 2,
             officerLevel: 1,
             officerLevelText: '일반',
             cityId: 1,
@@ -644,7 +645,7 @@ const install = async (page: Page, state: FixtureState) => {
                 return response({ recorded: true });
             }
             if (operation === 'nation.getBattleCenter') {
-                if (state.permission === 'member') {
+                if (state.permission === 'member' && !state.battleTenured) {
                     return {
                         error: {
                             message: '권한이 부족합니다.',
@@ -661,9 +662,18 @@ const install = async (page: Page, state: FixtureState) => {
                     ['generalHistory', 'battleDetail', 'battleResult', 'generalAction'].includes(jsonInput.type)
                         ? jsonInput.type
                         : 'generalAction';
+                if (state.battleTenured && jsonInput.generalId === 8 && type === 'generalAction') {
+                    return {
+                        error: {
+                            message: '권한이 부족합니다. 유저 장수의 개인 기록은 수뇌만 열람 가능합니다.',
+                            code: -32000,
+                            data: { code: 'FORBIDDEN', httpStatus: 403, path: operation },
+                        },
+                    };
+                }
                 return response({
                     type,
-                    generalId: 7,
+                    generalId: jsonInput.generalId,
                     logs: [{ id: 1, text: state.hiddenSeedLogText ?? `<Y>${type} 감찰 기록</>` }],
                 });
             }
@@ -2573,4 +2583,47 @@ test('감찰부 하단 창 닫기 버튼은 상단 버튼과 같은 크기를 �
     await page.setViewportSize({ width: 500, height: 900 });
     const mobile = await measure();
     expect(mobile.bottom).toEqual(mobile.top);
+});
+
+test('감찰부 사관 연수를 채운 일반 장수는 개인 기록 거부에도 열전과 전투 기록을 본다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        battleTenured: true,
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+    for (const width of [1000, 500]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('battle-center');
+        const selector = page.locator('.selector-row select').nth(1);
+        await expect(selector).toHaveValue('8');
+        for (const type of ['generalHistory', 'battleResult', 'battleDetail']) {
+            await expect(page.locator(`[data-log-type="${type}"]`)).toContainText(`${type} 감찰 기록`);
+        }
+        await expect(page.getByRole('alert')).toContainText('개인 기록은 수뇌만');
+        await expect(page.locator('[data-log-type="generalAction"]')).not.toContainText('generalAction 감찰 기록');
+        await expect(page.locator('.battle-general-card')).toBeVisible();
+        await waitForVisualAssets(page);
+        await persistParityArtifact(
+            page,
+            `core-battle-permission-${width}`,
+            await page.locator('.log-block').evaluateAll((elements) =>
+                elements.map((element) => ({
+                    type: element.getAttribute('data-log-type'),
+                    text: element.textContent,
+                    rect: element.getBoundingClientRect().toJSON(),
+                    font: getComputedStyle(element).font,
+                }))
+            )
+        );
+        await selector.selectOption('7');
+        await expect(page.locator('[data-log-type="generalAction"]')).toContainText('generalAction 감찰 기록');
+        await expect(page.getByRole('alert')).toHaveCount(0);
+        await selector.selectOption('8');
+        await expect(page.getByRole('alert')).toContainText('개인 기록은 수뇌만');
+        await expect(page.locator('[data-log-type="generalAction"]')).not.toContainText('generalAction 감찰 기록');
+        await expect(page.locator('[data-log-type="battleResult"]')).toContainText('battleResult 감찰 기록');
+    }
 });

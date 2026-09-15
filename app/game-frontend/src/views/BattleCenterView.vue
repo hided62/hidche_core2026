@@ -153,16 +153,27 @@ const loadLogs = async (generalId: number) => {
         return;
     }
     logLoading.value = true;
+    error.value = null;
+    // 대상 전환 시 이전 장수의 기록이 새 장수 정보와 섞이지 않게 비운다.
+    for (const type of logTypes) {
+        logs[type] = [];
+    }
     const requestId = (logRequestId += 1);
 
     try {
-        const responses = await Promise.all(
+        const responses = await Promise.allSettled(
             logTypes.map((type) => trpc.nation.getGeneralLog.query({ generalId, type }))
         );
         if (requestId !== logRequestId || selectedGeneralId.value !== generalId) {
             return;
         }
-        for (const response of responses) {
+        // Ref처럼 개인 기록의 권한 거부가 열전·전투 기록까지 지우지 않게 한다.
+        for (const result of responses) {
+            if (result.status === 'rejected') {
+                error.value = resolveErrorMessage(result.reason);
+                continue;
+            }
+            const response = result.value;
             const formatted = response.logs.map((entry) => {
                 const eventTime =
                     response.type === 'generalAction'

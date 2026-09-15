@@ -945,6 +945,52 @@ describe('in-game my information ownership', () => {
 });
 
 describe('battle-center general and user permissions', () => {
+    it.each([
+        { role: '연수 미달', officerLevel: 1, belong: 2, permission: 'normal', penalty: {}, level: 0 },
+        { role: '연수 충족', officerLevel: 1, belong: 3, permission: 'normal', penalty: {}, level: 1 },
+        { role: '연수 초과', officerLevel: 1, belong: 4, permission: 'normal', penalty: {}, level: 1 },
+        { role: '지방 관직', officerLevel: 2, belong: 0, permission: 'normal', penalty: {}, level: 1 },
+        { role: '수뇌', officerLevel: 5, belong: 0, permission: 'normal', penalty: {}, level: 2 },
+        { role: '군주', officerLevel: 12, belong: 0, permission: 'normal', penalty: {}, level: 4 },
+        { role: '외교권자', officerLevel: 1, belong: 0, permission: 'ambassador', penalty: {}, level: 4 },
+        { role: '조언자', officerLevel: 1, belong: 0, permission: 'auditor', penalty: {}, level: 3 },
+        { role: '수뇌 금지', officerLevel: 12, belong: 4, permission: 'normal', penalty: { noChief: true }, level: 0 },
+        {
+            role: '기밀 제한',
+            officerLevel: 12,
+            belong: 4,
+            permission: 'normal',
+            penalty: { noTopSecret: true },
+            level: 1,
+        },
+        {
+            role: '외교 제한',
+            officerLevel: 12,
+            belong: 4,
+            permission: 'normal',
+            penalty: { noAmbassador: true },
+            level: 2,
+        },
+    ])('Ref 감찰부 권한: $role', async ({ officerLevel, belong, permission, penalty, level }) => {
+        const me = buildGeneral({ officerLevel, meta: { belong, permission }, penalty });
+        const other = buildGeneral({ id: 8, userId: 'user-8' });
+        const fixture = createContext({ me, targets: [me, other], nationMeta: { secretLimit: 3 } });
+        const caller = appRouter.createCaller(fixture.context);
+        if (level < 1) {
+            await expect(caller.nation.getBattleCenter()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        } else {
+            await expect(caller.nation.getBattleCenter()).resolves.toMatchObject({ me: { permissionLevel: level } });
+        }
+        for (const type of ['generalHistory', 'battleDetail', 'battleResult', 'generalAction'] as const) {
+            const request = caller.nation.getGeneralLog({ generalId: other.id, type });
+            if (level < 1 || (type === 'generalAction' && level < 2)) {
+                await expect(request).rejects.toMatchObject({ code: 'FORBIDDEN' });
+            } else {
+                await expect(request).resolves.toMatchObject({ generalId: other.id, type });
+            }
+        }
+    });
+
     it('distinguishes an ordinary member, a tenured member, and an auditor', async () => {
         const ordinary = createContext({
             me: buildGeneral({ officerLevel: 1, meta: { belong: 1, permission: 'normal' } }),
