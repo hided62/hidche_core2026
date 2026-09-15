@@ -11,7 +11,11 @@ import { assignManualApplicantGroup } from '../../tournament/workerHelpers.js';
 import { accessAuthedProcedure, authedProcedure, engineAuthedProcedure, procedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { loadCurrentGameTime } from '../../services/gameClock.js';
-import { ensureActiveRedisClockFence, ensureBettingRedisClockFence } from '../../services/redisClockFence.js';
+import {
+    ensureActiveRedisClockFence,
+    ensureBettingRedisClockFence,
+    ensureTournamentParticipationRedisClockFence,
+} from '../../services/redisClockFence.js';
 import { loadClockAdminStatus } from '../../services/clockReadiness.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
@@ -63,10 +67,11 @@ const withTournamentClockMutation = async <T>(
         tournamentMutationLockHeld?: boolean;
     },
     store: TournamentStore,
-    operation: () => Promise<T>
+    operation: () => Promise<T>,
+    ensureFence = ensureActiveRedisClockFence
 ): Promise<T> => {
     const gameTime = await loadCurrentGameTime(ctx.db);
-    const fence = await ensureActiveRedisClockFence(ctx.redis, ctx.profile.name, gameTime);
+    const fence = await ensureFence(ctx.redis, ctx.profile.name, gameTime);
     if (!fence) {
         throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -473,70 +478,75 @@ export const tournamentRouter = router({
     join: engineAuthedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        return withTournamentClockMutation(ctx, store, async () => {
-            const state = await store.getState();
-            if (!state || state.stage !== 1 || state.participantsLockedAt) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
-            }
+        return withTournamentClockMutation(
+            ctx,
+            store,
+            async () => {
+                const state = await store.getState();
+                if (!state || state.stage !== 1 || state.participantsLockedAt) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
+                }
 
-            const [participants, worldState] = await Promise.all([
-                store.getParticipants(),
-                ctx.db.worldState.findFirst(),
-            ]);
-            if (participants.some((entry) => entry.id === general.id)) {
-                return { ok: true, count: participants.length };
-            }
-            if (participants.length >= 64) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 인원이 가득 찼습니다.' });
-            }
+                const [participants, worldState] = await Promise.all([
+                    store.getParticipants(),
+                    ctx.db.worldState.findFirst(),
+                ]);
+                if (participants.some((entry) => entry.id === general.id)) {
+                    return { ok: true, count: participants.length };
+                }
+                if (participants.length >= 64) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 인원이 가득 찼습니다.' });
+                }
 
-            const develCost = resolveCurrentDevelCost(worldState);
-            const feeResult = await ctx.turnDaemon.requestCommand({
-                type: 'adjustGeneralResources',
-                requestId: tournamentJoinCommandRequestId(ctx.requestId, 'resources'),
-                reason: 'tournamentJoin',
-                adjustments: [{ generalId: general.id, goldDelta: -develCost, minGoldAfter: 0 }],
-            });
-            if (!feeResult || feeResult.type !== 'adjustGeneralResources') {
-                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-            }
-            if (!feeResult.ok || feeResult.processed !== 1) {
-                throw new TRPCError({
-                    code: 'BAD_REQUEST',
-                    message: feeResult.ok ? '금이 부족합니다.' : feeResult.reason,
-                });
-            }
-
-            const meta = asRecord(general.meta);
-            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
-            const applicant = assignManualApplicantGroup({
-                state,
-                baseSeed: String(asRecord(worldState?.meta).hiddenSeed ?? 'tournament'),
-                current: participants,
-                applicant: {
-                    id: general.id,
-                    name: general.name,
-                    leadership: general.leadership,
-                    strength: general.strength,
-                    intel: general.intel,
-                    level,
-                },
-            });
-            const next = participants.concat(applicant);
-
-            try {
-                await store.setParticipants(next);
-            } catch (error) {
-                await ctx.turnDaemon.requestCommand({
+                const develCost = resolveCurrentDevelCost(worldState);
+                const feeResult = await ctx.turnDaemon.requestCommand({
                     type: 'adjustGeneralResources',
-                    requestId: tournamentJoinCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
-                    reason: 'tournamentJoinRollback',
-                    adjustments: [{ generalId: general.id, goldDelta: develCost }],
+                    requestId: tournamentJoinCommandRequestId(ctx.requestId, 'resources'),
+                    reason: 'tournamentJoin',
+                    adjustments: [{ generalId: general.id, goldDelta: -develCost, minGoldAfter: 0 }],
                 });
-                throw error;
-            }
-            return { ok: true, count: next.length };
-        });
+                if (!feeResult || feeResult.type !== 'adjustGeneralResources') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!feeResult.ok || feeResult.processed !== 1) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: feeResult.ok ? '금이 부족합니다.' : feeResult.reason,
+                    });
+                }
+
+                const meta = asRecord(general.meta);
+                const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+                const applicant = assignManualApplicantGroup({
+                    state,
+                    baseSeed: String(asRecord(worldState?.meta).hiddenSeed ?? 'tournament'),
+                    current: participants,
+                    applicant: {
+                        id: general.id,
+                        name: general.name,
+                        leadership: general.leadership,
+                        strength: general.strength,
+                        intel: general.intel,
+                        level,
+                    },
+                });
+                const next = participants.concat(applicant);
+
+                try {
+                    await store.setParticipants(next);
+                } catch (error) {
+                    await ctx.turnDaemon.requestCommand({
+                        type: 'adjustGeneralResources',
+                        requestId: tournamentJoinCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
+                        reason: 'tournamentJoinRollback',
+                        adjustments: [{ generalId: general.id, goldDelta: develCost }],
+                    });
+                    throw error;
+                }
+                return { ok: true, count: next.length };
+            },
+            ensureTournamentParticipationRedisClockFence
+        );
     }),
     cancel: adminProcedure.mutation(async ({ ctx }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));

@@ -336,6 +336,11 @@ PM2가 새 owner/epoch와 DB snapshot으로 재시작합니다. lease 오류만�
 않습니다. 이전 버전에서 이미 lease 오류로 PAUSED가 된 서버는 원인을 확인한 뒤
 한 번 `START`/재개해야 합니다.
 
+Host 업데이트 등으로 VM이 최대 10분 중단되면 새 runtime은 밀린 턴을 기존 엔진의
+순서·batch budget으로 즉시 따라잡습니다(정확히 10분 포함). 10분 초과는 기존의
+12턴 묶음 이동 및 대기 후 2배속 복구 정책을 사용합니다. 이미 저장한 복구 창과
+운영자의 PAUSED/STOPPED는 변경하지 않습니다.
+
 30초 lease와 이전 owner의 fencing은 유지합니다. transaction의 만료 검사는 시작에
 고정된 `CURRENT_TIMESTAMP`가 아닌 검사 순간의 `clock_timestamp()`를 사용합니다.
 역방향 시계 보정으로 기존 lease가 아직 유효하면 startup은 2초 간격으로 기다리며

@@ -231,7 +231,7 @@ describeIntegration('durable clock reconciliation', () => {
         expect((await db.worldState.findUniqueOrThrow({ where: { id: row.id } })).clockRecoveryStartTick).toBe(1n);
     });
 
-    it.each([300, 420])('applies startup recovery after %i seconds on a 60-minute server', async (delay) => {
+    it.each([180, 420, 590, 610])('applies startup recovery after %i seconds on a 60-minute server', async (delay) => {
         const profile = 'short-startup';
         await db.worldState.create({
             data: {
@@ -259,8 +259,8 @@ describeIntegration('durable clock reconciliation', () => {
                 fencingEpoch: token.fencingEpoch,
             });
             const world = await db.worldState.findFirstOrThrow();
-            expect(world.clockPhase).toBe(delay < 360 ? 'RUNNING' : 'RECONCILING');
-            expect(readTurnRecovery(world) === null).toBe(delay < 360);
+            expect(world.clockPhase).toBe(delay <= 600 ? 'RUNNING' : 'RECONCILING');
+            expect(readTurnRecovery(world) === null).toBe(delay <= 600);
         } finally {
             await lease.close();
         }
@@ -344,6 +344,61 @@ describeIntegration('durable clock reconciliation', () => {
             await lease.close();
         }
     });
+
+    it.each([300, 1200, 3600])(
+        'keeps pending turns and operator pause across a short VM outage (%i second turn)',
+        async (turnSeconds) => {
+            const profile = 'short-vm-outage';
+            const anchor = new Date(Date.now() - 590_000);
+            await db.worldState.create({
+                data: {
+                    scenarioCode: profile,
+                    currentYear: 199,
+                    currentMonth: 1,
+                    tickSeconds: turnSeconds,
+                    clockBaseTime: anchor,
+                    clockWallAnchor: anchor,
+                    clockTick: 0n,
+                    lastTurnTick: 0n,
+                    clockMode: 'realtime',
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    deadlineGeneration: 1n,
+                },
+            });
+            const general = await db.general.create({
+                data: { id: 901, name: 'pending-turn', turnTick: 12345n, turnTime: anchor },
+            });
+            const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, { profile, heartbeat: false });
+            try {
+                const token = await lease.acquire();
+                const authority = {
+                    kind: 'DAEMON' as const,
+                    profileName: profile,
+                    ownerId: token!.ownerId,
+                    fencingEpoch: token!.fencingEpoch,
+                };
+                await prepareRealtimeRecovery(db, authority);
+                expect(await db.worldState.findFirstOrThrow()).toMatchObject({
+                    clockPhase: 'RUNNING',
+                    clockRevision: 1n,
+                    clockTick: 0n,
+                    lastTurnTick: 0n,
+                    clockRecoveryStartTick: null,
+                });
+                expect(await db.general.findUniqueOrThrow({ where: { id: general.id } })).toMatchObject({
+                    turnTick: general.turnTick,
+                    turnTime: general.turnTime,
+                });
+                expect(await db.clockSuspension.count()).toBe(0);
+                // 짧은 host 중단도 운영자가 정지한 서버를 자동 재개하는 근거가 되지 않는다.
+                await prepareRealtimeRecovery(db, authority, { paused: true });
+                expect(await db.worldState.findFirstOrThrow()).toMatchObject({ clockPhase: 'SUSPENDED' });
+            } finally {
+                await lease.close();
+            }
+        }
+    );
 
     it.each([false, true])('fences outage recovery and reuses its window; repeated outage=%s', async (repeated) => {
         const profile = 'recovery-startup';
@@ -513,8 +568,8 @@ describeIntegration('durable clock reconciliation', () => {
         }
     );
 
-    it.each([359999, 360000, 360001, 840000, 12 * 3600000 + 1000])(
-        'persists strict recovery boundaries for %i ms',
+    it.each([180000, 599999, 600000, 600001, 840000, 12 * 3600000 + 1000])(
+        'persists the inclusive ten-minute recovery boundary for %i ms',
         async (gap) => {
             const observed = T / 6;
             const future = new Date(Date.now() + 3600000);
@@ -549,7 +604,7 @@ describeIntegration('durable clock reconciliation', () => {
                 authority,
                 testResumeWallAt: now,
             });
-            expect(plan.recovery === null).toBe(gap < 360000);
+            expect(plan.recovery === null).toBe(gap <= 600000);
             expect(await db.message.count()).toBe(0);
             // Redis 장애 후에도 알림은 DB의 RUNNING 전이와 함께 한 번만 저장한다.
             await expect(

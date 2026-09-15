@@ -68,8 +68,8 @@ export const turnShiftTicks = (turns: number): GameTick => {
     return asGameTick(turns * GAME_TICKS_PER_TURN);
 };
 
-/** 즉시 처리 여부는 12턴 묶음 생략 전의 전체 지연으로 판정한다. */
-export const immediateRecoveryLimitSeconds = (turnSeconds: number): number => Math.min(600, turnSeconds / 10);
+/** VM/host 업데이트의 전체 중단 10분까지는 기존 엔진 순서와 budget으로 따라잡는다. */
+export const immediateRecoveryLimitSeconds = (): number => 600;
 
 /**
  * observedTick은 중단 전에 저장한 관측 지점, normalTick은 기존 시간표의 현재 지점이다.
@@ -91,8 +91,8 @@ export const planTurnRecovery = (input: {
     if (!Number.isFinite(wallNow.getTime())) throw new Error('Recovery wall instant is invalid.');
     const gap = Math.max(0, normalTick - observedTick);
     const ticksPerSecond = GAME_TICKS_PER_TURN / turnSeconds;
-    const immediateLimit = immediateRecoveryLimitSeconds(turnSeconds) * ticksPerSecond;
-    if (gap < immediateLimit) {
+    const immediateLimit = immediateRecoveryLimitSeconds() * ticksPerSecond;
+    if (gap <= immediateLimit) {
         return {
             skippedTurns: 0,
             recoveryTurns: 0,

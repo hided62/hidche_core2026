@@ -84,6 +84,52 @@ const buildWorld = (stateOverride: Partial<TurnWorldState> = {}): InMemoryTurnWo
 };
 
 describe('runtime clock shift', () => {
+    it('executes ten minutes of pending work in bounded batches without skipping or repeating generals', async () => {
+        const base = new Date('2026-07-30T10:00:00Z');
+        const resumed = new Date(base.getTime() + 600_000);
+        const plan = planTurnRecovery({
+            observedTick: 0,
+            normalTick: GAME_TICKS_PER_TURN,
+            wallNow: resumed,
+            turnSeconds: 600,
+        });
+        expect(plan).toMatchObject({ skippedTurns: 0, recovery: null });
+        const world = buildWorld({
+            clockBaseTime: base,
+            clockTick: 0,
+            clockWallAnchor: base,
+            clockMode: 'realtime',
+            clockPhase: 'RUNNING',
+            lastTurnTick: 0,
+        });
+        for (const [id, offset] of [
+            [1, 19_902],
+            [2, 42_001],
+        ] as const) {
+            world.updateGeneral(id, { turnTime: new Date(base.getTime() + offset), turnTick: offset * 60 });
+        }
+        const executed: number[] = [];
+        const processor = new InMemoryTurnProcessor(world, {
+            afterExecuteGeneral: async (general) => {
+                executed.push(general.id);
+            },
+        });
+        const target = world.getGameNow(resumed);
+        world.advanceGameClockTo(target, resumed);
+        const budget = { budgetMs: 10_000, maxGenerals: 1, catchUpCap: 1 };
+        let result = await processor.run(target, budget);
+        expect(result.processedGenerals).toBe(1);
+        for (let batch = 0; result.partial && batch < 4; batch++) {
+            result = await processor.run(target, budget, result.checkpoint);
+            expect(result.processedGenerals).toBeLessThanOrEqual(1);
+        }
+        expect(result.partial).toBe(false);
+        expect(executed).toEqual([1, 2]);
+        expect(world.getState().currentMonth).toBe(2);
+        expect(world.getGeneralById(1)!.turnTick).toBe(GAME_TICKS_PER_TURN + 19_902 * 60);
+        expect(world.getGeneralById(2)!.turnTick).toBe(GAME_TICKS_PER_TURN + 42_001 * 60);
+    });
+
     it('runs two real monthly cycles per normal interval, survives reload, and returns to one cycle', async () => {
         const base = new Date('2026-07-30T10:00:00Z');
         const wallAt = (minutes: number) => new Date(base.getTime() + minutes * 60_000);

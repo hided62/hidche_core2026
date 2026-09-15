@@ -44,9 +44,18 @@ From 2026-09-07, maintenance and crash recovery use the following
 `RECOVER_TURNS` policy. The base turn length does not change. One turn remains
 36,000,000 ticks; a persisted `TurnRecoveryWindow` changes only wall execution.
 
-- An entire delay strictly below `min(600 seconds, turnSeconds / 10)` catches
-  up immediately through the ordinary engine. Equality uses recovery. The
-  limit is 30 seconds on a 5-minute server and 6 minutes on a 60-minute server.
+- From 2026-09-15, an entire delay up to and including 600 seconds catches
+  up immediately through the ordinary engine, independently of the server's
+  turn length. This accommodates host updates that pause and resume a VM.
+  Pending turns are executed in order with the ordinary per-run budget and
+  month boundary cap; they are not marked complete or skipped. The lease still
+  expires after 30 seconds and a fresh owner must fence the old process and
+  reload durable state before catching up. Operator pauses remain pauses.
+- During the persisted wait before 2x recovery, tournament participation is
+  allowed when the phase is `RUNNING`, the daemon lease is ready, and DB/Redis
+  revision and deadline generation agree. Registration stage, capacity,
+  duplicate entry, fee and ENGINE transaction checks still apply. Tournament
+  stage advancement and settlement continue to require a ticking clock.
 - For longer delays, skip only complete 12-turn blocks, moving future
   schedules and the execution cursor by the same integer delta. Never apply
   the short-delay exception again to the remainder. An exact multiple of

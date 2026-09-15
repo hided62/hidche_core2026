@@ -160,9 +160,9 @@ describe('turn-aligned double-speed recovery', () => {
         expect(clock.executionRate(end)).toBe(1);
     });
 
-    it.each([300, 3600, 6000, 7200])('uses the strict whole-delay threshold for a %i second turn', (turnSeconds) => {
+    it.each([60, 300, 1200, 3600, 6000, 7200])('catches up through ten minutes for a %i second turn', (turnSeconds) => {
         const rate = T / turnSeconds;
-        const limitMs = Math.min(600, turnSeconds / 10) * 1000;
+        const limitMs = 600_000;
         for (const delta of [-1, 0, 1]) {
             const delayMs = limitMs + delta;
             const normal = Math.trunc((delayMs * rate) / 1000);
@@ -172,8 +172,8 @@ describe('turn-aligned double-speed recovery', () => {
                 wallNow: new Date(base + delayMs),
                 turnSeconds,
             });
-            expect(plan.recovery === null).toBe(delta < 0);
-            expect(plan.initialTick).toBe(delta < 0 ? normal : 0);
+            expect(plan.recovery === null).toBe(delta <= 0);
+            expect(plan.initialTick).toBe(delta <= 0 ? normal : 0);
         }
         // 장시간 중단의 작은 나머지에는 즉시 처리 예외를 다시 적용하지 않는다.
         const long = planTurnRecovery({ observedTick: 0, normalTick: 12 * T + rate, wallNow: wall(20), turnSeconds });

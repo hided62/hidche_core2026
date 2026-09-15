@@ -73,6 +73,13 @@ export const ensureActiveRedisClockFence = async (
     return ensureRedisClockFence(redis, profileName, gameTime, ['RUNNING']);
 };
 
+/** 복구 대기 중에도 참가 신청은 가능하다. 자동 진행/정산에는 사용하지 않는다. */
+export const ensureTournamentParticipationRedisClockFence = async (
+    redis: ClockFenceRedis,
+    profileName: string,
+    gameTime: CurrentGameTime
+): Promise<ActiveRedisClockFence | null> => ensureRedisClockFence(redis, profileName, gameTime, ['RUNNING']);
+
 /**
  * User betting is allowed against a frozen tournament deadline while the game
  * clock is suspended. Stage progression and settlement continue to use the

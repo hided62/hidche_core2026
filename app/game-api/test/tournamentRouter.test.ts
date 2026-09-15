@@ -153,6 +153,7 @@ const buildContext = (options: {
     rankRows?: Array<{ generalId: number; type: string; value: number }>;
     clockPhase?: 'PREOPEN' | 'RUNNING' | 'MANUAL' | 'SUSPENDED' | 'RECONCILING';
     requestId?: string;
+    clockWallAnchor?: Date;
 }): GameApiContext => {
     const db = {
         general: {
@@ -169,7 +170,7 @@ const buildContext = (options: {
                 clockBaseTime: new Date('2026-01-01T00:00:00.000Z'),
                 clockTick: 0n,
                 clockMode: 'realtime',
-                clockWallAnchor: new Date('2026-01-01T00:00:00.000Z'),
+                clockWallAnchor: options.clockWallAnchor ?? new Date('2026-01-01T00:00:00.000Z'),
                 clockPhase: options.clockPhase ?? 'RUNNING',
                 clockRevision: 1n,
                 deadlineGeneration: 1n,
@@ -261,7 +262,21 @@ describe('tournament router permissions and mutations', () => {
         ]);
     });
 
-    it('charges the authenticated general once when joining', async () => {
+    it.each(['PREOPEN', 'SUSPENDED', 'RECONCILING'] as const)(
+        'rejects joining in %s without charging',
+        async (clockPhase) => {
+            const redis = new MemoryRedis();
+            const transport = new TournamentTransport();
+            const general = buildGeneral(1, 'user-1');
+            const caller = appRouter.createCaller(
+                buildContext({ redis, transport, generals: [general], userId: 'user-1', clockPhase })
+            );
+            await expect(caller.tournament.join()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+            expect(transport.commands).toHaveLength(0);
+        }
+    );
+
+    it.each([false, true])('charges the authenticated general once when joining; recovery wait=%s', async (waiting) => {
         const redis = new MemoryRedis();
         const transport = new TournamentTransport();
         const general = buildGeneral(1, 'user-1');
@@ -284,6 +299,7 @@ describe('tournament router permissions and mutations', () => {
             userId: 'user-1',
             develCost: 200,
             requestId: 'http:tournament-join',
+            ...(waiting ? { clockWallAnchor: new Date(Date.now() + 1_800_000) } : {}),
         });
         const outerApiTransaction = vi.fn(async () => {
             throw new Error('tournament join must not hold an API transaction while waiting for the daemon');
