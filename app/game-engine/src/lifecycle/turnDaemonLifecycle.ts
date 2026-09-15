@@ -240,7 +240,8 @@ export class TurnDaemonLifecycle {
 
             const wallDeadline = await this.stateStore.projectGameDeadline?.(nextRunTime);
             const command = await this.controlQueue.waitFor(
-                Math.max(0, wallDeadline ? wallDeadline.getTime() - nowMs : nextTurnMs - gameNowMs)
+                // 벽시계가 뒤로 이동해도 다음 턴까지 장시간 잠들지 않고 lease/gate를 다시 확인한다.
+                Math.min(1000, Math.max(0, wallDeadline ? wallDeadline.getTime() - nowMs : nextTurnMs - gameNowMs))
             );
             if (command) {
                 await this.handleCommand(command);

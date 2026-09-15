@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { describeRuntimeError, gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common';
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 
+import { TurnDaemonLeaseLostError } from '../lifecycle/databaseTurnDaemonLease.js';
+
 export interface GatewayProfileGateOptions {
     databaseUrl: string;
     gatewayDatabaseUrl?: string;
@@ -15,7 +17,7 @@ export interface GatewayProfileGateOptions {
 export interface GatewayProfileGate {
     shouldPause(): Promise<boolean>;
     isExplicitlyPaused(): boolean;
-    markPaused(error?: unknown): Promise<void>;
+    reportFailure(error?: unknown): Promise<void>;
     close(): Promise<void>;
 }
 
@@ -29,6 +31,7 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
     });
     await connector.connect();
     const prisma = connector.prisma;
+    const reportedLeaseErrors = new WeakSet<TurnDaemonLeaseLostError>();
     let lastCheckedAt = 0;
     let cachedPause = false;
     let cachedStatus: GatewayProfileStatus | null = null;
@@ -60,26 +63,38 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
             lastCheckedAt = now;
             return cachedPause;
         },
-        async markPaused(error?: unknown): Promise<void> {
-            cachedPause = true;
-            cachedStatus = 'PAUSED';
-            lastCheckedAt = performance.now();
+        async reportFailure(error?: unknown): Promise<void> {
+            // VM 정지/시계 보정으로 lease를 잃은 실행자는 종료하고 새 owner가
+            // DB를 다시 읽는다. 운영자의 RUNNING/PAUSED/STOPPED 의도는 덮어쓰지 않는다.
+            const recoverable = error instanceof TurnDaemonLeaseLostError;
+            if (recoverable && reportedLeaseErrors.has(error)) return;
+            if (!recoverable) {
+                cachedPause = true;
+                cachedStatus = 'PAUSED';
+                lastCheckedAt = performance.now();
+            }
             const failure = error ? describeRuntimeError(error) : null;
             const message = failure?.message ?? null;
             try {
                 await prisma.$transaction(async (tx) => {
-                    const updated = await tx.gatewayProfile.updateMany({
-                        where: {
-                            profileName: options.profileName,
-                            status: { in: [...PROFILE_STATUSES_MARKABLE_AS_PAUSED] },
-                            OR: [{ status: { not: 'PAUSED' } }, { lastError: { not: message } }, { lastError: null }],
-                        },
-                        data: {
-                            status: 'PAUSED',
-                            lastError: message,
-                        },
-                    });
-                    if (updated.count && failure) {
+                    const updated = recoverable
+                        ? null
+                        : await tx.gatewayProfile.updateMany({
+                              where: {
+                                  profileName: options.profileName,
+                                  status: { in: [...PROFILE_STATUSES_MARKABLE_AS_PAUSED] },
+                                  OR: [
+                                      { status: { not: 'PAUSED' } },
+                                      { lastError: { not: message } },
+                                      { lastError: null },
+                                  ],
+                              },
+                              data: {
+                                  status: 'PAUSED',
+                                  lastError: message,
+                              },
+                          });
+                    if ((recoverable || updated?.count) && failure) {
                         // 상태와 이력을 함께 commit한다. 재개가 lastError를 지워도
                         // 당시 원인과 실행 좌표는 관리자 감사 저장소에 남는다.
                         await tx.adminAuditEvent.create({
@@ -95,11 +110,16 @@ export const createGatewayProfileGate = async (options: GatewayProfileGateOption
                                 outcome: 'FAILED',
                                 errorCode: failure.code,
                                 errorMessage: failure.message,
-                                summary: { frames: failure.frames, ...options.incidentContext?.() },
+                                summary: {
+                                    frames: failure.frames,
+                                    ...options.incidentContext?.(),
+                                    recovery: recoverable ? 'RESTART' : 'OPERATOR',
+                                },
                             },
                         });
                     }
                 });
+                if (recoverable) reportedLeaseErrors.add(error);
             } catch {
                 if (failure) console.error('[turn-daemon] failed to persist runtime incident', failure);
                 return;

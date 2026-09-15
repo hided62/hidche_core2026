@@ -6,6 +6,7 @@ import { resolveDatabaseUrl } from '../scenario/databaseUrl.js';
 import { createTurnDaemonRuntime } from './turnDaemon.js';
 import { createTurnDaemonMemoryReporter } from './turnDaemonMemoryReporter.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
+import { retryTurnDaemonLeaseStartup } from './leaseStartupRetry.js';
 import { TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonCliOptions {
@@ -79,19 +80,21 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
     }
     const gameClockMode = rawGameClockMode as GameClockMode | undefined;
 
-    const runtime = await createTurnDaemonRuntime({
-        profile,
-        profileName,
-        databaseUrl,
-        gatewayDatabaseUrl,
-        defaultBudget: budget,
-        tickMinutes,
-        schedule: options.schedule,
-        enableDatabaseFlush,
-        pauseGateIntervalMs,
-        adminActionIntervalMs,
-        gameClockMode,
-    }).catch(async (error: unknown) => {
+    const runtime = await retryTurnDaemonLeaseStartup(() =>
+        createTurnDaemonRuntime({
+            profile,
+            profileName,
+            databaseUrl,
+            gatewayDatabaseUrl,
+            defaultBudget: budget,
+            tickMinutes,
+            schedule: options.schedule,
+            enableDatabaseFlush,
+            pauseGateIntervalMs,
+            adminActionIntervalMs,
+            gameClockMode,
+        })
+    ).catch(async (error: unknown) => {
         // 중복 starter가 정상 owner를 멈추면 안 된다. 그 밖의 초기화 실패는
         // lifecycle hook이 아직 없으므로 여기서 별도로 관리자에게 기록한다.
         if (!(error instanceof TurnDaemonLeaseUnavailableError)) {
@@ -103,7 +106,7 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
                     incidentContext: () => ({ stage: 'startup' }),
                 });
                 try {
-                    await gate.markPaused(error);
+                    await gate.reportFailure(error);
                 } finally {
                     await gate.close();
                 }

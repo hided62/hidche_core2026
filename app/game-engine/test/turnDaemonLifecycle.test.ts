@@ -51,6 +51,39 @@ describe('TurnDaemonLifecycle', () => {
         expect(lifecycle.getStatus()).toMatchObject({ state: 'stopping', paused: true, lastError: error.message });
     });
 
+    it('rechecks the lease within one second while a wall deadline remains far in the future', async () => {
+        const now = new Date('2026-09-15T00:00:00Z');
+        const error = new TurnDaemonLeaseLostError('che:default');
+        const queue = new InMemoryControlQueue();
+        const wait = vi.spyOn(queue, 'waitFor').mockResolvedValue(null);
+        let checks = 0;
+        const processor = { run: vi.fn() };
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(now.getTime()),
+                controlQueue: queue,
+                processor,
+                getNextTickTime: (value) => addMinutes(value, 60),
+                stateStore: {
+                    loadLastTurnTime: async () => now,
+                    loadNextGeneralTurnTime: async () => addMinutes(now, 60),
+                    projectGameDeadline: async () => addMinutes(now, 180),
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                },
+                pauseGate: async () => {
+                    if (++checks === 2) throw error;
+                    return false;
+                },
+            },
+            { profile: 'che', defaultBudget: { budgetMs: 100, maxGenerals: 10, catchUpCap: 1 } }
+        );
+        await expect(lifecycle.start()).rejects.toBe(error);
+        expect(wait).toHaveBeenCalledExactlyOnceWith(1000);
+        expect(processor.run).not.toHaveBeenCalled();
+    });
+
     it.each(['PREOPEN', 'SUSPENDED', 'RECONCILING', 'COMPLETED'] as const)(
         'does not dispatch an explicit run while the clock phase is %s',
         async (phase) => {

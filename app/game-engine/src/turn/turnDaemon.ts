@@ -942,7 +942,7 @@ const createTurnDaemonRuntimeWithLease = async (
             ...dbHooks.hooks,
             onRunError: async (error) => {
                 await dbHooks.hooks.onRunError?.(error);
-                await gatewayGate?.markPaused(error);
+                await gatewayGate?.reportFailure(error);
                 if (!turnDaemonLease?.isLost() && world.getGameClockState().phase === 'RUNNING') {
                     // 같은 command batch의 다음 가입도 정지된 시각을 보게 한다.
                     await dbHooks.prepareRealtimeRecovery({ paused: true });
@@ -974,7 +974,7 @@ const createTurnDaemonRuntimeWithLease = async (
     } else if (reservedTurnStoreHandle) {
         hooks = {
             onRunError: async (error) => {
-                await gatewayGate?.markPaused(error);
+                await gatewayGate?.reportFailure(error);
             },
         };
         close = async () => {
@@ -985,7 +985,7 @@ const createTurnDaemonRuntimeWithLease = async (
     } else if (gatewayGate) {
         hooks = {
             onRunError: async (error) => {
-                await gatewayGate?.markPaused(error);
+                await gatewayGate?.reportFailure(error);
             },
         };
         close = async () => {

@@ -308,6 +308,30 @@ integration('database turn daemon lease and fencing', () => {
         expect(await db.inputEvent.findUnique({ where: { requestId } })).toBeNull();
     });
 
+    it('fences expiry during a transaction using current DB time rather than transaction start time', async () => {
+        const profile = `${profilePrefix}transaction-expiry`;
+        const requestId = `${profilePrefix}transaction-expiry-write`;
+        const lease = await createLease(profile, 'stalled-owner');
+        await lease.acquire();
+        await expect(
+            db.$transaction(async (tx) => {
+                // transaction 시작 뒤에 만료되는 짧은 DB lease를 만든다. local watchdog은
+                // 60초이므로 이 검증은 DB의 실제 시간 fence만으로 통과해야 한다.
+                await tx.$executeRaw`
+                UPDATE turn_daemon_lease
+                SET lease_until = (clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '100 milliseconds'
+                WHERE profile = ${profile}
+            `;
+                await tx.inputEvent.create({
+                    data: { requestId, target: 'ENGINE', eventType: 'fenced-test', payload: {} },
+                });
+                await tx.$executeRaw`SELECT pg_sleep(0.2)`;
+                await lease.assertActive(tx);
+            })
+        ).rejects.toBeInstanceOf(TurnDaemonLeaseLostError);
+        expect(await db.inputEvent.findUnique({ where: { requestId } })).toBeNull();
+    });
+
     it('permits a clean successor after release while fencing a resumed old token', async () => {
         const profile = `${profilePrefix}release`;
         const first = await createLease(profile, 'owner-a');

@@ -184,6 +184,7 @@ export class DatabaseTurnDaemonLease {
         if (!token || this.lost) {
             throw this.getLossError();
         }
+        // CURRENT_TIMESTAMP는 transaction 시작에 고정되어 VM 정지 중 만료를 놓친다.
         const db = transaction ?? this.db;
         const rows = await db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
             SELECT "profile", "owner_id", "fencing_epoch"
@@ -192,7 +193,7 @@ export class DatabaseTurnDaemonLease {
                 "profile" = ${token.profile}
                 AND "owner_id" = ${token.ownerId}
                 AND "fencing_epoch" = ${token.fencingEpoch}
-                AND "lease_until" > CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+                AND "lease_until" > clock_timestamp() AT TIME ZONE 'UTC'
             FOR UPDATE
         `);
         if (rows.length === 0) {

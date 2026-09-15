@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createGatewayPostgresConnector, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createGatewayAdminActionConsumer } from '../src/turn/gatewayAdminActions.js';
+import { TurnDaemonLeaseLostError } from '../src/lifecycle/databaseTurnDaemonLease.js';
 import { createGatewayProfileGate } from '../src/turn/gatewayProfileGate.js';
 
 const databaseUrl = process.env.GATEWAY_RUNTIME_ACTION_DATABASE_URL;
@@ -111,6 +112,36 @@ integration('gateway runtime action consumer', () => {
         expect(onActionApplied).toHaveBeenCalledTimes(1);
     });
 
+    it.each(['RUNNING', 'PREOPEN', 'PAUSED', 'STOPPED', 'COMPLETED'] as const)(
+        'preserves %s and its operator error when a lease-lost owner reports failure',
+        async (status) => {
+            await db.gatewayProfile.update({ where: { profileName }, data: { status, lastError: 'operator context' } });
+            const before = await db.adminAuditEvent.count({ where: { profileName, action: 'runtime.failure' } });
+            const gate = await createGatewayProfileGate({ databaseUrl: databaseUrl!, profileName, cacheMs: 0 });
+            try {
+                const paused = await gate.shouldPause();
+                const error = new TurnDaemonLeaseLostError(profileName, 'simulated VM resume');
+                await gate.reportFailure(error);
+                await gate.reportFailure(error);
+                expect(await db.gatewayProfile.findUniqueOrThrow({ where: { profileName } })).toMatchObject({
+                    status,
+                    lastError: 'operator context',
+                });
+                expect(await gate.shouldPause()).toBe(paused);
+                expect(await db.adminAuditEvent.count({ where: { profileName, action: 'runtime.failure' } })).toBe(
+                    before + 1
+                );
+                const incident = await db.adminAuditEvent.findFirstOrThrow({
+                    where: { profileName, errorCode: 'TurnDaemonLeaseLostError' },
+                    orderBy: { createdAt: 'desc' },
+                });
+                expect(incident.summary).toMatchObject({ recovery: 'RESTART' });
+            } finally {
+                await gate.close();
+            }
+        }
+    );
+
     it('does not overwrite a terminal operator status while reporting a daemon error', async () => {
         const existingIncidents = await db.adminAuditEvent.count({ where: { profileName, action: 'runtime.failure' } });
         const gate = await createGatewayProfileGate({
@@ -123,15 +154,15 @@ integration('gateway runtime action consumer', () => {
                 where: { profileName },
                 data: { status: 'RUNNING', lastError: null },
             });
-            await gate.markPaused(new Error('running failure'));
+            await gate.reportFailure(new Error('running failure'));
             expect(await db.gatewayProfile.findUniqueOrThrow({ where: { profileName } })).toMatchObject({
                 status: 'PAUSED',
                 lastError: 'running failure',
             });
-            await gate.markPaused(new Error('running failure'));
+            await gate.reportFailure(new Error('running failure'));
             const incidents = await db.adminAuditEvent.findMany({ where: { profileName, action: 'runtime.failure' } });
             expect(incidents).toHaveLength(existingIncidents + 1);
-            expect(incidents[0]).toMatchObject({
+            expect(incidents.find((incident) => incident.errorMessage === 'running failure')).toMatchObject({
                 credentialKind: 'DAEMON',
                 errorCode: 'Error',
                 errorMessage: 'running failure',
@@ -146,7 +177,7 @@ integration('gateway runtime action consumer', () => {
                 where: { profileName },
                 data: { status: 'STOPPED', lastError: null },
             });
-            await gate.markPaused(new Error('late shutdown failure'));
+            await gate.reportFailure(new Error('late shutdown failure'));
             expect(await db.gatewayProfile.findUniqueOrThrow({ where: { profileName } })).toMatchObject({
                 status: 'STOPPED',
                 lastError: null,

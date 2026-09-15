@@ -319,6 +319,7 @@ process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상
 - 실행·명령·lifecycle 및 초기화 실패는 `admin_audit_event`의
   `action=runtime.failure`, `credentialKind=DAEMON`으로 저장합니다. profile PAUSED
   전환과 같은 transaction이며 현재 오류와 같은 반복 보고는 중복 저장하지 않습니다.
+  lease 만료는 상태를 바꾸지 않고 `summary.recovery=RESTART` 이력으로 기록합니다.
   재개·배포로 `lastError`가 사라져도 append-only 이력은 남습니다.
 - 오류 종류·정화한 메시지·최대 8개 stack frame과 게임 연월/시계/lease 좌표를
   저장합니다. 연결 URL과 인증값은 제거합니다. Gateway DB 자체에 기록할 수 없는
@@ -328,10 +329,24 @@ process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상
   lease와 시계를 다시 확인합니다. 복구 시작 시각 전의 대기를 장애로 오인하지 않습니다.
 
 VM 중단이나 DB 연결 장애로 turn-daemon lease가 만료되면 기존 owner는 턴과
-관리자 mutation을 처리할 수 없습니다. Lifecycle은 이를 즉시 `lastError`와
-`PAUSED`로 기록하고 종료합니다. PM2가 새 runtime과 DB snapshot으로 시작한 뒤
-관리자가 `재개`를 요청합니다. 이전 owner의 lease를 연장하거나 fencing 검증을
-우회하지 않습니다. 초기화·pause gate 실패도 같은 오류 기록 경로를 사용합니다.
+관리자 mutation을 처리할 수 없습니다. Lifecycle은 오류 이력을 남기고 종료하며,
+PM2가 새 owner/epoch와 DB snapshot으로 재시작합니다. lease 오류만으로 profile을
+영구 `PAUSED`로 바꾸지 않아 원래 실행 중인 서버는 기존 clock recovery 절차로
+자동 복구합니다. 운영자의 `PAUSED`/`STOPPED`와 실제 게임 처리 오류는 자동 재개하지
+않습니다. 이전 버전에서 이미 lease 오류로 PAUSED가 된 서버는 원인을 확인한 뒤
+한 번 `START`/재개해야 합니다.
+
+30초 lease와 이전 owner의 fencing은 유지합니다. transaction의 만료 검사는 시작에
+고정된 `CURRENT_TIMESTAMP`가 아닌 검사 순간의 `clock_timestamp()`를 사용합니다.
+역방향 시계 보정으로 기존 lease가 아직 유효하면 startup은 2초 간격으로 기다리며
+PM2의 연속 시작 실패 한도를 소진하지 않습니다. 다음 턴을 기다리는 루프도 최대
+1초마다 gate를 다시 확인합니다. lease 이외 초기화·게임 처리 오류는 계속 PAUSED로
+기록하며 자동 재시도로 숨기지 않습니다.
+
+Hyper-V의 VM 정지/재개, 체크포인트 또는 host 시간 보정은 게스트의 heartbeat와
+벽시계에 영향을 줄 수 있습니다. 장애 시각의 게스트 `hv_utils`, `Clock change detected`,
+NTP 로그와 Windows Hyper-V/백업 작업 이력을 대조합니다. lease 기간을 늘리거나
+시간 동기화를 임의로 끄는 것으로 해결하지 않습니다.
 
 Turn daemon의 DB persistence interactive transaction은 기본 30초입니다. 정상 turn
 budget과 같은 Prisma 기본 5초를 그대로 쓰면 populated season의 flush가 경계에서
