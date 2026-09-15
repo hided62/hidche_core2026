@@ -629,7 +629,7 @@ onMounted(() => {
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 .my-page-mobile-scroll-spacer {
@@ -645,7 +645,7 @@ onMounted(() => {
     gap: 0 4px;
     border: 1px solid #666;
     background: transparent;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .title-row > span {
     flex-basis: 100%;
@@ -714,7 +714,7 @@ button:disabled {
     border-bottom: 1px solid #666;
     background-color: #14241b;
     background-image: var(--sammo-texture-green);
-    font-size: 1.25em;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 500;
 }
 .section-title {

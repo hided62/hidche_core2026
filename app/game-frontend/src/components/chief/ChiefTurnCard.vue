@@ -131,20 +131,20 @@ const handleClick = () => {
 }
 
 .chief-level {
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.7);
 }
 
 .chief-name {
     overflow: hidden;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .chief-me {
-    font-size: 0.65rem;
+    font-size: var(--sammo-font-size-small);
     padding: 2px 6px;
     border-radius: 0;
     background: rgba(201, 164, 90, 0.2);
@@ -166,7 +166,7 @@ const handleClick = () => {
     /* Ref draws no rule between reservation rows and keeps them left aligned. */
     border: 0;
     text-align: left;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .chief-card.compact .chief-row {

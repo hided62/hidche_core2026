@@ -424,7 +424,7 @@ onMounted(() => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.5;
 }
 
@@ -464,13 +464,13 @@ onMounted(() => {
 }
 
 #vote-title {
-    font-size: 1.8em;
+    font-size: var(--sammo-font-size-title);
     line-height: 1.5;
     text-align: center;
 }
 
 #vote-old-title {
-    font-size: 1.5em;
+    font-size: var(--sammo-font-size-title);
     line-height: 1.5;
     text-align: center;
 }

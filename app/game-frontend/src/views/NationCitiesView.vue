@@ -740,7 +740,7 @@ onMounted(async () => {
 .nation-cities-page {
     width: 1000px;
     margin: 0 auto;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 .legacy-table {
@@ -836,7 +836,7 @@ onMounted(async () => {
 }
 .secret-commands {
     text-align: left !important;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .bonus {
     color: cyan;

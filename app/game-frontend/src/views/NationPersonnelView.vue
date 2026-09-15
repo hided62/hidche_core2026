@@ -604,12 +604,17 @@ onMounted(() => void loadPersonnel());
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .legacy-office {
     width: 1000px;
     min-height: 100vh;
     margin: 0 auto;
     color: #fff;
-    font: 14px/1.3 var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/1.3 var(--sammo-font-sans);
 }
 .legacy-table {
     width: 1000px;
@@ -672,7 +677,7 @@ select {
 .nation-heading {
     height: 32px;
     text-align: center;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
 }
 .chief-status {
     margin-bottom: 0;
@@ -724,7 +729,7 @@ select {
     color: #fff;
     background: #24472e;
     text-align: center;
-    font-size: 17px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 700;
 }
 .general-icon {
@@ -742,14 +747,14 @@ select {
 }
 .chief-entry-copy strong {
     overflow: hidden;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .chief-entry-copy small {
     overflow: hidden;
     color: #c8c5bc;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -765,7 +770,7 @@ select {
     grid-area: action;
     color: #e7b64c;
     text-align: center;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
 }
 .award-label {
     text-align: center;
@@ -823,7 +828,7 @@ select {
 .city-header td {
     height: 29px;
     text-align: center;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .city-header-compact {
     display: none;
@@ -834,20 +839,20 @@ select {
 .region-heading {
     height: 29px;
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .city-identity {
     display: table-cell;
     width: 158px;
     text-align: center;
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .city-identity small,
 .city-identity strong {
     display: block;
 }
 .city-identity small {
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 .city-officer-cell {
     padding: 5px !important;
@@ -871,7 +876,7 @@ select {
 }
 .city-officer-copy small {
     color: #c9c6bd;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 .city-change-button {
     min-width: 70px;
@@ -919,7 +924,7 @@ select {
         margin-bottom: 10px;
     }
     .nation-heading {
-        font-size: 18px;
+        font-size: var(--sammo-font-size-emphasis);
     }
     .chief-entry-cell {
         padding: 4px !important;
@@ -933,7 +938,7 @@ select {
     }
     .chief-entry-role {
         padding: 5px 2px;
-        font-size: 12px;
+        font-size: var(--sammo-font-size-small);
     }
     .general-icon {
         width: 48px;
@@ -944,19 +949,19 @@ select {
         font-size: 15px;
     }
     .chief-entry-copy small {
-        font-size: 9px;
+        font-size: var(--sammo-font-size-small);
     }
     .personnel-change-button {
         min-height: 30px;
         padding: 3px 5px;
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         line-height: 18px;
     }
     .personnel-lock-label {
         font-size: 10px;
     }
     .award-label {
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         white-space: nowrap;
     }
     .award-label-full {
@@ -971,7 +976,7 @@ select {
     }
     .city-header td {
         height: 26px;
-        font-size: 13px;
+        font-size: var(--sammo-font-size-small);
     }
     .city-header-full {
         display: none;
@@ -981,14 +986,14 @@ select {
     }
     .region-heading {
         height: 25px;
-        font-size: 14px;
+        font-size: var(--sammo-font-size-normal);
     }
     .city-identity {
         width: 16%;
-        font-size: 13px;
+        font-size: var(--sammo-font-size-small);
     }
     .city-identity small {
-        font-size: 8px;
+        font-size: var(--sammo-font-size-small);
     }
     .city-officer-cell {
         padding: 4px !important;
@@ -998,17 +1003,17 @@ select {
         gap: 4px;
     }
     .city-officer-copy strong {
-        font-size: 12px;
+        font-size: var(--sammo-font-size-small);
     }
     .city-officer-copy small {
-        font-size: 9px;
+        font-size: var(--sammo-font-size-small);
     }
     .city-change-button {
         width: 100%;
         min-width: 0;
     }
     .legend {
-        font-size: 10px;
+        font-size: var(--sammo-font-size-small);
     }
     .kick-label {
         width: auto;

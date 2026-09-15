@@ -1,0 +1,2914 @@
+{
+    "main": {
+        "lobby.info": {
+            "result": {
+                "data": {
+                    "myGeneral": {
+                        "id": 7,
+                        "name": "가나다라마바사아자"
+                    },
+                    "serverId": "che_fixture_season",
+                    "profile": "che",
+                    "gameIdx": 101,
+                    "year": 185,
+                    "month": 1,
+                    "turnTerm": 10,
+                    "serverTime": "2026-08-13T00:00:00.000Z",
+                    "serverWallTime": "2026-08-13T00:00:00.000Z",
+                    "clockMode": "realtime",
+                    "clockRunning": true,
+                    "clockStartsAt": null,
+                    "clockRecovery": null,
+                    "turnEngineRunning": true,
+                    "scenarioTitle": "",
+                    "autorunUser": null
+                }
+            }
+        },
+        "auth.status": {
+            "result": {
+                "data": {
+                    "ok": true
+                }
+            }
+        },
+        "dashboard.getContextBundleDelta": {
+            "result": {
+                "data": {
+                    "context": {
+                        "kind": "snapshot",
+                        "revision": "AAAAAAAAAAAAAAAAAAAAAA",
+                        "data": {
+                            "general": {
+                                "id": 7,
+                                "name": "가나다라마바사아자",
+                                "nationId": 1,
+                                "cityId": 1,
+                                "troopId": 7,
+                                "npcState": 0,
+                                "officerLevel": 12,
+                                "officerLevelText": "군주",
+                                "officerCityName": null,
+                                "generalType": "용장",
+                                "leadershipBonus": 6,
+                                "picture": null,
+                                "imageServer": 0,
+                                "stats": {
+                                    "leadership": 70,
+                                    "strength": 60,
+                                    "intelligence": 50
+                                },
+                                "gold": 1000,
+                                "rice": 2000,
+                                "crew": 300,
+                                "train": 80,
+                                "atmos": 90,
+                                "injury": 0,
+                                "experience": 100,
+                                "dedication": 200,
+                                "age": 25,
+                                "retirementYear": 70,
+                                "defenceTrain": 80,
+                                "killTurn": 5,
+                                "remainingMinutes": 7,
+                                "troop": {
+                                    "name": "백마대",
+                                    "status": "present",
+                                    "leaderCityName": "업"
+                                },
+                                "refreshScore": {
+                                    "current": 3,
+                                    "total": 120,
+                                    "text": "보통"
+                                },
+                                "progression": {
+                                    "experienceLevel": 1,
+                                    "dedicationLevel": 2,
+                                    "statExperience": {
+                                        "leadership": 5,
+                                        "strength": 10,
+                                        "intelligence": 15
+                                    },
+                                    "statUpgradeLimit": 20,
+                                    "dex": [350, 100000, 500000, 1000000, 1275975]
+                                },
+                                "items": {
+                                    "horse": null,
+                                    "weapon": null,
+                                    "book": null,
+                                    "item": null
+                                },
+                                "itemNames": {
+                                    "horse": "적토마",
+                                    "weapon": "청룡언월도",
+                                    "book": "육도",
+                                    "item": "옥벽"
+                                },
+                                "crewTypeId": 1100,
+                                "crewTypeName": "보병",
+                                "traits": {
+                                    "personal": "대담",
+                                    "specialDomestic": "상재",
+                                    "specialWar": "무쌍"
+                                },
+                                "turnTime": "0185-01-01T00:00:00.000Z",
+                                "nextTurnMonthOffset": 0
+                            },
+                            "city": {
+                                "id": 1,
+                                "name": "업",
+                                "level": 8,
+                                "levelName": "특",
+                                "nationId": 1,
+                                "nationName": "대한민국천하통일국",
+                                "nationColor": "#008000",
+                                "region": 1,
+                                "regionName": "중원",
+                                "population": 100000,
+                                "populationMax": 200000,
+                                "agriculture": 1000,
+                                "agricultureMax": 2000,
+                                "commerce": 1000,
+                                "commerceMax": 2000,
+                                "security": 1000,
+                                "securityMax": 2000,
+                                "trust": 80,
+                                "trade": 100,
+                                "defence": 1000,
+                                "defenceMax": 2000,
+                                "wall": 1000,
+                                "wallMax": 2000,
+                                "supplyState": 1,
+                                "frontState": 0,
+                                "state": 0,
+                                "officers": {
+                                    "2": {
+                                        "id": 10,
+                                        "name": "가나다라마바사아자",
+                                        "npcState": 6
+                                    },
+                                    "3": {
+                                        "id": 9,
+                                        "name": "가나다라마바사아자",
+                                        "npcState": 2
+                                    },
+                                    "4": {
+                                        "id": 8,
+                                        "name": "가나다라마바사아자",
+                                        "npcState": 0
+                                    }
+                                }
+                            },
+                            "nation": {
+                                "id": 1,
+                                "name": "가나다라마바사아자",
+                                "color": "#008000",
+                                "level": 3,
+                                "gold": 10000,
+                                "rice": 20000,
+                                "tech": 100,
+                                "rate": 20,
+                                "bill": 100,
+                                "capitalCityId": 1,
+                                "typeCode": "che_유가",
+                                "typeName": "유가",
+                                "typePros": "농상↑ 민심↑",
+                                "typeCons": "쌀수입↓",
+                                "population": {
+                                    "cityCount": 2,
+                                    "current": 150000,
+                                    "max": 620500
+                                },
+                                "crew": {
+                                    "generalCount": 2,
+                                    "current": 500,
+                                    "max": 7000
+                                },
+                                "power": 1234,
+                                "taxRate": 20,
+                                "strategicCommandLimit": 2,
+                                "diplomaticLimit": 0,
+                                "prohibitScout": false,
+                                "prohibitWar": true,
+                                "techLevel": 0,
+                                "techLimited": false,
+                                "topChiefs": {
+                                    "11": {
+                                        "id": 2,
+                                        "name": "가나다라마바사아자",
+                                        "npcState": 1
+                                    },
+                                    "12": {
+                                        "id": 1,
+                                        "name": "가나다라마바사아자",
+                                        "npcState": 0
+                                    }
+                                },
+                                "impossibleStrategicCommands": [
+                                    {
+                                        "name": "수몰",
+                                        "remainingTurns": 2,
+                                        "availableYear": 190,
+                                        "availableMonth": 5
+                                    }
+                                ]
+                            },
+                            "settings": {},
+                            "penalties": {}
+                        },
+                        "sourceRevision": "AAAAAAAAAAAAAAAAAAAAAA"
+                    },
+                    "commandTable": {
+                        "kind": "snapshot",
+                        "revision": "CCCCCCCCCCCCCCCCCCCCCC",
+                        "sourceRevision": "CCCCCCCCCCCCCCCCCCCCCC",
+                        "data": {
+                            "general": [],
+                            "nation": [],
+                            "inputOptions": {
+                                "cities": [
+                                    {
+                                        "value": 1,
+                                        "label": "도시 1"
+                                    },
+                                    {
+                                        "value": 2,
+                                        "label": "도시 2"
+                                    },
+                                    {
+                                        "value": 3,
+                                        "label": "도시 3"
+                                    },
+                                    {
+                                        "value": 4,
+                                        "label": "도시 4"
+                                    },
+                                    {
+                                        "value": 5,
+                                        "label": "도시 5"
+                                    },
+                                    {
+                                        "value": 6,
+                                        "label": "도시 6"
+                                    },
+                                    {
+                                        "value": 7,
+                                        "label": "도시 7"
+                                    },
+                                    {
+                                        "value": 8,
+                                        "label": "도시 8"
+                                    },
+                                    {
+                                        "value": 9,
+                                        "label": "도시 9"
+                                    },
+                                    {
+                                        "value": 10,
+                                        "label": "도시 10"
+                                    },
+                                    {
+                                        "value": 11,
+                                        "label": "도시 11"
+                                    },
+                                    {
+                                        "value": 12,
+                                        "label": "도시 12"
+                                    },
+                                    {
+                                        "value": 13,
+                                        "label": "도시 13"
+                                    },
+                                    {
+                                        "value": 14,
+                                        "label": "도시 14"
+                                    },
+                                    {
+                                        "value": 15,
+                                        "label": "도시 15"
+                                    },
+                                    {
+                                        "value": 16,
+                                        "label": "도시 16"
+                                    },
+                                    {
+                                        "value": 17,
+                                        "label": "도시 17"
+                                    },
+                                    {
+                                        "value": 18,
+                                        "label": "도시 18"
+                                    },
+                                    {
+                                        "value": 19,
+                                        "label": "도시 19"
+                                    },
+                                    {
+                                        "value": 20,
+                                        "label": "도시 20"
+                                    }
+                                ],
+                                "nations": [],
+                                "generals": [],
+                                "crewTypes": [],
+                                "armTypes": [],
+                                "nationTypes": [],
+                                "colors": [],
+                                "items": {}
+                            }
+                        }
+                    },
+                    "boardAccess": {
+                        "kind": "snapshot",
+                        "revision": "DDDDDDDDDDDDDDDDDDDDDD",
+                        "sourceRevision": "DDDDDDDDDDDDDDDDDDDDDD",
+                        "data": {
+                            "permission": 4,
+                            "canMeeting": true,
+                            "canSecret": true
+                        }
+                    }
+                }
+            }
+        },
+        "world.getState": {
+            "result": {
+                "data": {
+                    "currentYear": 185,
+                    "currentMonth": 1,
+                    "tickSeconds": 600,
+                    "config": {
+                        "npcMode": 1,
+                        "const": {},
+                        "environment": {}
+                    },
+                    "meta": {}
+                }
+            }
+        },
+        "world.getMapLayout": {
+            "result": {
+                "data": {
+                    "mapName": "che",
+                    "cityList": [
+                        {
+                            "id": 1,
+                            "name": "업",
+                            "level": 8,
+                            "region": 1,
+                            "x": 200,
+                            "y": 120,
+                            "path": []
+                        }
+                    ],
+                    "regionMap": {
+                        "1": "하북"
+                    },
+                    "levelMap": {
+                        "8": "특"
+                    }
+                }
+            }
+        },
+        "turns.reserved.getGeneral": {
+            "result": {
+                "data": {
+                    "turns": [],
+                    "revision": 0,
+                    "autorunLimit": null
+                }
+            }
+        },
+        "general.getRecentRecords": {
+            "result": {
+                "data": {
+                    "global": [
+                        {
+                            "id": 3,
+                            "text": "장수 동향 기록"
+                        }
+                    ],
+                    "general": [
+                        {
+                            "id": 2,
+                            "text": "개인 기록"
+                        }
+                    ],
+                    "history": [
+                        {
+                            "id": 1,
+                            "text": "중원 정세 기록"
+                        }
+                    ]
+                }
+            }
+        },
+        "general.getFrontStatus": {
+            "result": {
+                "data": {
+                    "serverId": "che_fixture_season",
+                    "onlineUserCount": 1,
+                    "onlineNations": "위(1)",
+                    "onlineGenerals": "메뉴검증장수",
+                    "nationNotice": "<p>국가 방침</p>",
+                    "lastExecuted": "2026-08-13T00:05:06.000Z",
+                    "latestVote": {
+                        "id": 9,
+                        "title": "메뉴 설문",
+                        "hasVoted": false
+                    }
+                }
+            }
+        },
+        "tournament.getState": {
+            "result": {
+                "data": {
+                    "stage": 5,
+                    "type": 0
+                }
+            }
+        },
+        "world.getMap": {
+            "result": {
+                "data": {
+                    "result": true,
+                    "version": 0,
+                    "startYear": 180,
+                    "year": 185,
+                    "month": 1,
+                    "cityList": [[1, 8, 0, 1, 1, 1]],
+                    "nationList": [[1, "대한민국천하통일국", "#008000", 1]],
+                    "spyList": {},
+                    "shownByGeneralList": [],
+                    "myCity": 1,
+                    "myNation": 1
+                }
+            }
+        },
+        "messages.getRecent": {
+            "result": {
+                "data": {
+                    "private": [],
+                    "national": [],
+                    "public": [],
+                    "diplomacy": [],
+                    "permission": 4,
+                    "sequence": -1,
+                    "hasMore": {
+                        "private": false,
+                        "national": false,
+                        "public": false,
+                        "diplomacy": false
+                    },
+                    "latestRead": {
+                        "private": 0,
+                        "national": 0,
+                        "public": 0,
+                        "diplomacy": 0
+                    },
+                    "canRespondDiplomacy": false
+                }
+            }
+        },
+        "messages.getContacts": {
+            "result": {
+                "data": {
+                    "nation": []
+                }
+            }
+        }
+    },
+    "chief": {
+        "lobby.info": {
+            "result": {
+                "data": {
+                    "myGeneral": {
+                        "id": 1,
+                        "name": "가나다라마바사아자"
+                    },
+                    "year": 200,
+                    "month": 1,
+                    "turnTerm": 10,
+                    "userCnt": 1,
+                    "maxUserCnt": 100,
+                    "npcCnt": 0,
+                    "nationCnt": 2
+                }
+            }
+        },
+        "auth.status": {
+            "result": {
+                "data": {
+                    "ok": true
+                }
+            }
+        },
+        "nation.getChiefCenter": {
+            "result": {
+                "data": {
+                    "me": {
+                        "id": 1,
+                        "officerLevel": 5,
+                        "nationId": 1
+                    },
+                    "nation": {
+                        "id": 1,
+                        "name": "대한민국천하통일국",
+                        "level": 1
+                    },
+                    "currentYear": 200,
+                    "currentMonth": 1,
+                    "turnTermMinutes": 10,
+                    "maxTurns": 12,
+                    "chiefs": [
+                        {
+                            "officerLevel": 12,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "che_포상",
+                                    "args": {
+                                        "destGeneralId": 2,
+                                        "isGold": false,
+                                        "amount": 300
+                                    }
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 10,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 8,
+                            "name": "가나다라마바사아자",
+                            "npcState": 2,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 6,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 11,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 9,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 7,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        },
+                        {
+                            "officerLevel": 5,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "turnTime": "2026-08-30T01:46:47.590Z",
+                            "revision": 0,
+                            "turns": [
+                                {
+                                    "index": 0,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 1,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 2,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 3,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 4,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 5,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 6,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 7,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 8,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 9,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 10,
+                                    "action": "휴식",
+                                    "args": {}
+                                },
+                                {
+                                    "index": 11,
+                                    "action": "휴식",
+                                    "args": {}
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "turns.getCommandTable": {
+            "result": {
+                "data": {
+                    "general": [
+                        {
+                            "category": "계략",
+                            "values": [
+                                {
+                                    "key": "che_화계",
+                                    "name": "화계",
+                                    "reqArg": true,
+                                    "possible": false,
+                                    "status": "blocked",
+                                    "reason": "현재 조건에서는 실행할 수 없습니다.",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_선동",
+                                    "name": "선동",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_탈취",
+                                    "name": "탈취",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_파괴",
+                                    "name": "파괴",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "category": "내정",
+                            "values": [
+                                {
+                                    "key": "che_징병",
+                                    "name": "징병",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "crewType",
+                                            "label": "병종",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "crewTypes"
+                                        },
+                                        {
+                                            "key": "amount",
+                                            "label": "수량",
+                                            "kind": "number",
+                                            "required": true,
+                                            "min": 0,
+                                            "step": 1
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_모병",
+                                    "name": "모병",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "crewType",
+                                            "label": "병종",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "crewTypes"
+                                        },
+                                        {
+                                            "key": "amount",
+                                            "label": "수량",
+                                            "kind": "number",
+                                            "required": true,
+                                            "min": 0,
+                                            "step": 1
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "category": "군사",
+                            "values": [
+                                {
+                                    "key": "che_출병",
+                                    "name": "출병",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_첩보",
+                                    "name": "첩보",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "nation": [
+                        {
+                            "category": "인사",
+                            "values": [
+                                {
+                                    "key": "che_발령",
+                                    "name": "발령",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destGeneralId",
+                                            "label": "대상 장수",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "generals"
+                                        },
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_포상",
+                                    "name": "포상",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "isGold",
+                                            "label": "물자",
+                                            "kind": "boolean",
+                                            "required": true
+                                        },
+                                        {
+                                            "key": "amount",
+                                            "label": "수량",
+                                            "kind": "number",
+                                            "required": true,
+                                            "min": 0,
+                                            "step": 1
+                                        },
+                                        {
+                                            "key": "destGeneralId",
+                                            "label": "대상 장수",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "generals"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_몰수",
+                                    "name": "몰수",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "isGold",
+                                            "label": "물자",
+                                            "kind": "boolean",
+                                            "required": true
+                                        },
+                                        {
+                                            "key": "amount",
+                                            "label": "수량",
+                                            "kind": "number",
+                                            "required": true,
+                                            "min": 0,
+                                            "step": 1
+                                        },
+                                        {
+                                            "key": "destGeneralId",
+                                            "label": "대상 장수",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "generals"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_부대탈퇴지시",
+                                    "name": "부대 탈퇴 지시",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destGeneralId",
+                                            "label": "대상 장수",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "generals"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "category": "외교",
+                            "values": [
+                                {
+                                    "key": "che_물자원조",
+                                    "name": "원조",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        },
+                                        {
+                                            "key": "amountList",
+                                            "label": "지원 물자",
+                                            "kind": "numberTuple",
+                                            "required": true,
+                                            "min": 0,
+                                            "step": 1,
+                                            "tupleLabels": ["금", "쌀"]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_불가침제의",
+                                    "name": "불가침 제의",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        },
+                                        {
+                                            "key": "year",
+                                            "label": "기간(년)",
+                                            "kind": "number",
+                                            "required": true,
+                                            "min": 191,
+                                            "max": 210,
+                                            "step": 1,
+                                            "defaultValue": 191
+                                        },
+                                        {
+                                            "key": "month",
+                                            "label": "기간(월)",
+                                            "kind": "number",
+                                            "required": true,
+                                            "min": 1,
+                                            "max": 12,
+                                            "step": 1,
+                                            "defaultValue": 1
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_선전포고",
+                                    "name": "선전포고",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_종전제의",
+                                    "name": "종전 제의",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_불가침파기제의",
+                                    "name": "불가침 파기 제의",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "category": "특수",
+                            "values": [
+                                {
+                                    "key": "che_초토화",
+                                    "name": "초토화",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_천도",
+                                    "name": "천도",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_증축",
+                                    "name": "증축",
+                                    "reqArg": false,
+                                    "possible": true,
+                                    "status": "available",
+                                    "inputFields": []
+                                },
+                                {
+                                    "key": "che_감축",
+                                    "name": "감축",
+                                    "reqArg": false,
+                                    "possible": true,
+                                    "status": "available",
+                                    "inputFields": []
+                                }
+                            ]
+                        },
+                        {
+                            "category": "전략",
+                            "values": [
+                                {
+                                    "key": "che_백성동원",
+                                    "name": "백성동원",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_수몰",
+                                    "name": "수몰",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_허보",
+                                    "name": "허보",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destCityId",
+                                            "label": "대상 도시",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "cities"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_이호경식",
+                                    "name": "이호경식",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_급습",
+                                    "name": "급습",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "key": "che_피장파장",
+                                    "name": "피장파장",
+                                    "reqArg": true,
+                                    "possible": true,
+                                    "status": "needsInput",
+                                    "inputFields": [
+                                        {
+                                            "key": "destNationId",
+                                            "label": "대상 국가",
+                                            "kind": "select",
+                                            "required": true,
+                                            "optionSource": "nations"
+                                        },
+                                        {
+                                            "key": "commandType",
+                                            "label": "대응 명령",
+                                            "kind": "select",
+                                            "required": true,
+                                            "options": [
+                                                {
+                                                    "value": "che_수몰",
+                                                    "label": "수몰"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "inputOptions": {
+                        "cities": [
+                            {
+                                "value": 1,
+                                "label": "업 (아국)"
+                            },
+                            {
+                                "value": 2,
+                                "label": "허창 (적국)",
+                                "description": "적국 · 예주 · 대도시"
+                            },
+                            {
+                                "value": 3,
+                                "label": "단양 (오)"
+                            }
+                        ],
+                        "nations": [
+                            {
+                                "value": 1,
+                                "label": "아국",
+                                "color": "#008000"
+                            },
+                            {
+                                "value": 2,
+                                "label": "적국",
+                                "color": "#800000",
+                                "description": "수도 허창"
+                            },
+                            {
+                                "value": 3,
+                                "label": "불가침국",
+                                "color": "#000080",
+                                "description": "수도 단양"
+                            }
+                        ],
+                        "nationTargets": {
+                            "che_물자원조": [
+                                {
+                                    "value": 2,
+                                    "label": "적국",
+                                    "color": "#800000",
+                                    "availableNow": true,
+                                    "description": "현재 원조 대상 · 교역"
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "불가침국",
+                                    "color": "#000080",
+                                    "availableNow": true,
+                                    "description": "현재 원조 대상 · 불가침 12턴"
+                                },
+                                {
+                                    "value": 1,
+                                    "label": "아국",
+                                    "color": "#008000",
+                                    "availableNow": false,
+                                    "description": "아국은 대상이 아닙니다."
+                                }
+                            ],
+                            "che_불가침제의": [
+                                {
+                                    "value": 2,
+                                    "label": "적국",
+                                    "color": "#800000",
+                                    "availableNow": true,
+                                    "description": "현재 제의 가능 · 교역"
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "불가침국",
+                                    "color": "#000080",
+                                    "availableNow": true,
+                                    "description": "현재 제의 가능 · 불가침 12턴"
+                                },
+                                {
+                                    "value": 1,
+                                    "label": "아국",
+                                    "color": "#008000",
+                                    "availableNow": false,
+                                    "description": "아국은 대상이 아닙니다."
+                                }
+                            ],
+                            "che_선전포고": [
+                                {
+                                    "value": 2,
+                                    "label": "적국",
+                                    "color": "#800000",
+                                    "availableNow": true,
+                                    "description": "현재 선전포고 가능 · 교역"
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "불가침국",
+                                    "color": "#000080",
+                                    "availableNow": false,
+                                    "description": "현재 외교 관계에서는 선전포고 불가"
+                                },
+                                {
+                                    "value": 1,
+                                    "label": "아국",
+                                    "color": "#008000",
+                                    "availableNow": false,
+                                    "description": "아국은 대상이 아닙니다."
+                                }
+                            ],
+                            "che_종전제의": [
+                                {
+                                    "value": 2,
+                                    "label": "적국",
+                                    "color": "#800000",
+                                    "availableNow": true,
+                                    "description": "현재 종전 제의 가능 · 전쟁 6턴"
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "불가침국",
+                                    "color": "#000080",
+                                    "availableNow": false,
+                                    "description": "전쟁·선포 중인 국가가 아닙니다."
+                                },
+                                {
+                                    "value": 1,
+                                    "label": "아국",
+                                    "color": "#008000",
+                                    "availableNow": false,
+                                    "description": "아국은 대상이 아닙니다."
+                                }
+                            ],
+                            "che_불가침파기제의": [
+                                {
+                                    "value": 3,
+                                    "label": "불가침국",
+                                    "color": "#000080",
+                                    "availableNow": true,
+                                    "description": "현재 불가침 파기 제의 가능 · 불가침 12턴"
+                                },
+                                {
+                                    "value": 2,
+                                    "label": "적국",
+                                    "color": "#800000",
+                                    "availableNow": false,
+                                    "description": "불가침 중인 국가가 아닙니다."
+                                },
+                                {
+                                    "value": 1,
+                                    "label": "아국",
+                                    "color": "#008000",
+                                    "availableNow": false,
+                                    "description": "아국은 대상이 아닙니다."
+                                }
+                            ]
+                        },
+                        "generals": [
+                            {
+                                "value": 1,
+                                "label": "장수 (아국 · 업)"
+                            },
+                            {
+                                "value": 2,
+                                "label": "관우 (아국 · 업)"
+                            }
+                        ],
+                        "generalTargets": {
+                            "che_포상": [
+                                {
+                                    "value": 1,
+                                    "label": "장수 (업)",
+                                    "gold": 5000,
+                                    "rice": 400,
+                                    "crew": 500,
+                                    "description": "금 5,000 · 쌀 400 · 병력 500"
+                                },
+                                {
+                                    "value": 2,
+                                    "label": "관우 (업)",
+                                    "gold": 100,
+                                    "rice": 4000,
+                                    "crew": 1200,
+                                    "troopId": 2,
+                                    "description": "금 100 · 쌀 4,000 · 병력 1,200"
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "여포NPC (업)",
+                                    "npcState": 2,
+                                    "gold": 3000,
+                                    "rice": 500,
+                                    "crew": 1500,
+                                    "troopId": 2,
+                                    "description": "금 3,000 · 쌀 500 · 병력 1,500"
+                                }
+                            ],
+                            "che_몰수": [
+                                {
+                                    "value": 1,
+                                    "label": "장수 (업)",
+                                    "gold": 5000,
+                                    "rice": 400,
+                                    "crew": 500,
+                                    "description": "금 5,000 · 쌀 400 · 병력 500"
+                                },
+                                {
+                                    "value": 2,
+                                    "label": "관우 (업)",
+                                    "gold": 100,
+                                    "rice": 4000,
+                                    "crew": 1200,
+                                    "troopId": 2,
+                                    "description": "금 100 · 쌀 4,000 · 병력 1,200"
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "여포NPC (업)",
+                                    "npcState": 2,
+                                    "gold": 3000,
+                                    "rice": 500,
+                                    "crew": 1500,
+                                    "troopId": 2,
+                                    "description": "금 3,000 · 쌀 500 · 병력 1,500"
+                                }
+                            ],
+                            "che_발령": [
+                                {
+                                    "value": 1,
+                                    "label": "장수 (업)",
+                                    "targetNames": {
+                                        "name": "장수",
+                                        "nationName": "대한민국천하통일국",
+                                        "cityName": "업",
+                                        "troopName": null
+                                    },
+                                    "description": "통솔 70 · 무력 80 · 지력 90\n병력 500 · 훈련 0 · 사기 0\n금 5,000 · 쌀 400",
+                                    "gold": 5000,
+                                    "rice": 400,
+                                    "crew": 500,
+                                    "troopId": 0,
+                                    "npcState": 0
+                                },
+                                {
+                                    "value": 2,
+                                    "label": "관우 (업)",
+                                    "targetNames": {
+                                        "name": "관우",
+                                        "nationName": "대한민국천하통일국",
+                                        "cityName": "업",
+                                        "troopName": "청룡대"
+                                    },
+                                    "description": "통솔 100 · 무력 95 · 지력 70\n병력 1,200 · 훈련 80 · 사기 70\n금 100 · 쌀 4,000",
+                                    "gold": 100,
+                                    "rice": 4000,
+                                    "crew": 1200,
+                                    "troopId": 2,
+                                    "npcState": 0
+                                },
+                                {
+                                    "value": 3,
+                                    "label": "여포NPC (업)",
+                                    "targetNames": {
+                                        "name": "여포NPC",
+                                        "nationName": "대한민국천하통일국",
+                                        "cityName": "업",
+                                        "troopName": "청룡대"
+                                    },
+                                    "description": "통솔 90 · 무력 100 · 지력 0\n병력 1,500 · 훈련 100 · 사기 100\n금 3,000 · 쌀 500",
+                                    "gold": 3000,
+                                    "rice": 500,
+                                    "crew": 1500,
+                                    "troopId": 2,
+                                    "npcState": 2
+                                }
+                            ],
+                            "che_부대탈퇴지시": [
+                                {
+                                    "value": 3,
+                                    "label": "여포NPC (아국 · 업)",
+                                    "npcState": 2,
+                                    "availableNow": true,
+                                    "crew": 1500,
+                                    "troopId": 2,
+                                    "description": "현재 탈퇴 지시 가능 · 병력 1,500 · 탑승 부대 청룡대"
+                                },
+                                {
+                                    "value": 1,
+                                    "label": "장수 (아국 · 업)",
+                                    "availableNow": false,
+                                    "crew": 500,
+                                    "description": "현재 탈퇴 지시 불가 · 탑승 부대 없음"
+                                },
+                                {
+                                    "value": 2,
+                                    "label": "관우 (아국 · 업)",
+                                    "availableNow": false,
+                                    "crew": 1200,
+                                    "troopId": 2,
+                                    "description": "현재 탈퇴 지시 불가 · 탑승 부대 청룡대 (부대장)"
+                                }
+                            ]
+                        },
+                        "crewTypes": [
+                            {
+                                "value": 1100,
+                                "label": "보병"
+                            }
+                        ],
+                        "armTypes": [
+                            {
+                                "value": 1,
+                                "label": "보병"
+                            }
+                        ],
+                        "nationTypes": [
+                            {
+                                "value": "che_도적",
+                                "label": "도적",
+                                "description": "금 수입 증가, 쌀 수입 감소"
+                            }
+                        ],
+                        "colors": [
+                            {
+                                "value": 0,
+                                "label": "색상 1",
+                                "color": "#ff0000"
+                            }
+                        ],
+                        "items": {
+                            "horse": [
+                                {
+                                    "value": "None",
+                                    "label": "판매/해제"
+                                }
+                            ]
+                        },
+                        "recruitment": {
+                            "techLevel": 1,
+                            "leadership": 68,
+                            "fullLeadership": 70,
+                            "currentCrewTypeId": 1100,
+                            "currentCrewTypeName": "보병",
+                            "crew": 500,
+                            "gold": 12345,
+                            "groups": [
+                                {
+                                    "armType": 1,
+                                    "armName": "보병",
+                                    "values": [
+                                        {
+                                            "id": 1100,
+                                            "armType": 1,
+                                            "name": "보병",
+                                            "available": true,
+                                            "special": false,
+                                            "attack": 125,
+                                            "defence": 175,
+                                            "speed": 7,
+                                            "avoid": 10,
+                                            "baseCost": 10.35,
+                                            "baseRice": 10.35,
+                                            "info": ["표준적인 보병입니다.", "보병은 방어특화입니다."]
+                                        },
+                                        {
+                                            "id": 1101,
+                                            "armType": 1,
+                                            "name": "정예병",
+                                            "available": false,
+                                            "special": true,
+                                            "attack": 175,
+                                            "defence": 225,
+                                            "speed": 8,
+                                            "avoid": 20,
+                                            "baseCost": 13.8,
+                                            "baseRice": 11.5,
+                                            "info": [
+                                                "강력하지만 기술이 필요합니다.",
+                                                "기술력 2000 이상 필요",
+                                                "중원 지역 소유시 가능",
+                                                "저 소유시 가능"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "amountPresets": {
+                            "che_포상": {
+                                "values": [100, 500, 1000, 5000, 10000],
+                                "defaultValue": 1000,
+                                "min": 100,
+                                "max": 10000,
+                                "step": 1
+                            },
+                            "che_몰수": {
+                                "values": [100, 500, 1000, 5000, 10000],
+                                "defaultValue": 1000,
+                                "min": 100,
+                                "max": 10000,
+                                "step": 1
+                            },
+                            "che_물자원조": {
+                                "values": [10000, 20000, 30000],
+                                "defaultValue": 1000,
+                                "min": 1000,
+                                "max": 30000,
+                                "step": 10
+                            }
+                        },
+                        "context": {
+                            "actorGold": 1000,
+                            "actorRice": 1000,
+                            "citySecurity": 500,
+                            "nationGold": 5000,
+                            "nationRice": 6000,
+                            "nationLevel": 1
+                        }
+                    }
+                }
+            }
+        },
+        "world.getMap": {
+            "result": {
+                "data": {
+                    "result": true,
+                    "version": 0,
+                    "startYear": 180,
+                    "year": 200,
+                    "month": 1,
+                    "cityList": [
+                        [1, 8, 0, 1, 1, 1],
+                        [2, 7, 41, 2, 2, 1]
+                    ],
+                    "nationList": [
+                        [1, "대한민국천하통일국", "#008000", 1],
+                        [2, "대한민국천하통일국", "#800000", 2]
+                    ],
+                    "spyList": {},
+                    "shownByGeneralList": [],
+                    "myCity": 1,
+                    "myNation": 1
+                }
+            }
+        },
+        "world.getMapLayout": {
+            "result": {
+                "data": {
+                    "mapName": "che",
+                    "cityList": [
+                        {
+                            "id": 1,
+                            "name": "업",
+                            "level": 8,
+                            "region": 1,
+                            "x": 100,
+                            "y": 100,
+                            "path": [2]
+                        },
+                        {
+                            "id": 2,
+                            "name": "허창",
+                            "level": 7,
+                            "region": 2,
+                            "x": 240,
+                            "y": 180,
+                            "path": [1]
+                        }
+                    ],
+                    "regionMap": {
+                        "1": "하북",
+                        "2": "예주"
+                    },
+                    "levelMap": {
+                        "7": "대",
+                        "8": "특"
+                    }
+                }
+            }
+        }
+    },
+    "personnel": {
+        "lobby.info": {
+            "result": {
+                "data": {
+                    "myGeneral": {
+                        "id": 1,
+                        "name": "가나다라마바사아자"
+                    }
+                }
+            }
+        },
+        "auth.status": {
+            "result": {
+                "data": {
+                    "ok": true
+                }
+            }
+        },
+        "nation.getPersonnelInfo": {
+            "result": {
+                "data": {
+                    "me": {
+                        "id": 1,
+                        "officerLevel": 12,
+                        "canManage": true,
+                        "canChangePermissions": true,
+                        "canKick": true
+                    },
+                    "nation": {
+                        "id": 1,
+                        "name": "대한민국천하통일국",
+                        "color": "#777777",
+                        "level": 3,
+                        "typeCode": "che_법가",
+                        "capitalCityId": 1,
+                        "chiefSet": 0
+                    },
+                    "chiefStatMin": 65,
+                    "generals": [
+                        {
+                            "id": 1,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 12,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        {
+                            "id": 2,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 11,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        {
+                            "id": 3,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 4,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 1,
+                            "officerCityName": "허창",
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        {
+                            "id": 4,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 3,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 1,
+                            "officerCityName": "허창",
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        {
+                            "id": 5,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 2,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 1,
+                            "officerCityName": "허창",
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        {
+                            "id": 6,
+                            "name": "가나다라마바사아자",
+                            "npcState": 2,
+                            "officerLevel": 1,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        {
+                            "id": 7,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 1,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "ambassador"
+                        },
+                        {
+                            "id": 8,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 1,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "auditor"
+                        },
+                        {
+                            "id": 9,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 1,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        }
+                    ],
+                    "chiefAssignments": {
+                        "11": {
+                            "id": 2,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 11,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        },
+                        "12": {
+                            "id": 1,
+                            "name": "가나다라마바사아자",
+                            "npcState": 0,
+                            "officerLevel": 12,
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "troopId": 0,
+                            "troopName": null,
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "officerCity": 0,
+                            "officerCityName": null,
+                            "stats": {
+                                "leadership": 70,
+                                "strength": 70,
+                                "intelligence": 70
+                            },
+                            "experience": 100,
+                            "dedication": 200,
+                            "injury": 0,
+                            "gold": 1000,
+                            "rice": 1000,
+                            "crew": 100,
+                            "personality": null,
+                            "specialDomestic": null,
+                            "specialWar": null,
+                            "belong": 10,
+                            "permission": "normal"
+                        }
+                    },
+                    "cityAssignments": [
+                        {
+                            "id": 1,
+                            "name": "허창",
+                            "level": 7,
+                            "region": 2,
+                            "officerSet": 8,
+                            "officers": {
+                                "2": {
+                                    "id": 5,
+                                    "name": "가나다라마바사아자",
+                                    "npcState": 0,
+                                    "officerLevel": 2,
+                                    "cityId": 1,
+                                    "cityName": "허창",
+                                    "troopId": 0,
+                                    "troopName": null,
+                                    "picture": "default.jpg",
+                                    "imageServer": 0,
+                                    "officerCity": 1,
+                                    "officerCityName": "허창",
+                                    "stats": {
+                                        "leadership": 70,
+                                        "strength": 70,
+                                        "intelligence": 70
+                                    },
+                                    "experience": 100,
+                                    "dedication": 200,
+                                    "injury": 0,
+                                    "gold": 1000,
+                                    "rice": 1000,
+                                    "crew": 100,
+                                    "personality": null,
+                                    "specialDomestic": null,
+                                    "specialWar": null,
+                                    "belong": 10,
+                                    "permission": "normal"
+                                },
+                                "3": {
+                                    "id": 4,
+                                    "name": "가나다라마바사아자",
+                                    "npcState": 0,
+                                    "officerLevel": 3,
+                                    "cityId": 1,
+                                    "cityName": "허창",
+                                    "troopId": 0,
+                                    "troopName": null,
+                                    "picture": "default.jpg",
+                                    "imageServer": 0,
+                                    "officerCity": 1,
+                                    "officerCityName": "허창",
+                                    "stats": {
+                                        "leadership": 70,
+                                        "strength": 70,
+                                        "intelligence": 70
+                                    },
+                                    "experience": 100,
+                                    "dedication": 200,
+                                    "injury": 0,
+                                    "gold": 1000,
+                                    "rice": 1000,
+                                    "crew": 100,
+                                    "personality": null,
+                                    "specialDomestic": null,
+                                    "specialWar": null,
+                                    "belong": 10,
+                                    "permission": "normal"
+                                },
+                                "4": {
+                                    "id": 3,
+                                    "name": "가나다라마바사아자",
+                                    "npcState": 0,
+                                    "officerLevel": 4,
+                                    "cityId": 1,
+                                    "cityName": "허창",
+                                    "troopId": 0,
+                                    "troopName": null,
+                                    "picture": "default.jpg",
+                                    "imageServer": 0,
+                                    "officerCity": 1,
+                                    "officerCityName": "허창",
+                                    "stats": {
+                                        "leadership": 70,
+                                        "strength": 70,
+                                        "intelligence": 70
+                                    },
+                                    "experience": 100,
+                                    "dedication": 200,
+                                    "injury": 0,
+                                    "gold": 1000,
+                                    "rice": 1000,
+                                    "crew": 100,
+                                    "personality": null,
+                                    "specialDomestic": null,
+                                    "specialWar": null,
+                                    "belong": 10,
+                                    "permission": "normal"
+                                }
+                            }
+                        },
+                        {
+                            "id": 2,
+                            "name": "낙양",
+                            "level": 6,
+                            "region": 2,
+                            "officerSet": 0,
+                            "officers": {
+                                "2": null,
+                                "3": null,
+                                "4": null
+                            }
+                        }
+                    ],
+                    "awards": {
+                        "tigers": [
+                            {
+                                "id": 3,
+                                "name": "하후돈",
+                                "value": 12
+                            }
+                        ],
+                        "eagles": [
+                            {
+                                "id": 4,
+                                "name": "곽가",
+                                "value": 9
+                            }
+                        ]
+                    },
+                    "permissionCandidates": {
+                        "ambassadors": [
+                            {
+                                "id": 6,
+                                "name": "가나다라마바사아자",
+                                "npcState": 0,
+                                "permission": "normal",
+                                "maxPermission": 4
+                            },
+                            {
+                                "id": 7,
+                                "name": "가나다라마바사아자",
+                                "npcState": 0,
+                                "permission": "ambassador",
+                                "maxPermission": 4
+                            },
+                            {
+                                "id": 9,
+                                "name": "가나다라마바사아자",
+                                "npcState": 0,
+                                "permission": "normal",
+                                "maxPermission": 4
+                            }
+                        ],
+                        "auditors": [
+                            {
+                                "id": 6,
+                                "name": "가나다라마바사아자",
+                                "npcState": 0,
+                                "permission": "normal",
+                                "maxPermission": 4
+                            },
+                            {
+                                "id": 8,
+                                "name": "가나다라마바사아자",
+                                "npcState": 0,
+                                "permission": "auditor",
+                                "maxPermission": 4
+                            },
+                            {
+                                "id": 9,
+                                "name": "가나다라마바사아자",
+                                "npcState": 0,
+                                "permission": "normal",
+                                "maxPermission": 4
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "possession": {
+        "lobby.info": {
+            "result": {
+                "data": {
+                    "myGeneral": null,
+                    "year": 180,
+                    "month": 1,
+                    "turnTerm": 5
+                }
+            }
+        },
+        "auth.status": {
+            "result": {
+                "data": {
+                    "ok": true
+                }
+            }
+        },
+        "join.getConfig": {
+            "result": {
+                "data": {
+                    "rules": {
+                        "stat": {
+                            "total": 165,
+                            "min": 15,
+                            "max": 80,
+                            "bonusMin": 3,
+                            "bonusMax": 5
+                        },
+                        "allowDirectCreation": false,
+                        "allowCustomName": true
+                    },
+                    "user": {
+                        "id": "npc-user",
+                        "displayName": "빙의사용자",
+                        "canCreateGeneral": true,
+                        "icons": [],
+                        "preferredPicture": null
+                    },
+                    "personalities": [
+                        {
+                            "key": "Random",
+                            "name": "???",
+                            "info": ""
+                        }
+                    ],
+                    "warSpecials": [],
+                    "nations": [],
+                    "serverInfo": {
+                        "currentYear": 180,
+                        "currentMonth": 1,
+                        "tickMinutes": 5,
+                        "maxGeneral": 500,
+                        "userGeneralCount": 0,
+                        "npcGeneralCount": 12
+                    },
+                    "inherit": {
+                        "totalPoint": 0,
+                        "costs": {
+                            "inheritBornSpecialPoint": 0,
+                            "inheritBornTurntimePoint": 0,
+                            "inheritBornCityPoint": 0,
+                            "inheritBornStatPoint": 0
+                        },
+                        "availableCities": [],
+                        "turnTimeZones": [],
+                        "availableSpecialWar": []
+                    },
+                    "selectionPool": {
+                        "enabled": false
+                    },
+                    "npcPossession": {
+                        "enabled": true
+                    }
+                }
+            }
+        },
+        "join.listPossessCandidates": {
+            "result": {
+                "data": {
+                    "tokenNonce": 101,
+                    "validUntil": "2026-09-15T15:10:08.460Z",
+                    "pickMoreFrom": "2026-09-15T15:08:37.460Z",
+                    "pickMoreSeconds": 0,
+                    "candidates": [
+                        {
+                            "id": 1,
+                            "name": "가나다라마바사아자",
+                            "nation": {
+                                "id": 0,
+                                "name": "대한민국천하통일국",
+                                "color": "#aaaaaa"
+                            },
+                            "stats": {
+                                "leadership": 40,
+                                "strength": 50,
+                                "intelligence": 60
+                            },
+                            "picture": "default.jpg",
+                            "imageServer": 1,
+                            "personality": {
+                                "code": "che_안전",
+                                "name": "안전",
+                                "info": "안전을 중시합니다."
+                            },
+                            "specialDomestic": {
+                                "code": "che_인덕",
+                                "name": "인덕",
+                                "info": "인덕 설명"
+                            },
+                            "specialWar": {
+                                "code": "che_무쌍",
+                                "name": "무쌍",
+                                "info": "무쌍 설명"
+                            },
+                            "keepCount": 3
+                        },
+                        {
+                            "id": 2,
+                            "name": "가나다라마바사아자",
+                            "nation": {
+                                "id": 0,
+                                "name": "대한민국천하통일국",
+                                "color": "#aaaaaa"
+                            },
+                            "stats": {
+                                "leadership": 41,
+                                "strength": 51,
+                                "intelligence": 61
+                            },
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "personality": {
+                                "code": "che_안전",
+                                "name": "안전",
+                                "info": "안전을 중시합니다."
+                            },
+                            "specialDomestic": {
+                                "code": "che_인덕",
+                                "name": "인덕",
+                                "info": "인덕 설명"
+                            },
+                            "specialWar": {
+                                "code": "che_무쌍",
+                                "name": "무쌍",
+                                "info": "무쌍 설명"
+                            },
+                            "keepCount": 3
+                        },
+                        {
+                            "id": 3,
+                            "name": "가나다라마바사아자",
+                            "nation": {
+                                "id": 0,
+                                "name": "대한민국천하통일국",
+                                "color": "#aaaaaa"
+                            },
+                            "stats": {
+                                "leadership": 42,
+                                "strength": 52,
+                                "intelligence": 62
+                            },
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "personality": {
+                                "code": "che_안전",
+                                "name": "안전",
+                                "info": "안전을 중시합니다."
+                            },
+                            "specialDomestic": {
+                                "code": "che_인덕",
+                                "name": "인덕",
+                                "info": "인덕 설명"
+                            },
+                            "specialWar": {
+                                "code": "che_무쌍",
+                                "name": "무쌍",
+                                "info": "무쌍 설명"
+                            },
+                            "keepCount": 3
+                        },
+                        {
+                            "id": 4,
+                            "name": "가나다라마바사아자",
+                            "nation": {
+                                "id": 0,
+                                "name": "대한민국천하통일국",
+                                "color": "#aaaaaa"
+                            },
+                            "stats": {
+                                "leadership": 43,
+                                "strength": 53,
+                                "intelligence": 63
+                            },
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "personality": {
+                                "code": "che_안전",
+                                "name": "안전",
+                                "info": "안전을 중시합니다."
+                            },
+                            "specialDomestic": {
+                                "code": "che_인덕",
+                                "name": "인덕",
+                                "info": "인덕 설명"
+                            },
+                            "specialWar": {
+                                "code": "che_무쌍",
+                                "name": "무쌍",
+                                "info": "무쌍 설명"
+                            },
+                            "keepCount": 3
+                        },
+                        {
+                            "id": 5,
+                            "name": "가나다라마바사아자",
+                            "nation": {
+                                "id": 0,
+                                "name": "대한민국천하통일국",
+                                "color": "#aaaaaa"
+                            },
+                            "stats": {
+                                "leadership": 44,
+                                "strength": 54,
+                                "intelligence": 64
+                            },
+                            "picture": "default.jpg",
+                            "imageServer": 0,
+                            "personality": {
+                                "code": "che_안전",
+                                "name": "안전",
+                                "info": "안전을 중시합니다."
+                            },
+                            "specialDomestic": {
+                                "code": "che_인덕",
+                                "name": "인덕",
+                                "info": "인덕 설명"
+                            },
+                            "specialWar": {
+                                "code": "che_무쌍",
+                                "name": "무쌍",
+                                "info": "무쌍 설명"
+                            },
+                            "keepCount": 3
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

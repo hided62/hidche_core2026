@@ -659,7 +659,7 @@ onBeforeUnmount(() => {
     color: #fff;
     overflow-x: clip;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -699,7 +699,7 @@ onBeforeUnmount(() => {
 
 .panel-header h2 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 500;
 }
 
@@ -809,7 +809,7 @@ onBeforeUnmount(() => {
 
 .letter-header h3 {
     margin: 0;
-    font-size: 28px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 400;
 }
 
@@ -817,7 +817,7 @@ onBeforeUnmount(() => {
     position: absolute;
     right: 10px;
     bottom: 3px;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .letter-text {

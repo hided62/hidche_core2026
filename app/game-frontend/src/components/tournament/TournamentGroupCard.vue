@@ -92,7 +92,7 @@ const pointsOf = (participant: StandingParticipant): number => (participant.win 
     padding: 3px;
     background: #000;
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     text-align: center;
 }
@@ -129,7 +129,7 @@ const pointsOf = (participant: StandingParticipant): number => (participant.win 
     min-width: 0;
     flex-direction: column;
     color: #d8cfca;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     font-variant-numeric: tabular-nums;
     line-height: 14px;
     white-space: nowrap;
@@ -156,7 +156,7 @@ const pointsOf = (participant: StandingParticipant): number => (participant.win 
         grid-template-columns: 28px minmax(0, 1fr);
     }
     .standing-summary {
-        font-size: 12px;
+        font-size: var(--sammo-font-size-small);
         line-height: 15px;
     }
 }

@@ -369,7 +369,7 @@ onMounted(() => {
     color: #fff;
     background: transparent;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.5;
 }
 
@@ -395,7 +395,7 @@ onMounted(() => {
 
 .topBackBar h2 {
     margin: 0;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 500;
     line-height: 32px;
     text-align: center;
@@ -455,7 +455,7 @@ onMounted(() => {
 .makeTitle {
     grid-column: 1/3;
     padding: 0.15em;
-    font-size: 1.2em;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 1.2;
 }
 
@@ -521,7 +521,7 @@ onMounted(() => {
     grid-column: 4/5;
     grid-row: 1/3;
     overflow: hidden;
-    font-size: 85%;
+    font-size: var(--sammo-font-size-small);
     text-align: left;
 }
 

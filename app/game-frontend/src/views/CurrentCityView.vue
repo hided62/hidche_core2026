@@ -340,7 +340,7 @@ const commandBrief = (command: ReservedCommand): string =>
     width: 1000px;
     margin: 0 auto;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 .legacy-table {
@@ -371,7 +371,7 @@ const commandBrief = (command: ReservedCommand): string =>
     background: #6b6b6b;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 13.3333px;
+    font-size: var(--sammo-font-size-normal);
 }
 .selector {
     transform: translateY(-2px);
@@ -450,7 +450,7 @@ const commandBrief = (command: ReservedCommand): string =>
     object-fit: fill;
 }
 .turns--reserved {
-    font-size: x-small;
+    font-size: var(--sammo-font-size-small);
 }
 .turn-line {
     display: block;
@@ -466,7 +466,7 @@ const commandBrief = (command: ReservedCommand): string =>
 }
 .back-link {
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .legacy-banner a {
     color: #fff;
@@ -542,7 +542,7 @@ const commandBrief = (command: ReservedCommand): string =>
     .generals tbody td[data-label]::before {
         content: attr(data-label);
         margin-right: 3px;
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         line-height: 1;
         color: #bbb;
     }

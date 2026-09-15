@@ -474,7 +474,7 @@ onMounted(() => void loadStratFinan());
     margin: 0 auto;
     color: #fff;
     background: var(--sammo-texture-walnut);
-    font: 14px/1.3 var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/1.3 var(--sammo-font-sans);
 }
 .tiptap-compat-controls {
     display: none;
@@ -510,7 +510,7 @@ textarea:focus-visible {
 .finance-title {
     height: 25.47px;
     text-align: center;
-    font-size: 19.6px;
+    font-size: var(--sammo-font-size-title);
     line-height: 25.47px;
 }
 .diplomacy-title {

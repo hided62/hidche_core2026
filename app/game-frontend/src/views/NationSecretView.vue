@@ -368,7 +368,7 @@ onMounted(load);
 .secret-page {
     width: auto;
     margin: 0;
-    font: 14px var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal) var(--sammo-font-sans);
     color: #fff;
 }
 .layout {
@@ -381,7 +381,7 @@ th,
 .state {
     border: 1px solid gray;
     padding: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     word-break: break-all;
     text-align: center;
     font-weight: 400;
@@ -455,7 +455,7 @@ th,
 }
 .turns {
     text-align: left;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
 }
 .bonus {
     color: cyan;
@@ -483,13 +483,13 @@ th,
     }
     .list th,
     .list td {
-        font-size: 14px;
+        font-size: var(--sammo-font-size-normal);
     }
     .list tbody tr {
         height: auto;
     }
     .list tbody td {
-        font-size: 12px;
+        font-size: var(--sammo-font-size-small);
     }
     .list :is(th, td):nth-child(1),
     .list :is(th, td):nth-child(2) {
@@ -592,7 +592,7 @@ th,
         min-width: 0;
         padding: 0 2px;
         border: 0;
-        font-size: 14px;
+        font-size: var(--sammo-font-size-normal);
         line-height: 18.2px;
         overflow-wrap: anywhere;
         align-content: center;
@@ -600,7 +600,7 @@ th,
     .list tbody td[data-label]::before {
         content: attr(data-label);
         margin-right: 3px;
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         line-height: 1;
         color: #bbb;
     }
@@ -609,13 +609,13 @@ th,
     }
     .general-level {
         margin-left: 3px;
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         line-height: 1;
         color: #bbb;
         white-space: nowrap;
     }
     .list tbody .turns {
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         line-height: 1.3;
         border-left: 1px solid gray;
         padding-inline: 4px;

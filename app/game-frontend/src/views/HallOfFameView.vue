@@ -193,6 +193,11 @@ onMounted(loadOptions);
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 /* Ref's document does not clip; the page column stays 500px wide instead. */
 :global(body:has(.legacy-hall-page)) {
     min-width: 500px;
@@ -204,7 +209,7 @@ onMounted(loadOptions);
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .legacy-hall-title,
@@ -274,7 +279,7 @@ onMounted(loadOptions);
 }
 
 .legacy-banner {
-    font-size: 13px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .legacy-banner a {
@@ -296,7 +301,7 @@ onMounted(loadOptions);
     margin: 0;
     border-bottom: 1px solid gray;
     padding: 2px;
-    font-size: calc(19px + 0.784615vw);
+    font-size: var(--sammo-font-size-title);
     font-weight: 500;
     line-height: 1.2;
     text-align: center;
@@ -380,7 +385,7 @@ onMounted(loadOptions);
     }
 
     .rankType {
-        font-size: 28px;
+        font-size: var(--sammo-font-size-title);
     }
 }
 </style>

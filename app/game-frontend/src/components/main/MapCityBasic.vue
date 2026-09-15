@@ -102,7 +102,7 @@ const { touchstart, touchmove, touchend, touchcancel } = useMapCityTouch(
     position: absolute;
     box-sizing: border-box;
     transform: translate(-50%, -50%);
-    font-size: 0.65rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.8);
     cursor: pointer;
     touch-action: manipulation;

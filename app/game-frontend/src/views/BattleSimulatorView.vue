@@ -1368,7 +1368,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
     padding: 2px 6px;
     background: #444;
     color: #aaa;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .independence-notice p {
@@ -1403,7 +1403,7 @@ button {
     border-radius: 5.25px;
     padding: 5.25px 10.5px;
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 700;
     line-height: 21px;
     vertical-align: middle;
@@ -1465,12 +1465,12 @@ button:disabled {
 
 .error {
     color: #f5b7b1;
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .status {
     color: #f5d08a;
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .settings-grid {
@@ -1484,7 +1484,7 @@ button:disabled {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     color: #ddd;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .unit-after {
@@ -1507,7 +1507,7 @@ button:disabled {
     background: #ddd;
     color: #303030;
     padding: 5.25px 10.5px;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 21px;
     box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.075);
     transition:
@@ -1571,7 +1571,7 @@ button:disabled {
     border: 1px solid #111;
     background: #444;
     color: #ddd;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     white-space: nowrap;
 }
 
@@ -1595,7 +1595,7 @@ button:disabled {
     padding: 6px 14px;
     border-radius: 5px;
     background: #444;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .defender-toolbar > div {
@@ -1653,7 +1653,7 @@ button:disabled {
 .log-body {
     min-height: 0;
     line-height: 1.5;
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .modal-backdrop {
@@ -1686,7 +1686,7 @@ button:disabled {
 
 .modal h3 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--sammo-font-size-emphasis);
 }
 
 .modal-body {
@@ -1696,7 +1696,7 @@ button:disabled {
 }
 
 .hint {
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.7);
 }
 

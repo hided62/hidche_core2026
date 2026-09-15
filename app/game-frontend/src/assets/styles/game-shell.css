@@ -23,12 +23,12 @@
 }
 
 .game-shell__title {
-    font-size: 1.6rem;
+    font-size: var(--sammo-font-size-title);
     font-weight: 600;
 }
 
 .game-shell__subtitle {
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
     color: var(--sammo-color-text-muted);
 }
 
@@ -44,11 +44,11 @@
     background: var(--sammo-color-action-bg);
     color: inherit;
     text-decoration: none;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
     cursor: pointer;
 }
 
 .game-feedback--error {
     color: var(--sammo-color-error);
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
 }

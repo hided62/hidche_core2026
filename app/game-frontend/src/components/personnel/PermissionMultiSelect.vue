@@ -203,7 +203,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
     border-radius: 2px;
     color: #111;
     background: #fff;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 700;
     line-height: 1;
 }
@@ -212,7 +212,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
     margin: 0;
     padding: 6px 8px;
     color: #bbb;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
 }
 .permission-multiselect-help {
     border-top: 1px solid #454545;

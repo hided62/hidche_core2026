@@ -106,7 +106,7 @@ watch(
     background-color: #302016;
     background-image: var(--sammo-texture-walnut);
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     line-height: 21px;
 }
@@ -169,7 +169,7 @@ watch(
 .execution-status > span {
     display: block;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .execution-status:disabled {
     opacity: 1;

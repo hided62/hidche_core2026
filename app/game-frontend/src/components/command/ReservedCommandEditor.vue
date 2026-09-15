@@ -832,13 +832,18 @@ const clickOutsideMenu = (event: Event) => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .reserved-command-editor {
     position: relative;
     width: 100%;
     min-width: 0;
     color: #fff;
     background: #1d1d1d;
-    font: 14px/1.05 var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/1.05 var(--sammo-font-sans);
 }
 .reserved-command-editor.picker-open {
     z-index: 50;
@@ -850,7 +855,7 @@ const clickOutsideMenu = (event: Event) => {
     align-items: center;
     justify-content: center;
     gap: 5px;
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 400;
 }
 .identity strong {
@@ -1069,7 +1074,7 @@ const clickOutsideMenu = (event: Event) => {
     background: #102c35;
     box-shadow: 0 3px 8px #000;
     color: #aaffff;
-    font-size: 0.78rem;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
     line-height: 1.35;
     text-align: left;
@@ -1091,7 +1096,7 @@ const clickOutsideMenu = (event: Event) => {
     visibility: visible;
 }
 .action-column small {
-    font-size: 0.72em;
+    font-size: var(--sammo-font-size-small);
     line-height: 1;
 }
 .reserved-command-editor.mobile .action-column > div.autonomous {

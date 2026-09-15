@@ -788,7 +788,7 @@ button {
 .game-version-dialog__commit code {
     overflow-wrap: anywhere;
     color: #d7d7d7;
-    font-size: 0.85em;
+    font-size: var(--sammo-font-size-small);
 }
 
 /*
@@ -820,7 +820,7 @@ button {
 
 .front-status-error {
     color: #ff8a80;
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .legacy-game-info {
@@ -834,7 +834,7 @@ button {
     border-top: 1px solid #666;
     background: #302016 var(--sammo-texture-walnut);
     color: #fff;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     line-height: 17px;
     text-align: center;
 }
@@ -851,7 +851,7 @@ button {
 
 .warning {
     color: #f5d08a;
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .survey-notice {
@@ -866,7 +866,7 @@ button {
     background: rgba(32, 28, 16, 0.96);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -883,7 +883,7 @@ button {
 .survey-notice-title button {
     padding: 0 4px;
     cursor: pointer;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
     line-height: 1;
 }
 
@@ -912,7 +912,7 @@ button {
     background: rgba(12, 12, 12, 0.96);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -933,7 +933,7 @@ button {
 .private-message-notice-close {
     padding: 0 4px;
     cursor: pointer;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
     line-height: 1;
 }
 
@@ -1158,7 +1158,7 @@ button {
 }
 
 .placeholder {
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
     color: rgba(232, 221, 196, 0.7);
     display: flex;
     flex-direction: column;

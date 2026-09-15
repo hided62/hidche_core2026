@@ -52,7 +52,7 @@ defineProps<{
     box-shadow: 0 3px 12px rgb(0 0 0 / 65%);
     color: #f5f5f5;
     font-family: var(--sammo-font-sans);
-    font-size: 12.5px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
     line-height: 1.45;
     text-align: left;
@@ -66,7 +66,7 @@ defineProps<{
 .directory-tooltip__content strong {
     margin-bottom: 4px;
     color: #7fd4ff;
-    font-size: 13px;
+    font-size: var(--sammo-font-size-small);
 }
 .directory-tooltip--enabled:hover > .directory-tooltip__content,
 .directory-tooltip--enabled:focus > .directory-tooltip__content {

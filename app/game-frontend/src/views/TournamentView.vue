@@ -375,6 +375,11 @@ const start = async () => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .legacy-page {
     width: 100%;
     max-width: 1200px;
@@ -383,7 +388,7 @@ const start = async () => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
     text-align: center;
 }
@@ -392,7 +397,7 @@ const start = async () => {
     text-align: left;
 }
 .tournament-guide {
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     line-height: 14px;
 }
 .tournament-footer {
@@ -419,7 +424,7 @@ const start = async () => {
     --legacy-button-height: 44px;
     min-width: 72px;
     padding: 10px 16px;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .operator-row,
 .state-row,
@@ -451,10 +456,10 @@ button:not(.legacy-button):focus-visible {
 }
 .operator-row span {
     color: orange;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
 }
 .state-row {
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
 }
 .state-row .type {
     color: cyan;
@@ -463,7 +468,7 @@ button:not(.legacy-button):focus-visible {
     min-height: 38px;
     padding: 5px;
     color: magenta;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
 }
 .fight {
     padding: 8px;
@@ -473,7 +478,7 @@ button:not(.legacy-button):focus-visible {
     margin: 0;
     text-align: center;
     color: orange;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .fight p {
     margin: 2px 10px;
@@ -496,7 +501,7 @@ button:not(.legacy-button):focus-visible {
     padding: 4px;
     background: #000;
     color: orange;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     text-align: center;
 }
@@ -525,13 +530,13 @@ button:not(.legacy-button):focus-visible {
 @media (max-width: 800px) {
     .legacy-page {
         max-width: 100%;
-        font-size: 13px;
+        font-size: var(--sammo-font-size-small);
     }
     .state-row {
-        font-size: 18px;
+        font-size: var(--sammo-font-size-emphasis);
     }
     .section-title {
-        font-size: 20px;
+        font-size: var(--sammo-font-size-title);
     }
     .group-tabs {
         display: grid;
@@ -568,7 +573,7 @@ button:not(.legacy-button):focus-visible {
     }
     .tournament-guide {
         padding: 10px;
-        font-size: 11px;
+        font-size: var(--sammo-font-size-small);
         line-height: 16px;
     }
     .tournament-footer {

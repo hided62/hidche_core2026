@@ -1,4 +1,9 @@
 :root {
+    /* 검증된 화면이 공유하는 네 단계. 콘텐츠 내부 축소/숨김은 별도 계약이다. */
+    --sammo-font-size-small: 12px;
+    --sammo-font-size-normal: 14px;
+    --sammo-font-size-emphasis: 16px;
+    --sammo-font-size-title: 24px;
     --sammo-font-sans: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
     --sammo-color-text: #fff;
     --sammo-color-text-muted: rgba(232, 221, 196, 0.7);

@@ -131,3 +131,65 @@ than forcing it into either family.
 The CSS variables contain `/image/game/*` URLs but do not import or copy image
 files. Caddy continues to own `/image/*`; Vite must not rewrite the image tree
 as application assets.
+
+
+## Game typography tiers
+
+The game UI uses four starting sizes from `assets/styles/tokens.css`:
+
+| Token suffix (`--sammo-font-size-`) | CSS size | Role |
+| --- | --- | --- |
+| `small` | 12px | Compact controls, metadata, secondary labels |
+| `normal` | 14px | Body, tables, ordinary controls |
+| `emphasis` | 16px | Emphasized names and section labels |
+| `title` | 24px | Page and major section headings |
+
+This is an intentional Core UX policy adopted on 2026-09-15. It is a starting
+policy for verified UI, not a claim that every rendered glyph has one of four
+computed sizes. Existing geometry and media queries remain owned by each page.
+A breakpoint can choose another tier (for example, the personnel nation heading
+uses 16px on its narrow layout and 24px on its wide layout).
+
+Use the tokens for new UI. Do not round arbitrary content or all remaining
+relative sizes automatically. Before moving an existing label to a tier, compare
+actual Chromium screenshots and text geometry at 500px and 1000px, with the
+same font, data, DPR and zoom. Also check the real mobile viewport modes: a
+390px-wide device scales a 500px layout to approximately 78% and a 1000px layout
+to 39%; these do not change the CSS token values. A page with a fixed 1000px
+minimum width can still render at about 39% in 500px mode because Chromium
+fits the overflowing content. Record `visualViewport.scale` for each route;
+do not infer every route's scale from the selected mode alone.
+
+### Preserved exceptions
+
+- Battle log `.small_war_log .name_plate` remains `0.75em`, and `.crew_plate`
+  remains `90%`. Legacy inline `0.9em` conversions and zero-sized hidden markers
+  remain unchanged. At a 14px parent these are 10.5px and 12.6px respectively;
+  nested content must be calculated from its actual parent.
+- NPC possession names retain their existing length rule: 4 and 7 characters
+  render at 16px, and the existing `length >= 9` branch renders at 12px. Do not
+  remove the smaller branch or enlarge long names to match adjacent labels.
+- Player HTML, editor size choices, and personal CSS remain content/user settings.
+  Scoped `small` rules normalize UI metadata without rewriting injected HTML.
+
+### Deferred conversions
+
+| Area | Preserved size | Reason |
+| --- | --- | --- |
+| Chief overview compact rows and turn indices | `0.55rem` (8.8px) | 12px text overlaps the existing 11.25px rows |
+| Chief compact header/name | `0.65rem` / `0.6rem` | Preserve the same dense card contract |
+| Narrow personnel chief name / lock label | 15px / 10px | Enlarging them reduces visible maximum-length names |
+| Best generals / hall name and nation cells | 11px; inner `small` 95% | 12px worsens overflow in the fixed name cells |
+| General selection and main nation basic card | Existing local/inherited sizes | Maximum-width names already overflow; conversion is deferred |
+
+User-created general names and founded/renamed nation names are limited by
+legacy width 18 (CJK counts 2, ASCII counts 1): test both 9 CJK characters and
+18 wide ASCII characters. Selection-pool and scenario names have a different
+source contract and are not proven bounded by that user-input guard.
+
+Existing ellipsis, horizontal scrolling, and pre-existing maximum-name overflow
+are not fixed by these tokens. The deferred areas need a separate layout decision
+before their fonts are enlarged. The `typographyPolicy.spec.ts` fixture tests
+protect the safe main labels, personnel breakpoints, dense chief rows, NPC
+length branches, and battle log ratios. They use mocked read responses and do
+not constitute live game or public deployment verification.

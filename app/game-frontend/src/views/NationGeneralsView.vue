@@ -1015,12 +1015,17 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .general-page {
     width: 1000px;
     min-width: 1000px;
     height: 100vh;
     margin: 0 auto;
-    font: 14px/21px var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/21px var(--sammo-font-sans);
     color: #fff;
     background-color: transparent;
 }
@@ -1035,10 +1040,10 @@ onBeforeUnmount(() => {
     justify-content: center;
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .top-bar strong {
-    font-size: 22px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 400;
 }
 .left-actions,
@@ -1061,7 +1066,7 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: center;
     padding: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     text-decoration: none;
 }
 .nation-button {
@@ -1147,7 +1152,7 @@ table {
     table-layout: fixed;
     background: #293033;
     color: #f5f5f5;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: normal;
     cursor: default;
 }
@@ -1198,7 +1203,7 @@ th {
 }
 .sort-indicator {
     color: #8dd4ff;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 .filter-head th {
     position: relative;
@@ -1234,7 +1239,7 @@ th {
 .floating-filter > input::placeholder,
 .filter-popup input::placeholder {
     color: #8f999d;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 .filter-menu-button {
     display: inline-flex;
@@ -1292,7 +1297,7 @@ th {
     background: #2d3436;
     box-shadow: 0 2px 6px rgb(0 0 0 / 45%);
     color: #f5f5f5;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18px;
     text-align: left;
     white-space: normal;
@@ -1311,7 +1316,7 @@ th {
     border-radius: 0;
     background: #252a2c;
     color: #fff;
-    font: 12px/18px var(--sammo-font-sans);
+    font: var(--sammo-font-size-small)/18px var(--sammo-font-sans);
 }
 .filter-condition select {
     cursor: pointer;

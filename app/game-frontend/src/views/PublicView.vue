@@ -256,7 +256,7 @@ onMounted(() => {
 <style scoped>
 .page-hint {
     margin-top: 6px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.5);
 }
 
@@ -279,7 +279,7 @@ onMounted(() => {
 }
 
 .placeholder {
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
     color: rgba(232, 221, 196, 0.7);
     display: flex;
     flex-direction: column;
@@ -295,7 +295,7 @@ onMounted(() => {
 .public-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .public-table th,
@@ -306,7 +306,7 @@ onMounted(() => {
 }
 
 .public-table thead th {
-    font-size: 0.7rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.6);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -325,7 +325,7 @@ onMounted(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.6rem;
+    font-size: var(--sammo-font-size-small);
     padding: 2px 4px;
     margin-right: 6px;
     border: 1px solid rgba(201, 164, 90, 0.4);
@@ -346,11 +346,11 @@ onMounted(() => {
     background: rgba(16, 16, 16, 0.8);
     color: rgba(232, 221, 196, 0.9);
     padding: 6px 8px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .list-count {
-    font-size: 0.7rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.6);
     white-space: nowrap;
 }

@@ -49,14 +49,14 @@ withDefaults(defineProps<Props>(), {
 .panel-title {
     margin: 0;
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 700;
 }
 
 .panel-subtitle {
     margin: 1px 0 0;
     color: #ccc;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .panel-actions {
@@ -68,6 +68,6 @@ withDefaults(defineProps<Props>(), {
 .panel-body {
     padding: 6px;
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 </style>

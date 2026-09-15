@@ -314,6 +314,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .legacy-page {
     box-sizing: border-box;
     width: 100%;
@@ -325,7 +330,7 @@ onBeforeUnmount(() => {
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 .title-row {
@@ -367,7 +372,7 @@ onBeforeUnmount(() => {
     background-color: #14241b;
     background-image: var(--sammo-texture-green);
     color: skyblue;
-    font-size: 1.25em;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 500;
 }
 .settings-content {
@@ -440,7 +445,7 @@ onBeforeUnmount(() => {
     padding: 12px;
     background: #171717 var(--sammo-texture-walnut);
     color: #fff;
-    font: 14px/1.3 var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/1.3 var(--sammo-font-sans);
 }
 .mobile-layout-dialog::backdrop {
     background: rgb(0 0 0 / 72%);
@@ -461,7 +466,7 @@ onBeforeUnmount(() => {
 }
 .mobile-layout-dialog__header h2 {
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .mobile-layout-dialog__header form,
 .mobile-layout-dialog__actions form {
@@ -470,7 +475,7 @@ onBeforeUnmount(() => {
 .mobile-layout-dialog__header button {
     min-width: 32px;
     min-height: 32px;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
 }
 .mobile-layout-list {
     display: grid;
@@ -494,7 +499,7 @@ onBeforeUnmount(() => {
 .mobile-layout-handle {
     color: #aaa;
     text-align: center;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
 }
 .mobile-layout-label {
     min-width: 0;
@@ -508,7 +513,7 @@ onBeforeUnmount(() => {
     margin-right: 4px;
     border: 1px solid #7186a7;
     border-radius: 50%;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .mobile-layout-move-buttons {
     gap: 4px;

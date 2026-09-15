@@ -75,7 +75,7 @@ const emit = defineEmits<{
 
 .main-turn-controls__auto strong {
     color: #bbb;
-    font-size: 0.85em;
+    font-size: var(--sammo-font-size-small);
 }
 
 .main-turn-controls__auto.active strong {

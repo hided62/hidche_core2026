@@ -816,7 +816,7 @@ const selectCity = (cityId: number) => {
         left top,
         right top;
     background-repeat: no-repeat;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 700;
     line-height: 20px;
     text-align: center;
@@ -834,7 +834,7 @@ const selectCity = (cityId: number) => {
     padding: 5px 8px;
     background: #000;
     color: #fff;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
     line-height: 18px;
     text-align: left;
@@ -880,7 +880,7 @@ const selectCity = (cityId: number) => {
     background: #345c85;
     color: #fff;
     cursor: pointer;
-    font-size: 17px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 1;
     pointer-events: auto;
 }
@@ -928,7 +928,7 @@ const selectCity = (cityId: number) => {
     padding: 3px 7px;
     background: #345c85;
     color: #fff;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18px;
     cursor: pointer;
     text-align: left;
@@ -998,7 +998,7 @@ const selectCity = (cityId: number) => {
     padding: 0;
     background: rgb(30, 164, 255);
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 15px;
     white-space: nowrap;
 }
@@ -1013,7 +1013,7 @@ const selectCity = (cityId: number) => {
     padding: 1px 4px;
     background: rgba(5, 27, 43, 0.92);
     color: #d9f3ff;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 700;
     line-height: 14px;
     pointer-events: none;

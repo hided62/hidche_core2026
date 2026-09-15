@@ -418,12 +418,12 @@ const mobilePairs = computed(() => {
     left: 50%;
     transform: translate(-50%, -50%);
     color: #ffd25e;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .tournament-bracket > p {
     margin: 8px 0 0;
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 @media (max-width: 800px) {
     .desktop-bracket {
@@ -434,7 +434,7 @@ const mobilePairs = computed(() => {
     }
     .tournament-bracket > p {
         padding: 0 8px;
-        font-size: 13px;
+        font-size: var(--sammo-font-size-small);
     }
 }
 
@@ -511,13 +511,13 @@ const mobilePairs = computed(() => {
     }
 }
 .bracket-info-identity :deep(.general-identity-name) {
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 18px;
 }
 .bracket-info-identity :deep(.general-identity-details) {
     display: flex;
     flex-direction: column;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 18px;
     text-align: left;
     overflow-wrap: anywhere;

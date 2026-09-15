@@ -355,12 +355,17 @@ const sortHelp = (header: Header): string =>
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .directory-table {
     width: 1000px;
     border-collapse: collapse;
     table-layout: auto;
     padding: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
     word-break: break-all;
 }
@@ -414,7 +419,7 @@ const sortHelp = (header: Header): string =>
     display: grid;
     grid-template-columns: 66px repeat(4, minmax(0, 1fr));
     color: inherit;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     line-height: 1.2;
 }
 .general-card + .general-card {
@@ -453,7 +458,7 @@ const sortHelp = (header: Header): string =>
     min-height: 32px;
     flex-direction: row;
     gap: 4px;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .name-field,
 .nation-field {
@@ -461,11 +466,11 @@ const sortHelp = (header: Header): string =>
 }
 .field-label {
     color: #a8d8bd;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
     line-height: 1;
 }
 .identity-field .field-label {
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
 }
 .general-card-loading {
     min-height: 65px;

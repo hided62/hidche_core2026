@@ -517,7 +517,7 @@ onMounted(() => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 21px;
 }
 .legacy-auction-page.resource-page {
@@ -549,7 +549,7 @@ onMounted(() => {
 }
 .top-back-bar h1 {
     margin: 0;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 500;
     line-height: 32px;
     text-align: center;

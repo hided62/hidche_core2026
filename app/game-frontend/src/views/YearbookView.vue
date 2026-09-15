@@ -258,7 +258,7 @@ onMounted(async () => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     background-color: transparent;
 }
 
@@ -279,7 +279,7 @@ onMounted(async () => {
 .yearbook-title strong {
     display: inline-block;
     line-height: 32px;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
     letter-spacing: 0.35em;
 }
 
@@ -355,7 +355,7 @@ onMounted(async () => {
 .nation-position table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     text-align: center;
 }
 

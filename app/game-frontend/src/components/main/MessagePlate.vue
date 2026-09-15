@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
     min-height: 64px;
     outline: 1px solid gray;
     color: #fff;
-    font-size: 12.5px;
+    font-size: var(--sammo-font-size-small);
     word-break: break-all;
 }
 
@@ -414,7 +414,7 @@ button.msg-target {
 }
 
 .msg-time {
-    font-size: 0.75em;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
 }
 
@@ -429,7 +429,7 @@ button.msg-target {
     background: transparent;
     padding: 2px 4px;
     color: #ffc107;
-    font-size: 8px;
+    font-size: var(--sammo-font-size-small);
     cursor: pointer;
 }
 
@@ -479,7 +479,7 @@ button.msg-target {
 .message-response .legacy-button {
     min-width: 42px;
     padding: 2px 8px;
-    font-size: 12.5px;
+    font-size: var(--sammo-font-size-small);
     cursor: pointer;
 }
 

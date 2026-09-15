@@ -75,7 +75,7 @@ const unavailableText: Record<GeneralRecordType, string> = {
     color: orange;
     background-color: #000;
     background-image: var(--sammo-texture-green);
-    font-size: 1.3em;
+    font-size: var(--sammo-font-size-title);
     font-weight: 500;
 }
 

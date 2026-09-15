@@ -427,7 +427,7 @@ onBeforeUnmount(() => editor.value?.destroy());
 }
 .legacy-html-editor__image-toolbar span {
     padding: 0 4px;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .legacy-html-editor__image-toolbar button {
     border: 1px solid transparent;
@@ -453,7 +453,7 @@ onBeforeUnmount(() => editor.value?.destroy());
     align-items: center;
     gap: 0;
     color: inherit;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .legacy-html-editor__select select {
     min-width: 0;

@@ -216,7 +216,7 @@ const cityStateStyle = computed(() => ({
 .city-base {
     position: absolute;
     transform: translate(-50%, -50%);
-    font-size: 0.65rem;
+    font-size: var(--sammo-font-size-small);
     color: #fff;
     cursor: pointer;
     touch-action: manipulation;
@@ -296,7 +296,7 @@ const cityStateStyle = computed(() => ({
     bottom: -10px;
     background: rgba(0, 0, 0, 0.5);
     white-space: nowrap;
-    font-size: 0.6rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.9);
 }
 
