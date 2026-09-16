@@ -192,6 +192,14 @@ const persistScreenshot = async (page: Page, name: string, fallbackPath: string)
 const installFixture = async (
     page: Page,
     options: {
+        clock?: {
+            serverTime: string;
+            serverWallTime: string;
+            clockMode: 'realtime' | 'manual';
+            clockRunning: boolean;
+            clockRecovery?: { startsAt: string; endsAt: string };
+        };
+        bettingCloseAt?: string;
         applicationOpen?: boolean;
         tournamentType?: number;
         tournamentStage?: number;
@@ -224,7 +232,7 @@ const installFixture = async (
         const results = operationNames(route).map((operation) => {
             options.onOperation?.(operation, route.request().headers());
             if (operation === 'auth.status') return response({ ok: true });
-            if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: names[0] } });
+            if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: names[0] }, ...options.clock });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') return response({ general: { id: 1, name: names[0] } });
             if (operation === 'tournament.getAdminStatus') return response({ ok: false });
@@ -244,6 +252,7 @@ const installFixture = async (
                         openMonth: 1,
                         termSeconds: 60,
                         nextAt: '2026-08-02T00:00:00.000Z',
+                        bettingCloseAt: options.bettingCloseAt,
                         winnerId: tournamentStage === 0 ? 1 : undefined,
                     },
                     participants:
@@ -1212,4 +1221,59 @@ for (const width of [1365, 801, 390, 320]) {
         await expect(cards.first().locator('.bracket-odds')).toHaveText('배당 56.00');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
+}
+
+for (const width of [1365, 390]) {
+    for (const displayMode of ['game', 'real']) {
+        test(`recovery betting uses game deadline at ${width}px in ${displayMode} display`, async ({
+            page,
+        }, testInfo) => {
+            await page.setViewportSize({ width, height: 900 });
+            const wallNow = new Date('2026-09-16T12:00:00Z');
+            await page.clock.install({ time: wallNow });
+            await page.clock.setFixedTime(wallNow);
+            await page.addInitScript(
+                ({ profile, displayMode }) => {
+                    localStorage.setItem(`sammo-clock-display:${profile}:/${profile.split(':')[0]}/`, displayMode);
+                },
+                { profile: gameProfile, displayMode }
+            );
+            const { placedBets } = await installFixture(page, {
+                tournamentStage: 6,
+                bettingCloseAt: '2026-09-16T11:50:20Z',
+                clock: {
+                    serverTime: '2026-09-16T11:50:00Z',
+                    serverWallTime: wallNow.toISOString(),
+                    clockMode: 'realtime',
+                    clockRunning: true,
+                    clockRecovery: { startsAt: wallNow.toISOString(), endsAt: '2026-09-16T12:10:00Z' },
+                },
+            });
+            await page.goto('betting');
+            const button = page.getByRole('button', { name: '관우에게 베팅하기', exact: true });
+            await expect(button).toBeVisible();
+            await button.click();
+            await expect(page.getByRole('status').filter({ hasText: '10금 베팅 완료' })).toBeVisible();
+            expect(placedBets).toEqual([{ targetId: 1, amount: 10 }]);
+            await page.clock.pauseAt(wallNow);
+            await page.clock.setSystemTime(wallNow);
+            await page.clock.runFor(9_750);
+            await expect(button).toBeVisible();
+            await page.evaluate(() => document.fonts.ready);
+            const geometry = await button.evaluate((el) => ({
+                rect: el.getBoundingClientRect().toJSON(),
+                fontSize: getComputedStyle(el).fontSize,
+                disabled: (el as HTMLButtonElement).disabled,
+                html: document.querySelector('#tournament-betting-container')?.outerHTML,
+            }));
+            expect(geometry.disabled).toBe(false);
+            expect(geometry.rect.width).toBeGreaterThan(0);
+            await writeFile(testInfo.outputPath('recovery-betting-geometry.json'), JSON.stringify(geometry));
+            await page.screenshot({ path: testInfo.outputPath('recovery-betting-open.png'), fullPage: true });
+            // 250ms 표시 갱신 주기의 위상과 무관하게 마감 직후를 확인한다.
+            await page.clock.runFor(500);
+            await expect(button).toHaveCount(0);
+            await page.screenshot({ path: testInfo.outputPath('recovery-betting-closed.png'), fullPage: true });
+        });
+    }
 }

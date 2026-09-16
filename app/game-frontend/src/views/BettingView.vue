@@ -2,7 +2,7 @@
 import { usePageExit } from '../composables/usePageExit';
 
 import { useClockDisplay } from '../composables/useClockDisplay';
-const { formatTime: formatGameTime } = useClockDisplay();
+const { formatTime: formatGameTime, gameTime } = useClockDisplay();
 import { storeToRefs } from 'pinia';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import TournamentBracket from '../components/tournament/TournamentBracket.vue';
@@ -62,7 +62,7 @@ const bettingOpen = computed(() => {
     const state = snapshot.value?.state;
     if (!state || state.stage !== 6) return false;
     if (!state.bettingCloseAt) return true;
-    return new Date(state.bettingCloseAt).getTime() > Date.now();
+    return gameTime.value !== null && new Date(state.bettingCloseAt).getTime() > gameTime.value.getTime();
 });
 
 const placeBet = async (target: TournamentBracketSlot) => {

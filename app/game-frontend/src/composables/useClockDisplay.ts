@@ -63,6 +63,8 @@ export const clockSampleIsStale = (): boolean =>
 const projection = computed(() =>
     sample.value ? projectServerClock(sample.value, haltedAt.value ?? now.value) : null
 );
+// 마감 판정은 표시 모드와 무관하게 서버가 투영한 GAME 시각을 사용한다.
+const gameTime = computed(() => projection.value?.time ?? null);
 const accelerated = computed(() => projection.value?.rate === 2 && engineRunning.value !== false);
 const label = computed(() => (mode.value === 'real' ? '실제 시간 기준' : '게임 시간 기준'));
 const time = computed(() => {
@@ -90,6 +92,7 @@ export const useClockDisplay = () => ({
     mode,
     label,
     time,
+    gameTime,
     accelerated,
     toggle,
     projectTime,
