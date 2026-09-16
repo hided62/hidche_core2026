@@ -320,6 +320,36 @@ snapshot과 source를 구분한다. migration은 빈 DB·증분·재실행 no-op
 기존 연감·계정 원장의 보존 정책은 바꾸지 않는다. 정리 전 backup·현재 RESET 보호 절차를
 따르고, 이 문서 구현이 임의 운영 데이터 삭제 권한을 뜻하지 않는다.
 
+#### 취소된 기수의 조회 실행 경계
+
+현재 `CANCEL_GAME`은 쓰기를 막기 위해 profile 전체 process를 정지한 뒤 정산하고
+CANCELLED를 확정한다. `startProfile()`은 API와 daemon·경매·전투 시뮬레이터·대회
+worker를 함께 시작한다. 따라서 감사 조회를 위해 이 함수를 재사용하거나
+CANCELLED의 기존 `runtimeExpected/userAccessible`을 일괄 true로 바꾸면 안 된다.
+일반 게임 접근·재개 불가 계약은 유지한다. 이 항목은 아직 구현되지 않았다.
+
+후속 구현은 다음 경계를 한 단위로 연결한다.
+
+1. **취소 확정 이후 감사 실행:** 정산 commit과 lease 확인 후 frontend와 감사 전용
+   API만 준비한다. daemon/worker는 시작하지 않는다. 감사 기동 실패는 취소 정산을
+   되돌리거나 다시 실행하지 않고, 조회 준비만 재시도한다. Gateway 재시작 reconcile도
+   같은 실행 집합을 복구해야 한다. STOPPED/DISABLED를 자동으로 켜지 않는다.
+2. **서버에서 제한:** 감사 실행 모드는 `playAudit.*` query와 인증에 필요한 최소
+   session 경로만 허용한다. 일반 query·mutation, batch에 섞인 mutation, upload,
+   SSE 등록과 background worker도 우회 경로가 되지 않게 검사한다. frontend에서
+   버튼을 숨기는 것으로 대신하지 않는다. 프로필별 감사 권한·제재 검사는 유지한다.
+3. **관리자 진입:** Gateway 감사 버튼의 `runtimeExpected` 의존을 별도 감사 준비
+   상태로 분리한다. 세션 발급은 기존 권한 검사를 유지하고 일반 사용자 입장을 열지
+   않는다. 공개 prefix·직접 링크·새로고침은 같은 profile의 감사 API를 사용한다.
+4. **RESET 전환:** 감사 실행을 정지하고 기존 reset 보호 절차와 새 serverId 활성화를
+   진행한다. 이전 사건 URL은 새 기수에서 조회되지 않아야 한다. 이전 실행 mode나
+   session이 일반 실행에 잔류해 권한·쓰기 제한을 바꾸지 않도록 확인한다.
+5. **필수 증거:** 취소 정산 1회, 감사 기동 실패/재시도·Gateway 재시작, worker 0개,
+   승인 query 성공과 모든 비허용 transport 거부, 권한 회수·타 프로필·제재 거부,
+   RESET 후 이전 기록 차단을 실제 HTTP/격리 DB로 검증한다. CHE/HWE Chromium에서
+   취소 후 관리자 진입을 확인한다. 감사 조회 전후 gameplay/input_event 행의 불변과
+   추가 connection pool·idle query 비용도 측정한다.
+
 공통 계정 신규 조사 기록은 wall clock 기준 30일이다. 조회에서도 만료된 행을 제외하고
 삭제 worker는 작은 batch로 정리한다. 기존 계정/관리자 원장은 그대로 둔다. 과거 링크의
 대상이 만료·초기화·미수집이면 그 이유를 반환하며 '사건 없음'으로 표시하지 않는다.
