@@ -1,3 +1,4 @@
+import { projectCurrentGeneral } from '../src/router/playAudit/projection.js';
 import fs from 'node:fs/promises';
 import { createServer, type Server as HttpServer } from 'node:http';
 import os from 'node:os';
@@ -8,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { encryptGameSessionToken, type GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import {
     createGamePostgresConnector,
+    GamePrisma,
     createRedisConnector,
     enqueueWebPushOutboxEvents,
     resolveRedisConfigFromEnv,
@@ -2146,6 +2148,135 @@ integration('game API security over HTTP transport', () => {
             eventId: `game:${profileName}:${eventIds.staleLock}`,
         });
     }, 10_000);
+
+    it('play audit HTTP scope, no-general access, bounded history and token revocation', async () => {
+        const auditUserId = `audit-http-${process.pid}`;
+        const seasonId = `audit-season-${process.pid}`;
+        const sampleId = `${seasonId}:190:1`;
+        const originalWorld = await db.worldState.findUniqueOrThrow({ where: { id: fixtureWorldId } });
+        const token = async (roles: string[], sanctions: GameSessionTokenPayload['sanctions'] = {}) => {
+            const payload = buildPayload(`audit-${roles.join('-')}`, sanctions, auditUserId);
+            payload.user.roles = roles;
+            const issued = await accessTokenStore.create(payload);
+            if (!issued) throw new Error('audit token fixture failed');
+            return issued.accessToken;
+        };
+        const get = async (path: string, accessToken?: string, input?: unknown) => {
+            const response = await fetch(
+                `${baseUrl}/trpc/playAudit.${path}${input === undefined ? '' : `?input=${encodeURIComponent(JSON.stringify(input))}`}`,
+                {
+                    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+                }
+            );
+            return { status: response.status, body: (await response.json()) as unknown };
+        };
+        try {
+            await db.worldState.update({
+                where: { id: fixtureWorldId },
+                data: {
+                    currentYear: 190,
+                    currentMonth: 2,
+                    meta: { serverId: seasonId, scenarioMeta: { startYear: 190 } },
+                },
+            });
+            const current = await db.general.findUniqueOrThrow({ where: { id: generalId } });
+            const past = projectCurrentGeneral(current);
+            await db.playAuditMonth.create({
+                data: {
+                    id: sampleId,
+                    serverId: seasonId,
+                    year: 190,
+                    month: 1,
+                    kind: 'MONTH_END',
+                    settlementsComplete: true,
+                    hash: 'http-fixture',
+                    generals: {
+                        create: {
+                            generalId,
+                            nationId: current.nationId,
+                            cityId: current.cityId,
+                            npcState: current.npcState,
+                            data: { ...past, name: '과거이름', hiddenSecret: 'must-not-expose' },
+                        },
+                    },
+                },
+            });
+            const beforeInputs = await db.inputEvent.count();
+            expect((await get('capabilities')).status).toBe(401);
+            for (const roles of [['user'], ['admin'], ['admin.audit.read'], ['admin.playAudit.read:other:default']]) {
+                expect((await get('capabilities', await token(roles))).status).toBe(403);
+            }
+            const admin = await token([`admin.playAudit.read:${profileName}`]);
+            expect(await db.general.findUnique({ where: { userId: auditUserId } })).toBeNull();
+            expect((await get('capabilities', admin)).body).toMatchObject({
+                result: { data: { read: true, accounts: false } },
+            });
+            const first = await get('generals', admin, { limit: 1 });
+            expect(first.status).toBe(200);
+            expect(first.body).toMatchObject({
+                result: { data: { nextCursor: generalId, items: [{ id: generalId }] } },
+            });
+            expect((await get('generals', admin, { limit: 1, cursor: generalId })).body).toMatchObject({
+                result: { data: { items: [{ id: sameNationGeneralId }] } },
+            });
+            expect((await get('generals', admin, { population: 'npc' })).body).toMatchObject({
+                result: { data: { items: [{ id: npcGeneralId }] } },
+            });
+            expect((await get('coverage', admin, { limit: 1 })).body).toMatchObject({
+                result: { data: { status: 'COLLECTED', samples: [{ year: 190, month: 1 }] } },
+            });
+            expect((await get('coverage', admin, { cursor: { year: 190, month: 1 } })).body).toMatchObject({
+                result: { data: { status: 'PAGE_EMPTY', samples: [] } },
+            });
+            expect((await get('generals', admin, { limit: 201 })).status).toBe(400);
+            expect((await get('generals', admin, { at: { year: 191, month: 1 } })).status).toBe(400);
+            const history = await get('generals', admin, { at: { year: 190, month: 1 } });
+            expect(history.status).toBe(200);
+            expect(history.body).toMatchObject({
+                result: { data: { collected: true, items: [{ name: '과거이름' }] } },
+            });
+            expect(JSON.stringify(history.body)).not.toContain('must-not-expose');
+            expect((await get('generals', admin, { at: { year: 190, month: 2 } })).body).toMatchObject({
+                result: { data: { collected: false, items: [] } },
+            });
+            const blocked = await token([`admin.playAudit.read:${profileName}`], {
+                serverRestrictions: { [profileName]: { blockedFeatures: ['gameplay'] } },
+            });
+            expect((await get('capabilities', blocked)).status).toBe(403);
+            await db.worldState.update({
+                where: { id: fixtureWorldId },
+                data: {
+                    meta: {
+                        serverId: `${seasonId}:new`,
+                        scenarioMeta: { startYear: 190 },
+                    },
+                },
+            });
+            expect((await get('generals', admin, { at: { year: 190, month: 1 } })).body).toMatchObject({
+                result: { data: { collected: false, items: [] } },
+            });
+            expect(await db.inputEvent.count()).toBe(beforeInputs);
+            await redis!.client.publish(
+                `${redisPrefix}:flush`,
+                JSON.stringify({
+                    userId: auditUserId,
+                    flushedAt: new Date().toISOString(),
+                    reason: 'audit-role-revoked',
+                })
+            );
+            await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
+        } finally {
+            await db.playAuditMonth.deleteMany({ where: { serverId: seasonId } });
+            await db.worldState.update({
+                where: { id: fixtureWorldId },
+                data: {
+                    meta: originalWorld.meta ?? GamePrisma.JsonNull,
+                    currentYear: originalWorld.currentYear,
+                    currentMonth: originalWorld.currentMonth,
+                },
+            });
+        }
+    });
 
     // Flush invalidates every token issued before the user watermark. Keep it
     // last so this lifecycle assertion cannot invalidate the actor tokens used

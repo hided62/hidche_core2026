@@ -32,3 +32,4 @@ export * from './gateway/runtimeDiagnostics.js';
 export * from './game/accessPenalty.js';
 export * from './http/trpcTransport.js';
 export * from './webPush/types.js';
+export { canReadPlayAudit, canReadPlayAuditAccounts } from './auth/playAudit.js';

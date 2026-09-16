@@ -11,6 +11,20 @@ export interface AdminCapabilityDefinition {
 
 export const ADMIN_CAPABILITIES: readonly AdminCapabilityDefinition[] = [
     {
+        permission: 'admin.playAudit.read',
+        label: '플레이 감사 조회',
+        description: '지정 profile의 장수·도시·재정과 플레이 이력을 조회합니다.',
+        risk: 'HIGH',
+        scope: 'PROFILE',
+    },
+    {
+        permission: 'admin.playAudit.accounts',
+        label: '플레이 감사 계정 조사',
+        description: '플레이 감사 권한을 가진 profile에서 계정 시도·접속지 연관 자료를 조사합니다.',
+        risk: 'HIGH',
+        scope: 'GLOBAL',
+    },
+    {
         permission: 'admin.notice.manage',
         label: 'Gateway 공지 관리',
         description: 'Gateway 전역 공지를 조회하고 변경합니다.',

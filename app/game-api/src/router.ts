@@ -1,3 +1,4 @@
+import { playAuditRouter } from './router/playAudit/index.js';
 import { router } from './trpc.js';
 
 import { battleRouter } from './router/battle/index.js';
@@ -28,6 +29,7 @@ import { archiveRouter } from './router/archive/index.js';
 import { dashboardRouter } from './router/dashboard/index.js';
 
 export const appRouter = router({
+    playAudit: playAuditRouter,
     health: healthRouter,
     auth: authRouter,
     lobby: lobbyRouter,

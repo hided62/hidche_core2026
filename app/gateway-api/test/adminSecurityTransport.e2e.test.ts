@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
 import fastify, { type FastifyRequest } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -246,6 +248,46 @@ describe('admin security over HTTP transport', () => {
             },
         });
         expect(harness.flushes).toEqual([]);
+    });
+
+    it('grants scoped play audit roles, flushes old tokens and transports the exact scope', async () => {
+        const grant = 'admin.playAudit.read:che:default';
+        const harness = await createHarness(['admin.users.manage', grant, 'admin.playAudit.accounts']);
+        const granted = await postTrpc(
+            harness.baseUrl,
+            'admin.users.updateRoles',
+            {
+                userId: harness.target.id,
+                roles: [grant, 'admin.playAudit.accounts'],
+                mode: 'grant',
+                reason: '감사 조회 권한 부여',
+            },
+            harness.adminSessionToken
+        );
+        expect(granted.response.status).toBe(200);
+        expect(harness.flushes).toEqual([{ userId: harness.target.id, reason: 'admin-roles-updated' }]);
+        const issued = await postTrpc(harness.baseUrl, 'auth.issueGameSession', {
+            sessionToken: harness.targetSessionToken,
+            profile: 'che:default',
+        });
+        expect(issued.response.status).toBe(200);
+        const body = z.object({ result: z.object({ data: z.object({ gameToken: z.string() }) }) }).parse(issued.body);
+        const payload = decryptGameSessionToken(body.result.data.gameToken, 'transport-e2e-secret');
+        expect(payload?.profile).toBe('che:default');
+        expect(payload?.user.roles).toEqual(['user', grant, 'admin.playAudit.accounts']);
+        const rejected = await postTrpc(
+            harness.baseUrl,
+            'admin.users.updateRoles',
+            {
+                userId: harness.target.id,
+                roles: ['admin.playAudit.read:*'],
+                mode: 'grant',
+                reason: '범위 확대 거부 검증',
+            },
+            harness.adminSessionToken
+        );
+        expect(rejected.response.status).toBe(403);
+        expect(harness.flushes).toHaveLength(1);
     });
 
     it('accepts an equal scoped role and rejects wildcard escalation without mutating roles', async () => {

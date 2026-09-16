@@ -1,7 +1,7 @@
 # 플레이 감사 구현 기록과 수집 inventory
 
 [확정 설계](play-audit.md)의 P1~P6를 구현하는 작업 기록이다. 전체 기능은 진행 중이며,
-월별 projection과 runtime 수집·DB transaction 연결을 구현했다. API·화면은 아직 미구현이다.
+월별 projection과 runtime 수집·DB transaction 연결을 구현했다. 프로필 권한과 장수·도시 현재/월말 조회 API를 연결했다. 화면과 나머지 조회는 미구현이다.
 Push 요청 이후 `feat/play-audit` 전용 worktree에서 계속 구현하며 전체 완료 후 main 통합·push한다.
 
 ## 현재 구현
@@ -43,6 +43,39 @@ payload hash가 같은 재시도는 중복 저장하지 않고, 내용이 다르
 업무 데이터와 감사 표본의 transaction rollback, 재시도/충돌, 월 경계의 전월 세율과
 world meta reload도 확인했다. 이전 기수 차단/정리, 최종 표본 전체 종료 경로,
 정산 전후값의 별도 사건 원장은 아직 남아 있다.
+
+## 프로필 조회·권한 구현
+
+`game-api/router/playAudit`에 `capabilities`, `coverage`, `generals`, `cities`를
+추가했다. Gateway는 capability catalog만 제공하며 게임 자료를 대신 조회하지 않는다.
+`admin.playAudit.read:<profileName>`는 `che:default`처럼 scenario까지 정확히 비교한다.
+기존 resolver와 같은 명시적 전체 grant와 `superuser/admin.superuser`를 허용하고
+일반 `admin`, Gateway 조치 감사 권한, 인게임 직책으로 접근을 추론하지 않는다.
+공통 계정 권한 판정은 추가 `admin.playAudit.accounts`를 요구한다. 계정 조사 자체는 아직 없다.
+
+정상 bootstrap 첫 계정은 기존 발급 경로의 명시적 `superuser` role을 사용한다.
+역할 없는 레거시 첫 계정에 대한 Gateway의 DB 기반 관리자 fallback은 게임 token에
+전달되지 않는다. 감사 API는 기존 게임 token의 명시적 role만 신뢰하며 Gateway의
+첫 계정 판정을 game DB에서 재현하지 않는다. 해당 계정은 기존 Gateway 권한 관리로
+감사 role을 부여할 수 있다. 이 경계는 일반 `admin`의 권한 확대로 해결하지 않는다.
+
+모든 조회는 인증·기존 제재·token profile 검사 후 실행한다. 장수 보유, 접속 가중치,
+input_event 쓰기를 요구하지 않는다. 현재 세계 identity와 자료를 같은 RepeatableRead
+transaction으로 읽으며 대기는 2초, 실행은 5초로 제한한다. 응답에 `asOf`, tick과
+현재 기수 identity를 포함하고 오래된 기수 ID를 client에게 입력받지 않는다.
+
+장수/도시 목록은 기본 50·최대 200, ID cursor로 페이지를 읽는다. `at`이 있으면
+현재 기수의 해당 월말/FINAL 표본에서 조회하고 미수집이면 `collected:false`다.
+현재 일반 장수와 NPC/부대장 NPC, 국가·도시 필터를 지원한다. 저장·현재 자료 모두
+DTO allowlist를 적용해 임의 meta를 응답하지 않는다. `coverage`도 월 header만
+cursor 조회하며 원문·장수 목록을 같이 싣지 않는다. 아직 마감 월 캐시는 없다.
+
+실제 Gateway HTTP에서 새 role 부여·범위 확대 거부·flush 호출·암호화 game token의
+정확한 scope 전달을 확인했다. 별도 PostgreSQL/Redis와 실제 game HTTP에서는
+no-general 허용, 무인증·일반 admin·다른 profile·제재 거부, 200 상한,
+과거 이름/미수집, 새 기수 전환 후 이전 표본 차단과 flush 후 401을 확인했다.
+
+국가 시계열/6개월 집계 API, 장수·도시 상세와 독립 로그, UI와 모든 조사 기능은 남았다.
 
 ## 수집 지점과 쓰기 재검토
 
