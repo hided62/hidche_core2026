@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { JosaUtil } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
@@ -15,7 +15,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import type { GameApiContext } from '../src/context.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
-import { fetchMessagesFromMailbox, tombstoneMessages } from '../src/messages/store.js';
+import { fetchMessagesFromMailbox, insertMessage, tombstoneMessages } from '../src/messages/store.js';
 import { appRouter } from '../src/router.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -25,6 +25,7 @@ const fixtureNationId = 841;
 const foreignNationId = fixtureNationId + 1;
 const fixtureGeneralId = 8_864_243;
 const foreignGeneralId = fixtureGeneralId + 1;
+const fixtureCityId = 8_864_246;
 const fixtureWorldStateId = -8_864_241;
 const fixtureUserId = 'diplomacy-document-message-src-user';
 const foreignUserId = 'diplomacy-document-message-dest-user';
@@ -82,7 +83,23 @@ integration('diplomacy document message persistence', () => {
     };
 
     const cleanupRouteState = async (): Promise<void> => {
+        await db.logEntry.deleteMany({
+            where: {
+                OR: [
+                    { generalId: { in: [fixtureGeneralId, foreignGeneralId] } },
+                    { nationId: { in: [fixtureNationId, foreignNationId] } },
+                ],
+            },
+        });
         await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: requestPrefix } });
+        const proposalIds = await db.message.findMany({
+            where: { mailbox: { in: [...fixtureMailboxes] } },
+            select: { id: true },
+        });
+        await db.inputEvent.deleteMany({
+            where: { requestId: { in: proposalIds.map(({ id }) => `messages.respond.diplomatic:${id}`) } },
+        });
+        await db.diplomacy.deleteMany({ where: { srcNationId: { in: [fixtureNationId, foreignNationId] } } });
         await db.message.deleteMany({ where: { mailbox: { in: [...fixtureMailboxes] } } });
         await db.diplomacyLetter.deleteMany({
             where: {
@@ -106,6 +123,7 @@ integration('diplomacy document message persistence', () => {
         await cleanupRouteState();
         await db.general.deleteMany({ where: { id: { in: [fixtureGeneralId, foreignGeneralId] } } });
         await db.nation.deleteMany({ where: { id: { in: [fixtureNationId, foreignNationId] } } });
+        await db.city.deleteMany({ where: { id: fixtureCityId } });
         await db.worldState.deleteMany({ where: { id: fixtureWorldStateId } });
     };
 
@@ -306,6 +324,27 @@ integration('diplomacy document message persistence', () => {
                 { id: foreignNationId, name: '상대국', color: '#654321' },
             ],
         });
+        await db.city.create({
+            data: {
+                id: fixtureCityId,
+                name: '감사 도시',
+                level: 1,
+                nationId: foreignNationId,
+                population: 1000,
+                populationMax: 1000,
+                agriculture: 100,
+                agricultureMax: 100,
+                commerce: 100,
+                commerceMax: 100,
+                security: 100,
+                securityMax: 100,
+                defence: 100,
+                defenceMax: 100,
+                wall: 100,
+                wallMax: 100,
+                region: 1,
+            },
+        });
         await db.general.createMany({
             data: [
                 {
@@ -320,6 +359,7 @@ integration('diplomacy document message persistence', () => {
                 },
                 {
                     id: foreignGeneralId,
+                    cityId: fixtureCityId,
                     userId: foreignUserId,
                     name: '상대수뇌',
                     nationId: foreignNationId,
@@ -615,6 +655,92 @@ integration('diplomacy document message persistence', () => {
             '불변 본문'
         );
     });
+
+    it.each(['noAggression', 'cancelNA', 'stopWar'] as const)(
+        'records both directions of %s with no duplicate on replay',
+        async (action) => {
+            const initialState = action === 'noAggression' ? 2 : action === 'cancelNA' ? 7 : 0;
+            await db.diplomacy.createMany({
+                data: [
+                    { srcNationId: fixtureNationId, destNationId: foreignNationId, stateCode: initialState, term: 12 },
+                    { srcNationId: foreignNationId, destNationId: fixtureNationId, stateCode: initialState, term: 12 },
+                ],
+            });
+            const messageId = await insertMessage(db, {
+                mailbox: fixtureMailboxes[1],
+                msgType: 'diplomacy',
+                srcId: fixtureMailboxes[0],
+                destId: fixtureMailboxes[1],
+                time: logicalGameTime,
+                validUntil: new Date('9999-12-31T00:00:00Z'),
+                payload: {
+                    text: '불가침 파기 제의',
+                    option: { action, year: 209, month: 4 },
+                    src: {
+                        generalId: fixtureGeneralId,
+                        generalName: '원민수뇌',
+                        nationId: fixtureNationId,
+                        nationName: '원민국',
+                        color: '#123456',
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: foreignGeneralId,
+                        generalName: '상대수뇌',
+                        nationId: foreignNationId,
+                        nationName: '상대국',
+                        color: '#654321',
+                        icon: '',
+                    },
+                },
+            });
+            const context = buildContext('audit-relation', foreignAuth);
+            vi.spyOn(context.turnDaemon, 'requestCommand').mockResolvedValueOnce(null).mockResolvedValue({
+                type: 'syncDiplomaticResponse',
+                ok: true,
+                generalId: foreignGeneralId,
+                messageId,
+                nations: 2,
+                diplomacy: 2,
+                cities: 0,
+            });
+            const caller = appRouter.createCaller(context);
+            const input = { generalId: foreignGeneralId, messageId, response: true };
+            await expect(caller.messages.respond(input)).rejects.toThrow(
+                '외교 상태를 게임 엔진에 동기화하지 못했습니다.'
+            );
+            expect(await caller.messages.respond(input)).toEqual({ result: true, reason: 'success' });
+            expect(await caller.messages.respond(input)).toEqual({ result: true, reason: 'success' });
+            const events = await db.playAuditDiplomacyEvent.findMany({
+                where: { serverId: requestPrefix },
+                orderBy: { sequence: 'asc' },
+            });
+            expect(events).toHaveLength(2);
+            expect(new Set(events.map((event) => `${event.srcNationId}:${event.destNationId}`))).toEqual(
+                new Set([`${fixtureNationId}:${foreignNationId}`, `${foreignNationId}:${fixtureNationId}`])
+            );
+            for (const event of events) {
+                expect(event).toMatchObject({
+                    category: 'RELATION',
+                    eventType: `MESSAGE_ACCEPTED_${action}`,
+                    before: { state: initialState, term: 12 },
+                    actor: { generalId: foreignGeneralId, messageId },
+                });
+                const current = await db.diplomacy.findUniqueOrThrow({
+                    where: {
+                        srcNationId_destNationId: {
+                            srcNationId: event.srcNationId,
+                            destNationId: event.destNationId,
+                        },
+                    },
+                });
+                expect(event.after).toMatchObject({ state: current.stateCode, term: current.term });
+            }
+            expect(await db.messageAction.findUniqueOrThrow({ where: { messageId } })).toMatchObject({
+                status: 'RESOLVED',
+            });
+        }
+    );
 
     it('rolls back the document and notices if the audit insert fails', async () => {
         await db.$executeRawUnsafe(`CREATE FUNCTION reject_audit_document_fixture() RETURNS trigger LANGUAGE plpgsql AS $$

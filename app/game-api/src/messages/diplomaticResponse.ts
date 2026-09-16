@@ -1,4 +1,6 @@
 import { TRPCError } from '@trpc/server';
+import { persistAuditDiplomacyEvents, type AuditDiplomacyEventDraft, type GamePrisma } from '@sammo-ts/infra';
+import type { ApiInputExecutionContext } from '../inputEventBoundary.js';
 
 import { asRecord, JosaUtil } from '@sammo-ts/common';
 import {
@@ -95,12 +97,25 @@ const persistEffects = async (
     year: number,
     month: number,
     at: Date,
-    serverId: string | null
+    serverId: string | null,
+    audit?: {
+        before: GamePrisma.DiplomacyGetPayload<Record<string, never>>[];
+        base: Omit<AuditDiplomacyEventDraft, 'srcNationId' | 'destNationId' | 'ordinal' | 'before' | 'after'>;
+    }
 ): Promise<void> => {
+    const changes: AuditDiplomacyEventDraft[] = [];
+    const states = new Map(audit?.before.map((row) => [`${row.srcNationId}:${row.destNationId}`, row]));
+    const project = (row: GamePrisma.DiplomacyGetPayload<Record<string, never>>) => ({
+        state: row.stateCode,
+        term: row.term,
+        isDead: row.isDead,
+        isShowing: row.isShowing,
+        dead: typeof asRecord(row.meta).dead === 'number' ? asRecord(row.meta).dead : 0,
+    });
     const logs: LogEntryDraft[] = [];
     for (const effect of effects) {
         if (effect.type === 'diplomacy:patch') {
-            await db.diplomacy.update({
+            const updated = await db.diplomacy.update({
                 where: {
                     srcNationId_destNationId: {
                         srcNationId: effect.srcNationId,
@@ -113,6 +128,24 @@ const persistEffects = async (
                     ...(effect.patch.meta !== undefined ? { meta: effect.patch.meta as InputJsonValue } : {}),
                 },
             });
+            if (audit) {
+                const key = `${effect.srcNationId}:${effect.destNationId}`;
+                const previous = states.get(key);
+                if (!previous) throw new Error('Missing locked diplomacy audit state');
+                const before = project(previous);
+                const after = project(updated);
+                if (JSON.stringify(before) !== JSON.stringify(after)) {
+                    changes.push({
+                        ...audit.base,
+                        srcNationId: effect.srcNationId,
+                        destNationId: effect.destNationId,
+                        ordinal: changes.length + 1,
+                        before,
+                        after,
+                    });
+                }
+                states.set(key, updated);
+            }
         } else if (effect.type === 'nation:patch' && effect.targetId !== undefined) {
             const patch = effect.patch;
             await db.nation.update({
@@ -126,6 +159,7 @@ const persistEffects = async (
         }
     }
     await persistLogs(db, orderLegacyActionLoggerFlush(logs), year, month, at, serverId);
+    await persistAuditDiplomacyEvents(db, changes);
 };
 
 const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds: number[]): Promise<number[]> => {
@@ -182,6 +216,7 @@ export const respondToDiplomaticMessage = async (options: {
     actor: GeneralRow;
     messageId: number;
     response: boolean;
+    auditInput?: ApiInputExecutionContext;
 }): Promise<DiplomaticMessageResponseResult> => {
     const { db, actor, messageId, response } = options;
     const message = await fetchMessageByIdForUpdate(db, messageId);
@@ -197,7 +232,8 @@ export const respondToDiplomaticMessage = async (options: {
     }
     const serverIdValue = asRecord(world.meta).serverId;
     const serverId = typeof serverIdValue === 'string' && serverIdValue.trim() ? serverIdValue : null;
-    const now = (await loadCurrentGameTime(db)).now;
+    const gameTime = await loadCurrentGameTime(db);
+    const now = gameTime.now;
     const action = parseAction(message.payload.option?.action);
     if (message.msgType !== 'diplomacy' || !action || message.payload.option?.used) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: '응답할 수 없는 메시지입니다.' });
@@ -421,7 +457,49 @@ export const respondToDiplomaticMessage = async (options: {
             ...(action === 'noAggression' ? { treatyYear: treatyYear!, treatyMonth: treatyMonth! } : {}),
         }
     );
-    await persistEffects(db, resolution.effects, world.currentYear, world.currentMonth, now, serverId);
+    const auditInput = options.auditInput;
+    if (auditInput && auditInput.actorUserId !== actor.userId) throw new Error('Diplomacy audit actor mismatch');
+    await persistEffects(
+        db,
+        resolution.effects,
+        world.currentYear,
+        world.currentMonth,
+        now,
+        serverId,
+        auditInput && serverId
+            ? {
+                  before: [actorDiplomacy, reverseDiplomacy],
+                  base: {
+                      schemaVersion: 1,
+                      serverId,
+                      category: 'RELATION',
+                      source: 'API',
+                      eventType: `MESSAGE_ACCEPTED_${action}`,
+                      documentId: null,
+                      documentHash: null,
+                      previousDocumentId: null,
+                      year: world.currentYear,
+                      month: world.currentMonth,
+                      tick: gameTime.tick === null ? null : BigInt(gameTime.tick),
+                      clockRevision: gameTime.revision == null ? null : BigInt(gameTime.revision),
+                      executionId: `api:${auditInput.requestId}`,
+                      requestId: auditInput.requestId,
+                      inputSequence: auditInput.sequence,
+                      actor: {
+                          userId: actor.userId,
+                          generalId: actor.id,
+                          name: actor.name,
+                          nationId: actor.nationId,
+                          officerLevel: actor.officerLevel,
+                          npcState: actor.npcState,
+                          permission: resolveNationPermission(actor, actorNation.meta, false),
+                          messageId,
+                      },
+                  },
+              }
+            : undefined
+    );
+
     let affectedCityIds: number[] = [];
     if (resolution.refreshFront) {
         const worldConfig = asRecord(world.config);

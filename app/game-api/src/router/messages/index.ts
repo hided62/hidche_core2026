@@ -371,7 +371,7 @@ export const messagesRouter = router({
                 eventType: 'messages.respond.diplomatic',
                 payload: input,
                 actorUserId: ctx.auth?.user.id,
-                execute: async (transaction) => {
+                execute: async (transaction, auditInput) => {
                     const transactionContext = { ...ctx, db: transaction, changeJournal };
                     const transactionGeneral = ownsChangeJournal
                         ? await getOwnedGeneral(transactionContext, input.generalId)
@@ -379,6 +379,7 @@ export const messagesRouter = router({
                     const result = await respondToDiplomaticMessage({
                         db: transaction,
                         actor: transactionGeneral,
+                        auditInput,
                         messageId: input.messageId,
                         response: input.response,
                     });

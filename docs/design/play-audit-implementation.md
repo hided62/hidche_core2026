@@ -116,6 +116,23 @@ UPDATE 반환값에서 변경 전후 allowlist를 만들고, 원장 잠금 SELEC
 일반 외교 알림은 WALL_TIME이고 제의 처리와 tombstone은 구분한다. 오래된 알림
 테스트의 게임 tick 가정을 현행 envelope 계약에 맞췄다.
 
+### 즉시 외교 응답의 관계 전이
+
+`messages.respond`의 별도 `executeInputEvent` 경로에도 인증된 입력 context를 전달한다.
+불가침 체결·불가침 파기·종전 수락에서 이미 잠근 양방향 관계 행을 before로 사용하고,
+각 diplomacy UPDATE의 반환값을 after로 기록한다. state/term/dead/isDead/isShowing만
+투영하며 임의 meta를 복사하지 않는다. 같은 값의 재적용은 상태 전이에 포함하지 않는다.
+
+추가 상태/clock/입력 SELECT는 없고, 두 방향의 전이를 한 bulk INSERT와 ID/hash
+확인 SELECT로 저장한다. 원장·관계·로그·알림과 같은 transaction이다. API commit 뒤
+엔진 메모리 동기화가 실패해도 재요청은 원장 결과를 재사용해 감사 이력을 중복 쓰지
+않는다. 엔진 동기화에서 같은 사건을 다시 수집하지 않는다.
+
+실제 PG에서 세 응답의 양방향 before/after, 처리 순서, RESOLVED 제의 상태와 동기화
+실패 후 재요청을 검증했다. 엔진 transport만 fixture 응답이므로 엔진 runtime 동기화
+완료의 증거는 아니다. 거절/실패/무변경은 관계 전이와 구분할 시도 원장 구현에 남겼다.
+엔진 턴·월간 변화와 기준 수집, 외교 조회 화면은 아직 남았다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.
