@@ -48,6 +48,7 @@ integration('monthly diplomacy persistence', () => {
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
+        await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: scenarioCode } });
         await db.diplomacy.deleteMany({
             where: {
                 OR: [{ srcNationId: { in: nationIds } }, { destNationId: { in: nationIds } }],
@@ -59,6 +60,7 @@ integration('monthly diplomacy persistence', () => {
     });
 
     afterAll(async () => {
+        await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: scenarioCode } });
         await db.diplomacy.deleteMany({
             where: {
                 OR: [{ srcNationId: { in: nationIds } }, { destNationId: { in: nationIds } }],
@@ -112,7 +114,7 @@ integration('monthly diplomacy persistence', () => {
                     const: {},
                     environment: { mapName: 'test', unitSet: 'default' },
                 },
-                meta: {},
+                meta: { serverId: scenarioCode },
             },
         });
         const state: TurnWorldState = {
@@ -121,7 +123,7 @@ integration('monthly diplomacy persistence', () => {
             currentMonth: 1,
             tickSeconds: 600,
             lastTurnTime: new Date('0193-01-01T00:00:00.000Z'),
-            meta: {},
+            meta: { serverId: scenarioCode },
         };
         const snapshot: TurnWorldSnapshot = {
             scenarioConfig: {
@@ -148,7 +150,40 @@ integration('monthly diplomacy persistence', () => {
         });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
         try {
+            const checkpoint = world.captureState();
             await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
+            const queued = world.peekDirtyState().pendingAuditDiplomacy;
+            expect(queued.length).toBeGreaterThan(0);
+            world.restoreState(checkpoint);
+            expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+            await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
+            expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(queued);
+            await db.$executeRawUnsafe(`CREATE FUNCTION reject_monthly_audit_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'monthly audit fixture failure'; END; $$`);
+            await db.$executeRawUnsafe(`CREATE TRIGGER reject_monthly_audit_fixture BEFORE INSERT ON play_audit_diplomacy_event
+                FOR EACH ROW EXECUTE FUNCTION reject_monthly_audit_fixture()`);
+            try {
+                await expect(hooks.flushChanges()).rejects.toThrow('monthly audit fixture failure');
+                expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(queued);
+                expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: scenarioCode } })).toBe(0);
+                expect(await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } })).toMatchObject({
+                    currentMonth: 1,
+                });
+                expect(
+                    await db.diplomacy.findUniqueOrThrow({
+                        where: {
+                            srcNationId_destNationId: {
+                                srcNationId: nationIds[0]!,
+                                destNationId: nationIds[1]!,
+                            },
+                        },
+                    })
+                ).toMatchObject({ stateCode: 1, term: 1 });
+            } finally {
+                await db.$executeRawUnsafe('DROP TRIGGER reject_monthly_audit_fixture ON play_audit_diplomacy_event');
+                await db.$executeRawUnsafe('DROP FUNCTION reject_monthly_audit_fixture()');
+            }
+
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: '0193-02-01T00:00:00.000Z',
                 processedGenerals: 0,
@@ -173,6 +208,33 @@ integration('monthly diplomacy persistence', () => {
                 partial: false,
             });
 
+            expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+            const events = await db.playAuditDiplomacyEvent.findMany({
+                where: { serverId: scenarioCode },
+                orderBy: { sequence: 'asc' },
+            });
+            expect(
+                events.every(
+                    (event) =>
+                        event.source === 'ENGINE' &&
+                        event.actor === null &&
+                        event.requestId === null &&
+                        event.inputSequence === null
+                )
+            ).toBe(true);
+            const startEvents = events.filter((event) => event.month === 2);
+            expect(startEvents.map((event) => event.ordinal)).toEqual(startEvents.map((_, index) => index + 1));
+            expect(
+                startEvents.find((event) => event.srcNationId === nationIds[0] && event.destNationId === nationIds[1])
+            ).toMatchObject({
+                before: { state: 1, term: 1, dead: 777 },
+                after: { state: 0, term: 6, dead: 0 },
+            });
+            expect(
+                events.some((event) => event.srcNationId === nationIds[0] && event.destNationId === nationIds[3])
+            ).toBe(false);
+            await hooks.flushChanges();
+            expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: scenarioCode } })).toBe(events.length);
             const rows = await db.diplomacy.findMany({
                 where: {
                     OR: [{ srcNationId: { in: nationIds } }, { destNationId: { in: nationIds } }],

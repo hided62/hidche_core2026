@@ -1,3 +1,4 @@
+import type { AuditDiplomacyEventDraft } from '@sammo-ts/infra';
 import { initializeNationAuditPolicies, type PendingAuditPolicy } from '../playAudit/policy.js';
 import type { PendingAuditMonth } from '../playAudit/persistence.js';
 import type {
@@ -203,6 +204,7 @@ export interface TurnWorldChanges {
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
     pendingAuditMonths: PendingAuditMonth[];
     pendingAuditPolicies: PendingAuditPolicy[];
+    pendingAuditDiplomacy: AuditDiplomacyEventDraft[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
 }
 
@@ -245,6 +247,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
     pendingAuditMonths: PendingAuditMonth[];
     pendingAuditPolicies: PendingAuditPolicy[];
+    pendingAuditDiplomacy: AuditDiplomacyEventDraft[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
     pendingRealtimeBacklogShiftTicks: number;
 }
@@ -551,6 +554,7 @@ export class InMemoryTurnWorld {
     private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
     private readonly pendingAuditMonths: PendingAuditMonth[] = [];
     private readonly pendingAuditPolicies: PendingAuditPolicy[] = [];
+    private readonly pendingAuditDiplomacy: AuditDiplomacyEventDraft[] = [];
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private pendingRealtimeBacklogShiftTicks = 0;
     private readonly scenarioConfig: ScenarioConfig;
@@ -1101,6 +1105,7 @@ export class InMemoryTurnWorld {
             pendingYearbookSnapshots: this.pendingYearbookSnapshots,
             pendingAuditMonths: this.pendingAuditMonths,
             pendingAuditPolicies: this.pendingAuditPolicies,
+            pendingAuditDiplomacy: this.pendingAuditDiplomacy,
             pendingUnificationFinalizations: this.pendingUnificationFinalizations,
             pendingRealtimeBacklogShiftTicks: this.pendingRealtimeBacklogShiftTicks,
         } satisfies InMemoryTurnWorldStateSnapshot);
@@ -1149,6 +1154,7 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.pendingYearbookSnapshots, restored.pendingYearbookSnapshots);
         this.replaceArray(this.pendingAuditMonths, restored.pendingAuditMonths);
         this.replaceArray(this.pendingAuditPolicies, restored.pendingAuditPolicies);
+        this.replaceArray(this.pendingAuditDiplomacy, restored.pendingAuditDiplomacy);
         this.replaceArray(this.pendingUnificationFinalizations, restored.pendingUnificationFinalizations);
         this.pendingRealtimeBacklogShiftTicks = restored.pendingRealtimeBacklogShiftTicks ?? 0;
     }
@@ -1373,12 +1379,20 @@ export class InMemoryTurnWorld {
         return ordinal;
     }
 
+    queueAuditDiplomacy(event: AuditDiplomacyEventDraft): void {
+        this.pendingAuditDiplomacy.push(structuredClone(event));
+    }
+
     queueAuditPolicy(policy: PendingAuditPolicy): void {
         this.pendingAuditPolicies.push(structuredClone(policy));
     }
 
     hasPendingAuditRecords(): boolean {
-        return this.pendingAuditPolicies.length > 0 || this.pendingAuditMonths.length > 0;
+        return (
+            this.pendingAuditPolicies.length > 0 ||
+            this.pendingAuditMonths.length > 0 ||
+            this.pendingAuditDiplomacy.length > 0
+        );
     }
 
     queueAuditMonth(snapshot: PendingAuditMonth): void {
@@ -2230,6 +2244,7 @@ export class InMemoryTurnWorld {
         const pendingYearbookSnapshots = structuredClone(this.pendingYearbookSnapshots);
         const pendingAuditMonths = structuredClone(this.pendingAuditMonths);
         const pendingAuditPolicies = structuredClone(this.pendingAuditPolicies);
+        const pendingAuditDiplomacy = structuredClone(this.pendingAuditDiplomacy);
         const pendingUnificationFinalizations = structuredClone(this.pendingUnificationFinalizations);
         const accessScoreResetGeneralIds = Array.from(this.accessScoreResetGeneralIds).sort(
             (left, right) => left - right
@@ -2264,6 +2279,7 @@ export class InMemoryTurnWorld {
             pendingYearbookSnapshots,
             pendingAuditMonths,
             pendingAuditPolicies,
+            pendingAuditDiplomacy,
             pendingUnificationFinalizations,
         };
     }
@@ -2304,6 +2320,7 @@ export class InMemoryTurnWorld {
         this.pendingYearbookSnapshots.splice(0, changes.pendingYearbookSnapshots.length);
         this.pendingAuditMonths.splice(0, changes.pendingAuditMonths.length);
         this.pendingAuditPolicies.splice(0, changes.pendingAuditPolicies.length);
+        this.pendingAuditDiplomacy.splice(0, changes.pendingAuditDiplomacy.length);
         this.pendingUnificationFinalizations.splice(0, changes.pendingUnificationFinalizations.length);
     }
 

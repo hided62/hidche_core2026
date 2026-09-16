@@ -1,3 +1,4 @@
+import { recordMonthlyAuditDiplomacy } from '../playAudit/diplomacy.js';
 import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
@@ -217,6 +218,8 @@ export const createMonthlyDiplomacyHandler = (options: {
         const afterByKey = new Map(
             world.listDiplomacy().map((entry) => [`${entry.fromNationId}:${entry.toNationId}`, entry] as const)
         );
+
+        recordMonthlyAuditDiplomacy(world, before, afterByKey);
 
         for (const entry of declarationStarts) {
             const nation1 = world.getNationById(entry.fromNationId);

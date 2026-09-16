@@ -131,7 +131,23 @@ UPDATE 반환값에서 변경 전후 allowlist를 만들고, 원장 잠금 SELEC
 실제 PG에서 세 응답의 양방향 before/after, 처리 순서, RESOLVED 제의 상태와 동기화
 실패 후 재요청을 검증했다. 엔진 transport만 fixture 응답이므로 엔진 runtime 동기화
 완료의 증거는 아니다. 거절/실패/무변경은 관계 전이와 구분할 시도 원장 구현에 남겼다.
-엔진 턴·월간 변화와 기준 수집, 외교 조회 화면은 아직 남았다.
+엔진 턴 변화와 기준 수집, 외교 조회 화면은 아직 남았다.
+
+### 엔진 월간 외교 전이
+
+`createMonthlyDiplomacyHandler`가 이미 가진 before/after에서 state/term/dead의 실제
+변화만 directed event로 모은다. 사건 순서는 국가 ID 쌍으로 고정하고 실행 identity는
+기수/달력/clock revision을 사용한다. 자연 월간 실행에 actor나 입력 원장 ID를 만들지
+않는다. 기본 TRADE matrix 보충 자체와 무변경 행은 기록하지 않는다.
+
+pending queue는 world capture/restore/peek/ack에 포함하고, 기존 fenced DB transaction
+안에서 bulk200 INSERT와 hash 확인을 수행한다. 실패 시 상태와 이력은 함께 rollback,
+queue는 재시도까지 유지하며 commit 후에만 제거한다. 기존 계산/RNG/로그 순서는
+그대로고 추가 상태 SELECT는 없다. 기존 before 목록을 정렬한 메모리 사본만 추가한다.
+
+실제 PG에서 개전·기간 감소·사상자 처리·불가침 만료·종전의 기존 결과/로그를 유지하며,
+메모리 checkpoint 복구, 감사 INSERT 실패 rollback, 재시도/중복 방지를 검증했다.
+엔진 개별 명령 전이와 초기 외교 기준, 조회 API/UI 및 전체 비용 실측은 남았다.
 
 ## NPC·국방 정책 버전 저장 기반
 
