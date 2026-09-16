@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useClockDisplay } from '../composables/useClockDisplay';
 import { usePageExit } from '../composables/usePageExit';
 
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
@@ -7,6 +8,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { trpc } from '../utils/trpc';
 
+const { gameTime } = useClockDisplay();
 const { pageExitLabel, exitPage } = usePageExit();
 
 type VoteListResponse = Awaited<ReturnType<typeof trpc.vote.getVoteList.query>>;
@@ -41,11 +43,15 @@ const isEnded = (poll: { endAt: string | null; closedAt: string | null }): boole
     if (poll.closedAt) {
         return true;
     }
-    return poll.endAt ? new Date(poll.endAt).getTime() < Date.now() : false;
+    return Boolean(poll.endAt && gameTime.value && new Date(poll.endAt).getTime() < gameTime.value.getTime());
 };
 
 const canVote = computed(
-    () => Boolean(currentVote.value) && !currentVote.value?.myVote && !isEnded(currentVote.value!.voteInfo)
+    () =>
+        Boolean(currentVote.value) &&
+        !currentVote.value?.myVote &&
+        (!currentVote.value?.voteInfo.endAt || gameTime.value !== null) &&
+        !isEnded(currentVote.value!.voteInfo)
 );
 
 const voteTotal = computed(() => (currentVote.value?.votes ?? []).reduce((total, vote) => total + vote.count, 0));

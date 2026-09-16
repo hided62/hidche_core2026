@@ -10,7 +10,7 @@ import { buildTournamentKeys } from '../../tournament/keys.js';
 import { assignManualApplicantGroup } from '../../tournament/workerHelpers.js';
 import { accessAuthedProcedure, authedProcedure, engineAuthedProcedure, procedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
-import { loadCurrentGameTime } from '../../services/gameClock.js';
+import { loadCurrentGameTime, type CurrentGameTime } from '../../services/gameClock.js';
 import {
     ensureActiveRedisClockFence,
     ensureBettingRedisClockFence,
@@ -67,7 +67,7 @@ const withTournamentClockMutation = async <T>(
         tournamentMutationLockHeld?: boolean;
     },
     store: TournamentStore,
-    operation: () => Promise<T>,
+    operation: (gameTime: CurrentGameTime) => Promise<T>,
     ensureFence = ensureActiveRedisClockFence
 ): Promise<T> => {
     const gameTime = await loadCurrentGameTime(ctx.db);
@@ -85,7 +85,7 @@ const withTournamentClockMutation = async <T>(
         dateToTick: gameTime.dateToTick,
     };
     return store.withClockContext(clockContext, () =>
-        ctx.tournamentMutationLockHeld ? operation() : store.withMutationLock(operation)
+        ctx.tournamentMutationLockHeld ? operation(gameTime) : store.withMutationLock(() => operation(gameTime))
     );
 };
 
@@ -349,6 +349,29 @@ export const tournamentRouter = router({
                 .slice(0, 30)
                 .map((entry, index) => ({ rank: index + 1, ...entry }));
             return { prefix, ...tournamentRankInfo[prefix], entries };
+        });
+    }),
+    start: adminProcedure.input(z.void()).mutation(async ({ ctx }) => {
+        const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+        return withTournamentClockMutation(ctx, store, async (gameTime) => {
+            const [current, world] = await Promise.all([store.getState(), ctx.db.worldState.findFirst()]);
+            if (!world) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
+            }
+            // 브라우저 WALL 시각을 GAME 일정으로 저장하지 않고 검증한 서버 시계로 시작한다.
+            await store.setState({
+                stage: 1,
+                phase: 0,
+                type: 0,
+                auto: true,
+                openYear: world.currentYear,
+                openMonth: world.currentMonth,
+                termSeconds: current?.termSeconds ?? 60,
+                nextAt: new Date(gameTime.now.getTime() + 60_000).toISOString(),
+                bettingSettled: false,
+                rewardSettled: false,
+            });
+            return { ok: true };
         });
     }),
     setState: adminProcedure.input(zTournamentState).mutation(async ({ ctx, input }) => {

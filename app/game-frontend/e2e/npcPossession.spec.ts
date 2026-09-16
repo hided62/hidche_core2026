@@ -7,6 +7,7 @@ const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 type FixtureState = {
+    clockOffsetMs?: number;
     reservationCalls: number;
     reservationInputs: Array<Record<string, unknown>>;
     rawBodies: unknown[];
@@ -131,6 +132,10 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({
+                    serverTime: new Date(Date.now() + (state.clockOffsetMs ?? 0)).toISOString(),
+                    serverWallTime: new Date(Date.now() + (state.clockOffsetMs ?? 0)).toISOString(),
+                    clockRunning: true,
+                    clockMode: 'realtime',
                     myGeneral: state.hasGeneral ? { id: 1, name: '빙의후보1' } : null,
                     year: 180,
                     month: 1,
@@ -445,6 +450,7 @@ test('renders Ref-shaped token cards, preserves keep cooldown and retries posses
         firstRequestId as string
     );
 
+    state.clockOffsetMs = 120_000;
     await page.evaluate(() => {
         const expiredNow = Date.now() + 120_000;
         Date.now = () => expiredNow;

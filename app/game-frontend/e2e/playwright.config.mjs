@@ -37,6 +37,7 @@ export default defineConfig({
         'auction.spec.ts',
         'nationBetting.spec.ts',
         'tournamentBracket.spec.ts',
+        'gameDeadlines.spec.ts',
         'battleSimulator.spec.ts',
         'battleSimulatorRef.spec.ts',
         'commandArguments.spec.ts',

@@ -172,20 +172,8 @@ const cancel = async () => {
 };
 
 const start = async () => {
-    const now = new Date();
     try {
-        await trpc.tournament.setState.mutate({
-            stage: 1,
-            phase: 0,
-            type: 0,
-            auto: true,
-            openYear: snapshot.value?.state?.openYear ?? now.getUTCFullYear(),
-            openMonth: snapshot.value?.state?.openMonth ?? now.getUTCMonth() + 1,
-            termSeconds: snapshot.value?.state?.termSeconds ?? 60,
-            nextAt: new Date(Date.now() + 60_000).toISOString(),
-            bettingSettled: false,
-            rewardSettled: false,
-        });
+        await trpc.tournament.start.mutate();
         showSuccessToast('토너먼트를 개최했습니다.');
         await load();
     } catch (value) {

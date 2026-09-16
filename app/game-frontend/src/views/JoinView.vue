@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -11,7 +11,7 @@ import { useSessionStore } from '../stores/session';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { useClockDisplay } from '../composables/useClockDisplay';
-const { formatTime: formatSeoulDateTime } = useClockDisplay();
+const { formatTime: formatSeoulDateTime, gameTime } = useClockDisplay();
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { abilityLeadint, abilityLeadpow, abilityPowint, abilityRand, type GeneralStats } from '../utils/generalStats';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
@@ -185,8 +185,6 @@ const npcReservation = ref<PossessReservation | null>(null);
 const npcLoading = ref(false);
 const npcError = ref<string | null>(null);
 const keptNpcIds = ref<number[]>([]);
-const nowMs = ref(Date.now());
-const npcPickMoreAvailableAtMs = ref(0);
 const pendingPossessAction = ref<PendingPossessAction | null>(null);
 const npcGeneralList = ref<NpcGeneralList | null>(null);
 const npcGeneralListLoading = ref(false);
@@ -202,17 +200,22 @@ const publicGeneralsLoaded = ref(false);
 const publicGeneralsLoading = ref(false);
 const publicGeneralsError = ref('');
 const publicGeneralFilter = ref('');
-let npcTimer: number | null = null;
 
 const npcCandidates = computed<PossessCandidate[]>(() => npcReservation.value?.candidates ?? []);
 const npcValidUntilMs = computed(() => {
     const value = npcReservation.value?.validUntil;
     return value ? new Date(value).getTime() : 0;
 });
-const npcExpired = computed(() => npcValidUntilMs.value > 0 && npcValidUntilMs.value < nowMs.value);
-const npcPickMoreSeconds = computed(() =>
-    Math.max(0, Math.ceil((npcPickMoreAvailableAtMs.value - nowMs.value) / 1000))
+const npcExpired = computed(
+    () => npcValidUntilMs.value > 0 && gameTime.value !== null && npcValidUntilMs.value < gameTime.value.getTime()
 );
+const npcPickMoreSeconds = computed(() => {
+    const reservation = npcReservation.value;
+    if (!reservation) return 0;
+    if (!gameTime.value) return reservation.pickMoreSeconds;
+    // pickMoreFrom은 GAME 기한이므로 복구 배속과 정지 상태도 같은 시계를 따른다.
+    return Math.max(0, Math.ceil((new Date(reservation.pickMoreFrom).getTime() - gameTime.value.getTime()) / 1000));
+});
 const hasPendingPossession = computed(
     () => pendingPossessAction.value !== null && pendingPossessAction.value.ownerUserId === joinConfig.value?.user.id
 );
@@ -261,7 +264,8 @@ const filteredPublicGenerals = computed(() => {
     return sortGeneralsByTypeThenName(filtered);
 });
 const npcValidColor = computed(() => {
-    const remaining = npcValidUntilMs.value - nowMs.value;
+    if (!gameTime.value) return '#ffffff';
+    const remaining = npcValidUntilMs.value - gameTime.value.getTime();
     if (remaining > 30_000) return '#ffffff';
     const channel = Math.max(0, Math.min(255, Math.round((remaining / 30_000) * 255)));
     return `rgb(255, ${channel}, ${channel})`;
@@ -465,9 +469,6 @@ const loadNpcCandidates = async (refresh = false) => {
         });
         npcReservation.value = reservation;
         keptNpcIds.value = [];
-        const receivedAt = Date.now();
-        nowMs.value = receivedAt;
-        npcPickMoreAvailableAtMs.value = receivedAt + reservation.pickMoreSeconds * 1000;
     } catch (err) {
         npcError.value = err instanceof Error ? err.message : 'npc_list_failed';
         if (refresh) {
@@ -648,16 +649,7 @@ watch(contextTab, (value) => {
 });
 
 onMounted(() => {
-    npcTimer = window.setInterval(() => {
-        nowMs.value = Date.now();
-    }, 250);
     void loadConfig();
-});
-
-onUnmounted(() => {
-    if (npcTimer !== null) {
-        window.clearInterval(npcTimer);
-    }
 });
 </script>
 
@@ -1119,7 +1111,9 @@ onUnmounted(() => {
                         id="btn-pick-more"
                         class="legacy-button legacy-button--secondary"
                         type="button"
-                        :disabled="npcLoading || npcPickMoreSeconds > 0 || submitting || hasPendingPossession"
+                        :disabled="
+                            npcLoading || !gameTime || npcPickMoreSeconds > 0 || submitting || hasPendingPossession
+                        "
                         @click="loadNpcCandidates(true)"
                     >
                         다른 장수 보기<span v-if="npcPickMoreSeconds > 0">({{ npcPickMoreSeconds }}초)</span>

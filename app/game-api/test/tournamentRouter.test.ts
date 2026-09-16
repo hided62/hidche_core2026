@@ -154,6 +154,7 @@ const buildContext = (options: {
     clockPhase?: 'PREOPEN' | 'RUNNING' | 'MANUAL' | 'SUSPENDED' | 'RECONCILING';
     requestId?: string;
     clockWallAnchor?: Date;
+    recovery?: boolean;
 }): GameApiContext => {
     const db = {
         general: {
@@ -165,10 +166,20 @@ const buildContext = (options: {
         rankData: {
             findMany: async () => options.rankRows ?? [],
         },
+        $queryRaw: async () => [{ ready: true }],
         worldState: {
             findFirst: async () => ({
                 clockBaseTime: new Date('2026-01-01T00:00:00.000Z'),
+                currentYear: 193,
+                currentMonth: 7,
                 clockTick: 0n,
+                ...(options.recovery
+                    ? {
+                          clockRecoveryStartTick: 0n,
+                          clockRecoveryEndTick: 720_000_000n,
+                          clockRecoveryStartWallAt: options.clockWallAnchor,
+                      }
+                    : {}),
                 clockMode: 'realtime',
                 clockWallAnchor: options.clockWallAnchor ?? new Date('2026-01-01T00:00:00.000Z'),
                 clockPhase: options.clockPhase ?? 'RUNNING',
@@ -215,6 +226,88 @@ const setTournamentFixture = async (redis: MemoryRedis, state: Record<string, un
 };
 
 describe('tournament router permissions and mutations', () => {
+    it.each([false, true])('starts from the server GAME time (recovery=%s)', async (recovery) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T12:00:10Z'));
+        try {
+            const redis = new MemoryRedis();
+            const context = buildContext({
+                redis,
+                transport: new TournamentTransport(),
+                generals: [],
+                userId: 'admin',
+                roles: ['admin.tournament:che:default'],
+                clockWallAnchor: new Date('2026-01-01T12:00:00Z'),
+                recovery,
+            });
+            const caller = appRouter.createCaller(context);
+            // @ts-expect-error 클라이언트가 보낸 WALL 일정은 입력 단계에서 거부한다.
+            await expect(caller.tournament.start({ nextAt: '2099-01-01T00:00:00Z' })).rejects.toMatchObject({
+                code: 'BAD_REQUEST',
+            });
+            expect(await redis.get('sammo:che:default:tournament:state')).toBeNull();
+            await expect(caller.tournament.start()).resolves.toEqual({ ok: true });
+            const state = JSON.parse((await redis.get('sammo:che:default:tournament:state'))!);
+            expect(state).toMatchObject({
+                stage: 1,
+                openYear: 193,
+                openMonth: 7,
+                termSeconds: 60,
+                nextAt: recovery ? '2026-01-01T00:01:20.000Z' : '2026-01-01T00:01:10.000Z',
+                nextTick: recovery ? 48_000_000 : 42_000_000,
+                clockRevision: 1,
+                deadlineGeneration: 1,
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each(['PREOPEN', 'SUSPENDED', 'RECONCILING'] as const)('rejects admin start in %s', async (clockPhase) => {
+        const redis = new MemoryRedis();
+        const caller = appRouter.createCaller(
+            buildContext({
+                redis,
+                transport: new TournamentTransport(),
+                generals: [],
+                userId: 'admin',
+                roles: ['admin'],
+                clockPhase,
+            })
+        );
+        await expect(caller.tournament.start()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+        expect(await redis.get('sammo:che:default:tournament:state')).toBeNull();
+    });
+
+    it('does not start against a stale Redis clock revision', async () => {
+        const redis = new MemoryRedis();
+        await redis.set('sammo:che:default:clock:active-revision', '2');
+        await redis.set('sammo:che:default:clock:deadline-generation', '1');
+        await redis.set('sammo:che:default:clock:phase', 'RUNNING');
+        const caller = appRouter.createCaller(
+            buildContext({
+                redis,
+                transport: new TournamentTransport(),
+                generals: [],
+                userId: 'admin',
+                roles: ['admin'],
+            })
+        );
+        await expect(caller.tournament.start()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+        expect(await redis.get('sammo:che:default:tournament:state')).toBeNull();
+    });
+
+    it('requires authentication to start a tournament', async () => {
+        const context = buildContext({
+            redis: new MemoryRedis(),
+            transport: new TournamentTransport(),
+            generals: [],
+            userId: 'guest',
+        });
+        const caller = appRouter.createCaller({ ...context, auth: null });
+        await expect(caller.tournament.start()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    });
+
     it('returns persisted group fight logs to an authenticated tournament viewer', async () => {
         const redis = new MemoryRedis();
         const transport = new TournamentTransport();
@@ -560,6 +653,7 @@ describe('tournament router permissions and mutations', () => {
             nextAt: '2026-07-26T01:00:00.000Z',
         };
 
+        await expect(caller.tournament.start()).rejects.toMatchObject({ code: 'FORBIDDEN' });
         await expect(caller.tournament.setState(state)).rejects.toMatchObject({ code: 'FORBIDDEN' });
         await expect(caller.tournament.patchState({ phase: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
         await expect(caller.tournament.setParticipants([])).rejects.toMatchObject({ code: 'FORBIDDEN' });

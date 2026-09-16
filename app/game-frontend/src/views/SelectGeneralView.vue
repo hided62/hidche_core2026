@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { usePageExit } from '../composables/usePageExit';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { useSessionStore } from '../stores/session';
 import { useClockDisplay } from '../composables/useClockDisplay';
-const { formatTime: formatSeoulDateTime } = useClockDisplay();
+const { formatTime: formatSeoulDateTime, gameTime } = useClockDisplay();
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { legacyLuminanceTextColor } from '../utils/legacyNationColor';
 import { trpc } from '../utils/trpc';
@@ -38,8 +38,6 @@ const selectedIconId = ref('');
 const loading = ref(true);
 const submitting = ref(false);
 const error = ref('');
-const now = ref(Date.now());
-let timer: number | null = null;
 const pendingActionStorageKey = 'sammo-select-pool-pending-action';
 
 const candidates = computed(() => reservation.value?.candidates ?? []);
@@ -54,9 +52,12 @@ const validUntil = computed(() => {
     const value = reservation.value?.validUntil;
     return value ? new Date(value).getTime() : 0;
 });
-const expired = computed(() => validUntil.value > 0 && now.value > validUntil.value);
+const expired = computed(
+    () => validUntil.value > 0 && gameTime.value !== null && gameTime.value.getTime() > validUntil.value
+);
 const validUntilColor = computed(() => {
-    const remaining = validUntil.value - now.value;
+    if (!gameTime.value) return '#fff';
+    const remaining = validUntil.value - gameTime.value.getTime();
     if (remaining <= 0 || remaining > 30_000) {
         return '#fff';
     }
@@ -227,7 +228,6 @@ async function loadPage(): Promise<void> {
             return;
         }
         reservation.value = await trpc.join.getSelectionPool.mutate();
-        now.value = Date.now();
     } catch (cause) {
         console.error(cause);
         error.value = errorText(cause);
@@ -250,16 +250,7 @@ const goBack = (): void => {
 };
 
 onMounted(() => {
-    timer = window.setInterval(() => {
-        now.value = Date.now();
-    }, 1_000);
     void loadPage();
-});
-
-onBeforeUnmount(() => {
-    if (timer !== null) {
-        window.clearInterval(timer);
-    }
 });
 </script>
 
