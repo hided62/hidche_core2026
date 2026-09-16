@@ -19,6 +19,7 @@ const frontendEnv =
 export default defineConfig({
     testDir: '.',
     testMatch: [
+        'playAudit.spec.ts',
         'troop.spec.ts',
         'typographyPolicy.spec.ts',
         'board.spec.ts',

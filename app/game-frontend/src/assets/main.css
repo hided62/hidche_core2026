@@ -45,7 +45,8 @@ body {
 #app:has(.interface-settings-page),
 #app:has(#tournament-container),
 #app:has(#tournament-betting-container),
-#app:has(#personnel-container) {
+#app:has(#personnel-container),
+#app:has(#play-audit-container) {
     min-width: 320px;
 }
 

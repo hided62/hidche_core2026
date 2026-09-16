@@ -22,6 +22,38 @@ import {
 
 export const playAuditRouter = router({
     nationSeries,
+    nations: auditProcedure.input(zAuditPage.omit({ nationId: true })).query(({ ctx, input }) =>
+        readAudit(ctx, async (tx) => {
+            const world = await readAuditWorld(tx);
+            const identity = z.object({ id: z.number(), name: z.string(), color: z.string() });
+            if (input.at) {
+                const sample = await findAuditMonth(tx, world, input.at);
+                const rows = sample
+                    ? await tx.playAuditNation.findMany({
+                          where: {
+                              sampleId: sample.id,
+                              nationId: input.cursor === undefined ? undefined : { gt: input.cursor },
+                          },
+                          orderBy: { nationId: 'asc' },
+                          take: input.limit + 1,
+                          select: { data: true },
+                      })
+                    : [];
+                return {
+                    ...world,
+                    collected: Boolean(sample),
+                    ...pageResult(rows.map((row) => identity.parse(row.data)), input.limit, (row) => row.id),
+                };
+            }
+            const rows = await tx.nation.findMany({
+                where: { id: input.cursor === undefined ? undefined : { gt: input.cursor } },
+                orderBy: { id: 'asc' },
+                take: input.limit + 1,
+                select: { id: true, name: true, color: true },
+            });
+            return { ...world, collected: true, ...pageResult(rows, input.limit, (row) => row.id) };
+        })
+    ),
     capabilities: auditProcedure.query(({ ctx }) => ({
         profileName: ctx.profile.name,
         read: true,

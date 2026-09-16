@@ -57,6 +57,12 @@ const accessPageByRouteName = {
 
 const routes = [
     {
+        path: '/play-audit',
+        name: 'play-audit',
+        component: () => import('../views/PlayAuditView.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
         path: '/',
         name: 'home',
         component: MainView,

@@ -2171,6 +2171,12 @@ integration('game API security over HTTP transport', () => {
             return { status: response.status, body: (await response.json()) as unknown };
         };
         try {
+            await db.nation.createMany({
+                data: [
+                    { id: 99121, name: '현재감사국가1', color: '#ffffff' },
+                    { id: 99122, name: '현재감사국가2', color: '#ffffff' },
+                ],
+            });
             await db.worldState.update({
                 where: { id: fixtureWorldId },
                 data: {
@@ -2284,6 +2290,24 @@ integration('game API security over HTTP transport', () => {
                 })),
             });
             await db.worldState.update({ where: { id: fixtureWorldId }, data: { currentMonth: 7 } });
+            expect((await get('nations', admin, { at: { year: 190, month: 1 }, limit: 1 })).body).toMatchObject({
+                result: { data: { collected: true, items: [{ id: ownerNationId, name: '국가1' }] } },
+            });
+            expect((await get('nations', admin, { at: { year: 190, month: 7 } })).body).toMatchObject({
+                result: { data: { collected: false, items: [] } },
+            });
+            expect((await get('nations', admin, { limit: 201 })).status).toBe(400);
+            expect((await get('nations')).status).toBe(401);
+            expect((await get('nations', await token(['admin']))).status).toBe(403);
+            expect((await get('nations', admin, { limit: 1 })).body).toMatchObject({
+                result: {
+                    data: {
+                        collected: true,
+                        nextCursor: expect.any(Number),
+                        items: [expect.objectContaining({ id: expect.any(Number), name: expect.any(String) })],
+                    },
+                },
+            });
             const series = await get('nationSeries', admin, {
                 nationId: ownerNationId,
                 from: { year: 190, month: 1 },
@@ -2355,6 +2379,7 @@ integration('game API security over HTTP transport', () => {
             await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
         } finally {
             await db.playAuditMonth.deleteMany({ where: { serverId: seasonId } });
+            await db.nation.deleteMany({ where: { id: { in: [99121, 99122] } } });
             await db.worldState.update({
                 where: { id: fixtureWorldId },
                 data: {
