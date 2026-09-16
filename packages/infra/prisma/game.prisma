@@ -791,6 +791,7 @@ model Event {
 
 model LogEntry {
   id        Int         @id @default(autoincrement())
+  serverId  String?     @map("server_id")
   scope     LogScope
   category  LogCategory
   subType   String?     @map("sub_type")

@@ -30,6 +30,7 @@ const history = [
 ];
 
 const publicResponse = (operation: string): unknown => {
+    if (operation === 'lobby.info') return response({ myGeneral: null });
     if (operation === 'public.getMapLayout') return response({ mapName: 'che', cityList: [] });
     if (operation === 'public.getCachedMap') {
         return response({ year: 200, month: 1, cityList: [], nationList: [], history });

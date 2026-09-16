@@ -416,6 +416,7 @@ export interface TurnEngineEventCreateManyInput {
 }
 
 export interface TurnEngineLogEntryCreateManyInput {
+    serverId?: string | null;
     scope: LogScope;
     category: LogCategory;
     subType: string | null;

@@ -59,7 +59,8 @@ const persistLogs = async (
     logs: LogEntryDraft[],
     year: number,
     month: number,
-    at: Date
+    at: Date,
+    serverId: string | null
 ): Promise<void> => {
     const data = logs.flatMap((entry) => {
         const record = finalizeLogEntry(entry, { year, month, at });
@@ -68,6 +69,7 @@ const persistLogs = async (
         }
         return [
             {
+                serverId,
                 scope: record.scope,
                 category: record.category,
                 subType: record.subType ?? null,
@@ -92,7 +94,8 @@ const persistEffects = async (
     effects: GeneralActionEffect[],
     year: number,
     month: number,
-    at: Date
+    at: Date,
+    serverId: string | null
 ): Promise<void> => {
     const logs: LogEntryDraft[] = [];
     for (const effect of effects) {
@@ -122,7 +125,7 @@ const persistEffects = async (
             logs.push(effect.entry);
         }
     }
-    await persistLogs(db, orderLegacyActionLoggerFlush(logs), year, month, at);
+    await persistLogs(db, orderLegacyActionLoggerFlush(logs), year, month, at, serverId);
 };
 
 const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds: number[]): Promise<number[]> => {
@@ -187,11 +190,13 @@ export const respondToDiplomaticMessage = async (options: {
     }
 
     const world = await db.worldState.findFirst({
-        select: { currentYear: true, currentMonth: true, config: true },
+        select: { currentYear: true, currentMonth: true, config: true, meta: true },
     });
     if (!world) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '게임 상태가 없습니다.' });
     }
+    const serverIdValue = asRecord(world.meta).serverId;
+    const serverId = typeof serverIdValue === 'string' && serverIdValue.trim() ? serverIdValue : null;
     const now = (await loadCurrentGameTime(db)).now;
     const action = parseAction(message.payload.option?.action);
     if (message.msgType !== 'diplomacy' || !action || message.payload.option?.used) {
@@ -204,7 +209,8 @@ export const respondToDiplomaticMessage = async (options: {
             buildFailureLog(actor.id, reason, actionName, response),
             world.currentYear,
             world.currentMonth,
-            now
+            now,
+            serverId
         );
         return {
             result: false,
@@ -302,7 +308,8 @@ export const respondToDiplomaticMessage = async (options: {
             [...actorLogger.flush(), ...proposerLogger.flush()],
             world.currentYear,
             world.currentMonth,
-            now
+            now,
+            serverId
         );
         await invalidateMessages(db, [message.id]);
         return {
@@ -414,7 +421,7 @@ export const respondToDiplomaticMessage = async (options: {
             ...(action === 'noAggression' ? { treatyYear: treatyYear!, treatyMonth: treatyMonth! } : {}),
         }
     );
-    await persistEffects(db, resolution.effects, world.currentYear, world.currentMonth, now);
+    await persistEffects(db, resolution.effects, world.currentYear, world.currentMonth, now, serverId);
     let affectedCityIds: number[] = [];
     if (resolution.refreshFront) {
         const worldConfig = asRecord(world.config);

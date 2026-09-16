@@ -669,7 +669,9 @@ const appendSelectionLogs = async (options: {
     generalText: string;
     globalText: string;
 }): Promise<void> => {
+    const serverId = asRecord(options.worldState.meta).serverId;
     const common = {
+        serverId: typeof serverId === 'string' && serverId.trim() ? serverId : null,
         year: options.worldState.currentYear,
         month: options.worldState.currentMonth,
         nationId: null,

@@ -8,13 +8,18 @@ const props = withDefaults(
         loading?: boolean;
         trustedHtml?: boolean;
         unavailable?: GeneralRecordType[];
+        types?: GeneralRecordType[];
+        errors?: Partial<Record<GeneralRecordType, string>>;
     }>(),
     {
         loading: false,
         trustedHtml: false,
         unavailable: () => [],
+        types: () => [...GENERAL_RECORD_TYPES],
+        errors: () => ({}),
     }
 );
+defineEmits<{ retry: [type: GeneralRecordType] }>();
 
 const labels: Record<GeneralRecordType, string> = {
     generalHistory: '장수 열전',
@@ -33,9 +38,12 @@ const unavailableText: Record<GeneralRecordType, string> = {
 
 <template>
     <div class="log-grid" data-general-record-panels>
-        <div v-for="type in GENERAL_RECORD_TYPES" :key="type" class="log-block" :data-log-type="type">
+        <div v-for="type in props.types" :key="type" class="log-block" :data-log-type="type">
             <div class="log-title">{{ labels[type] }}</div>
             <SkeletonLines v-if="loading" :lines="3" />
+            <div v-else-if="props.errors[type]" class="empty" role="alert">
+                {{ props.errors[type] }} <button class="legacy-button" @click="$emit('retry', type)">다시 조회</button>
+            </div>
             <template v-else-if="props.unavailable.includes(type)">
                 <div class="empty unavailable">{{ unavailableText[type] }}</div>
             </template>

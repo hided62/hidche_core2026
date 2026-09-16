@@ -2238,6 +2238,87 @@ integration('game API security over HTTP transport', () => {
             });
             const admin = await token([`admin.playAudit.read:${profileName}`]);
             const beforeInputs = await db.inputEvent.count();
+            const logGeneralId = 99129; // No live general: death must not hide retained records.
+            const ownLogs = await Promise.all(
+                ['HISTORY', 'ACTION', 'BATTLE_BRIEF', 'BATTLE_DETAIL'].map((category) =>
+                    db.logEntry.create({
+                        data: {
+                            serverId: seasonId,
+                            generalId: logGeneralId,
+                            scope: 'GENERAL',
+                            category: category as 'HISTORY' | 'ACTION' | 'BATTLE_BRIEF' | 'BATTLE_DETAIL',
+                            year: 190,
+                            month: 1,
+                            text: `${seasonId}:${category}`,
+                        },
+                    })
+                )
+            );
+            const latest = await db.logEntry.create({
+                data: {
+                    serverId: seasonId,
+                    generalId: logGeneralId,
+                    scope: 'GENERAL',
+                    category: 'HISTORY',
+                    year: 190,
+                    month: 2,
+                    text: `${seasonId}:latest`,
+                },
+            });
+            await db.logEntry.createMany({
+                data: [null, `${seasonId}:previous`].map((serverId) => ({
+                    serverId,
+                    generalId: logGeneralId,
+                    scope: 'GENERAL' as const,
+                    category: 'HISTORY' as const,
+                    year: 190,
+                    month: 1,
+                    text: `${seasonId}:excluded`,
+                })),
+            });
+            for (const [index, type] of ['generalHistory', 'generalAction', 'battleResult', 'battleDetail'].entries()) {
+                const result = await get('generalLogs', admin, {
+                    generalId: logGeneralId,
+                    type,
+                    month: { year: 190, month: 1 },
+                });
+                expect(result.status).toBe(200);
+                expect(result.body).toMatchObject({
+                    result: {
+                        data: {
+                            coverage: 'IDENTIFIED_LOGS_ONLY',
+                            items: [{ id: ownLogs[index]!.id }],
+                            nextCursor: null,
+                        },
+                    },
+                });
+                expect(JSON.stringify(result.body)).not.toContain(`${seasonId}:excluded`);
+            }
+            expect(
+                (await get('generalLogs', admin, { generalId: logGeneralId, type: 'generalHistory', limit: 1 })).body
+            ).toMatchObject({ result: { data: { items: [{ id: latest.id }], nextCursor: latest.id } } });
+            expect(
+                (
+                    await get('generalLogs', admin, {
+                        generalId: logGeneralId,
+                        type: 'generalHistory',
+                        limit: 1,
+                        cursor: latest.id,
+                    })
+                ).body
+            ).toMatchObject({ result: { data: { items: [{ id: ownLogs[0]!.id }], nextCursor: null } } });
+            for (const invalid of [
+                { limit: 201 },
+                { cursor: 0 },
+                { month: { year: 190, month: 3 } },
+                { month: { year: 189, month: 12 } },
+            ]) {
+                expect(
+                    (await get('generalLogs', admin, { generalId: logGeneralId, type: 'generalHistory', ...invalid }))
+                        .status
+                ).toBe(400);
+            }
+
             expect((await get('generalDetail', admin, { id: generalId })).body).toMatchObject({
                 result: { data: { collected: true, general: { id: generalId, name: current.name } } },
             });
@@ -2512,6 +2593,7 @@ integration('game API security over HTTP transport', () => {
             );
             await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
         } finally {
+            await db.logEntry.deleteMany({ where: { text: { startsWith: `${seasonId}:` } } });
             await db.playAuditMonth.deleteMany({ where: { serverId: seasonId } });
             await db.generalTurn.deleteMany({ where: { generalId, turnIdx: { in: [9001, 9002] } } });
             await db.nation.deleteMany({ where: { id: { in: [99121, 99122] } } });

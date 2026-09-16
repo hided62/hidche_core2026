@@ -71,6 +71,22 @@ const install = async (page: Page, denied = false) => {
                                   },
                               }
                             : result({ profileName: gameProfile, read: true, accounts: false });
+                    case 'playAudit.generalLogs':
+                        return result({
+                            ...world,
+                            type: input.type,
+                            coverage: 'IDENTIFIED_LOGS_ONLY',
+                            items: [
+                                {
+                                    id: 1,
+                                    year: 190,
+                                    month: 1,
+                                    text: `<script>window.auditInjected=true</script>${input.type} 감사 로그`,
+                                    createdAt: '0190-01-01T00:00:00.000Z',
+                                },
+                            ],
+                            nextCursor: null,
+                        });
                     case 'playAudit.coverage':
                         return result({ ...world, status: 'COLLECTED', samples: [], nextCursor: null });
                     case 'playAudit.nations':
@@ -403,4 +419,58 @@ test('city detail is addressable without reloading the list and retains month fo
         cityId: 3,
         at: { year: 190, month: 6, kind: 'MONTH_END' },
     });
+});
+
+test('general logs load explicitly and cache each category without reloading entity lists', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=generals&general=1'));
+    await expect(page.getByRole('button', { name: '장수 기록 조회', exact: true })).toBeVisible();
+    expect(requests.filter((r) => r.operation === 'playAudit.generalLogs')).toHaveLength(0);
+    const listCount = requests.filter((r) => r.operation === 'playAudit.generals').length;
+    await page.getByRole('button', { name: '장수 기록 조회', exact: true }).click();
+    await expect(page.getByText('generalHistory 감사 로그', { exact: false })).toBeVisible();
+    await page.getByLabel('기록 종류').selectOption('generalAction');
+    await expect(page.getByText('generalAction 감사 로그', { exact: false })).toBeVisible();
+    await page.getByLabel('기록 종류').selectOption('generalHistory');
+    await expect(page.getByText('generalHistory 감사 로그', { exact: false })).toBeVisible();
+    expect(requests.filter((r) => r.operation === 'playAudit.generalLogs')).toHaveLength(2);
+    expect(requests.filter((r) => r.operation === 'playAudit.generals')).toHaveLength(listCount);
+    expect(await page.evaluate(() => Reflect.get(window, 'auditInjected'))).toBeUndefined();
+    await expect(page.locator('.audit-logs script')).toHaveCount(0);
+    await capture(page, 'general-logs');
+});
+
+test('historical log failure retries independently and sends only the selected month', async ({ page }) => {
+    const requests = await install(page);
+    let fail = true;
+    await page.route(gameTrpcRoute, async (route) => {
+        if (decodeURIComponent(route.request().url()).includes('playAudit.generalLogs') && fail) {
+            fail = false;
+            await route.fulfill({
+                status: 500,
+                contentType: 'application/json',
+                body: JSON.stringify([
+                    {
+                        error: {
+                            message: '기록 조회 재시도',
+                            code: -32603,
+                            data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 },
+                        },
+                    },
+                ]),
+            });
+        } else await route.fallback();
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(gamePath('/play-audit?tab=generals&general=1&at=month&year=190&month=6'));
+    await page.getByRole('button', { name: '장수 기록 조회', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('기록 조회 재시도');
+    await page.getByRole('button', { name: '다시 조회', exact: true }).click();
+    await expect(page.getByText('generalHistory 감사 로그', { exact: false })).toBeVisible();
+    expect(requests.filter((r) => r.operation === 'playAudit.generalLogs')[0]?.input).toMatchObject({
+        generalId: 1,
+        month: { year: 190, month: 6 },
+    });
+    expect(requests.filter((r) => r.operation === 'playAudit.generalTurns')).toHaveLength(0);
+    await capture(page, 'historical-general-logs-mobile');
 });

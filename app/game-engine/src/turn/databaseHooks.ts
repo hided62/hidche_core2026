@@ -619,7 +619,8 @@ const persistNationBettingOpen = async (
 const persistNationBettingFinish = async (
     prisma: GamePrisma.TransactionClient,
     finish: PendingNationBettingFinish,
-    recordsFinalized: boolean
+    recordsFinalized: boolean,
+    serverId: string | null
 ): Promise<void> => {
     await prisma.$queryRaw`
         SELECT id
@@ -752,6 +753,7 @@ const persistNationBettingFinish = async (
     if (finishLog) {
         await prisma.logEntry.create({
             data: {
+                serverId,
                 scope: finishLog.scope,
                 category: finishLog.category,
                 subType: finishLog.subType ?? null,
@@ -1026,7 +1028,7 @@ const buildDiplomacyUpdate = (
 
 const buildLogCreateData = (
     entry: LogEntryDraft,
-    context: { year: number; month: number; at: Date }
+    context: { year: number; month: number; at: Date; serverId: string | null }
 ): TurnEngineLogEntryCreateManyInput | null => {
     const record = finalizeLogEntry(entry, {
         year: context.year,
@@ -1038,6 +1040,7 @@ const buildLogCreateData = (
     }
 
     return {
+        serverId: context.serverId,
         scope: record.scope,
         category: record.category,
         subType: record.subType ?? null,
@@ -1194,6 +1197,8 @@ export const createDatabaseTurnHooks = async (
                     })
                 )?.id ?? 0;
             const logContext = {
+                serverId:
+                    typeof state.meta.serverId === 'string' && state.meta.serverId.trim() ? state.meta.serverId : null,
                 year: state.currentYear,
                 month: state.currentMonth,
                 at: state.lastTurnTime,
@@ -1474,7 +1479,7 @@ export const createDatabaseTurnHooks = async (
                 await persistNationBettingOpen(prisma, betting);
             }
             for (const finish of pendingNationBettingFinishes) {
-                await persistNationBettingFinish(prisma, finish, recordsFinalized);
+                await persistNationBettingFinish(prisma, finish, recordsFinalized, logContext.serverId);
             }
 
             const meta = asRecord(state.meta);

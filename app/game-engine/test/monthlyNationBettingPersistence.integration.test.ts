@@ -214,7 +214,7 @@ integration('monthly nation betting persistence', () => {
                 currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
-                meta: { lastBettingId: bettingId - 1 },
+                meta: { lastBettingId: bettingId - 1, serverId: 'audit-betting-fixture' },
             },
         });
         const state: TurnWorldState = {
@@ -223,7 +223,7 @@ integration('monthly nation betting persistence', () => {
             currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:00:00.000Z'),
-            meta: { lastBettingId: bettingId - 1 },
+            meta: { lastBettingId: bettingId - 1, serverId: 'audit-betting-fixture' },
         };
         const scenarioConfig: TurnWorldSnapshot['scenarioConfig'] = {
             stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 75, npcMin: 10, chiefMin: 70 },
@@ -356,6 +356,7 @@ integration('monthly nation betting persistence', () => {
                     where: { text: { contains: '천통국 예상 내기의 결과' } },
                 })
             ).toMatchObject({
+                serverId: 'audit-betting-fixture',
                 year: 200,
                 month: 2,
                 text: '<C>●</>200년 2월:<B><b>【내기】</b></> 200년 1월에 열렸던 천통국 예상 내기의 결과가 나왔습니다!',

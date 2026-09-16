@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import PanelCard from '../ui/PanelCard.vue';
+import AuditGeneralLogs from './AuditGeneralLogs.vue';
 import { trpc } from '../../utils/trpc';
 const props = defineProps<{ generalId: number; at?: { year: number; month: number; kind: 'MONTH_END' | 'FINAL' } }>();
 defineEmits<{ close: [] }>();
@@ -12,6 +13,7 @@ const loading = ref(false);
 const turnsLoading = ref(false);
 const error = ref('');
 const turnsError = ref('');
+const showLogs = ref(false);
 let generation = 0;
 const format = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 const load = async () => {
@@ -56,7 +58,7 @@ const loadTurns = async (more = false) => {
     }
 };
 watch(
-    () => [props.generalId, props.at] as const,
+    [() => props.generalId, () => props.at?.year, () => props.at?.month, () => props.at?.kind],
     () => {
         void load();
     },
@@ -117,6 +119,14 @@ watch(
                 </template>
             </template>
         </template>
+        <button class="legacy-button" @click="showLogs = !showLogs">
+            {{ showLogs ? '장수 기록 닫기' : '장수 기록 조회' }}
+        </button>
+        <AuditGeneralLogs
+            v-if="showLogs"
+            :general-id="generalId"
+            :month="at ? { year: at.year, month: at.month } : undefined"
+        />
     </PanelCard>
 </template>
 

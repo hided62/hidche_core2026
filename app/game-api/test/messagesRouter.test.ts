@@ -1049,6 +1049,7 @@ describe('messages router missing-flow compatibility', () => {
                     findFirst: vi.fn(async () => ({
                         currentYear: 200,
                         currentMonth: 3,
+                        meta: { serverId: 'diplomatic-response-audit' },
                         config: { environment: { mapName: 'che' } },
                         clockBaseTime: new Date('0200-03-01T00:00:00.000Z'),
                         clockTick: 1_000n,
@@ -1116,6 +1117,9 @@ describe('messages router missing-flow compatibility', () => {
             cityIds: [],
         });
         expect(setup.diplomacyUpdate).toHaveBeenCalledTimes(2);
+        expect(setup.logCreateMany).toHaveBeenCalledWith({
+            data: expect.arrayContaining([expect.objectContaining({ serverId: 'diplomatic-response-audit' })]),
+        });
         expect(setup.nationUpdate).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: { id: 2 },
@@ -1147,6 +1151,9 @@ describe('messages router missing-flow compatibility', () => {
         expect(setup.diplomacyUpdate).not.toHaveBeenCalled();
         expect(setup.messageUpdateMany).toHaveBeenCalledOnce();
         expect(setup.logCreateMany).toHaveBeenCalledOnce();
+        expect(setup.logCreateMany).toHaveBeenCalledWith({
+            data: expect.arrayContaining([expect.objectContaining({ serverId: 'diplomatic-response-audit' })]),
+        });
     });
 
     it('permanently records rejection of an NPC aid-based non-aggression proposal', async () => {
@@ -1217,6 +1224,9 @@ describe('messages router missing-flow compatibility', () => {
 
         expect(result).toEqual({ result: true, reason: 'success' });
         expect(setup.diplomacyUpdate).toHaveBeenCalledTimes(2);
+        expect(setup.logCreateMany).toHaveBeenCalledWith({
+            data: expect.arrayContaining([expect.objectContaining({ serverId: 'diplomatic-response-audit' })]),
+        });
         if (action === 'stopWar') {
             expect(setup.cityUpdate).toHaveBeenCalledTimes(2);
             expect(setup.cityUpdate).toHaveBeenCalledWith({
@@ -1255,6 +1265,9 @@ describe('messages router missing-flow compatibility', () => {
         expect(setup.diplomacyUpdate).not.toHaveBeenCalled();
         expect(setup.messageUpdateMany).not.toHaveBeenCalled();
         expect(setup.logCreateMany).toHaveBeenCalledOnce();
+        expect(setup.logCreateMany).toHaveBeenCalledWith({
+            data: expect.arrayContaining([expect.objectContaining({ serverId: 'diplomatic-response-audit' })]),
+        });
     });
 
     it('does not let another nation process the diplomatic inbox row', async () => {

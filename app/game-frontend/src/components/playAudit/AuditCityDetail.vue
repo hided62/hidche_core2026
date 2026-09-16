@@ -26,7 +26,7 @@ const load = async () => {
 };
 const format = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 watch(
-    () => [props.cityId, props.at] as const,
+    [() => props.cityId, () => props.at?.year, () => props.at?.month, () => props.at?.kind],
     () => {
         void load();
     },

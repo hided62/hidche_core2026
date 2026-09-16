@@ -338,7 +338,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         ).toBe(initial.name);
         expect(
             await db.logEntry.count({
-                where: { meta: { path: ['ownerUserId'], equals: userId } },
+                where: { serverId: profile, meta: { path: ['ownerUserId'], equals: userId } },
             })
         ).toBe(2);
         if (realtimeHub) {
@@ -432,7 +432,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         ).toBe(target.uniqueName);
         expect(
             await db.logEntry.count({
-                where: { meta: { path: ['ownerUserId'], equals: userId } },
+                where: { serverId: profile, meta: { path: ['ownerUserId'], equals: userId } },
             })
         ).toBe(4);
 

@@ -18,7 +18,12 @@ const cityIds = [991_201, 991_202, 991_203, 991_204, 991_205, 991_206, 991_207];
 const nationId = 991_201;
 const yearbookProfile = 'monthly-boundary-pre-persistence';
 const yearbookServerId = 'monthly-boundary-generation-20260731';
-const archivedLogTexts = ['월경계 과거 정세', '월경계 과거 장수 동향', '월경계 과거 호환 행동'];
+const archivedLogTexts = [
+    '월경계 과거 정세',
+    '월경계 과거 장수 동향',
+    '월경계 과거 호환 행동',
+    '월경계 감사 기수 로그',
+];
 
 integration('monthly pre-update persistence', () => {
     let db: GamePrismaClient;
@@ -197,6 +202,12 @@ integration('monthly pre-update persistence', () => {
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world, { profileName: yearbookProfile });
         try {
             await world.advanceMonth(new Date('0201-01-01T00:00:00.000Z'));
+            world.pushLog({
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                generalId: generalIds[0],
+                text: archivedLogTexts[3]!,
+            });
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: '0201-01-01T00:00:00.000Z',
                 processedGenerals: 0,
@@ -205,6 +216,12 @@ integration('monthly pre-update persistence', () => {
                 partial: false,
             });
 
+            expect(await db.logEntry.findFirst({ where: { text: archivedLogTexts[3] } })).toMatchObject({
+                serverId: yearbookServerId,
+            });
+            expect(await db.logEntry.findFirst({ where: { text: archivedLogTexts[0] } })).toMatchObject({
+                serverId: null,
+            });
             expect(
                 await db.generalAccessLog.findMany({
                     where: { generalId: { in: generalIds } },
