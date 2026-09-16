@@ -1,4 +1,4 @@
-import { nationSeries } from './nationSeries.js';
+import { nationSeries, zAuditNation } from './nationSeries.js';
 import { z } from 'zod';
 import { canReadPlayAuditAccounts } from '@sammo-ts/common';
 import { router } from '../../trpc.js';
@@ -22,6 +22,26 @@ import {
 
 export const playAuditRouter = router({
     nationSeries,
+    nationSnapshot: auditProcedure
+        .input(z.object({ nationId: z.number().int().nonnegative(), at: zAuditMonth }).strict())
+        .query(({ ctx, input }) =>
+            readAudit(ctx, async (tx) => {
+                const world = await readAuditWorld(tx);
+                const sample = await findAuditMonth(tx, world, input.at);
+                const row = sample
+                    ? await tx.playAuditNation.findUnique({
+                          where: { sampleId_nationId: { sampleId: sample.id, nationId: input.nationId } },
+                          select: { data: true },
+                      })
+                    : null;
+                return {
+                    ...world,
+                    sample,
+                    collected: Boolean(sample),
+                    nation: row ? zAuditNation.parse(row.data) : null,
+                };
+            })
+        ),
     nations: auditProcedure.input(zAuditPage.omit({ nationId: true })).query(({ ctx, input }) =>
         readAudit(ctx, async (tx) => {
             const world = await readAuditWorld(tx);
@@ -42,7 +62,11 @@ export const playAuditRouter = router({
                 return {
                     ...world,
                     collected: Boolean(sample),
-                    ...pageResult(rows.map((row) => identity.parse(row.data)), input.limit, (row) => row.id),
+                    ...pageResult(
+                        rows.map((row) => identity.parse(row.data)),
+                        input.limit,
+                        (row) => row.id
+                    ),
                 };
             }
             const rows = await tx.nation.findMany({

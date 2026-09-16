@@ -114,6 +114,26 @@ const install = async (page: Page, denied = false) => {
                                 },
                             ],
                         });
+                    case 'playAudit.nationSnapshot':
+                        return result({
+                            ...world,
+                            collected: true,
+                            sample: { year: 190, month: 6, kind: 'FINAL', settlementsComplete: true },
+                            nation: {
+                                id: 2,
+                                name: '촉',
+                                color: '#ff0000',
+                                gold: 999,
+                                rice: 222,
+                                tech: 100,
+                                appliedRate: 20,
+                                incomeGold: 99,
+                                incomeRice: 0,
+                                paidGold: 0,
+                                paidRice: 0,
+                                populations: { human: population, npc: population, troopNpc: population },
+                            },
+                        });
                     case 'playAudit.generals':
                         return result({
                             ...world,
@@ -282,4 +302,17 @@ test('back navigation during a slow read keeps the newer city view', async ({ pa
     await expect(page.getByRole('rowheader', { name: /감사장수/ })).toHaveCount(0);
     await page.getByRole('button', { name: '조회', exact: true }).focus();
     await expect(page.getByRole('button', { name: '조회', exact: true })).toBeFocused();
+});
+
+test('final nation snapshot is separate from the monthly series', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=nations&nation=2&at=final&year=190&month=6'));
+    await expect(page.getByRole('heading', { name: '촉 · 190년 6월 최종 표본' })).toBeVisible();
+    await expect(page.getByText('999 / 222', { exact: true })).toBeVisible();
+    expect(requests.some((request) => request.operation === 'playAudit.nationSeries')).toBe(false);
+    expect(requests.find((request) => request.operation === 'playAudit.nationSnapshot')?.input).toEqual({
+        nationId: 2,
+        at: { year: 190, month: 6, kind: 'FINAL' },
+    });
+    await capture(page, 'final-nation');
 });

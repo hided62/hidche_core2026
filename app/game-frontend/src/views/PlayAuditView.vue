@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import AuditNationSeries from '../components/playAudit/AuditNationSeries.vue';
+import AuditNationSnapshot from '../components/playAudit/AuditNationSnapshot.vue';
 import { usePageExit } from '../composables/usePageExit';
 import { trpc } from '../utils/trpc';
 
@@ -11,6 +12,7 @@ type Nations = Awaited<ReturnType<typeof trpc.playAudit.nations.query>>;
 type Generals = Awaited<ReturnType<typeof trpc.playAudit.generals.query>>;
 type Cities = Awaited<ReturnType<typeof trpc.playAudit.cities.query>>;
 type Series = Awaited<ReturnType<typeof trpc.playAudit.nationSeries.query>>;
+type NationSnapshot = Awaited<ReturnType<typeof trpc.playAudit.nationSnapshot.query>>;
 const route = useRoute();
 const router = useRouter();
 const { pageExitLabel, exitPage } = usePageExit();
@@ -19,6 +21,7 @@ const nations = ref<Nations | null>(null);
 const generals = ref<Generals | null>(null);
 const cities = ref<Cities | null>(null);
 const series = ref<Series | null>(null);
+const nationSnapshot = ref<NationSnapshot | null>(null);
 const authorized = ref(false);
 const profileName = ref('');
 const loading = ref(false);
@@ -54,7 +57,13 @@ const scopeLabel = computed(() =>
         : `${route.query.year}년 ${route.query.month}월 ${route.query.at === 'final' ? '최종 표본' : '월말'}`
 );
 const result = computed(() =>
-    tab.value === 'generals' ? generals.value : tab.value === 'cities' ? cities.value : series.value
+    tab.value === 'generals'
+        ? generals.value
+        : tab.value === 'cities'
+          ? cities.value
+          : nationSnapshot.value
+            ? { ...nationSnapshot.value, nextCursor: null }
+            : series.value
 );
 const readQuery = () => {
     tab.value = ['nations', 'generals', 'cities'].includes(String(route.query.tab))
@@ -83,6 +92,7 @@ const load = async (append = false) => {
         generals.value = null;
         cities.value = null;
         series.value = null;
+        nationSnapshot.value = null;
     }
     const filter = { at: at.value, nationId: nationId.value === '' ? undefined : Number(nationId.value), limit: 50 };
     try {
@@ -111,6 +121,12 @@ const load = async (append = false) => {
                     ...response,
                     items: append ? [...(cities.value?.items ?? []), ...response.items] : response.items,
                 };
+        } else if (nationId.value !== '' && moment.value === 'final') {
+            const response = await trpc.playAudit.nationSnapshot.query({
+                nationId: Number(nationId.value),
+                at: { year: year.value, month: month.value, kind: 'FINAL' },
+            });
+            if (request === generation) nationSnapshot.value = response;
         } else if (nationId.value !== '') {
             const response = await trpc.playAudit.nationSeries.query({
                 nationId: Number(nationId.value),
@@ -292,7 +308,7 @@ onMounted(async () => {
                             required
                     /></label>
                     <label>월<input v-model.number="month" type="number" min="1" max="12" required /></label>
-                    <template v-if="tab === 'nations'">
+                    <template v-if="tab === 'nations' && moment !== 'final'">
                         <label
                             >시작 연도<input
                                 v-model.number="fromYear"
@@ -335,6 +351,7 @@ onMounted(async () => {
                 국가를 선택하고 조회해 주세요. 멸망한 국가는 해당 월말 기준의 국가 목록에서 선택할 수 있습니다.
             </p>
             <AuditNationSeries v-if="series && tab === 'nations'" :data="series" />
+            <AuditNationSnapshot v-if="nationSnapshot && tab === 'nations'" :data="nationSnapshot" />
             <template v-if="generals && tab === 'generals'">
                 <p v-if="!generals.collected">선택한 시점의 표본이 없습니다.</p>
                 <p v-else-if="!generals.items.length">조건에 맞는 장수가 없습니다.</p>

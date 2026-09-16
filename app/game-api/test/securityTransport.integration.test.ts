@@ -1,4 +1,5 @@
 import { projectCurrentGeneral } from '../src/router/playAudit/projection.js';
+import { asRecord } from '@sammo-ts/common';
 import fs from 'node:fs/promises';
 import { createServer, type Server as HttpServer } from 'node:http';
 import os from 'node:os';
@@ -2290,6 +2291,72 @@ integration('game API security over HTTP transport', () => {
                 })),
             });
             await db.worldState.update({ where: { id: fixtureWorldId }, data: { currentMonth: 7 } });
+            const finalNation = await db.playAuditNation.findUniqueOrThrow({
+                where: { sampleId_nationId: { sampleId: `${seasonId}:190:6`, nationId: ownerNationId } },
+            });
+            await db.playAuditMonth.create({
+                data: {
+                    id: `${seasonId}:final`,
+                    serverId: seasonId,
+                    year: 190,
+                    month: 6,
+                    kind: 'FINAL',
+                    settlementsComplete: true,
+                    hash: 'http-final-fixture',
+                    nations: {
+                        create: {
+                            nationId: ownerNationId,
+                            data: {
+                                ...asRecord(finalNation.data),
+                                gold: 999,
+                                incomeGold: 999,
+                                hiddenSecret: 'must-not-expose',
+                            },
+                        },
+                    },
+                },
+            });
+            expect(
+                (
+                    await get('nationSnapshot', admin, {
+                        nationId: ownerNationId,
+                        at: { year: 190, month: 6, kind: 'FINAL' },
+                    })
+                ).body
+            ).toMatchObject({
+                result: {
+                    data: { collected: true, sample: { kind: 'FINAL' }, nation: { gold: 999, incomeGold: 999 } },
+                },
+            });
+            expect(
+                JSON.stringify(
+                    (
+                        await get('nationSnapshot', admin, {
+                            nationId: ownerNationId,
+                            at: { year: 190, month: 6, kind: 'FINAL' },
+                        })
+                    ).body
+                )
+            ).not.toContain('must-not-expose');
+            expect(
+                (
+                    await get('nationSnapshot', admin, {
+                        nationId: ownerNationId,
+                        at: { year: 190, month: 7, kind: 'FINAL' },
+                    })
+                ).body
+            ).toMatchObject({ result: { data: { collected: false, nation: null } } });
+            expect(
+                (await get('nationSnapshot', admin, { nationId: 0, at: { year: 190, month: 6, kind: 'FINAL' } })).body
+            ).toMatchObject({ result: { data: { collected: true, nation: null } } });
+            expect(
+                (
+                    await get('nationSnapshot', await token(['admin']), {
+                        nationId: ownerNationId,
+                        at: { year: 190, month: 6, kind: 'FINAL' },
+                    })
+                ).status
+            ).toBe(403);
             expect((await get('nations', admin, { at: { year: 190, month: 1 }, limit: 1 })).body).toMatchObject({
                 result: { data: { collected: true, items: [{ id: ownerNationId, name: '국가1' }] } },
             });

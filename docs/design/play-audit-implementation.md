@@ -28,7 +28,7 @@ PanelCard, legacy-button, legacy-sort-select를 재사용한다. 새 차트 라�
 
 이 화면은 Core 신규 UX다. 최대 폭 1200px, 390px 모바일에서 문서 가로 넘침 없음,
 넓은 표만 내부 수평 스크롤, 공통 14px 기본 typography와 명시적 focus/disabled가 계약이다.
-월말/FINAL 장수·도시 projection을 보여주지만 국가 FINAL 별도 시계열, 지도,
+월말/FINAL 장수·도시 projection을 보여주지만 지도,
 로그/예약 명령/전투 상세, 검색·정렬은 후속 구현으로 남는다.
 따라서 기본 화면 추가만으로 R1~R3/P2를 완료 처리하지 않는다.
 
@@ -39,6 +39,12 @@ game session transfer를 사용하고 Gateway가 감사 데이터를 대신 읽�
 새 감사 진입은 동일 origin의 sessionStorage 전달만 허용하며, 실패하면 현재 화면에
 재시도 가능한 오류를 표시한다. 기존 로비의 query fallback은 동작 변경 없이 유지하되
 새 감사 경로에는 적용하지 않는다. 서로 다른 origin의 관리자 진입은 지원하지 않는다.
+
+`nationSnapshot`은 같은 권한/기수 범위에서 한 월말 또는 FINAL header와 그 국가의
+복합 PK 행 하나만 읽는다. 최종 국가 화면은 이 API만 사용하며 월말 시계열을 동시에
+요청하지 않는다. 국가 보유량·집단 통계와 해당 월 수집 시점까지 관측한 정산을 표시한다.
+FINAL의 관측값을 월말/반기 합계에 추가하지 않는다. 표본 없음과 해당 국가 없음도 구분한다.
+최종 수집 자체의 모든 게임 종료 경로 연결은 P1의 남은 lifecycle 검증을 따른다.
 
 `app/game-engine/src/playAudit/snapshot.ts`는 기존 메모리 엔티티에서 명시적으로
 허용한 장수·도시 필드와 국가별 자원·숙련 집계를 만든다. 입력 iterable을 각각
