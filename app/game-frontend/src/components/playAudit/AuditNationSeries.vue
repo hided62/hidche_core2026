@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { trpc } from '../../utils/trpc';
+import type { trpc } from '../../utils/trpc';
 
 type Series = Awaited<ReturnType<typeof trpc.playAudit.nationSeries.query>>;
 type Point = Series['items'][number];

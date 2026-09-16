@@ -2243,6 +2243,129 @@ integration('game API security over HTTP transport', () => {
             });
             const admin = await token([`admin.playAudit.read:${profileName}`]);
             const beforeInputs = await db.inputEvent.count();
+            const decisionIds = [policyId(501), policyId(502)].sort().reverse();
+            const decisionGeneral = 99129; // live general 없이 보존 이력을 읽는다.
+            const decisionSummary = {
+                schemaVersion: 1,
+                coverage: 'PROCEDURES',
+                clockRevision: 1,
+                codeVersion: null,
+                policyRefs: { DEFENCE: policyId(1), secret: 'decision-secret' },
+                requestedAction: '휴식',
+                selectedAction: 'che_징병',
+                selectedReason: '징병',
+                executedAction: '휴식',
+                completed: false,
+                usedFallback: true,
+                blockedReason: '자원 부족',
+                seed: 'decision-secret',
+            };
+            await db.playAuditDecision.createMany({
+                data: decisionIds.map((id, index) => ({
+                    id,
+                    serverId: seasonId,
+                    executionId: id,
+                    phase: index ? 'nation' : 'general',
+                    generalId: decisionGeneral,
+                    nationId: ownerNationId,
+                    cityId: 1,
+                    npcState: index ? 1 : 2,
+                    year: 190,
+                    month: 1,
+                    tick: 4_320_000_000n,
+                    stepCount: 129,
+                    summary: decisionSummary,
+                    hash: id,
+                })),
+            });
+            const step = {
+                phase: 'general',
+                generalId: decisionGeneral,
+                nationId: ownerNationId,
+                cityId: 1,
+                npcState: 2,
+                year: 190,
+                month: 1,
+                tick: 4_320_000_000,
+                kind: 'PROCEDURE_START',
+                procedure: '상세에서만표시',
+                secret: 'decision-secret',
+            };
+            await db.playAuditDecisionChunk.createMany({
+                data: [
+                    {
+                        decisionId: decisionIds[0]!,
+                        ordinal: 0,
+                        steps: Array.from({ length: 128 }, (_, sequence) => ({ ...step, sequence })),
+                    },
+                    { decisionId: decisionIds[0]!, ordinal: 1, steps: [{ ...step, sequence: 128 }] },
+                ],
+            });
+            const decisionInput = { generalId: decisionGeneral, month: { year: 190, month: 1 }, limit: 1 };
+            expect((await get('decisionHistory', undefined, decisionInput)).status).toBe(401);
+            expect((await get('decisionHistory', await token(['admin']), decisionInput)).status).toBe(403);
+            const decisionList = await get('decisionHistory', admin, decisionInput);
+            expect(decisionList.body).toMatchObject({
+                result: {
+                    data: {
+                        coverage: 'PROCEDURES_ONLY',
+                        items: [{ id: decisionIds[0], tick: '4320000000' }],
+                        nextCursor: { tick: '4320000000', id: decisionIds[0] },
+                    },
+                },
+            });
+            expect(JSON.stringify(decisionList.body)).not.toContain('상세에서만표시');
+            expect(JSON.stringify(decisionList.body)).not.toContain('decision-secret');
+            expect(
+                (
+                    await get('decisionHistory', admin, {
+                        ...decisionInput,
+                        cursor: { tick: '4320000000', id: decisionIds[0] },
+                    })
+                ).body
+            ).toMatchObject({ result: { data: { items: [{ id: decisionIds[1] }], nextCursor: null } } });
+            expect((await get('decisionHistory', admin, { ...decisionInput, phase: 'nation' })).body).toMatchObject({
+                result: { data: { items: [{ id: decisionIds[1] }] } },
+            });
+            const decisionDetailInput = { generalId: decisionGeneral, id: decisionIds[0] };
+            const decisionPage = await get('decisionDetail', admin, decisionDetailInput);
+            expect(decisionPage.status).toBe(200);
+            expect(decisionPage.body).toMatchObject({
+                result: {
+                    data: {
+                        chunks: [
+                            {
+                                ordinal: 0,
+                                steps: expect.arrayContaining(
+                                    [{ ...step, secret: undefined, sequence: 0 }].map(
+                                        ({ secret: _secret, ...value }) => value
+                                    )
+                                ),
+                            },
+                        ],
+                        nextCursor: 0,
+                    },
+                },
+            });
+            expect(JSON.stringify(decisionPage.body)).not.toContain('decision-secret');
+            expect((await get('decisionDetail', admin, { ...decisionDetailInput, cursor: 0 })).body).toMatchObject({
+                result: { data: { chunks: [{ ordinal: 1, steps: [{ sequence: 128 }] }], nextCursor: null } },
+            });
+            expect((await get('decisionDetail', admin, { ...decisionDetailInput, generalId })).status).toBe(404);
+            expect((await get('decisionDetail', admin, { ...decisionDetailInput, limit: 5 })).status).toBe(400);
+            expect((await get('decisionHistory', admin, { ...decisionInput, limit: 201 })).status).toBe(400);
+            expect(
+                (
+                    await get('decisionHistory', admin, {
+                        ...decisionInput,
+                        cursor: { tick: '9007199254740992', id: decisionIds[0] },
+                    })
+                ).status
+            ).toBe(400);
+            expect(
+                (await get('decisionHistory', admin, { ...decisionInput, month: { year: 9999, month: 1 } })).status
+            ).toBe(400);
+
             const diplomacyInput = {
                 nationId: 99121,
                 otherNationId: 99122,
@@ -3002,6 +3125,10 @@ integration('game API security over HTTP transport', () => {
                 result: { data: { items: [] } },
             });
             expect((await get('diplomacyEvent', admin, { id: policyId(101) })).status).toBe(404);
+            expect((await get('decisionHistory', admin, decisionInput)).body).toMatchObject({
+                result: { data: { items: [] } },
+            });
+            expect((await get('decisionDetail', admin, decisionDetailInput)).status).toBe(404);
             expect(await db.inputEvent.count()).toBe(beforeInputs);
             await redis!.client.publish(
                 `${redisPrefix}:flush`,
@@ -3013,6 +3140,8 @@ integration('game API security over HTTP transport', () => {
             );
             await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
         } finally {
+            await db.playAuditDecisionChunk.deleteMany({ where: { decision: { serverId: seasonId } } });
+            await db.playAuditDecision.deleteMany({ where: { serverId: seasonId } });
             await db.playAuditPolicy.deleteMany({ where: { serverId: seasonId } });
             await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: seasonId } });
             await db.diplomacyLetter.deleteMany({ where: { srcNationId: 99121, destNationId: 99122 } });

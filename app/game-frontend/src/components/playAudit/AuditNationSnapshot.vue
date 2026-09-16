@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { trpc } from '../../utils/trpc';
+import type { trpc } from '../../utils/trpc';
 type Snapshot = Awaited<ReturnType<typeof trpc.playAudit.nationSnapshot.query>>;
 const props = defineProps<{ data: Snapshot }>();
 const label = computed(() => (props.data.sample?.kind === 'INITIAL' ? '수집 시작 기준' : '최종 표본'));

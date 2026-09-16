@@ -43,6 +43,34 @@ const general = {
         items: { horse: null, weapon: null, book: null, item: null },
     },
 };
+const decision = {
+    id: 'd'.repeat(64),
+    executionId: 'e'.repeat(64),
+    phase: 'general',
+    generalId: 1,
+    nationId: 2,
+    cityId: 3,
+    npcState: 2,
+    year: 190,
+    month: 6,
+    tick: '100',
+    stepCount: 129,
+    createdAt: '2026-09-16T00:00:00.000Z',
+    summary: {
+        schemaVersion: 1,
+        coverage: 'PROCEDURES',
+        clockRevision: 1,
+        codeVersion: null,
+        policyRefs: {},
+        requestedAction: '휴식',
+        selectedAction: 'che_징병',
+        selectedReason: '징병 선택',
+        executedAction: '휴식',
+        completed: false,
+        usedFallback: true,
+        blockedReason: '자원 부족',
+    },
+};
 const install = async (page: Page, denied = false, baseline: boolean | 'document' | 'created' | 'removed' = false) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
@@ -73,6 +101,47 @@ const install = async (page: Page, denied = false, baseline: boolean | 'document
                                   },
                               }
                             : result({ profileName: gameProfile, read: true, accounts: false });
+                    case 'playAudit.decisionHistory':
+                        return result({
+                            ...world,
+                            month: input.month ?? { year: 190, month: 7 },
+                            coverage: 'PROCEDURES_ONLY',
+                            items: [
+                                {
+                                    ...decision,
+                                    id: input.cursor ? 'c'.repeat(64) : decision.id,
+                                    phase: input.cursor ? 'nation' : 'general',
+                                },
+                            ],
+                            nextCursor: input.cursor ? null : { tick: '100', id: decision.id },
+                        });
+                    case 'playAudit.decisionDetail':
+                        return result({
+                            ...world,
+                            decision,
+                            chunks: [
+                                {
+                                    ordinal: input.cursor === undefined ? 0 : 1,
+                                    steps: [
+                                        {
+                                            phase: 'general',
+                                            generalId: 1,
+                                            nationId: 2,
+                                            cityId: 3,
+                                            npcState: 2,
+                                            year: 190,
+                                            month: 6,
+                                            tick: 100,
+                                            sequence: input.cursor === undefined ? 0 : 128,
+                                            ...(input.cursor === undefined
+                                                ? { kind: 'PROCEDURE_START', procedure: '<b>징병판정</b>' }
+                                                : { kind: 'DECISION_END', action: 'che_징병', reason: '징병 선택' }),
+                                        },
+                                    ],
+                                },
+                            ],
+                            nextCursor: input.cursor === undefined ? 0 : null,
+                        });
                     case 'playAudit.generalLogs':
                         return result({
                             ...world,
@@ -1014,4 +1083,74 @@ test('general search is explicit and persists across pagination and reload', asy
     await expect(page.getByLabel('장수 번호 정렬', { exact: true })).toHaveValue('desc');
     await expect(page.getByRole('rowheader', { name: /감사장수/ })).toBeVisible();
     await capture(page, 'mobile-general-search');
+});
+
+test('NPC decisions are explicit, paginated, independently addressable and escaped', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=generals&at=month&year=190&month=6&general=1'));
+    await expect(page.getByRole('heading', { name: '선택 장수 상세' })).toBeVisible();
+    expect(requests.some((r) => r.operation.startsWith('playAudit.decision'))).toBe(false);
+    await page.getByRole('button', { name: 'NPC 결정 기록 조회', exact: true }).click();
+    await expect(page.getByRole('button', { name: '개인 판단 · tick 100', exact: true })).toBeVisible();
+    expect(requests.filter((r) => r.operation === 'playAudit.decisionHistory').at(-1)?.input).toMatchObject({
+        generalId: 1,
+        month: { year: 190, month: 6 },
+    });
+    expect(requests.some((r) => r.operation === 'playAudit.decisionDetail')).toBe(false);
+    const counts = {
+        list: requests.filter((r) => r.operation === 'playAudit.generals').length,
+        history: requests.filter((r) => r.operation === 'playAudit.decisionHistory').length,
+    };
+    await page.getByRole('button', { name: '개인 판단 · tick 100', exact: true }).click();
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('<b>징병판정</b>');
+    await expect(page.getByRole('list', { name: '판단 절차' }).locator('b')).toHaveCount(0);
+    await page.getByRole('button', { name: '판단 절차 더 불러오기', exact: true }).click();
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('최종 선택');
+    expect(requests.filter((r) => r.operation === 'playAudit.decisionDetail').at(-1)?.input).toMatchObject({
+        id: decision.id,
+        generalId: 1,
+        cursor: 0,
+        limit: 1,
+    });
+    expect(requests.filter((r) => r.operation === 'playAudit.generals')).toHaveLength(counts.list);
+    expect(requests.filter((r) => r.operation === 'playAudit.decisionHistory')).toHaveLength(counts.history);
+    await capture(page, 'mobile-npc-decision');
+    await page.reload();
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('징병판정');
+    await page.getByRole('button', { name: '결정 목록 더 불러오기', exact: true }).click();
+    await expect(page.getByRole('button', { name: '수뇌 판단 · tick 100', exact: true })).toBeVisible();
+});
+
+test('NPC decision detail retry preserves history and other general information', async ({ page }) => {
+    const requests = await install(page);
+    let fail = true;
+    await page.route(gameTrpcRoute, async (route) => {
+        if (fail && route.request().url().includes('playAudit.decisionDetail')) {
+            fail = false;
+            await route.fulfill({
+                status: 500,
+                contentType: 'application/json',
+                body: JSON.stringify([
+                    {
+                        error: {
+                            message: '결정 상세 재시도',
+                            code: -32603,
+                            data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 },
+                        },
+                    },
+                ]),
+            });
+        } else await route.fallback();
+    });
+    await page.goto(gamePath('/play-audit?tab=generals&general=1'));
+    await page.getByRole('button', { name: 'NPC 결정 기록 조회', exact: true }).click();
+    await page.getByRole('button', { name: '개인 판단 · tick 100', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('결정 상세 재시도');
+    await expect(page.getByRole('button', { name: '개인 판단 · tick 100', exact: true })).toBeVisible();
+    const count = requests.filter((r) => r.operation === 'playAudit.decisionHistory').length;
+    await page.getByRole('button', { name: '결정 상세 다시 조회', exact: true }).click();
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('징병판정');
+    expect(requests.filter((r) => r.operation === 'playAudit.decisionHistory')).toHaveLength(count);
+    await capture(page, 'desktop-npc-decision');
 });

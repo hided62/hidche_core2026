@@ -1222,7 +1222,7 @@ model PlayAuditDecision {
   chunks PlayAuditDecisionChunk[]
 
   @@unique([executionId, phase])
-  @@index([serverId, generalId, tick, id])
+  @@index([serverId, generalId, year, month, tick, id], map: "play_audit_decision_general_month_idx")
   @@index([serverId, nationId, tick, id])
   @@map("play_audit_decision")
 }

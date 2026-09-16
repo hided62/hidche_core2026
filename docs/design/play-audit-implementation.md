@@ -9,6 +9,21 @@ NPC 결정 trace와 조사 A~F의 완성, 전체 종료 경계 및 COST gate는 
 
 ## 현재 구현
 
+### NPC 결정 조회 API와 화면
+
+`playAudit.decisionHistory/decisionDetail`은 같은 프로필 감사 권한·현재 기수 경계를 따른다.
+장수별 조회는 선택 월(미지정은 현재 월), 선택 phase와 `(tick,id)` 내림차순 cursor를 사용한다.
+목록은50건 기본/200건 상한으로 요약만 읽고, 상세는 명시 선택 시128 event chunk를
+기본1개/최대4개 읽는다. header의 stepCount로 다음 chunk를 판단해 추가 본문이나 COUNT를
+읽지 않는다. summary/step은 허용 필드만 투영하며 seed/raw metadata를 반환하지 않는다.
+같은 tick의 개인·수뇌 결정 및 사망 장수의 현재 기수 기록도 조회한다.
+
+migration58은 기존 장수 인덱스를 `(server, general, year, month, tick, id)`로 교체한다.
+월 조건 밖의 기수 기록을 훑지 않으며 인덱스 개수는 늘리지 않는다. UI는 기존 장수 상세와
+버튼·표 스타일을 재사용한다. 열기/상세 선택/더 보기는 명시적으로 수행하고 polling하지
+않는다. 결정 URL 복원과 상세 재시도는 상위 장수 목록을 다시 읽지 않는다.
+절차 coverage와 미수집 코드 버전을 표시하며 전체 후보 조건·유효 정책 연결은 남는다.
+
 ### NPC 결정 저장·복구 기반
 
 새 migration57은 `play_audit_decision` 요약과 `play_audit_decision_chunk` 상세를 분리한다.
@@ -27,7 +42,7 @@ rollback되고 commit 뒤에만 pending prefix를 비운다. 실패한 실행의
 정리는 이전 기수 header를 잠그고200개 chunk씩 삭제한 후 header를 제거한다. FK RESTRICT로
 무제한 cascade를 막으며 현재 기수는 기존 schema lock/identity 재검사로 보호한다.
 빈57·기존56→57·재실행 no-op,302 event/3chunk 복원, 삽입 실패/재시도/충돌 및 실제
-DB hooks와 정리 회귀를 검증했다. 전체 비용 gate와 전용 API/GUI는 아직 후속이다.
+DB hooks와 정리 회귀를 검증했다. 전체 비용 gate는 후속이며 전용 API/GUI는 위 조회 절에 연결했다.
 
 ### NPC 판단 관측 기반
 
@@ -42,9 +57,9 @@ GeneralAI와 예약 실행 handler에 선택적 `onDecisionTrace` 관측 경계�
 고정 seed3종에서16개 RNG utility 호출의 반환값·객체 identity·다음 RNG 결과가 같고,
 실제 NPC 선전포고→개전→점령 fixture에서도 수집 on/off 회귀가 통과했다.
 초기 관측 단계에서는 default daemon을 켜지 않았다. 이후 아래 저장 경계에서 현재 기수의 새 실행을 수집하도록 연결했다.
-이는 R5의 관측 기반일 뿐 완료가 아니다. 다음 작업은 불변 결정 ID·정책/code version,
-후보/조건별 실제 관측값, 실행 결과 연결, 같은 gameplay transaction의 pending/rollback,
-정식 migration·bounded 정리, 프로필 목록/상세 API와 GUI를 연결하는 것이다.
+이는 R5의 관측 기반일 뿐 완료가 아니다. 불변 결정 ID·기존 정책 참조·실행 결과·
+pending/rollback·migration·정리·목록/상세 API와 GUI는 위 절에서 연결했다.
+후보/조건별 실제 관측값, 합성 유효 정책과 code version 연결은 남는다.
 
 ### 전달 전 DB tick 정밀도 보완
 

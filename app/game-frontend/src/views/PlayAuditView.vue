@@ -97,10 +97,10 @@ const selectedCity = computed(() =>
         : null
 );
 const selectGeneral = (id: number) =>
-    router.push({ query: { ...route.query, general: String(id), cityRecord: undefined } });
-const closeGeneral = () => router.push({ query: { ...route.query, general: undefined } });
+    router.push({ query: { ...route.query, general: String(id), cityRecord: undefined, decision: undefined } });
+const closeGeneral = () => router.push({ query: { ...route.query, general: undefined, decision: undefined } });
 const selectCity = (id: number) =>
-    router.push({ query: { ...route.query, cityRecord: String(id), general: undefined } });
+    router.push({ query: { ...route.query, cityRecord: String(id), general: undefined, decision: undefined } });
 const closeCity = () => router.push({ query: { ...route.query, cityRecord: undefined } });
 const at = computed(() =>
     moment.value === 'current'
@@ -296,7 +296,12 @@ watch(
     () =>
         JSON.stringify(
             Object.entries(route.query).filter(
-                ([key]) => key !== 'general' && key !== 'cityRecord' && key !== 'policy' && key !== 'event'
+                ([key]) =>
+                    key !== 'general' &&
+                    key !== 'cityRecord' &&
+                    key !== 'policy' &&
+                    key !== 'event' &&
+                    key !== 'decision'
             )
         ),
     () => {

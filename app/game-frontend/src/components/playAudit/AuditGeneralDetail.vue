@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import AuditGeneralDecisions from './AuditGeneralDecisions.vue';
 import PanelCard from '../ui/PanelCard.vue';
 import AuditGeneralLogs from './AuditGeneralLogs.vue';
 import { trpc } from '../../utils/trpc';
@@ -17,6 +19,16 @@ const turnsLoading = ref(false);
 const error = ref('');
 const turnsError = ref('');
 const showLogs = ref(false);
+const route = useRoute();
+const router = useRouter();
+const showDecisions = ref(false);
+const decisionsOpen = computed(() => showDecisions.value || typeof route.query.decision === 'string');
+const toggleDecisions = async () => {
+    if (decisionsOpen.value) {
+        showDecisions.value = false;
+        await router.push({ query: { ...route.query, decision: undefined } });
+    } else showDecisions.value = true;
+};
 let generation = 0;
 const format = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 const load = async () => {
@@ -126,6 +138,14 @@ watch(
                 </template>
             </template>
         </template>
+        <button class="legacy-button" @click="toggleDecisions">
+            {{ decisionsOpen ? 'NPC 결정 기록 닫기' : 'NPC 결정 기록 조회' }}
+        </button>
+        <AuditGeneralDecisions
+            v-if="decisionsOpen"
+            :general-id="generalId"
+            :month="at ? { year: at.year, month: at.month } : undefined"
+        />
         <button class="legacy-button" @click="showLogs = !showLogs">
             {{ showLogs ? '장수 기록 닫기' : '장수 기록 조회' }}
         </button>
