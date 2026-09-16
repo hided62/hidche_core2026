@@ -349,7 +349,7 @@ onMounted(async () => {
                 </p>
                 <p v-if="coverage.collectionStart">
                     상태·정책 수집 시작: {{ coverage.collectionStart.year }}년 {{ coverage.collectionStart.month }}월 ·
-                    {{ coverage.collectionStart.observedAt }}. 이전 상태를 소급 복원하지 않습니다.
+                    {{ coverage.collectionStart.observedAt }}
                 </p>
                 <form class="filters" @submit.prevent="apply">
                     <label
