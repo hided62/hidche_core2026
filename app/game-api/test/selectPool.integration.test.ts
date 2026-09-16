@@ -166,6 +166,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         closeDb = () => connector.disconnect();
         await db.inputEvent.deleteMany();
         await db.logEntry.deleteMany();
+        await db.playAuditPolicy.deleteMany({ where: { serverId: profile } });
         worldStateId = (await db.worldState.findFirstOrThrow()).id;
         await db.playAuditMonth.deleteMany({
             where: { id: { in: ['select-pool-audit-old', 'select-pool-audit-active'] } },
@@ -527,6 +528,59 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             data: { config: fullConfig as GamePrisma.InputJsonValue },
         });
     }, 30_000);
+
+    it('commits a policy version with its actor, durable input sequence and nation pointer', async () => {
+        const actor = runtime!.world.listGenerals().find((general) => general.userId === userId)!;
+        const old = { nationId: actor.nationId, officerLevel: actor.officerLevel };
+        runtime!.world.addNation({
+            id: 99091,
+            name: '감사정책국',
+            color: '#ffffff',
+            capitalCityId: null,
+            chiefGeneralId: actor.id,
+            gold: 1000,
+            rice: 1000,
+            power: 0,
+            level: 1,
+            typeCode: 'che_중립',
+            meta: {},
+        });
+        runtime!.world.updateGeneral(actor.id, { nationId: 99091, officerLevel: 12 });
+        const requestId = 'select-pool-audit-policy';
+        try {
+            const result = await turnDaemon.requestCommand({
+                type: 'setNpcPolicy',
+                requestId,
+                userId,
+                generalId: actor.id,
+                nationId: 99091,
+                expectedUpdatedAt: null,
+                mutation: { kind: 'nationPolicy', values: { reqNationGold: 4321 } },
+            });
+            expect(result).toMatchObject({ type: 'setNpcPolicy', ok: true });
+            const input = await db.inputEvent.findUniqueOrThrow({ where: { requestId } });
+            expect(input.status).toBe('SUCCEEDED');
+            const rows = await db.playAuditPolicy.findMany({
+                where: { serverId: profile, nationId: 99091, area: 'NPC_VALUES' },
+                orderBy: { revision: 'asc' },
+            });
+            expect(rows).toHaveLength(2);
+            expect(rows[1]).toMatchObject({
+                source: 'CHANGE',
+                requestId,
+                inputSequence: input.sequence,
+                actor: { userId, generalId: actor.id, officerLevel: 12 },
+                after: { reqNationGold: 4321 },
+            });
+            expect(await db.nation.findUniqueOrThrow({ where: { id: 99091 } })).toMatchObject({
+                meta: {
+                    _playAuditPolicy: { NPC_VALUES: { id: rows[1]!.id, revision: 2 } },
+                },
+            });
+        } finally {
+            runtime!.world.updateGeneral(actor.id, old);
+        }
+    });
 
     it('keeps a stable ENGINE event for retries and rejects reservation bypasses', async () => {
         const logicalNow = runtime!.world.getGameNow(new Date());

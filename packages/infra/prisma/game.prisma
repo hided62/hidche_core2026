@@ -1138,3 +1138,30 @@ model PlayAuditGeneral {
   @@index([sampleId, cityId, generalId])
   @@map("play_audit_general")
 }
+
+// 현재 기수의 불변 정책 버전. live nation 삭제와 수명을 분리한다.
+model PlayAuditPolicy {
+  schemaVersion  Int      @default(1) @map("schema_version")
+  id             String   @id
+  serverId       String   @map("server_id")
+  nationId       Int      @map("nation_id")
+  area           String
+  revision       Int
+  previousId     String?  @map("previous_id")
+  source         String
+  year           Int
+  month          Int
+  tick           Int?
+  requestId      String?  @map("request_id")
+  inputSequence  BigInt?  @map("input_sequence")
+  ordinal        Int
+  actor          Json?
+  before         Json?
+  after          Json
+  hash           String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([serverId, nationId, area, revision])
+  @@index([serverId, nationId, year, month, ordinal])
+  @@map("play_audit_policy")
+}

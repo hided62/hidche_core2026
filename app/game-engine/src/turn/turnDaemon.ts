@@ -1,3 +1,4 @@
+import { initializeAuditPolicies } from '../playAudit/policy.js';
 import { startAuditRetentionWorker } from '../playAudit/retentionWorker.js';
 import { createPlayAuditHandler } from '../playAudit/collection.js';
 import { randomUUID } from 'node:crypto';
@@ -803,6 +804,7 @@ const createTurnDaemonRuntimeWithLease = async (
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
     worldRef = world;
+    initializeAuditPolicies(world);
 
     const stateManager = new EngineStateManager();
     stateManager.register('world', {

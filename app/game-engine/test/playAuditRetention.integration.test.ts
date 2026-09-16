@@ -23,6 +23,7 @@ integration('bounded previous-season audit retention', () => {
 
     it('keeps the active season, bounds each transaction and retries after rollback', async () => {
         await db.playAuditMonth.deleteMany();
+        await db.playAuditPolicy.deleteMany();
         await db.worldState.deleteMany();
         const world = await db.worldState.create({
             data: {
@@ -121,6 +122,7 @@ integration('bounded previous-season audit retention', () => {
     });
     it('starts bounded cleanup only after seed commits, including a reserved opening', async () => {
         await db.playAuditMonth.deleteMany();
+        await db.playAuditPolicy.deleteMany();
         await db.worldState.deleteMany();
         await db.worldState.create({
             data: {
@@ -183,5 +185,34 @@ integration('bounded previous-season audit retention', () => {
             code: 'audit_retention_pending',
             message: '이전 플레이 감사 자료의 나머지는 서버 시작 후 정리합니다.',
         });
+    });
+    it('prunes old policy versions by key and preserves the active policy history', async () => {
+        await db.playAuditMonth.deleteMany();
+        await db.playAuditPolicy.deleteMany();
+        await db.worldState.updateMany({ data: { meta: { serverId: 'policy-active' } } });
+        const row = (id: string, serverId: string, revision: number) => ({
+            id,
+            serverId,
+            nationId: 1,
+            area: 'DEFENCE',
+            revision,
+            source: 'BASELINE',
+            year: 190,
+            month: 1,
+            ordinal: revision,
+            after: {},
+            hash: id,
+        });
+        await db.playAuditPolicy.createMany({
+            data: [
+                ...Array.from({ length: 201 }, (_, index) => row(`old-policy-${index}`, 'old-policy', index + 1)),
+                row('active-policy', 'policy-active', 1),
+            ],
+        });
+        expect(await prunePreviousAuditBatch(db, 'policy-active')).toEqual({ status: 'progress', deleted: 200 });
+        expect(await db.playAuditPolicy.count({ where: { serverId: 'old-policy' } })).toBe(1);
+        expect(await prunePreviousAuditBatch(db, 'policy-active')).toEqual({ status: 'progress', deleted: 1 });
+        expect(await prunePreviousAuditBatch(db, 'policy-active')).toEqual({ status: 'complete', deleted: 0 });
+        expect(await db.playAuditPolicy.findUnique({ where: { id: 'active-policy' } })).not.toBeNull();
     });
 });

@@ -421,4 +421,49 @@ describe('nation setting mutation', () => {
         });
         expect(world.getNationById(1)?.meta).toEqual(before);
     });
+    it('records a baseline and changed defence policy, preserving no-op and rollback semantics', () => {
+        const world = createWorld({ worldMeta: { serverId: 'policy-fixture' }, nationMeta: { scout: 0 } });
+        const saved = world.captureState();
+        const result = applyNationSettingMutation({
+            world,
+            acceptedAt,
+            command: command({ kind: 'blockScout', value: true }),
+        });
+        expect(result.ok).toBe(true);
+        const records = world.peekDirtyState().pendingAuditPolicies;
+        expect(records).toHaveLength(2);
+        expect(records[0]).toMatchObject({
+            area: 'DEFENCE',
+            source: 'BASELINE',
+            before: null,
+            after: { scout: 0 },
+            actor: null,
+        });
+        expect(records[1]).toMatchObject({
+            source: 'CHANGE',
+            revision: 2,
+            previousId: records[0]!.id,
+            requestId: 'nation-setting-test',
+            before: { scout: 0 },
+            after: { scout: 1 },
+            actor: { userId: 'owner-1', generalId: 1, name: '테스트군주', officerLevel: 12 },
+        });
+        const next = applyNationSettingMutation({
+            world,
+            acceptedAt,
+            command: command({ kind: 'blockScout', value: true }, { requestId: 'same-value' }),
+        });
+        expect(next.ok).toBe(true);
+        expect(world.peekDirtyState().pendingAuditPolicies).toHaveLength(2);
+        applyNationSettingMutation({
+            world,
+            acceptedAt,
+            command: command({ kind: 'blockScout', value: false }, { userId: 'intruder' }),
+        });
+        expect(world.peekDirtyState().pendingAuditPolicies).toHaveLength(2);
+        world.restoreState(saved);
+        expect(world.peekDirtyState().pendingAuditPolicies).toEqual([]);
+        expect(world.getNationById(1)?.meta.scout).toBe(0);
+        expect(world.getState().meta._playAuditOrdinal).toBeUndefined();
+    });
 });

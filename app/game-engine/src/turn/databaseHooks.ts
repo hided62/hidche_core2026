@@ -1,3 +1,4 @@
+import { persistAuditPolicies } from '../playAudit/policyPersistence.js';
 import { prunePreviousAuditBatch, type AuditRetentionResult } from '../playAudit/retention.js';
 import { persistAuditMonth } from '../playAudit/persistence.js';
 import { persistGeneralAccessScores, persistGeneralUpdates } from './generalBatchPersistence.js';
@@ -1145,6 +1146,7 @@ export const createDatabaseTurnHooks = async (
             pendingNationBettingFinishes,
             pendingYearbookSnapshots,
             pendingAuditMonths,
+            pendingAuditPolicies,
             pendingUnificationFinalizations,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
@@ -1303,15 +1305,18 @@ export const createDatabaseTurnHooks = async (
                           cutWallAt: unificationCutWallAt!,
                       })
                     : null;
+            let auditCommand: { requestId: string; sequence: bigint; actorUserId: string | null } | undefined;
             if (commandCompletion) {
                 const commandFence = await prisma.$queryRaw<
                     Array<{
                         status: string;
+                        sequence: bigint;
+                        actor_user_id: string | null;
                         processing_clock_revision: bigint | null;
                         processing_deadline_generation: bigint | null;
                     }>
                 >(GamePrisma.sql`
-                    SELECT status,
+                    SELECT status, sequence, actor_user_id,
                            processing_clock_revision,
                            processing_deadline_generation
                     FROM input_event
@@ -1320,6 +1325,12 @@ export const createDatabaseTurnHooks = async (
                     FOR UPDATE
                 `);
                 const event = commandFence[0];
+                if (event)
+                    auditCommand = {
+                        requestId: commandCompletion.requestId,
+                        sequence: event.sequence,
+                        actorUserId: event.actor_user_id,
+                    };
                 const unificationRevisionTransition =
                     commandCompletion.result.type === 'messageRespond' &&
                     commandCompletion.result.ok &&
@@ -1876,6 +1887,7 @@ export const createDatabaseTurnHooks = async (
                     data: pendingLogRows,
                 });
             }
+            await persistAuditPolicies(prisma, pendingAuditPolicies, auditCommand);
             for (const snapshot of pendingAuditMonths) {
                 await persistAuditMonth(prisma, snapshot);
             }

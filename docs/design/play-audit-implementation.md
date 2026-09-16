@@ -2,7 +2,7 @@
 
 [확정 설계](play-audit.md)의 P1~P6를 구현하는 작업 기록이다. 전체 기능은 진행 중이며,
 월별 projection과 runtime 수집·DB transaction 연결을 구현했다. 프로필 권한과 장수·도시 현재/월말 조회 API,
-국가 월/반기 시계열과 `/play-audit` 기본 조회 화면을 연결했다. 외교·정책·NPC trace·조사 도구는 미구현이다.
+국가 월/반기 시계열과 `/play-audit` 기본 조회 화면을 연결했다. 정책 이력 저장 기반을 추가했으며 정책 조회 화면, 외교, NPC trace와 조사 도구는 남아 있다.
 Push 요청 이후 `feat/play-audit` 전용 worktree에서 계속 구현하며 전체 완료 후 main 통합·push한다.
 
 ## 현재 구현
@@ -88,6 +88,47 @@ R1을 완료했다고 판단하지 않는다.
 world metadata로 계산하며 추가 DB 조회·쓰기나 시나리오/AI 규칙 변경은 없다.
 PREOPEN은 wall-clock 대기 상태이며, 검증하는 것은 공식 개방 때의 논리 게임 달력이다.
 
+## NPC·국방 정책 버전 저장 기반
+
+`PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.
+영역은 국가 NPC 값, 국가 NPC 우선순위, 장수 NPC 우선순위, 국방(`war/scout/secretlimit`)이다.
+공지·권유문·세율·지급률 등 나머지 국가 설정의 사건 기록은 자원/행위 원장 연결에서 남아 있다.
+NPC 설정은 기존 allowlist의 저장 값만 복사하며 setter/time이나 임의 nation metadata를
+복사하지 않는다. 누락(null)은 설정 상속이다. 개인별·server별 보정이 적용된 최종 AI 값인
+것처럼 표시하지 않으며, 해당 관측값과 코드 버전은 이후 NPC trace가 담당한다.
+
+daemon world 구성과 신규 `addNation`에서 네 기준 버전을 pending에 담는다. 기존 정상
+포인터가 있으면 재시작 때 재생성하지 않는다. 포인터 ID는 기수·국가·영역·revision으로
+검증하므로 다른 국가 metadata를 복사해도 기존 국가 이력을 이어받지 않는다.
+기준 버전은 현재 첫 gameplay flush에서 내구화된다. PREOPEN에서 아직 flush가 없을 때의
+초기 기준 버전 내구화/coverage는 후속 연결이 필요하며 현재 구현만으로 R6 완료가 아니다.
+
+기존 NPC mutation의 검증·CAS와 국가 설정의 권한·횟수 제한을 통과한 뒤 변경 전후를 비교한다.
+setter/time 변경과 동일 설정 저장에는 새 적용 버전을 만들지 않는다. 기존 CAS token 갱신,
+write와 성공 응답 계약은 유지한다. 거부된 입력은 정책 적용 이력에 넣지 않으며 기존
+input_event의 ok:false와 구분한다. OBSERVED_GAP은 저장된 포인터와 현재 설정 불일치를
+발견했을 때의 기준 재관측이다. 실제 변경 전 값/actor/시각을 추정하지 않는다.
+
+pending 정책·최신 포인터·전역 감사 ordinal은 world capture/restore와 acknowledgement에
+포함한다. 정책 row, nation meta, world meta와 input_event 완료는 같은 transaction이다.
+기존 input_event fence SELECT에 sequence/actor_user_id만 추가하여 추가 요청 조회를 피한다.
+수행자 ID가 명령과 일치하지 않거나 요청이 있는데 input context가 없으면 저장을 거부한다.
+actor는 당시 user/general/name/nation/officer/npc/permission만 보존하며 createdAt은 DB wall time이다.
+향후 수뇌 DTO는 nation 소유권과 기존 resolver를 적용하고 userId/inputSequence/requestId 및
+관리자 진단을 제외해야 한다. 수뇌 직책/가입 전 열람 정책·화면은 확정 설계대로 후속 범위다.
+
+ID와 payload hash로 재시도를 검증한다.200행마다 createMany와 ID/hash 확인 SELECT를 사용하며
+본문 전체를 재조회하지 않는다. 최초 기준은 국가당4행, 적용 변경은 해당 영역1행이다.
+세계 전체 정책이나 장수별 정책을 매 턴 복사하지 않는다. 기존 NPC 기본값은 별도 pure module로
+옮겨 mutation과 audit allowlist가 공유하고 기존 export 경로는 유지한다.
+정책 schema version은1이며 migration은 기존 이력을 backfill하지 않는다. 이미 적용한 migration
+checksum은 수정하지 않고 schema_version 필드는 별도 증분 migration으로 추가했다.
+
+정리 worker는 이전 기수 정책 ID도 최대200개씩 삭제한다. policy version의 self-reference는
+삭제 FK로 강제하지 않아 과거 비공개 기수를 key batch로 정리할 수 있다. 현재 기수 포인터는
+같은 transaction으로 저장하고 조회 시 항상 현재 기수 범위를 검사해야 한다.
+policyHistory API/UI, 완전한 초기 기준 내구화와 NPC 결정 연결은 아직 남았다.
+
 ## 이전 기수 월별 표본 정리
 
 새 daemon runtime은 실제 `serverId`를 고정해 이전 월별 감사 표본 정리를 시작한다.
@@ -103,7 +144,7 @@ worker가 끝나므로 평상시 idle polling은 없다. 프로세스 재기동�
 시작한다. 종료는 진행 중 transaction을 기다린 뒤 connector를 닫는다. 원문 DB 오류 대신
 고정 경고를 운영 로그에 남기며 정리 실패로 gameplay 결과를 실패 처리하지 않는다.
 
-현재 정리 대상은 구현된 PlayAuditMonth/General/City/Nation뿐이다. 기존 연감/계정 원장과
+현재 정리 대상은 구현된 PlayAuditMonth/General/City/Nation과 PlayAuditPolicy다. 기존 연감/계정 원장과
 LogEntry 보존 정책은 바꾸지 않는다. 외교·정책·trace 테이블을 추가할 때 같은 수명주기와
 key 단위 삭제를 연결해야 한다. Gateway RESET의 기존 process중지→seed commit→재기동
 경로에서 시작한다. 예약 상태에서는 runtime이 없을 수 있어 seed commit 직후에도 batch

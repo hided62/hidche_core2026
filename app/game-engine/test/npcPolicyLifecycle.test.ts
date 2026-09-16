@@ -1,3 +1,4 @@
+import { initializeAuditPolicies } from '../src/playAudit/policy.js';
 import { describe, expect, it } from 'vitest';
 
 import type { TurnCommandEnv, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
@@ -177,7 +178,11 @@ const unitSet: UnitSetDefinition = {
 
 describe('NPC policy lifecycle', () => {
     it('applies CAS-protected semantic policy changes and the next AI instance consumes them without scheduler changes', () => {
-        const world = new InMemoryTurnWorld(state, snapshot, { schedule });
+        const world = new InMemoryTurnWorld(
+            { ...state, meta: { ...state.meta, serverId: 'npc-policy-next-consumer' } },
+            snapshot,
+            { schedule }
+        );
         const first = applyNpcPolicyMutation({
             world,
             acceptedAt: new Date('2026-02-03T04:05:06.000Z'),
@@ -466,5 +471,75 @@ describe('NPC policy lifecycle', () => {
                 command: { ...baseCommand, mutation: { kind: 'nationPriority', priority: ['천도'] } },
             })
         ).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+    });
+    it('records configured NPC policy changes but ignores setter time and unchanged values', () => {
+        const world = new InMemoryTurnWorld(
+            { ...state, meta: { ...state.meta, serverId: 'npc-policy-audit' } },
+            structuredClone(snapshot),
+            { schedule }
+        );
+        const apply = (requestId: string, expectedUpdatedAt: string | null) =>
+            applyNpcPolicyMutation({
+                world,
+                acceptedAt: new Date('2026-02-03T04:05:06Z'),
+                command: {
+                    type: 'setNpcPolicy',
+                    requestId,
+                    userId: 'owner-1',
+                    generalId: 1,
+                    nationId: 1,
+                    expectedUpdatedAt,
+                    mutation: { kind: 'nationPolicy', values: { reqNationGold: 4_321 } },
+                },
+            });
+        const first = apply('audit-first', '2026-01-01T00:00:00.000Z');
+        expect(first.ok).toBe(true);
+        if (!first.ok) throw new Error(first.reason);
+        expect(world.peekDirtyState().pendingAuditPolicies).toHaveLength(2);
+        expect(world.peekDirtyState().pendingAuditPolicies[1]).toMatchObject({
+            area: 'NPC_VALUES',
+            source: 'CHANGE',
+            after: { reqNationGold: 4321 },
+            actor: { name: 'NPC군주' },
+        });
+        expect(apply('audit-noop', first.updatedAt).ok).toBe(true);
+        expect(world.peekDirtyState().pendingAuditPolicies).toHaveLength(2);
+        expect(apply('audit-conflict', first.updatedAt).ok).toBe(false);
+        expect(world.peekDirtyState().pendingAuditPolicies).toHaveLength(2);
+    });
+    it('captures four baselines once, preserves their heads on reload and scopes copied metadata to a new nation', () => {
+        const world = new InMemoryTurnWorld(
+            { ...state, meta: { ...state.meta, serverId: 'policy-baselines' } },
+            structuredClone(snapshot),
+            { schedule }
+        );
+        initializeAuditPolicies(world);
+        expect(world.peekDirtyState().pendingAuditPolicies).toHaveLength(4);
+        world.acknowledgeDirtyState(world.peekDirtyState());
+        const reloaded = new InMemoryTurnWorld(
+            structuredClone(world.getState()),
+            { ...structuredClone(snapshot), nations: world.listNations() },
+            { schedule }
+        );
+        initializeAuditPolicies(reloaded);
+        expect(reloaded.peekDirtyState().pendingAuditPolicies).toHaveLength(0);
+        reloaded.addNation({ ...reloaded.getNationById(1)!, id: 2 });
+        const added = reloaded.peekDirtyState().pendingAuditPolicies;
+        expect(added).toHaveLength(4);
+        expect(added.every((row) => row.nationId === 2 && row.revision === 1 && row.source === 'BASELINE')).toBe(true);
+        expect(reloaded.getNationById(2)?.meta._playAuditPolicy).not.toEqual(
+            reloaded.getNationById(1)?.meta._playAuditPolicy
+        );
+        const nation = reloaded.getNationById(1)!;
+        reloaded.updateNation(1, { meta: { ...nation.meta, scout: 1 } });
+        initializeAuditPolicies(reloaded);
+        expect(reloaded.peekDirtyState().pendingAuditPolicies.at(-1)).toMatchObject({
+            nationId: 1,
+            area: 'DEFENCE',
+            source: 'OBSERVED_GAP',
+            actor: null,
+            before: null,
+            after: { scout: 1 },
+        });
     });
 });

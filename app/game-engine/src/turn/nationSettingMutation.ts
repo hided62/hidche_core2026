@@ -1,3 +1,4 @@
+import { recordAuditPolicyChange } from '../playAudit/policy.js';
 import { createHash } from 'node:crypto';
 
 import { asRecord, formatServerDateTime, type TurnDaemonCommand, type TurnDaemonCommandResult } from '@sammo-ts/common';
@@ -112,7 +113,11 @@ export const applyNationSettingMutation = (options: {
             break;
         }
         case 'rate':
-            if (!Number.isInteger(command.mutation.amount) || command.mutation.amount < 5 || command.mutation.amount > 30) {
+            if (
+                !Number.isInteger(command.mutation.amount) ||
+                command.mutation.amount < 5 ||
+                command.mutation.amount > 30
+            ) {
                 return reject('BAD_REQUEST', '올바른 세율을 입력해주세요.', command.nationId);
             }
             updates = { rate: command.mutation.amount };
@@ -128,7 +133,11 @@ export const applyNationSettingMutation = (options: {
             updates = { bill: command.mutation.amount };
             break;
         case 'secretLimit':
-            if (!Number.isInteger(command.mutation.amount) || command.mutation.amount < 1 || command.mutation.amount > 99) {
+            if (
+                !Number.isInteger(command.mutation.amount) ||
+                command.mutation.amount < 1 ||
+                command.mutation.amount > 99
+            ) {
                 return reject('BAD_REQUEST', '올바른 기밀 공개 기준을 입력해주세요.', command.nationId);
             }
             updates = { secretlimit: command.mutation.amount };
@@ -154,10 +163,22 @@ export const applyNationSettingMutation = (options: {
     }
 
     const updatedAt = buildRevision(acceptedAt, command.requestId ?? `${command.type}:${command.generalId}`);
+    const audit = ['blockWar', 'blockScout', 'secretLimit'].includes(command.mutation.kind)
+        ? recordAuditPolicyChange({
+              world,
+              nation,
+              area: 'DEFENCE',
+              nextMeta: { ...nation.meta, ...updates },
+              actor,
+              permission,
+              requestId: command.requestId,
+          })
+        : {};
     world.updateNation(command.nationId, {
         meta: {
             ...nation.meta,
             ...updates,
+            ...audit,
             _updatedAt: updatedAt,
         },
     });

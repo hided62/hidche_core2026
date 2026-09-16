@@ -20,6 +20,18 @@ export const prunePreviousAuditBatch = async (
             if (!lock?.locked) return { status: 'busy', deleted: 0 };
             const world = await tx.worldState.findFirst({ orderBy: { id: 'asc' }, select: { meta: true } });
             if (asRecord(world?.meta).serverId !== expectedServerId) return { status: 'identityChanged', deleted: 0 };
+            const policies = await tx.playAuditPolicy.findMany({
+                where: { serverId: { not: expectedServerId } },
+                orderBy: { id: 'asc' },
+                take: AUDIT_RETENTION_BATCH_SIZE,
+                select: { id: true },
+            });
+            if (policies.length) {
+                const deleted = await tx.playAuditPolicy.deleteMany({
+                    where: { id: { in: policies.map((row) => row.id) } },
+                });
+                return { status: 'progress', deleted: deleted.count };
+            }
             // 부모를 잠가 늦은 child INSERT와 빈 header 삭제의 경쟁도 차단한다.
             const [sample] = await tx.$queryRaw<{ id: string }[]>`
             SELECT id FROM play_audit_month WHERE server_id <> ${expectedServerId}

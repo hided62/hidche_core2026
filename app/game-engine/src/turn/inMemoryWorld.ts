@@ -1,3 +1,4 @@
+import { initializeNationAuditPolicies, type PendingAuditPolicy } from '../playAudit/policy.js';
 import type { PendingAuditMonth } from '../playAudit/persistence.js';
 import type {
     City,
@@ -201,6 +202,7 @@ export interface TurnWorldChanges {
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
     pendingAuditMonths: PendingAuditMonth[];
+    pendingAuditPolicies: PendingAuditPolicy[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
 }
 
@@ -242,6 +244,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
     pendingAuditMonths: PendingAuditMonth[];
+    pendingAuditPolicies: PendingAuditPolicy[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
     pendingRealtimeBacklogShiftTicks: number;
 }
@@ -547,6 +550,7 @@ export class InMemoryTurnWorld {
     private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
     private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
     private readonly pendingAuditMonths: PendingAuditMonth[] = [];
+    private readonly pendingAuditPolicies: PendingAuditPolicy[] = [];
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private pendingRealtimeBacklogShiftTicks = 0;
     private readonly scenarioConfig: ScenarioConfig;
@@ -1096,6 +1100,7 @@ export class InMemoryTurnWorld {
             pendingNationBettingFinishes: this.pendingNationBettingFinishes,
             pendingYearbookSnapshots: this.pendingYearbookSnapshots,
             pendingAuditMonths: this.pendingAuditMonths,
+            pendingAuditPolicies: this.pendingAuditPolicies,
             pendingUnificationFinalizations: this.pendingUnificationFinalizations,
             pendingRealtimeBacklogShiftTicks: this.pendingRealtimeBacklogShiftTicks,
         } satisfies InMemoryTurnWorldStateSnapshot);
@@ -1143,6 +1148,7 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.pendingNationBettingFinishes, restored.pendingNationBettingFinishes);
         this.replaceArray(this.pendingYearbookSnapshots, restored.pendingYearbookSnapshots);
         this.replaceArray(this.pendingAuditMonths, restored.pendingAuditMonths);
+        this.replaceArray(this.pendingAuditPolicies, restored.pendingAuditPolicies);
         this.replaceArray(this.pendingUnificationFinalizations, restored.pendingUnificationFinalizations);
         this.pendingRealtimeBacklogShiftTicks = restored.pendingRealtimeBacklogShiftTicks ?? 0;
     }
@@ -1356,6 +1362,19 @@ export class InMemoryTurnWorld {
             winnerNationIds: [...finish.winnerNationIds],
             turnTime: new Date(finish.turnTime.getTime()),
         });
+    }
+
+    nextAuditOrdinal(): number {
+        const previous = this.state.meta._playAuditOrdinal;
+        const ordinal =
+            typeof previous === 'number' && Number.isSafeInteger(previous) && previous >= 0 ? previous + 1 : 1;
+        if (ordinal > 2_147_483_647) throw new Error('Play audit ordinal exhausted');
+        this.updateWorldMeta({ _playAuditOrdinal: ordinal });
+        return ordinal;
+    }
+
+    queueAuditPolicy(policy: PendingAuditPolicy): void {
+        this.pendingAuditPolicies.push(structuredClone(policy));
     }
 
     queueAuditMonth(snapshot: PendingAuditMonth): void {
@@ -1595,6 +1614,7 @@ export class InMemoryTurnWorld {
         this.dirtyNationIds.add(nation.id);
         this.createdNationIds.add(nation.id);
         this.ensureDiplomacyMatrix();
+        initializeNationAuditPolicies(this, nation.id);
         return true;
     }
 
@@ -2205,6 +2225,7 @@ export class InMemoryTurnWorld {
         }));
         const pendingYearbookSnapshots = structuredClone(this.pendingYearbookSnapshots);
         const pendingAuditMonths = structuredClone(this.pendingAuditMonths);
+        const pendingAuditPolicies = structuredClone(this.pendingAuditPolicies);
         const pendingUnificationFinalizations = structuredClone(this.pendingUnificationFinalizations);
         const accessScoreResetGeneralIds = Array.from(this.accessScoreResetGeneralIds).sort(
             (left, right) => left - right
@@ -2238,6 +2259,7 @@ export class InMemoryTurnWorld {
             pendingNationBettingFinishes,
             pendingYearbookSnapshots,
             pendingAuditMonths,
+            pendingAuditPolicies,
             pendingUnificationFinalizations,
         };
     }
@@ -2277,6 +2299,7 @@ export class InMemoryTurnWorld {
         this.pendingNationBettingFinishes.splice(0, changes.pendingNationBettingFinishes.length);
         this.pendingYearbookSnapshots.splice(0, changes.pendingYearbookSnapshots.length);
         this.pendingAuditMonths.splice(0, changes.pendingAuditMonths.length);
+        this.pendingAuditPolicies.splice(0, changes.pendingAuditPolicies.length);
         this.pendingUnificationFinalizations.splice(0, changes.pendingUnificationFinalizations.length);
     }
 
