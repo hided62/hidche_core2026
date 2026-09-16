@@ -1,3 +1,6 @@
+import { auditDecisionIdentity, type PendingAuditDecision } from '../playAudit/decision.js';
+import { auditPolicyHash, AUDIT_POLICY_AREAS } from '../playAudit/policy.js';
+import type { AiDecisionTraceEvent } from './ai/generalAi/trace.js';
 import type { AiDecisionTraceObserver } from './ai/generalAi/trace.js';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import type {
@@ -902,6 +905,8 @@ export const createReservedTurnHandler = async (options: {
         currentMonth: number
     ) => Nation['meta'] | null;
     onDecisionTrace?: AiDecisionTraceObserver;
+    collectAuditDecisions?: boolean;
+    auditCodeVersion?: string;
     onActionResolved?: (payload: {
         kind: 'nation' | 'general';
         generalId: number;
@@ -1068,6 +1073,90 @@ export const createReservedTurnHandler = async (options: {
             let currentGeneral = context.general;
             let currentCity = context.city;
             let currentNation = context.nation ?? null;
+            const auditServerId = typeof context.world.meta.serverId === 'string' ? context.world.meta.serverId : null;
+            const collectDecisions =
+                options.collectAuditDecisions !== false && Boolean(auditServerId?.trim()) && Boolean(worldRef);
+            const auditDecisions: PendingAuditDecision[] = [];
+            const decisionSteps = new Map<'general' | 'nation', AiDecisionTraceEvent[]>();
+            const decisionPolicyRefs = new Map<'general' | 'nation', Record<string, string>>();
+            const onDecisionTrace: AiDecisionTraceObserver | undefined =
+                collectDecisions || options.onDecisionTrace
+                    ? (event) => {
+                          if (collectDecisions) {
+                              if (event.kind === 'DECISION_START') {
+                                  decisionSteps.set(event.phase, []);
+                                  const heads = asRecord(currentNation?.meta._playAuditPolicy);
+                                  decisionPolicyRefs.set(
+                                      event.phase,
+                                      Object.fromEntries(
+                                          AUDIT_POLICY_AREAS.flatMap((area) => {
+                                              const head = asRecord(heads[area]);
+                                              return head.serverId === auditServerId && typeof head.id === 'string'
+                                                  ? [[area, head.id]]
+                                                  : [];
+                                          })
+                                      )
+                                  );
+                              }
+                              decisionSteps.get(event.phase)?.push(structuredClone(event));
+                          }
+                          options.onDecisionTrace?.(event);
+                      }
+                    : undefined;
+            const finishDecision = (
+                phase: 'general' | 'nation',
+                outcome: {
+                    actionKey: string;
+                    usedFallback: boolean;
+                    completed?: boolean;
+                    blockedReason?: string;
+                }
+            ): void => {
+                const steps = decisionSteps.get(phase);
+                const first = steps?.[0];
+                const last = steps?.at(-1);
+                if (
+                    !collectDecisions ||
+                    !auditServerId ||
+                    !worldRef ||
+                    !steps ||
+                    first?.kind !== 'DECISION_START' ||
+                    last?.kind !== 'DECISION_END'
+                )
+                    return;
+                const tick = context.general.turnTick ?? worldRef.dateToGameTick(context.general.turnTime);
+                const revision = worldRef.getGameClockState().revision;
+                const executionId = auditDecisionIdentity(auditServerId, context.general.id, tick, revision);
+                auditDecisions.push({
+                    id: auditPolicyHash([executionId, phase]),
+                    serverId: auditServerId,
+                    executionId,
+                    phase,
+                    generalId: first.generalId,
+                    nationId: first.nationId,
+                    cityId: first.cityId,
+                    npcState: first.npcState,
+                    year: first.year,
+                    month: first.month,
+                    tick,
+                    summary: {
+                        schemaVersion: 1,
+                        coverage: 'PROCEDURES',
+                        clockRevision: revision,
+                        codeVersion: options.auditCodeVersion ?? null,
+                        policyRefs: decisionPolicyRefs.get(phase) ?? {},
+                        requestedAction: first.reservedAction,
+                        selectedAction: last.action,
+                        selectedReason: last.reason,
+                        executedAction: outcome.actionKey,
+                        completed: outcome.completed ?? null,
+                        usedFallback: outcome.usedFallback,
+                        blockedReason: outcome.blockedReason ?? null,
+                    },
+                    steps,
+                });
+            };
+
             // Ref는 장수와 첫 커맨드를 만들 때 getNationStaticInfo 캐시를 채운다.
             // 같은 장수 lifecycle의 국호변경은 뒤이은 유니크 획득 로그의 국호를 바꾸지 않는다.
             const legacyStaticNationName = currentNation?.name ?? '재야';
@@ -1936,7 +2025,7 @@ export const createReservedTurnHandler = async (options: {
                     nationUsedAi = true;
                     const aiStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                     sharedAi = new GeneralAI({
-                        onDecisionTrace: options.onDecisionTrace,
+                        onDecisionTrace,
                         general: currentGeneral,
                         city: currentCity,
                         nation: currentNation,
@@ -2009,6 +2098,7 @@ export const createReservedTurnHandler = async (options: {
                 }
                 const nationActionStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                 const nationResult = runAction('nation', nationDefinitions, nationFallback, nationCommand, false);
+                finishDecision('nation', nationResult);
                 const nationActionDurationNs = options.onActionProfiled
                     ? process.hrtime.bigint() - nationActionStartedAt
                     : 0n;
@@ -2093,7 +2183,7 @@ export const createReservedTurnHandler = async (options: {
                 const ai =
                     sharedAi ??
                     new GeneralAI({
-                        onDecisionTrace: options.onDecisionTrace,
+                        onDecisionTrace,
                         general: currentGeneral,
                         city: currentCity,
                         nation: currentNation,
@@ -2179,6 +2269,7 @@ export const createReservedTurnHandler = async (options: {
                       blockedReason: '블럭 대상자입니다.',
                   }
                 : runAction('general', generalDefinitions, generalFallback, generalCommand, true);
+            finishDecision('general', generalResult);
             const generalActionDurationNs = options.onActionProfiled
                 ? process.hrtime.bigint() - generalActionStartedAt
                 : 0n;
@@ -2411,6 +2502,7 @@ export const createReservedTurnHandler = async (options: {
             }
 
             const result: GeneralTurnResult = {
+                ...(auditDecisions.length ? { auditDecisions } : {}),
                 general: currentGeneral,
                 city: currentCity,
                 nation: currentNation,

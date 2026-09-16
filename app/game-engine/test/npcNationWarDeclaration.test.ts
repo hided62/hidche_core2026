@@ -1,3 +1,4 @@
+import type { PendingAuditDecision } from '../src/playAudit/decision.js';
 import type { AiDecisionTraceEvent } from '../src/turn/ai/generalAi/trace.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
@@ -247,8 +248,14 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
         };
 
         const decisionTrace: AiDecisionTraceEvent[] = [];
+        const savedDecisions: PendingAuditDecision[] = [];
         const { runUntil } = await createTurnTestHarness({
             onDecisionTrace: auditEnabled ? (event) => decisionTrace.push(event) : undefined,
+            wrapGeneralTurnHandler: (handler) => ({ execute: (context) => {
+                const result = handler.execute(context);
+                savedDecisions.push(...(result.auditDecisions ?? []));
+                return result;
+            } }),
             snapshot,
             state,
             schedule,
@@ -439,6 +446,11 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
         }
         expect(dispatchCount).toBeGreaterThan(0);
         if (auditEnabled) {
+            expect(savedDecisions.length).toBeGreaterThan(0);
+            expect(new Set(savedDecisions.map((row) => row.id)).size).toBe(savedDecisions.length);
+            expect(savedDecisions.some((row) => row.phase === 'nation' && row.summary.executedAction === 'che_선전포고')).toBe(true);
+            expect(savedDecisions.some((row) => row.phase === 'general' && row.summary.executedAction === 'che_출병')).toBe(true);
+            expect(savedDecisions.every((row) => row.steps[0]?.kind === 'DECISION_START' && row.steps.at(-1)?.kind === 'DECISION_END')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'DECISION_START' && step.phase === 'nation')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'DECISION_END' && step.phase === 'general')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'RNG')).toBe(true);

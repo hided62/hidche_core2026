@@ -1,3 +1,4 @@
+import { buildAuditDecisionFixture } from './fixtures/playAuditDecision.js';
 import { initializeAuditDiplomacy } from '../src/playAudit/diplomacy.js';
 import { describe, expect, it } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
@@ -129,6 +130,22 @@ const buildWorld = (generalTurnHandler?: GeneralTurnHandler) => {
     return world;
 };
 describe('play audit collection durability state', () => {
+    it('restores decision buffers and acknowledges only the committed prefix', () => {
+        const world = buildWorld();
+        const first = buildAuditDecisionFixture('first');
+        world.queueAuditDecision(first);
+        const checkpoint = world.captureState();
+        const committed = world.peekDirtyState();
+        world.queueAuditDecision(buildAuditDecisionFixture('second'));
+        world.acknowledgeDirtyState(committed);
+        expect(world.peekDirtyState().pendingAuditDecisions.map((row) => row.id)).toEqual(['second']);
+        world.restoreState(checkpoint);
+        expect(world.peekDirtyState().pendingAuditDecisions).toEqual([first]);
+        const peeked = world.peekDirtyState();
+        peeked.pendingAuditDecisions[0]!.steps.pop();
+        expect(world.peekDirtyState().pendingAuditDecisions[0]!.steps).toHaveLength(302);
+    });
+
     it('captures direct reserved-turn nation batches once and initializes their policies', () => {
         const world = buildWorld({
             execute: () => ({ created: { generals: [], nations: [buildNation(3, 0, {}), buildNation(4, 0, {})] } }),

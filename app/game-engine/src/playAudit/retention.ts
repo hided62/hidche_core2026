@@ -32,6 +32,30 @@ export const prunePreviousAuditBatch = async (
                 });
                 return { status: 'progress', deleted: deleted.count };
             }
+            const [decision] = await tx.$queryRaw<{ id: string }[]>`
+                SELECT id FROM play_audit_decision WHERE id = COALESCE(
+                    (SELECT id FROM play_audit_decision WHERE server_id < ${expectedServerId}
+                     ORDER BY server_id, general_id, tick, id LIMIT 1),
+                    (SELECT id FROM play_audit_decision WHERE server_id > ${expectedServerId}
+                     ORDER BY server_id, general_id, tick, id LIMIT 1)
+                ) FOR UPDATE
+            `;
+            if (decision) {
+                const chunks = await tx.playAuditDecisionChunk.findMany({
+                    where: { decisionId: decision.id },
+                    orderBy: { ordinal: 'asc' },
+                    take: AUDIT_RETENTION_BATCH_SIZE,
+                    select: { ordinal: true },
+                });
+                if (chunks.length) {
+                    const deleted = await tx.playAuditDecisionChunk.deleteMany({
+                        where: { decisionId: decision.id, ordinal: { in: chunks.map((row) => row.ordinal) } },
+                    });
+                    return { status: 'progress', deleted: deleted.count };
+                }
+                await tx.playAuditDecision.delete({ where: { id: decision.id } });
+                return { status: 'progress', deleted: 1 };
+            }
             const policies = await tx.playAuditPolicy.findMany({
                 where: { serverId: { not: expectedServerId } },
                 orderBy: { id: 'asc' },

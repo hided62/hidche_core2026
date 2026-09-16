@@ -1,3 +1,4 @@
+import type { PendingAuditDecision } from '../playAudit/decision.js';
 import {
     recordTurnAuditDiplomacy,
     recordNationAuditDiplomacy,
@@ -60,6 +61,7 @@ export interface GeneralTurnContext {
 }
 
 export interface GeneralTurnResult {
+    auditDecisions?: PendingAuditDecision[];
     general?: TurnGeneral;
     city?: City;
     nation?: Nation | null;
@@ -211,6 +213,7 @@ export interface TurnWorldChanges {
     pendingAuditMonths: PendingAuditMonth[];
     pendingAuditPolicies: PendingAuditPolicy[];
     pendingAuditDiplomacy: AuditDiplomacyEventDraft[];
+    pendingAuditDecisions: PendingAuditDecision[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
 }
 
@@ -254,6 +257,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     pendingAuditMonths: PendingAuditMonth[];
     pendingAuditPolicies: PendingAuditPolicy[];
     pendingAuditDiplomacy: AuditDiplomacyEventDraft[];
+    pendingAuditDecisions: PendingAuditDecision[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
     pendingRealtimeBacklogShiftTicks: number;
 }
@@ -561,6 +565,7 @@ export class InMemoryTurnWorld {
     private readonly pendingAuditMonths: PendingAuditMonth[] = [];
     private readonly pendingAuditPolicies: PendingAuditPolicy[] = [];
     private readonly pendingAuditDiplomacy: AuditDiplomacyEventDraft[] = [];
+    private readonly pendingAuditDecisions: PendingAuditDecision[] = [];
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private pendingRealtimeBacklogShiftTicks = 0;
     private readonly scenarioConfig: ScenarioConfig;
@@ -1112,6 +1117,7 @@ export class InMemoryTurnWorld {
             pendingAuditMonths: this.pendingAuditMonths,
             pendingAuditPolicies: this.pendingAuditPolicies,
             pendingAuditDiplomacy: this.pendingAuditDiplomacy,
+            pendingAuditDecisions: this.pendingAuditDecisions,
             pendingUnificationFinalizations: this.pendingUnificationFinalizations,
             pendingRealtimeBacklogShiftTicks: this.pendingRealtimeBacklogShiftTicks,
         } satisfies InMemoryTurnWorldStateSnapshot);
@@ -1161,6 +1167,7 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.pendingAuditMonths, restored.pendingAuditMonths);
         this.replaceArray(this.pendingAuditPolicies, restored.pendingAuditPolicies);
         this.replaceArray(this.pendingAuditDiplomacy, restored.pendingAuditDiplomacy);
+        this.replaceArray(this.pendingAuditDecisions, restored.pendingAuditDecisions);
         this.replaceArray(this.pendingUnificationFinalizations, restored.pendingUnificationFinalizations);
         this.pendingRealtimeBacklogShiftTicks = restored.pendingRealtimeBacklogShiftTicks ?? 0;
     }
@@ -1389,6 +1396,10 @@ export class InMemoryTurnWorld {
         this.pendingAuditDiplomacy.push(structuredClone(event));
     }
 
+    queueAuditDecision(decision: PendingAuditDecision): void {
+        this.pendingAuditDecisions.push(structuredClone(decision));
+    }
+
     queueAuditPolicy(policy: PendingAuditPolicy): void {
         this.pendingAuditPolicies.push(structuredClone(policy));
     }
@@ -1397,7 +1408,8 @@ export class InMemoryTurnWorld {
         return (
             this.pendingAuditPolicies.length > 0 ||
             this.pendingAuditMonths.length > 0 ||
-            this.pendingAuditDiplomacy.length > 0
+            this.pendingAuditDiplomacy.length > 0 ||
+            this.pendingAuditDecisions.length > 0
         );
     }
 
@@ -1964,6 +1976,8 @@ export class InMemoryTurnWorld {
             schedule: this.schedule,
         });
 
+        if (result.auditDecisions?.length) this.pendingAuditDecisions.push(...structuredClone(result.auditDecisions));
+
         let nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
         if (!result.deleted?.general) {
             const resolvedGeneral = result.general ?? currentGeneral;
@@ -2274,6 +2288,7 @@ export class InMemoryTurnWorld {
         const pendingAuditMonths = structuredClone(this.pendingAuditMonths);
         const pendingAuditPolicies = structuredClone(this.pendingAuditPolicies);
         const pendingAuditDiplomacy = structuredClone(this.pendingAuditDiplomacy);
+        const pendingAuditDecisions = structuredClone(this.pendingAuditDecisions);
         const pendingUnificationFinalizations = structuredClone(this.pendingUnificationFinalizations);
         const accessScoreResetGeneralIds = Array.from(this.accessScoreResetGeneralIds).sort(
             (left, right) => left - right
@@ -2309,6 +2324,7 @@ export class InMemoryTurnWorld {
             pendingAuditMonths,
             pendingAuditPolicies,
             pendingAuditDiplomacy,
+            pendingAuditDecisions,
             pendingUnificationFinalizations,
         };
     }
@@ -2350,6 +2366,7 @@ export class InMemoryTurnWorld {
         this.pendingAuditMonths.splice(0, changes.pendingAuditMonths.length);
         this.pendingAuditPolicies.splice(0, changes.pendingAuditPolicies.length);
         this.pendingAuditDiplomacy.splice(0, changes.pendingAuditDiplomacy.length);
+        this.pendingAuditDecisions.splice(0, changes.pendingAuditDecisions.length);
         this.pendingUnificationFinalizations.splice(0, changes.pendingUnificationFinalizations.length);
     }
 

@@ -1201,3 +1201,38 @@ model PlayAuditDiplomacyEvent {
   @@index([serverId, documentId, sequence])
   @@map("play_audit_diplomacy_event")
 }
+
+// NPC/자동턴 결정 요약. 큰 절차 본문은 chunk로 나누어 목록에서 제외한다.
+model PlayAuditDecision {
+  id String @id
+  serverId String @map("server_id")
+  executionId String @map("execution_id")
+  phase String
+  generalId Int @map("general_id")
+  nationId Int @map("nation_id")
+  cityId Int @map("city_id")
+  npcState Int @map("npc_state")
+  year Int
+  month Int
+  tick BigInt
+  stepCount Int @map("step_count")
+  summary Json
+  hash String
+  createdAt DateTime @default(now()) @map("created_at")
+  chunks PlayAuditDecisionChunk[]
+
+  @@unique([executionId, phase])
+  @@index([serverId, generalId, tick, id])
+  @@index([serverId, nationId, tick, id])
+  @@map("play_audit_decision")
+}
+
+model PlayAuditDecisionChunk {
+  decisionId String @map("decision_id")
+  ordinal Int
+  steps Json
+  decision PlayAuditDecision @relation(fields: [decisionId], references: [id], onDelete: Restrict)
+
+  @@id([decisionId, ordinal])
+  @@map("play_audit_decision_chunk")
+}

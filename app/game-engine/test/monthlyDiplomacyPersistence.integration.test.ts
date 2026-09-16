@@ -1,3 +1,4 @@
+import { buildAuditDecisionFixture } from './fixtures/playAuditDecision.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 import type { Nation } from '@sammo-ts/logic';
@@ -49,6 +50,8 @@ integration('monthly diplomacy persistence', () => {
         db = connector.prisma;
         closeDb = () => connector.disconnect();
         await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: scenarioCode } });
+        await db.playAuditDecisionChunk.deleteMany({ where: { decision: { serverId: scenarioCode } } });
+        await db.playAuditDecision.deleteMany({ where: { serverId: scenarioCode } });
         await db.playAuditPolicy.deleteMany({ where: { serverId: scenarioCode } });
         await db.diplomacy.deleteMany({
             where: {
@@ -62,6 +65,8 @@ integration('monthly diplomacy persistence', () => {
 
     afterAll(async () => {
         await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: scenarioCode } });
+        await db.playAuditDecisionChunk.deleteMany({ where: { decision: { serverId: scenarioCode } } });
+        await db.playAuditDecision.deleteMany({ where: { serverId: scenarioCode } });
         await db.playAuditPolicy.deleteMany({ where: { serverId: scenarioCode } });
         await db.diplomacy.deleteMany({
             where: {
@@ -186,6 +191,20 @@ integration('monthly diplomacy persistence', () => {
                 await db.$executeRawUnsafe('DROP FUNCTION reject_monthly_audit_fixture()');
             }
 
+            const decision = buildAuditDecisionFixture('monthly-decision', scenarioCode);
+            world.queueAuditDecision(decision);
+            await db.$executeRawUnsafe(`CREATE FUNCTION reject_decision_flush_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'decision flush rollback'; END; $$`);
+            await db.$executeRawUnsafe(`CREATE TRIGGER reject_decision_flush_fixture BEFORE INSERT ON play_audit_decision_chunk FOR EACH ROW EXECUTE FUNCTION reject_decision_flush_fixture()`);
+            try {
+                await expect(hooks.flushChanges()).rejects.toThrow('decision flush rollback');
+                expect(world.peekDirtyState().pendingAuditDecisions).toEqual([decision]);
+                expect(await db.playAuditDecision.count({ where: { serverId: scenarioCode } })).toBe(0);
+                expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: scenarioCode } })).toBe(0);
+                expect((await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } })).currentMonth).toBe(1);
+            } finally {
+                await db.$executeRawUnsafe('DROP TRIGGER reject_decision_flush_fixture ON play_audit_decision_chunk');
+                await db.$executeRawUnsafe('DROP FUNCTION reject_decision_flush_fixture()');
+            }
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: '0193-02-01T00:00:00.000Z',
                 processedGenerals: 0,
@@ -211,6 +230,8 @@ integration('monthly diplomacy persistence', () => {
             });
 
             expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+            expect(world.peekDirtyState().pendingAuditDecisions).toEqual([]);
+            expect(await db.playAuditDecision.count({ where: { serverId: scenarioCode } })).toBe(1);
             const events = await db.playAuditDiplomacyEvent.findMany({
                 where: { serverId: scenarioCode },
                 orderBy: { sequence: 'asc' },

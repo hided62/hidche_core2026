@@ -1,3 +1,4 @@
+import { persistAuditDecisions } from '../playAudit/decisionPersistence.js';
 import { persistAuditDiplomacyEvents } from '@sammo-ts/infra';
 import { hasAuditDocumentBaseline, persistAuditDocumentBaseline } from '../playAudit/documentBaseline.js';
 import { persistAuditPolicies } from '../playAudit/policyPersistence.js';
@@ -1152,6 +1153,7 @@ export const createDatabaseTurnHooks = async (
             pendingAuditMonths,
             pendingAuditPolicies,
             pendingAuditDiplomacy,
+            pendingAuditDecisions,
             pendingUnificationFinalizations,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
@@ -1894,6 +1896,7 @@ export const createDatabaseTurnHooks = async (
             }
             await persistAuditPolicies(prisma, pendingAuditPolicies, auditCommand);
             await persistAuditDiplomacyEvents(prisma, pendingAuditDiplomacy);
+            await persistAuditDecisions(prisma, pendingAuditDecisions);
             for (const snapshot of pendingAuditMonths) {
                 await persistAuditMonth(prisma, snapshot);
             }

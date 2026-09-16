@@ -9,7 +9,27 @@ NPC 결정 trace와 조사 A~F의 완성, 전체 종료 경계 및 COST gate는 
 
 ## 현재 구현
 
-### NPC 판단 관측 기반 — 아직 운영 수집 아님
+### NPC 결정 저장·복구 기반
+
+새 migration57은 `play_audit_decision` 요약과 `play_audit_decision_chunk` 상세를 분리한다.
+reservedTurnHandler가 기수 identity가 있는 새 AI 실행을 phase별로 모으고 실제 요청/선택/
+실행·성공/대체 결과를 함께 반환한다. 실행 tick은 해당 장수 기준, ID는 serverId·장수·tick·
+clock revision·phase로 결정한다. 정책 head 참조는 시작 시 확보하며 없는 값은 채우지 않는다.
+현재 codeVersion 주입과 유효 정책 합성 상세, 내부 후보 조건은 남아 있어 coverage는
+`PROCEDURES`다. 수동 턴 중 AI를 사용하지 않은 경우 결정 행을 만들지 않는다.
+
+GeneralTurnResult→world pending→capture/restore/peek/ack→기존 fenced DB flush를 연결했다.
+요약 hash와 실행/phase unique로 같은 재시도는 중복 없이 통과하고 다른 payload는 실패한다.
+상세는128개 event씩 나누며 최대200행씩 batch insert한다. 목록을 위해 전체 trace를 하나의
+header JSON으로 저장하지 않고 후보별 SQL도 추가하지 않는다. 실패하면 게임 상태와 모두
+rollback되고 commit 뒤에만 pending prefix를 비운다. 실패한 실행의 별도 진단 원장은 남는다.
+
+정리는 이전 기수 header를 잠그고200개 chunk씩 삭제한 후 header를 제거한다. FK RESTRICT로
+무제한 cascade를 막으며 현재 기수는 기존 schema lock/identity 재검사로 보호한다.
+빈57·기존56→57·재실행 no-op,302 event/3chunk 복원, 삽입 실패/재시도/충돌 및 실제
+DB hooks와 정리 회귀를 검증했다. 전체 비용 gate와 전용 API/GUI는 아직 후속이다.
+
+### NPC 판단 관측 기반
 
 GeneralAI와 예약 실행 handler에 선택적 `onDecisionTrace` 관측 경계를 추가했다.
 공유 AI의 수뇌→개인 결정 순서에 동일 sequence를 유지하며 시작/최종 선택/오류,
@@ -21,7 +41,7 @@ GeneralAI와 예약 실행 handler에 선택적 `onDecisionTrace` 관측 경계�
 
 고정 seed3종에서16개 RNG utility 호출의 반환값·객체 identity·다음 RNG 결과가 같고,
 실제 NPC 선전포고→개전→점령 fixture에서도 수집 on/off 회귀가 통과했다.
-현재 default daemon에는 observer를 켜지 않았으며 DB 쓰기를 추가하지 않았다.
+초기 관측 단계에서는 default daemon을 켜지 않았다. 이후 아래 저장 경계에서 현재 기수의 새 실행을 수집하도록 연결했다.
 이는 R5의 관측 기반일 뿐 완료가 아니다. 다음 작업은 불변 결정 ID·정책/code version,
 후보/조건별 실제 관측값, 실행 결과 연결, 같은 gameplay transaction의 pending/rollback,
 정식 migration·bounded 정리, 프로필 목록/상세 API와 GUI를 연결하는 것이다.

@@ -42,7 +42,7 @@
 ## DB migration과 적용 순서
 
 정식 game migration에 감사 테이블과 인덱스가 포함되어 있다. `prisma db push`나
-수동 CREATE TABLE로 대신 적용하지 않는다. 현재 game chain은56개이며 다음 감사
+수동 CREATE TABLE로 대신 적용하지 않는다. 현재 game chain은57개이며 다음 감사
 migration들을 포함한다. 기존 기록을 삭제하거나 지난달 상세를 역산하지 않는다.
 
 | migration | 준비되는 저장소/제약 |
@@ -54,6 +54,7 @@ migration들을 포함한다. 기존 기록을 삭제하거나 지난달 상세�
 | `20260916040000_add_play_audit_initial` | 기수당 INITIAL 표본 1개 제약 |
 | `20260916050000_add_play_audit_diplomacy` | 방향·국가쌍·실행 순서 기반 외교 사건과 불변 원문 보호 |
 | `20260916060000_widen_play_audit_ticks` | 월 표본/정책 tick을 BIGINT로 확장하여 약60개월 이후 INTEGER 초과 방지 |
+| `20260916070000_add_play_audit_decision` | NPC/자동턴 결정 요약과 순서별 상세 chunk, bounded 정리용 FK/index |
 
 운영은 [릴리스 절차](release-operations.md)의 **DB 보존 버전 업데이트**로 해당 고정
 commit을 적용한다. 이 기능을 켜기 위해 시나리오를 초기화할 필요는 없다. 수동 환경의
@@ -85,7 +86,11 @@ Gateway의 새 진입/권한 catalog도 사용하려면 같은 commit의 Gateway
   즉시 차단하고 이전 감사 자료를200행 단위로 정리한다. 기존 연감/계정 원장은 별도다.
 - 통일 시 FINAL 표본은 정규 월말과 구분한다. **CANCELLED가 runtime을 중단한 프로필은
   현재 감사 API도 사용할 수 없다.** 취소 후 다음 초기화까지 읽는 수명주기는 후속 작업이다.
-- NPC의 개인/수뇌/유저 자동턴 상세 판정 trace는 아직 수집·조회하지 않는다.
+- NPC/유저 자동턴의 개인·수뇌 절차, 정책 차단, RNG utility 결과와 최종 실행 결과는
+  migration 이후 새 실행부터 저장한다. 후보 내부 조건 전체는 아직 없으며 `PROCEDURES`
+  coverage로 구분한다. 전용 조회 화면은 후속 작업이다. 과거 결정은 역산하지 않는다.
+- 결정은 당시 확보된 정책 참조를 보존한다. 합성된 유효 정책 상세와 코드 버전 연결은
+  아직 미완성이다. 코드 버전이 주입되지 않은 실행은 null로 남기며 현재 버전으로 메우지 않는다.
 - 계정/IP HMAC 조사, 상세 자원 이동, 예약 변경/실행 연결, 실패·rollback 조사와 알려진
   버그 사례 조회는 미완성이다. 자동 탐지·자동 제재 기능도 제공하지 않는다.
 - 일부 국가 생성/소멸 사건은 actor/request가 null이다. 원인을 현재 주체로 추정하지 않는다.

@@ -118,7 +118,8 @@ describe('durable read-model change journal mapping', () => {
             pendingYearbookSnapshots: [],
             pendingAuditMonths: [],
             pendingAuditPolicies: [],
-    pendingAuditDiplomacy: [],
+            pendingAuditDiplomacy: [],
+            pendingAuditDecisions: [],
             pendingUnificationFinalizations: [],
         } satisfies TurnWorldChanges;
         const readModelChanges = createEmptyRealtimeReadModelChanges();
