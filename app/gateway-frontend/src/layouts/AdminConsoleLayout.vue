@@ -212,12 +212,22 @@ onMounted(async () => {
     position: sticky;
     top: 0;
     height: 100vh;
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid #27272a;
     background: #111113;
     padding: 24px 16px;
 }
 
+.admin-sidebar > nav {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+}
+
 .admin-identity {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 11px;
@@ -317,10 +327,9 @@ onMounted(async () => {
 }
 
 .admin-exit {
-    position: absolute;
-    right: 24px;
-    bottom: 24px;
-    left: 24px;
+    flex-shrink: 0;
+    display: block;
+    margin: 16px 8px 0;
     border-top: 1px solid #27272a;
     padding-top: 17px;
     color: #71717a;
@@ -416,6 +425,10 @@ onMounted(async () => {
         border-radius: 10px;
         box-shadow: 0 20px 45px rgb(0 0 0 / 55%);
         padding: 18px 14px 14px;
+    }
+
+    .admin-sidebar > nav {
+        overflow-y: visible;
     }
 
     .admin-sidebar.open {

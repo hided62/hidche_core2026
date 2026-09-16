@@ -8,7 +8,7 @@ const operationNames = (route: Route): string[] => {
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
 };
 
-const installGatewayFixture = async (page: Page, roles: string[]) => {
+const installGatewayFixture = async (page: Page, roles: string[], manyProfiles = false) => {
     const requests: Array<{ method: string; url: string; body: unknown }> = [];
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-session-token', 'playwright-admin-session');
@@ -62,6 +62,16 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                 );
             }
             if (operation === 'admin.profiles.listNavigation') {
+                if (manyProfiles)
+                    return response(
+                        ['che', 'kwe', 'twe', 'hwe', 'nya', 'pwe', 'pya'].map((profile) => ({
+                            profileName: `${profile}:default`,
+                            profile,
+                            instanceKey: 'default',
+                            displayName: `${profile.toUpperCase()} 서버`,
+                            currentScenario: '1010',
+                        }))
+                    );
                 return response(
                     roles.some((role) => role === 'superuser' || role.includes(':hwe:2'))
                         ? [
@@ -378,3 +388,54 @@ test('scoped administrators see the same navigation while ordinary users do not'
     await expect(userPage.getByRole('link', { name: '관리자 페이지' })).toHaveCount(0);
     await userContext.close();
 });
+
+for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1200, height: 500 },
+    { width: 390, height: 844 },
+]) {
+    test(`administrator exit stays separate from seven-profile navigation at ${viewport.width}x${viewport.height}`, async ({
+        page,
+    }, testInfo) => {
+        await page.setViewportSize(viewport);
+        await installGatewayFixture(page, ['superuser'], true);
+        await page.goto('admin');
+        if (viewport.width < 860) await page.getByRole('button', { name: '관리자 메뉴' }).click();
+        else await page.evaluate(() => window.scrollTo(0, 76));
+        const nav = page.getByRole('navigation', { name: '관리자 메뉴' });
+        await expect(nav.getByRole('link', { name: 'PYA 서버' })).toBeVisible();
+        const lastLink = nav.getByRole('link', { name: '감사 로그' });
+        await lastLink.scrollIntoViewIfNeeded();
+        await lastLink.focus();
+        await expect(lastLink).toBeFocused();
+        const exit = page.getByRole('link', { name: '← 로비로 돌아가기', exact: true });
+        await exit.scrollIntoViewIfNeeded();
+        const geometry = await page.locator('#admin-navigation').evaluate((sidebar) => {
+            const nav = sidebar.querySelector('nav')!;
+            const exit = sidebar.querySelector('.admin-exit')!;
+            const last = sidebar.querySelector('.admin-nav-group:last-child .admin-nav-link:last-child')!;
+            return {
+                navBottom: nav.getBoundingClientRect().bottom,
+                exitTop: exit.getBoundingClientRect().top,
+                lastBottom: last.getBoundingClientRect().bottom,
+                width: document.documentElement.scrollWidth,
+                navHeight: nav.clientHeight,
+                navScrollHeight: nav.scrollHeight,
+                exitPosition: getComputedStyle(exit).position,
+            };
+        });
+        expect(geometry.navBottom).toBeLessThanOrEqual(geometry.exitTop);
+        expect(geometry.lastBottom).toBeLessThanOrEqual(geometry.exitTop);
+        expect(geometry.width).toBeLessThanOrEqual(viewport.width);
+        if (viewport.width >= 860) expect(geometry.navScrollHeight).toBeGreaterThan(geometry.navHeight);
+        await page.evaluate(() => document.fonts.ready);
+        await writeFile(testInfo.outputPath('sidebar-geometry.json'), JSON.stringify(geometry));
+        await writeFile(testInfo.outputPath('sidebar.html'), await page.content());
+        await page.screenshot({ path: testInfo.outputPath('sidebar.png'), fullPage: true });
+        await exit.hover();
+        await exit.focus();
+        await expect(exit).toBeFocused();
+        await exit.click();
+        await expect(page).toHaveURL(/\/gateway\/lobby$/);
+    });
+}
