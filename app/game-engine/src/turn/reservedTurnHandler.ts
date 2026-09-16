@@ -1056,11 +1056,8 @@ export const createReservedTurnHandler = async (options: {
                 nations: [] as Array<{ id: number; patch: Partial<Nation> }>,
                 troops: [] as Array<{ id: number; patch: Partial<Troop> }>,
             };
-            const diplomacyPatches: Array<{
-                srcNationId: number;
-                destNationId: number;
-                patch: DiplomacyPatch;
-            }> = [];
+            const diplomacyPatches: NonNullable<GeneralTurnResult['diplomacyPatches']> = [];
+            let auditActionOrdinal = 0;
             const createdGenerals: TurnGeneral[] = [];
             const createdNations: Nation[] = [];
             const commandDeletedTroopIds = new Set<number>();
@@ -1333,6 +1330,15 @@ export const createReservedTurnHandler = async (options: {
 
                 const lastTurnBeforeExecution = JSON.stringify(currentGeneral.lastTurn ?? {});
                 const generalBeforeExecution = currentGeneral;
+                const actionOrdinal = ++auditActionOrdinal;
+                const auditActor = {
+                    generalId: currentGeneral.id,
+                    userId: currentGeneral.userId ?? null,
+                    name: currentGeneral.name,
+                    nationId: currentGeneral.nationId,
+                    officerLevel: currentGeneral.officerLevel,
+                    npcState: currentGeneral.npcState,
+                };
                 const cityNationIdsBeforeExecution = new Map(
                     (worldView?.listCities() ?? []).map((city) => [city.id, city.nationId] as const)
                 );
@@ -1574,6 +1580,9 @@ export const createReservedTurnHandler = async (options: {
                                 srcNationId: effect.srcNationId,
                                 destNationId: effect.destNationId,
                                 patch: effect.patch,
+                                ...(typeof context.world.meta.serverId === 'string'
+                                    ? { audit: { actionKey, kind, actionOrdinal, actor: auditActor } }
+                                    : {}),
                             });
                             worldOverlay?.applyDiplomacyPatch(effect.srcNationId, effect.destNationId, effect.patch);
                         }

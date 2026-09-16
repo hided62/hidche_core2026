@@ -1,3 +1,4 @@
+import { recordTurnAuditDiplomacy, type AuditDiplomacyAction } from '../playAudit/diplomacy.js';
 import type { AuditDiplomacyEventDraft } from '@sammo-ts/infra';
 import { initializeNationAuditPolicies, type PendingAuditPolicy } from '../playAudit/policy.js';
 import type { PendingAuditMonth } from '../playAudit/persistence.js';
@@ -71,6 +72,7 @@ export interface GeneralTurnResult {
         srcNationId: number;
         destNationId: number;
         patch: DiplomacyPatch;
+        audit?: AuditDiplomacyAction;
     }>;
     created?: {
         generals: TurnGeneral[];
@@ -1940,6 +1942,7 @@ export class InMemoryTurnWorld {
     executeGeneralTurn(general: TurnGeneral): GeneralTurnExecution {
         assertGameplayCommitAllowed(this.getGameClock().phase);
         const currentGeneral = this.generals.get(general.id) ?? general;
+        const executionTick = currentGeneral.turnTick ?? this.getGameClock().dateToTick(currentGeneral.turnTime);
         const executionYear = this.state.currentYear;
         const executionMonth = this.state.currentMonth;
         const city = this.cities.get(currentGeneral.cityId);
@@ -2064,12 +2067,22 @@ export class InMemoryTurnWorld {
             }
         }
         if (result.diplomacyPatches) {
-            for (const patch of result.diplomacyPatches) {
+            for (const [index, patch] of result.diplomacyPatches.entries()) {
+                const key = buildDiplomacyKey(patch.srcNationId, patch.destNationId);
+                const before = this.diplomacy.get(key) ?? buildDefaultDiplomacy(patch.srcNationId, patch.destNationId);
                 this.applyDiplomacyPatch({
                     srcNationId: patch.srcNationId,
                     destNationId: patch.destNationId,
                     patch: patch.patch,
                 });
+                const after = this.diplomacy.get(key);
+                if (patch.audit && after) {
+                    recordTurnAuditDiplomacy(this, before, after, patch.audit, {
+                        generalId: currentGeneral.id,
+                        tick: executionTick,
+                        ordinal: index + 1,
+                    });
+                }
             }
         }
         if (result.created) {

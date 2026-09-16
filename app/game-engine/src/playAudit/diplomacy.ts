@@ -46,3 +46,56 @@ export const recordMonthlyAuditDiplomacy = (
         });
     }
 };
+
+export interface AuditDiplomacyAction {
+    actionKey: string;
+    kind: 'nation' | 'general';
+    actionOrdinal: number;
+    actor: {
+        generalId: number;
+        userId: string | null;
+        name: string;
+        nationId: number;
+        officerLevel: number;
+        npcState: number;
+    };
+}
+
+export const recordTurnAuditDiplomacy = (
+    world: InMemoryTurnWorld,
+    before: TurnDiplomacy,
+    after: TurnDiplomacy,
+    action: AuditDiplomacyAction,
+    turn: { generalId: number; tick: number; ordinal: number }
+): void => {
+    const state = world.getState();
+    const serverId = state.meta.serverId;
+    if (typeof serverId !== 'string' || !serverId.trim()) return;
+    const previousState = { state: before.state, term: before.term, dead: before.dead };
+    const nextState = { state: after.state, term: after.term, dead: after.dead };
+    if (JSON.stringify(previousState) === JSON.stringify(nextState)) return;
+    const clock = world.getGameClockState();
+    world.queueAuditDiplomacy({
+        schemaVersion: 1,
+        serverId,
+        srcNationId: before.fromNationId,
+        destNationId: before.toNationId,
+        category: 'RELATION',
+        source: 'ENGINE',
+        eventType: 'TURN_RELATION_CHANGED',
+        documentId: null,
+        documentHash: null,
+        previousDocumentId: null,
+        year: state.currentYear,
+        month: state.currentMonth,
+        tick: BigInt(turn.tick),
+        clockRevision: BigInt(clock.revision),
+        executionId: `turn:${turn.generalId}:${turn.tick}:${clock.revision}`,
+        ordinal: turn.ordinal,
+        requestId: null,
+        inputSequence: null,
+        actor: { ...action.actor, actionKey: action.actionKey, kind: action.kind, actionOrdinal: action.actionOrdinal },
+        before: previousState,
+        after: nextState,
+    });
+};

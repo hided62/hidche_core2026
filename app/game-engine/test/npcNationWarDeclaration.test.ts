@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld, TurnCalendarHandler } from '../src/turn/inMemoryWorld.js';
@@ -71,7 +71,7 @@ const buildUnificationLog = (nationName: string): LogEntryDraft => ({
 });
 
 describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
-    it('선전포고부터 개전과 첫 도시 점령까지 진행되어야 한다', async () => {
+    it.each([false, true])('감사 수집 %s에서 선전포고부터 개전과 첫 도시 점령까지 진행되어야 한다', async (auditEnabled) => {
         const cities = buildLargeTestCities().map(maxCityStats);
         const cityA1 = cities.find((city) => city.id === 1)!;
         const cityA2 = cities.find((city) => city.id === 2)!;
@@ -206,7 +206,7 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
             currentMonth: 5,
             tickSeconds: 600,
             lastTurnTime: mockDate,
-            meta: { seed: 1, initYear: 183, initMonth: 5 },
+            meta: { seed: 1, initYear: 183, initMonth: 5, ...(auditEnabled ? { serverId: 'npc-declaration-audit' } : {}) },
         };
 
         const schedule: TurnSchedule = {
@@ -278,6 +278,7 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
             },
         });
 
+        const auditQueue = vi.spyOn(worldRef.current!, 'queueAuditDiplomacy');
         const debug = createWorldDebugger(() => worldRef.current, {
             nationIds: [1, 2],
             cityIds: [cityA1.id, cityA2.id, cityB1.id, cityB2.id],
@@ -326,6 +327,13 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
         }
         expect(declareEntry).not.toBeNull();
         expect(declareEntry?.state).toBe(DIPLOMACY_STATE.DECLARATION);
+        const declarationAudit = auditQueue.mock.calls.map(([event]) => event).filter(
+            (event) => event.actor?.actionKey === 'che_선전포고'
+        );
+        expect(declarationAudit).toHaveLength(auditEnabled ? 2 : 0);
+        expect(declarationAudit.every((event) => event.eventType === 'TURN_RELATION_CHANGED' && event.actor?.kind === 'nation')).toBe(true);
+        expect(declarationAudit.map((event) => event.after?.state)).toEqual(auditEnabled ? [DIPLOMACY_STATE.DECLARATION, DIPLOMACY_STATE.DECLARATION] : []);
+
 
         const remainTurns = Math.max(0, (declareEntry?.term ?? 0) - 1);
         const preWarTarget = addMonths(world!.getState().currentYear, world!.getState().currentMonth, remainTurns);

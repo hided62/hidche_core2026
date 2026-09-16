@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
-import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { InMemoryTurnWorld, type GeneralTurnHandler } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import {
     createPlayAuditHandler,
@@ -77,7 +77,7 @@ const buildNation = (id: number, power: number, meta: Nation['meta']): Nation =>
     meta,
 });
 
-const buildWorld = () => {
+const buildWorld = (generalTurnHandler?: GeneralTurnHandler) => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 200,
@@ -122,11 +122,53 @@ const buildWorld = () => {
     };
     const world = new InMemoryTurnWorld(state, snapshot, {
         schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+        generalTurnHandler,
     });
 
     return world;
 };
 describe('play audit collection durability state', () => {
+    it('preserves consecutive diplomacy transitions in one turn and restores them with the checkpoint', () => {
+        const world = buildWorld({
+            execute: ({ general }) => ({
+                diplomacyPatches: [1, 0].map((state, index) => ({
+                    srcNationId: 1,
+                    destNationId: 2,
+                    patch: { state, term: 6 },
+                    audit: {
+                        actionKey: index === 0 ? 'che_선전포고' : 'che_급습',
+                        kind: 'nation',
+                        actionOrdinal: index + 1,
+                        actor: {
+                            generalId: general.id,
+                            userId: null,
+                            name: general.name,
+                            nationId: 1,
+                            officerLevel: 12,
+                            npcState: 2,
+                        },
+                    },
+                })),
+            }),
+        });
+        const checkpoint = world.captureState();
+        const general = world.getGeneralById(3)!;
+        world.executeGeneralTurn(general);
+        const events = world.peekDirtyState().pendingAuditDiplomacy;
+        expect(events).toHaveLength(2);
+        expect(events.map((event) => [event.before?.state, event.after?.state])).toEqual([
+            [2, 1],
+            [1, 0],
+        ]);
+        expect(events.map((event) => event.ordinal)).toEqual([1, 2]);
+        expect(new Set(events.map((event) => event.executionId)).size).toBe(1);
+        expect(events.map((event) => event.actor?.actionKey)).toEqual(['che_선전포고', 'che_급습']);
+        world.restoreState(checkpoint);
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+        world.executeGeneralTurn(world.getGeneralById(3)!);
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(events);
+    });
+
     it('freezes the initial observation separately from month-end and restores its marker on rollback', () => {
         const world = buildWorld();
         const before = world.captureState();

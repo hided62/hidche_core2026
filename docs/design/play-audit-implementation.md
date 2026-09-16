@@ -149,6 +149,23 @@ queue는 재시도까지 유지하며 commit 후에만 제거한다. 기존 계�
 메모리 checkpoint 복구, 감사 INSERT 실패 rollback, 재시도/중복 방지를 검증했다.
 엔진 개별 명령 전이와 초기 외교 기준, 조회 API/UI 및 전체 비용 실측은 남았다.
 
+### 예약 턴 명령의 외교 전이
+
+`createReservedTurnHandler`는 각 실제 action의 실행 순번과 실행 전 장수 identity,
+국가/개인 명령 구분, actionKey를 diplomacy patch에 운반한다. world가 patch를 실제
+적용하는 순서대로 직전/직후 state/term/dead를 queue하므로 같은 턴의 중간 전이를
+최종값으로 덮어쓰지 않는다. API 응답 동기화의 직접 world patch는 다시 기록하지 않는다.
+
+실행 ID는 장수/실행 전 scheduled tick/clock revision이며 기수 ID와 함께 unique하다.
+ordinal은 해당 턴의 patch 순서이고 무변경을 생략하면 간격이 생길 수 있다. 입력 접수
+sequence를 예약 턴의 실행 ID로 오인하지 않는다. 메모리 Map을 직접 읽어 before
+관측 때문에 기본 관계 생성 순서가 달라지지 않도록 했다. 상태 SELECT/RNG 호출은 없다.
+
+연속 두 전이와 checkpoint 복구 fixture, 실제 NPC 선전포고의 양방향 사건,
+감사 on/off에서 기존 개전·점령 진행을 검증했다. 완전한 RNG trace 동일성, 모든 명령의
+실제 DB 재로드와 당시 NPC 정책/결정 trace 연결은 후속 gate다. 즉시 명령 executor와
+특수 상태 변경을 포함한 최종 mutation inventory 및 초기 기준/조회 화면도 남았다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.
