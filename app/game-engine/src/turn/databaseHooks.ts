@@ -1,3 +1,4 @@
+import { prunePreviousAuditBatch, type AuditRetentionResult } from '../playAudit/retention.js';
 import { persistAuditMonth } from '../playAudit/persistence.js';
 import { persistGeneralAccessScores, persistGeneralUpdates } from './generalBatchPersistence.js';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
@@ -78,6 +79,7 @@ export interface DatabaseTurnHooks {
     applyClockProjection(redis: ClockProjectionRedis, workerId: string): Promise<boolean>;
     synchronizeClockAuthority(): Promise<boolean>;
     prepareRealtimeRecovery(options?: { paused?: boolean }): Promise<void>;
+    prunePreviousAudit(expectedServerId: string): Promise<AuditRetentionResult>;
 }
 
 export interface CommittedReadModelChangeReceipt {
@@ -2150,6 +2152,7 @@ export const createDatabaseTurnHooks = async (
                 await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
                 return synchronizeRuntimeClockAuthorityUnderHeldLock(transaction, world);
             }, transactionOptions),
+        prunePreviousAudit: (expectedServerId) => prunePreviousAuditBatch(prisma, expectedServerId),
         close: () => connector.disconnect(),
     };
 };

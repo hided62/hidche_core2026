@@ -1,3 +1,4 @@
+import { startAuditRetentionWorker } from '../playAudit/retentionWorker.js';
 import { createPlayAuditHandler } from '../playAudit/collection.js';
 import { randomUUID } from 'node:crypto';
 import { createRuntimePauseGate } from './runtimePauseGate.js';
@@ -720,6 +721,7 @@ const createTurnDaemonRuntimeWithLease = async (
     let applyClockProjection: DatabaseTurnHooks['applyClockProjection'] | undefined;
     let synchronizeClockAuthority: DatabaseTurnHooks['synchronizeClockAuthority'] | undefined;
     let prepareClockRecovery: DatabaseTurnHooks['prepareRealtimeRecovery'] | undefined;
+    let prunePreviousAudit: DatabaseTurnHooks['prunePreviousAudit'] | undefined;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const monthlyActionModules = await loadActionModuleBundle(
@@ -955,6 +957,7 @@ const createTurnDaemonRuntimeWithLease = async (
         applyClockProjection = dbHooks.applyClockProjection;
         synchronizeClockAuthority = dbHooks.synchronizeClockAuthority;
         prepareClockRecovery = dbHooks.prepareRealtimeRecovery;
+        prunePreviousAudit = dbHooks.prunePreviousAudit;
         close = async () => {
             if (auctionBidder) {
                 await auctionBidder.close();
@@ -1110,6 +1113,22 @@ const createTurnDaemonRuntimeWithLease = async (
         controlQueue: resolvedControlQueue,
     });
 
+    const auditServerId = world.getState().meta.serverId;
+    const pruneAudit = prunePreviousAudit;
+    const auditRetention =
+        pruneAudit && typeof auditServerId === 'string' && auditServerId.trim()
+            ? startAuditRetentionWorker({
+                  prune: () =>
+                      turnDaemonLease?.isLost()
+                          ? Promise.resolve({ status: 'identityChanged', deleted: 0 })
+                          : pruneAudit(auditServerId),
+                  onError: () => {
+                      // 원문 DB 오류에는 연결 정보가 포함될 수 있어 고정된 운영 신호만 남긴다.
+                      console.warn('[play-audit] Previous-season cleanup failed; retrying in 30 seconds.');
+                  },
+              })
+            : null;
+
     return {
         lifecycle,
         world,
@@ -1119,7 +1138,10 @@ const createTurnDaemonRuntimeWithLease = async (
         processor,
         reservedTurns: reservedTurnStoreHandle?.store ?? null,
         hooks,
-        close,
+        close: async () => {
+            await auditRetention?.stop();
+            await close();
+        },
     };
 };
 

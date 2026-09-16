@@ -88,6 +88,37 @@ R1을 완료했다고 판단하지 않는다.
 world metadata로 계산하며 추가 DB 조회·쓰기나 시나리오/AI 규칙 변경은 없다.
 PREOPEN은 wall-clock 대기 상태이며, 검증하는 것은 공식 개방 때의 논리 게임 달력이다.
 
+## 이전 기수 월별 표본 정리
+
+새 daemon runtime은 실제 `serverId`를 고정해 이전 월별 감사 표본 정리를 시작한다.
+기수 변경 직후 조회 차단은 기존 API identity 필터가 담당한다. 정리는 gameplay flush와
+별도 transaction이며, seeder와 같은 schema advisory lock을 try-lock한 뒤 DB의 현재
+identity를 재확인한다. 이전 runtime/누락 identity는 정리하지 않는다. 부모 표본의 row lock으로
+child 추가와 빈 부모 삭제의 경쟁을 막고, 장수→도시→국가 child의 PK만 최대200개 읽어
+그 행을 삭제한다. 모두 빈 뒤 header1개를 삭제하여 대량 cascade를 피한다.
+
+batch는 SQL statement2초/transaction5초 상한이고 성공 후1초, lock경합/오류 후30초에
+재시도한다. 동시에 두 batch를 수행하지 않는다. 기수가 바뀌거나 이전 자료가 없으면
+worker가 끝나므로 평상시 idle polling은 없다. 프로세스 재기동은 DB의 남은 key부터 다시
+시작한다. 종료는 진행 중 transaction을 기다린 뒤 connector를 닫는다. 원문 DB 오류 대신
+고정 경고를 운영 로그에 남기며 정리 실패로 gameplay 결과를 실패 처리하지 않는다.
+
+현재 정리 대상은 구현된 PlayAuditMonth/General/City/Nation뿐이다. 기존 연감/계정 원장과
+LogEntry 보존 정책은 바꾸지 않는다. 외교·정책·trace 테이블을 추가할 때 같은 수명주기와
+key 단위 삭제를 연결해야 한다. Gateway RESET의 기존 process중지→seed commit→재기동
+경로에서 시작한다. 예약 상태에서는 runtime이 없을 수 있어 seed commit 직후에도 batch
+하나를 시도한다. 실패한 seed에는 정리가 실행되지 않고, 정리 실패는 seed 결과의 warning으로
+남긴 뒤 이후 runtime이 재시도한다. RESERVED에서 남은 물리 정리는 PREOPEN 기동까지
+연기되지만 새 identity로의 조회 차단은 즉시 적용된다. 취소 CANCELLED는 기존 정책상 API도
+중지되므로 관리자 감사 접근과 최종 표본 수집의 별도 lifecycle 보완은 아직 남는다.
+
+검증 fixture는 `PLAY_AUDIT_RETENTION_DATABASE_URL`의 `_retention_fixture` 전용 schema를
+요구한다. schema에 정식 migration을 적용한 뒤 `playAuditRetention.integration.test.ts`를
+실행한다. 삭제·trigger rollback fixture이므로 다른 통합 suite의 DB를 공유하지 않는다.
+conditional registry는 external_fixture로 분류하며 일반 core DB URL에 자동 연결하지 않는다.
+실제 DB에서401장수/201도시/1국가를 여러 batch로 정리하고 현재 기수를 보존했다.
+추가 real daemon startup 검증은 기존 selectPool integration에 연결했다.
+
 ## 기존 장수 로그의 기수별 조회
 
 `generalLogs`는 기존 `LogEntry`에서 현재 기수와 장수·기록 종류를 제한하고

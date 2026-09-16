@@ -167,6 +167,31 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         await db.inputEvent.deleteMany();
         await db.logEntry.deleteMany();
         worldStateId = (await db.worldState.findFirstOrThrow()).id;
+        await db.playAuditMonth.deleteMany({
+            where: { id: { in: ['select-pool-audit-old', 'select-pool-audit-active'] } },
+        });
+        await db.playAuditMonth.createMany({
+            data: [
+                {
+                    id: 'select-pool-audit-old',
+                    serverId: `${profile}:previous`,
+                    year: 190,
+                    month: 1,
+                    kind: 'MONTH_END',
+                    hash: 'old',
+                    settlementsComplete: true,
+                },
+                {
+                    id: 'select-pool-audit-active',
+                    serverId: profile,
+                    year: 190,
+                    month: 1,
+                    kind: 'MONTH_END',
+                    hash: 'current',
+                    settlementsComplete: true,
+                },
+            ],
+        });
 
         if (process.env.REDIS_URL) {
             const realtimeSubscriber = createRedisConnector(resolveRedisConfigFromEnv());
@@ -198,10 +223,15 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         }
         unsubscribeRealtime();
         await realtimeHub?.stop();
+        await db?.playAuditMonth.deleteMany({
+            where: { id: { in: ['select-pool-audit-old', 'select-pool-audit-active'] } },
+        });
         await closeDb?.();
     }, 30_000);
 
     it('creates and reselects in one durable DB and in-memory command boundary', async () => {
+        await expect.poll(() => db.playAuditMonth.findUnique({ where: { id: 'select-pool-audit-old' } })).toBeNull();
+        expect(await db.playAuditMonth.findUnique({ where: { id: 'select-pool-audit-active' } })).not.toBeNull();
         await expect(
             appRouter.createCaller(buildContext('select-pool-public-lobby')).lobby.info()
         ).resolves.toMatchObject({ selectionPoolEnabled: true });
@@ -680,6 +710,10 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 enableLeaseHeartbeat: false,
                 leaseOwnerId: `frozen-pool-${phase}`,
             });
+            await expect
+                .poll(() => db.playAuditMonth.findUnique({ where: { id: 'select-pool-audit-old' } }))
+                .toBeNull();
+            expect(await db.playAuditMonth.findUnique({ where: { id: 'select-pool-audit-active' } })).not.toBeNull();
             turnDaemon = new DatabaseTurnDaemonTransport(db, 10_000);
             daemonLoop = runtime.lifecycle.start();
             await turnDaemon.requestStatus(10_000);

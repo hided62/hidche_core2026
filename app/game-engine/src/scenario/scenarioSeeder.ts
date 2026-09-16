@@ -1,3 +1,4 @@
+import { prunePreviousAuditBatch } from '../playAudit/retention.js';
 import { randomBytes } from 'node:crypto';
 
 import {
@@ -81,7 +82,9 @@ export interface ScenarioSeedOptions {
 
 export interface ScenarioSeedResult {
     seed: WorldSeedPayload;
-    warnings: ScenarioBootstrapWarning[];
+    warnings: Array<
+        ScenarioBootstrapWarning | { code: 'audit_retention_pending' | 'audit_retention_failed'; message: string }
+    >;
     applied: boolean;
 }
 
@@ -372,7 +375,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     }
     await connector.connect();
     try {
-        const result: ScenarioSeedResult = { seed, warnings, applied: true };
+        const result: ScenarioSeedResult = { seed, warnings: [...warnings], applied: true };
         const applied = await connector.prisma.$transaction(
             async (prisma) => {
                 await prisma.$queryRawUnsafe(
@@ -765,6 +768,24 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             { maxWait: 10_000, timeout: 60_000 }
         );
         result.applied = applied;
+        if ((options.resetTables ?? true) && typeof worldMeta.serverId === 'string' && worldMeta.serverId.trim()) {
+            // RESERVED에는 daemon이 없을 수 있으므로 commit 뒤 작은 batch 하나를 시작한다.
+            // 정리 실패는 이미 확정된 seed를 되돌리지 않으며, 나머지는 runtime 시작 시 재시도한다.
+            try {
+                const cleanup = await prunePreviousAuditBatch(connector.prisma, worldMeta.serverId);
+                if (cleanup.status === 'progress' || cleanup.status === 'busy') {
+                    result.warnings.push({
+                        code: 'audit_retention_pending',
+                        message: '이전 플레이 감사 자료의 나머지는 서버 시작 후 정리합니다.',
+                    });
+                }
+            } catch {
+                result.warnings.push({
+                    code: 'audit_retention_failed',
+                    message: '이전 플레이 감사 자료 정리를 완료하지 못했습니다. 서버 시작 후 재시도합니다.',
+                });
+            }
+        }
         return result;
     } finally {
         await connector.disconnect();
