@@ -223,6 +223,27 @@ WAL 실측, 이후 신생국·소멸국 및 기존 문서의 도입 기준은 �
 실제 격리 PostgreSQL startup 검증은 실패 rollback, PREOPEN 저장, 재시작의 동일 행과
 표식 및 readiness 경계를 확인한다. UI는 이를 '관계 최초 관측'으로 구분한다.
 
+### 기존 외교 문서 도입 기준
+
+`databaseHooks.flushInitialAudit`는 문서 도입 표식이 없는 기수에만 seed와 같은 schema lock → lease → CLOCK →
+GENERAL_ACCESS 순서의 transaction을 열고 clock authority와 기수 identity를 확인한다.
+`documentBaseline.ts`가 문서를 id cursor 200건씩 읽어 기존 불변 원문 참조/hash와
+관측 당시 상태·서명·이전 문서 번호를 저장한다. 원문 자체를 사건에 복제하지 않는다.
+현재 유효 문서뿐 아니라 보유 중인 교체·종료 문서도 보존하며 과거 승낙 시점이나
+actor는 만들지 않는다. 기존 API가 쓰던 상태 projection을 infra로 옮겨 함께 사용한다.
+
+문서 기준 사건·world 표식과 대기 중인 초기 상태/정책/관계가 같은 fenced transaction에서
+확정되고 commit 뒤에만 ack한다. 실패는 memory checkpoint를 복원한다. 문서가 0건이어도
+표식을 저장하고 일반 재시작에서는 문서 SELECT를 수행하지 않는다. 본문 mutation API와
+같은 CLOCK lock 아래서 읽으며, 조회 준비가 되기 전에 종료한다.
+
+비용 재검토: 최초에 작은 identity SELECT 1회, 문서 SELECT `floor(L/200)+1`회와 기존
+writer의 batch INSERT/hash 확인 SELECT를 사용한다. 원문은 해시 계산에 필요한 한 batch만
+유지하며 매 턴 다시 읽지 않는다. 초기 실패 복원을 위한 world memory checkpoint 1개의
+비용과 대규모 도입 transaction 시간·WAL은 전체 COST gate에서 측정해야 한다.
+실제 PG fixture는 201건/2 batch와 INITIAL 저장 실패의 전체 rollback, 원문 hash와 상태,
+재시작의 동일 event/표식을 확인한다. 화면에서는 '문서 최초 관측'으로 구분한다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.

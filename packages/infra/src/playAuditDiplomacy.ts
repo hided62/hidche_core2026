@@ -1,3 +1,4 @@
+import { asRecord } from '@sammo-ts/common';
 import { createHash } from 'node:crypto';
 import { GamePrisma, type GamePrismaClient } from './gamePrisma.js';
 
@@ -87,4 +88,29 @@ export const persistAuditDiplomacyEvents = async (
         if (batch.some((event) => hashes.get(event.id) !== event.hash))
             throw new Error('Play audit diplomacy replay payload conflict');
     }
+};
+
+export const projectAuditDocumentState = (
+    letter: Pick<
+        GamePrisma.DiplomacyLetterGetPayload<Record<string, never>>,
+        'state' | 'srcSignerId' | 'destSignerId' | 'aux'
+    >
+): Record<string, unknown> => {
+    const aux = asRecord(letter.aux);
+    const src = asRecord(aux.src);
+    const dest = asRecord(aux.dest);
+    const reason = asRecord(aux.reason);
+    return {
+        state: letter.state,
+        srcSignerId: letter.srcSignerId,
+        destSignerId: letter.destSignerId,
+        srcNationName: typeof src.nationName === 'string' ? src.nationName : null,
+        destNationName: typeof dest.nationName === 'string' ? dest.nationName : null,
+        srcSignerName: typeof src.generalName === 'string' ? src.generalName : null,
+        destSignerName: typeof dest.generalName === 'string' ? dest.generalName : null,
+        stateOption: typeof aux.state_opt === 'string' ? aux.state_opt : null,
+        reason: typeof reason.reason === 'string' ? reason.reason : null,
+        reasonAction: typeof reason.action === 'string' ? reason.action : null,
+        reasonActorId: typeof reason.who === 'number' ? reason.who : null,
+    };
 };

@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { asRecord, GAME_TICKS_PER_TURN } from '@sammo-ts/common';
-import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import {
+    createGamePostgresConnector,
+    hashAuditDiplomacyDocument,
+    type GamePrismaClient,
+    type GamePrisma,
+} from '@sammo-ts/infra';
 import { seedScenarioToDatabase } from '../src/scenario/scenarioSeeder.js';
 import { createTurnDaemonRuntime, type TurnDaemonRuntime } from '../src/turn/turnDaemon.js';
 
@@ -66,6 +71,21 @@ integration('initial audit durability before runtime readiness', () => {
         await db.diplomacy.create({
             data: { srcNationId: 91990, destNationId: 91991, stateCode: 7, term: 12, meta: { dead: 34 } },
         });
+        await db.diplomacyLetter.createMany({
+            data: Array.from({ length: 201 }, (_, index) => ({
+                id: 1000 + index,
+                srcNationId: 91990,
+                destNationId: 91991,
+                prevId: index ? 999 + index : null,
+                state: index === 200 ? ('ACTIVATED' as const) : ('REPLACED' as const),
+                textBrief: `도입 전 문서 ${index}`,
+                textDetail: `<p>보유 원문 ${index}</p>`,
+                date: new Date('2026-09-01T00:00:00Z'),
+                srcSignerId: 70001,
+                destSignerId: 70002,
+                aux: { src: { nationName: '옛 국명', generalName: '옛 서명자' }, debug: '비공개 임의 값' },
+            })),
+        });
     }, 60_000);
     afterAll(async () => {
         await runtime?.close();
@@ -92,6 +112,7 @@ integration('initial audit durability before runtime readiness', () => {
             expect(await db.playAuditPolicy.count()).toBe(0);
             expect(await db.playAuditDiplomacyEvent.count()).toBe(0);
             expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy).toBeUndefined();
+            expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments).toBeUndefined();
             expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditCollection).toBeUndefined();
             expect(
                 (await db.nation.findMany()).every((nation) => asRecord(nation.meta)._playAuditPolicy === undefined)
@@ -117,7 +138,7 @@ integration('initial audit durability before runtime readiness', () => {
         const initial = await db.playAuditMonth.findFirstOrThrow({ where: { serverId, kind: 'INITIAL' } });
         const policies = await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } });
         const diplomacy = await db.playAuditDiplomacyEvent.findMany({
-            where: { serverId },
+            where: { serverId, category: 'RELATION' },
             orderBy: { ordinal: 'asc' },
         });
         expect(diplomacy).toHaveLength(
@@ -146,6 +167,26 @@ integration('initial audit durability before runtime readiness', () => {
         ).toBe(true);
         const diplomacyMarker = asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy;
         expect(diplomacyMarker).toMatchObject({ serverId, schemaVersion: 1, relationCount: diplomacy.length });
+        const documentEvents = await db.playAuditDiplomacyEvent.findMany({
+            where: { serverId, category: 'DOCUMENT' },
+            orderBy: { ordinal: 'asc' },
+        });
+        expect(documentEvents).toHaveLength(201);
+        const currentLetter = await db.diplomacyLetter.findUniqueOrThrow({ where: { id: 1200 } });
+        expect(documentEvents[200]).toMatchObject({
+            source: 'BASELINE',
+            eventType: 'LETTER_BASELINE',
+            documentId: 1200,
+            previousDocumentId: 1199,
+            documentHash: hashAuditDiplomacyDocument(currentLetter),
+            actor: null,
+            before: null,
+            after: { state: 'ACTIVATED', srcNationName: '옛 국명', srcSignerName: '옛 서명자' },
+        });
+        expect(documentEvents[0]).toMatchObject({ after: { state: 'REPLACED' } });
+        expect(JSON.stringify(documentEvents.map(({ after }) => after))).not.toContain('비공개 임의 값');
+        const documentMarker = asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments;
+        expect(documentMarker).toMatchObject({ serverId, schemaVersion: 1, documentCount: 201 });
 
         expect(policies).toHaveLength((await db.nation.count()) * 4);
         expect(
@@ -171,10 +212,20 @@ integration('initial audit durability before runtime readiness', () => {
         expect(await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } })).toEqual(policies);
         expect(await db.playAuditMonth.findMany({ where: { serverId, kind: 'INITIAL' } })).toEqual([initial]);
         expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditCollection).toEqual(marker);
-        expect(await db.playAuditDiplomacyEvent.findMany({ where: { serverId }, orderBy: { ordinal: 'asc' } })).toEqual(
-            diplomacy
-        );
+        expect(
+            await db.playAuditDiplomacyEvent.findMany({
+                where: { serverId, category: 'RELATION' },
+                orderBy: { ordinal: 'asc' },
+            })
+        ).toEqual(diplomacy);
         expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy).toEqual(diplomacyMarker);
+        expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments).toEqual(documentMarker);
+        expect(
+            await db.playAuditDiplomacyEvent.findMany({
+                where: { serverId, category: 'DOCUMENT' },
+                orderBy: { ordinal: 'asc' },
+            })
+        ).toEqual(documentEvents);
         expect(await clock()).toEqual(beforeClock);
         expect(await db.inputEvent.count()).toBe(beforeInputs);
         await expect(
@@ -207,5 +258,25 @@ integration('initial audit durability before runtime readiness', () => {
         expect(policies).toHaveLength(4);
         expect(policies.every((policy) => policy.tick === runtime!.world.getGameClockState().tick)).toBe(true);
         expect(await db.playAuditMonth.findMany({ where: { serverId, kind: 'INITIAL' } })).toEqual([initial]);
+    }, 30_000);
+    it('adopts an empty document collection without duplicating an existing initial sample', async () => {
+        await runtime?.close();
+        runtime = undefined;
+        const original = await db.worldState.findFirstOrThrow();
+        const meta = asRecord(original.meta);
+        delete meta.playAuditDocuments;
+        await db.diplomacyLetter.deleteMany();
+        await db.playAuditDiplomacyEvent.deleteMany({ where: { category: 'DOCUMENT' } });
+        await db.worldState.update({ where: { id: original.id }, data: { meta: meta as GamePrisma.InputJsonObject } });
+        const samples = await db.playAuditMonth.findMany({ orderBy: { id: 'asc' } });
+        runtime = await start();
+        const marker = asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments;
+        expect(marker).toMatchObject({ serverId, schemaVersion: 1, documentCount: 0 });
+        expect(await db.playAuditDiplomacyEvent.count({ where: { category: 'DOCUMENT' } })).toBe(0);
+        expect(await db.playAuditMonth.findMany({ orderBy: { id: 'asc' } })).toEqual(samples);
+        await runtime.close();
+        runtime = undefined;
+        runtime = await start();
+        expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments).toEqual(marker);
     }, 30_000);
 });

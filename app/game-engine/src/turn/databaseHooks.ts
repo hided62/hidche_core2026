@@ -1,4 +1,5 @@
 import { persistAuditDiplomacyEvents } from '@sammo-ts/infra';
+import { hasAuditDocumentBaseline, persistAuditDocumentBaseline } from '../playAudit/documentBaseline.js';
 import { persistAuditPolicies } from '../playAudit/policyPersistence.js';
 import { prunePreviousAuditBatch, type AuditRetentionResult } from '../playAudit/retention.js';
 import { persistAuditMonth } from '../playAudit/persistence.js';
@@ -76,6 +77,7 @@ import { prepareRealtimeRecovery } from './prepareRealtimeRecovery.js';
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
     flushChanges(): Promise<void>;
+    flushInitialAudit(observedAt: Date, force?: boolean): Promise<void>;
     takeCommittedReadModelChanges(): RealtimeReadModelChanges | null;
     takeCommittedReadModelChangeReceipt(): CommittedReadModelChangeReceipt | null;
     close(): Promise<void>;
@@ -2087,6 +2089,31 @@ export const createDatabaseTurnHooks = async (
         committed.acknowledge();
         enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
     };
+    const flushInitialAudit = async (observedAt: Date, force = false): Promise<void> => {
+        if (hasAuditDocumentBaseline(world)) {
+            if (force || world.hasPendingAuditRecords()) await flushChanges();
+            return;
+        }
+        const checkpoint = world.captureState();
+        let committed: Awaited<ReturnType<typeof persistChanges>>;
+        try {
+            committed = await prisma.$transaction(async (transaction) => {
+                // seed/RESET과 같은 schema lock을 먼저 잡아 문서 scan 중 초기화를 막는다.
+                await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(current_schema(), 0))::text AS lock_result`;
+                await options?.turnDaemonLease?.assertActive(transaction);
+                await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
+                await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
+                await synchronizeRuntimeClockAuthorityUnderHeldLock(transaction, world);
+                await persistAuditDocumentBaseline(transaction, world, observedAt);
+                return persistChanges(transaction);
+            }, transactionOptions);
+        } catch (error) {
+            world.restoreState(checkpoint);
+            throw error;
+        }
+        committed.acknowledge();
+        enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
+    };
     const hooks: TurnDaemonHooks = {
         flushChanges,
         commitCommand: async (requestId, result) => {
@@ -2133,6 +2160,7 @@ export const createDatabaseTurnHooks = async (
     return {
         hooks,
         flushChanges,
+        flushInitialAudit,
         takeCommittedReadModelChanges: () => {
             return takeCommittedReceipt()?.changes ?? null;
         },

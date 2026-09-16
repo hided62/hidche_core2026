@@ -1,8 +1,9 @@
-import { asRecord, GameClock, inferClockPhase, parseGameClockPhase, readTurnRecovery } from '@sammo-ts/common';
+import { GameClock, inferClockPhase, parseGameClockPhase, readTurnRecovery } from '@sammo-ts/common';
 import {
     GamePrisma,
     hashAuditDiplomacyDocument,
     persistAuditDiplomacyEvents,
+    projectAuditDocumentState,
     readTurnRuntimeReady,
     type AuditDiplomacyEventDraft,
 } from '@sammo-ts/infra';
@@ -18,25 +19,7 @@ type DocumentAction =
     | 'LETTER_DESTROY_REQUESTED'
     | 'LETTER_DESTROYED';
 
-export const projectAuditDocumentState = (letter: Letter): Record<string, unknown> => {
-    const aux = asRecord(letter.aux);
-    const src = asRecord(aux.src);
-    const dest = asRecord(aux.dest);
-    const reason = asRecord(aux.reason);
-    return {
-        state: letter.state,
-        srcSignerId: letter.srcSignerId,
-        destSignerId: letter.destSignerId,
-        srcNationName: typeof src.nationName === 'string' ? src.nationName : null,
-        destNationName: typeof dest.nationName === 'string' ? dest.nationName : null,
-        srcSignerName: typeof src.generalName === 'string' ? src.generalName : null,
-        destSignerName: typeof dest.generalName === 'string' ? dest.generalName : null,
-        stateOption: typeof aux.state_opt === 'string' ? aux.state_opt : null,
-        reason: typeof reason.reason === 'string' ? reason.reason : null,
-        reasonAction: typeof reason.action === 'string' ? reason.action : null,
-        reasonActorId: typeof reason.who === 'number' ? reason.who : null,
-    };
-};
+export { projectAuditDocumentState } from '@sammo-ts/infra';
 
 interface AuditCoordinateRow {
     serverId: string | null;

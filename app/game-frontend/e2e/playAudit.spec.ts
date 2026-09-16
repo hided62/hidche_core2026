@@ -43,7 +43,7 @@ const general = {
         items: { horse: null, weapon: null, book: null, item: null },
     },
 };
-const install = async (page: Page, denied = false, baseline = false) => {
+const install = async (page: Page, denied = false, baseline: boolean | 'document' = false) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_audit');
@@ -101,10 +101,10 @@ const install = async (page: Page, denied = false, baseline = false) => {
                                         sequence: '1',
                                         srcNationId: 2,
                                         destNationId: 3,
-                                        category: 'RELATION',
+                                        category: baseline === 'document' ? 'DOCUMENT' : 'RELATION',
                                         source: 'BASELINE',
-                                        eventType: 'RELATION_BASELINE',
-                                        documentId: null,
+                                        eventType: baseline === 'document' ? 'LETTER_BASELINE' : 'RELATION_BASELINE',
+                                        documentId: baseline === 'document' ? 8 : null,
                                         previousDocumentId: null,
                                         year: 190,
                                         month: 1,
@@ -150,25 +150,38 @@ const install = async (page: Page, denied = false, baseline = false) => {
                                     sequence: '1',
                                     srcNationId: 2,
                                     destNationId: 3,
-                                    category: 'RELATION',
+                                    category: baseline === 'document' ? 'DOCUMENT' : 'RELATION',
                                     source: 'BASELINE',
-                                    eventType: 'RELATION_BASELINE',
-                                    documentId: null,
+                                    eventType: baseline === 'document' ? 'LETTER_BASELINE' : 'RELATION_BASELINE',
+                                    documentId: baseline === 'document' ? 8 : null,
                                     previousDocumentId: null,
                                     year: 190,
                                     month: 1,
                                     actor: null,
                                     createdAt: world.asOf,
                                     before: null,
-                                    after: { state: 2, term: 0, dead: 0 },
+                                    after:
+                                        baseline === 'document'
+                                            ? { state: 'ACTIVATED' }
+                                            : { state: 2, term: 0, dead: 0 },
                                     tick: '0',
                                     clockRevision: '1',
                                     ordinal: 1,
                                     executionId: 'relation-baseline',
                                     requestId: null,
                                     inputSequence: null,
-                                    documentStatus: 'NOT_APPLICABLE',
-                                    document: null,
+                                    documentStatus: baseline === 'document' ? 'AVAILABLE' : 'NOT_APPLICABLE',
+                                    document:
+                                        baseline === 'document'
+                                            ? {
+                                                  id: 8,
+                                                  writtenAt: '2026-09-01T00:00:00.000Z',
+                                                  brief: '보유 협정',
+                                                  briefHtml: '<p>보유 협정</p>',
+                                                  detail: '<p>도입 전 본문</p>',
+                                                  detailHtml: '<p>도입 전 본문</p>',
+                                              }
+                                            : null,
                                 },
                             });
                         return result({
@@ -926,4 +939,15 @@ test('diplomacy baseline displays observed state without a fictional document or
     await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText('미관측 / 없음');
     await expect(page.getByRole('region', { name: '당시 외교 문서' })).toHaveCount(0);
     expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory')).toHaveLength(1);
+});
+
+test('existing diplomacy document is an initial observation with its preserved source', async ({ page }) => {
+    await install(page, false, 'document');
+    await page.goto(
+        gamePath('/play-audit?tab=diplomacy&nation=2&otherNation=3&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await page.getByRole('button', { name: '문서 최초 관측', exact: true }).click();
+    await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText('미관측 / 없음');
+    await expect(page.getByRole('region', { name: '당시 외교 문서' })).toContainText('도입 전 본문');
+    await expect(page.getByRole('heading', { name: '문서 #8' })).toBeVisible();
 });

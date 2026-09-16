@@ -933,10 +933,8 @@ const createTurnDaemonRuntimeWithLease = async (
             initializeAuditPolicies(world);
             const diplomacyInitialized = initializeAuditDiplomacy(world, new Date(clock.nowMs()));
             initializeAuditCollection(world, new Date(clock.nowMs()));
-            if (world.hasPendingAuditRecords() || diplomacyInitialized) {
-                await dbHooks.flushChanges();
-                dbHooks.takeCommittedReadModelChangeReceipt();
-            }
+            await dbHooks.flushInitialAudit(new Date(clock.nowMs()), diplomacyInitialized);
+            dbHooks.takeCommittedReadModelChangeReceipt();
         } catch (error) {
             await Promise.allSettled([
                 dbHooks.close(),
