@@ -2243,6 +2243,94 @@ integration('game API security over HTTP transport', () => {
                 serverRestrictions: { [profileName]: { blockedFeatures: ['gameplay'] } },
             });
             expect((await get('capabilities', blocked)).status).toBe(403);
+            const population = {
+                count: 0,
+                gold: 0,
+                rice: 0,
+                dex: { dex1: 0, dex2: 0, dex3: 0, dex4: 0, dex5: 0 },
+                averageGold: null,
+                averageRice: null,
+                averageDex: { dex1: null, dex2: null, dex3: null, dex4: null, dex5: null },
+            };
+            await db.playAuditMonth.createMany({
+                data: [2, 3, 4, 5, 6].map((month) => ({
+                    id: `${seasonId}:190:${month}`,
+                    serverId: seasonId,
+                    year: 190,
+                    month,
+                    kind: 'MONTH_END',
+                    settlementsComplete: true,
+                    hash: 'http-series-fixture',
+                })),
+            });
+            await db.playAuditNation.createMany({
+                data: [1, 2, 3, 4, 5, 6].map((month) => ({
+                    sampleId: `${seasonId}:190:${month}`,
+                    nationId: ownerNationId,
+                    data: {
+                        id: ownerNationId,
+                        name: `국가${month}`,
+                        color: '#ffffff',
+                        gold: month * 100,
+                        rice: 200,
+                        tech: 10,
+                        appliedRate: 20,
+                        incomeGold: month,
+                        incomeRice: 0,
+                        paidGold: 0,
+                        paidRice: 0,
+                        populations: { human: population, npc: population, troopNpc: population },
+                    },
+                })),
+            });
+            await db.worldState.update({ where: { id: fixtureWorldId }, data: { currentMonth: 7 } });
+            const series = await get('nationSeries', admin, {
+                nationId: ownerNationId,
+                from: { year: 190, month: 1 },
+                to: { year: 190, month: 6 },
+            });
+            expect(series.status).toBe(200);
+            expect(series.body).toMatchObject({
+                result: {
+                    data: {
+                        nextCursor: null,
+                        items: [
+                            {
+                                year: 190,
+                                month: 1,
+                                complete: true,
+                                stock: { gold: 600 },
+                                flows: { incomeGold: 21, incomeRice: 0 },
+                            },
+                        ],
+                    },
+                },
+            });
+            expect(
+                (
+                    await get('nationSeries', admin, {
+                        nationId: ownerNationId,
+                        resolution: 'month',
+                        limit: 1,
+                        from: { year: 190, month: 1 },
+                        to: { year: 190, month: 6 },
+                    })
+                ).body
+            ).toMatchObject({
+                result: { data: { nextCursor: { year: 190, month: 2 }, items: [{ stock: { gold: 100 } }] } },
+            });
+            expect(
+                (
+                    await get('nationSeries', admin, {
+                        nationId: ownerNationId,
+                        from: { year: 190, month: 7 },
+                        to: { year: 190, month: 7 },
+                    })
+                ).body
+            ).toMatchObject({
+                result: { data: { items: [{ complete: false, stock: null, flows: { incomeGold: null } }] } },
+            });
+
             await db.worldState.update({
                 where: { id: fixtureWorldId },
                 data: {

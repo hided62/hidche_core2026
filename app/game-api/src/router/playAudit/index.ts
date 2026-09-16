@@ -1,3 +1,4 @@
+import { nationSeries } from './nationSeries.js';
 import { z } from 'zod';
 import { canReadPlayAuditAccounts } from '@sammo-ts/common';
 import { router } from '../../trpc.js';
@@ -20,6 +21,7 @@ import {
 } from './projection.js';
 
 export const playAuditRouter = router({
+    nationSeries,
     capabilities: auditProcedure.query(({ ctx }) => ({
         profileName: ctx.profile.name,
         read: true,
