@@ -16,6 +16,8 @@ export interface PendingAuditDecision {
     summary: {
         schemaVersion: 1;
         coverage: 'PROCEDURES';
+        executionCoverage?: 'ATTEMPTS';
+        executionStatus?: 'PREPARING' | 'BLOCKED' | 'RESOLVED';
         clockRevision: number;
         codeVersion: string | null;
         policyRefs: Record<string, string>;

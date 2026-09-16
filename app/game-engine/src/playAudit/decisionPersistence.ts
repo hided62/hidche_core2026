@@ -14,7 +14,12 @@ export const persistAuditDecisions = async (
         const headers = batch.map(({ steps, ...decision }) => {
             if (!Number.isSafeInteger(decision.tick) || decision.tick < 0 || !steps.length)
                 throw new Error('Invalid play audit decision');
-            if (steps[0]?.kind !== 'DECISION_START' || steps.at(-1)?.kind !== 'DECISION_END')
+            if (
+                steps[0]?.kind !== 'DECISION_START' ||
+                !steps.some((step) => step.kind === 'DECISION_END') ||
+                !['DECISION_END', 'EXECUTION_ATTEMPT'].includes(steps.at(-1)!.kind) ||
+                (decision.summary.executionCoverage === 'ATTEMPTS' && steps.at(-1)?.kind !== 'EXECUTION_ATTEMPT')
+            )
                 throw new Error('Incomplete play audit decision');
             if (
                 steps.some(

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { PendingAuditDecision } from '../src/playAudit/decision.js';
 import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 import {
     LogFormat,
@@ -395,8 +396,39 @@ describe('legacy general-turn execution contract', () => {
         );
     });
 
-    it('persists pre-turn stacking and applies the inherited 60-turn cooldown', async () => {
+    it('records the real disband-to-talent-search alternative in execution order', async () => {
+        const decisions: PendingAuditDecision[] = [];
+        const general = makeGeneral({ npcState: 2, officerLevel: 12 });
+        const snapshot = makeSnapshot(general);
+        snapshot.nations[0] = { ...snapshot.nations[0]!, level: 0, chiefGeneralId: 1, capitalCityId: null };
+        snapshot.cities[0] = { ...snapshot.cities[0]!, nationId: 0 };
+        const harness = await createTurnTestHarness({
+            snapshot,
+            state: { ...makeState(), meta: { ...makeState().meta, serverId: 'audit-execution', initYear: 200, initMonth: 1 } },
+            schedule, map, collectLogs: true,
+            commandRngFactory: () => new RandUtil(new ConstantRNG(0)),
+            wrapGeneralTurnHandler: handler => ({ execute: context => {
+                const result = handler.execute(context);
+                decisions.push(...(result.auditDecisions ?? []));
+                return result;
+            } }),
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_해산', args: {} };
+        await harness.runOneTick();
+        const decision = decisions.find(row => row.phase === 'general');
+        expect(decision?.summary).toMatchObject({ selectedAction: 'che_해산', executedAction: 'che_인재탐색', usedFallback: true });
+        const attempts = decision?.steps.filter(step => step.kind === 'EXECUTION_ATTEMPT');
+        expect(attempts).toMatchObject([
+            { attempt: 0, executedAction: 'che_해산', alternativeAction: 'che_인재탐색' },
+            { attempt: 1, requestedAction: 'che_인재탐색', executedAction: 'che_인재탐색', alternativeAction: null },
+        ]);
+        expect(attempts?.[1]?.sequence).toBeGreaterThan(attempts?.[0]?.sequence ?? -1);
+    });
+
+    it.each([0, 2])('persists pre-turn stacking and applies the inherited 60-turn cooldown (npcState=%s)', async (npcState) => {
+        const decisions: PendingAuditDecision[] = [];
         const general = makeGeneral({
+            npcState,
             role: {
                 personality: null,
                 specialDomestic: null,
@@ -406,10 +438,15 @@ describe('legacy general-turn execution contract', () => {
         });
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot(general),
-            state: makeState(),
+            state: { ...makeState(), meta: { ...makeState().meta, serverId: 'audit-execution' } },
             schedule,
             map,
             collectLogs: true,
+            wrapGeneralTurnHandler: handler => ({ execute: context => {
+                const result = handler.execute(context);
+                decisions.push(...(result.auditDecisions ?? []));
+                return result;
+            } }),
         });
         const turns = harness.reservedTurnStore.getGeneralTurns(1);
         turns[0] = { action: 'che_전투특기초기화', args: {} };
@@ -427,10 +464,17 @@ describe('legacy general-turn execution contract', () => {
         expect(updated.role.specialWar).toBeNull();
         expect(updated.meta['next_execute_전투 특기 초기화']).toBe(2460);
         expect(updated.meta.prev_types_special2).toEqual(['che_격노']);
+        if (npcState === 2) {
+            expect(decisions[0]?.summary.executionStatus).toBe('PREPARING');
+            expect(decisions[0]?.steps.at(-1)).toMatchObject({ kind: 'EXECUTION_ATTEMPT', executedAction: null, preparation: { term: 1, total: 2 }, completed: false });
+            expect(decisions[1]?.steps.at(-1)).toMatchObject({ kind: 'EXECUTION_ATTEMPT', executedAction: 'che_전투특기초기화', preparation: null, completed: true });
+        } else expect(decisions).toEqual([]);
     });
 
-    it('rejects a speciality reset cooldown before accumulating its first preparation turn', async () => {
+    it.each([0, 2])('rejects a speciality reset cooldown before accumulating its first preparation turn (npcState=%s)', async (npcState) => {
+        const decisions: PendingAuditDecision[] = [];
         const general = makeGeneral({
+            npcState,
             role: {
                 personality: null,
                 specialDomestic: null,
@@ -441,15 +485,22 @@ describe('legacy general-turn execution contract', () => {
         });
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot(general),
-            state: makeState(),
+            state: { ...makeState(), meta: { ...makeState().meta, serverId: 'audit-execution' } },
             schedule,
             map,
             collectLogs: true,
+            wrapGeneralTurnHandler: handler => ({ execute: context => {
+                const result = handler.execute(context);
+                decisions.push(...(result.auditDecisions ?? []));
+                return result;
+            } }),
         });
         harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_전투특기초기화', args: {} };
 
         await harness.runOneTick();
 
+        if (npcState === 2) expect(decisions[0]?.steps.at(-1)).toMatchObject({ kind: 'EXECUTION_ATTEMPT', executedAction: '휴식', usedFallback: true, preparation: null, checks: expect.arrayContaining([{ stage: 'COOLDOWN', action: 'che_전투특기초기화', result: 'deny', reason: '60턴 더 기다려야 합니다' }]) });
+        else expect(decisions).toEqual([]);
         const updated = harness.world.getGeneralById(1)!;
         expect(updated.role.specialWar).toBe('che_격노');
         expect(updated.lastTurn).not.toEqual({ command: '전투 특기 초기화', term: 1 });

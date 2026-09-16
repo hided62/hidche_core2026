@@ -59,6 +59,7 @@ const decision = {
     summary: {
         schemaVersion: 1,
         coverage: 'PROCEDURES',
+        executionCoverage: 'ATTEMPTS',
         clockRevision: 1,
         codeVersion: null,
         policyRefs: { DEFENCE: 'a'.repeat(64) },
@@ -71,7 +72,12 @@ const decision = {
         blockedReason: '자원 부족',
     },
 };
-const install = async (page: Page, denied = false, baseline: boolean | 'document' | 'created' | 'removed' = false) => {
+const install = async (
+    page: Page,
+    denied = false,
+    baseline: boolean | 'document' | 'created' | 'removed' = false,
+    executionStatus?: 'PREPARING' | 'BLOCKED'
+) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_audit');
@@ -109,6 +115,7 @@ const install = async (page: Page, denied = false, baseline: boolean | 'document
                             items: [
                                 {
                                     ...decision,
+                                    summary: { ...decision.summary, executionStatus },
                                     id: input.cursor ? 'c'.repeat(64) : decision.id,
                                     phase: input.cursor ? 'nation' : 'general',
                                 },
@@ -118,7 +125,7 @@ const install = async (page: Page, denied = false, baseline: boolean | 'document
                     case 'playAudit.decisionDetail':
                         return result({
                             ...world,
-                            decision,
+                            decision: { ...decision, summary: { ...decision.summary, executionStatus } },
                             chunks: [
                                 {
                                     ordinal: input.cursor === undefined ? 0 : 1,
@@ -135,7 +142,25 @@ const install = async (page: Page, denied = false, baseline: boolean | 'document
                                             sequence: input.cursor === undefined ? 0 : 128,
                                             ...(input.cursor === undefined
                                                 ? { kind: 'PROCEDURE_START', procedure: '<b>징병판정</b>' }
-                                                : { kind: 'DECISION_END', action: 'che_징병', reason: '징병 선택' }),
+                                                : {
+                                                      kind: 'EXECUTION_ATTEMPT',
+                                                      attempt: 0,
+                                                      requestedAction: 'che_징병',
+                                                      resolvedAction: 'che_징병',
+                                                      executedAction: '휴식',
+                                                      completed: true,
+                                                      usedFallback: true,
+                                                      alternativeAction: null,
+                                                      preparation: null,
+                                                      checks: [
+                                                          {
+                                                              stage: 'CONSTRAINT',
+                                                              action: 'che_징병',
+                                                              result: 'deny',
+                                                              reason: '<b>자원 부족</b>',
+                                                          },
+                                                      ],
+                                                  }),
                                         },
                                     ],
                                 },
@@ -1106,7 +1131,15 @@ test('NPC decisions are explicit, paginated, independently addressable and escap
     await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('<b>징병판정</b>');
     await expect(page.getByRole('list', { name: '판단 절차' }).locator('b')).toHaveCount(0);
     await page.getByRole('button', { name: '판단 절차 더 불러오기', exact: true }).click();
-    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('최종 선택');
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('실행 시도 1');
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText(
+        '조건 · che_징병 · 차단 · <b>자원 부족</b>'
+    );
+    await expect(page.getByRole('list', { name: '판단 절차' }).locator('b')).toHaveCount(0);
+    await expect(page.getByRole('list', { name: '판단 절차' }).locator(':scope > li').last()).toHaveAttribute(
+        'value',
+        '129'
+    );
     expect(requests.filter((r) => r.operation === 'playAudit.decisionDetail').at(-1)?.input).toMatchObject({
         id: decision.id,
         generalId: 1,
@@ -1181,3 +1214,17 @@ test('NPC decision opens its immutable policy without querying policy history', 
     expect(requests.filter((r) => r.operation === 'playAudit.policyVersion')).toHaveLength(policyReads);
     await expect(page.getByRole('heading', { name: /선택 정책 버전/ })).toHaveCount(0);
 });
+
+for (const [status, label] of [
+    ['PREPARING', '준비 중'],
+    ['BLOCKED', '실행 차단'],
+] as const) {
+    test(`NPC execution ${status} is distinguished from a failed execution`, async ({ page }) => {
+        await install(page, false, false, status);
+        await page.goto(gamePath(`/play-audit?tab=generals&general=1&decision=${decision.id}`));
+        const region = page.getByRole('region', { name: 'NPC 결정 기록', exact: true });
+        await expect(region.getByRole('table')).toContainText(label);
+        await expect(region.getByRole('region', { name: '선택 결정 상세', exact: true })).toContainText(label);
+        await expect(region).not.toContainText('실행 실패');
+    });
+}

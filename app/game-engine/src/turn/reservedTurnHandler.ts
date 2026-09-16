@@ -1,6 +1,6 @@
 import { auditDecisionIdentity, normalizeAuditCodeVersion, type PendingAuditDecision } from '../playAudit/decision.js';
 import { auditPolicyHash, AUDIT_POLICY_AREAS } from '../playAudit/policy.js';
-import type { AiDecisionTraceEvent } from './ai/generalAi/trace.js';
+import type { AiDecisionTraceEvent, AiExecutionAttempt, AiExecutionCheck } from './ai/generalAi/trace.js';
 import type { AiDecisionTraceObserver } from './ai/generalAi/trace.js';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import type {
@@ -1079,6 +1079,7 @@ export const createReservedTurnHandler = async (options: {
                 options.collectAuditDecisions !== false && Boolean(auditServerId?.trim()) && Boolean(worldRef);
             const auditDecisions: PendingAuditDecision[] = [];
             const decisionSteps = new Map<'general' | 'nation', AiDecisionTraceEvent[]>();
+            let storedDecisionSequence = 0;
             const decisionPolicyRefs = new Map<'general' | 'nation', Record<string, string>>();
             const onDecisionTrace: AiDecisionTraceObserver | undefined =
                 collectDecisions || options.onDecisionTrace
@@ -1099,11 +1100,31 @@ export const createReservedTurnHandler = async (options: {
                                       )
                                   );
                               }
-                              decisionSteps.get(event.phase)?.push(structuredClone(event));
+                              decisionSteps
+                                  .get(event.phase)
+                                  ?.push({ ...structuredClone(event), sequence: storedDecisionSequence++ });
                           }
                           options.onDecisionTrace?.(event);
                       }
                     : undefined;
+            const recordExecution = (phase: 'general' | 'nation', attempt: AiExecutionAttempt): void => {
+                const steps = decisionSteps.get(phase);
+                const first = steps?.[0];
+                if (!collectDecisions || !first || !steps) return;
+                const { generalId, nationId, cityId, npcState, year, month, tick } = first;
+                steps.push({
+                    ...attempt,
+                    sequence: storedDecisionSequence++,
+                    phase,
+                    generalId,
+                    nationId,
+                    cityId,
+                    npcState,
+                    year,
+                    month,
+                    tick,
+                });
+            };
             const finishDecision = (
                 phase: 'general' | 'nation',
                 outcome: {
@@ -1115,7 +1136,7 @@ export const createReservedTurnHandler = async (options: {
             ): void => {
                 const steps = decisionSteps.get(phase);
                 const first = steps?.[0];
-                const last = steps?.at(-1);
+                const last = steps?.find((step) => step.kind === 'DECISION_END');
                 if (
                     !collectDecisions ||
                     !auditServerId ||
@@ -1128,6 +1149,7 @@ export const createReservedTurnHandler = async (options: {
                 const tick = context.general.turnTick ?? worldRef.dateToGameTick(context.general.turnTime);
                 const revision = worldRef.getGameClockState().revision;
                 const executionId = auditDecisionIdentity(auditServerId, context.general.id, tick, revision);
+                const execution = steps.at(-1);
                 auditDecisions.push({
                     id: auditPolicyHash([executionId, phase]),
                     serverId: auditServerId,
@@ -1143,6 +1165,14 @@ export const createReservedTurnHandler = async (options: {
                     summary: {
                         schemaVersion: 1,
                         coverage: 'PROCEDURES',
+                        executionCoverage: 'ATTEMPTS',
+                        executionStatus:
+                            execution?.kind === 'EXECUTION_ATTEMPT' && execution.preparation
+                                ? 'PREPARING'
+                                : execution?.kind === 'EXECUTION_ATTEMPT' &&
+                                    execution.checks.some((check) => check.stage === 'BLOCK')
+                                  ? 'BLOCKED'
+                                  : 'RESOLVED',
                         clockRevision: revision,
                         codeVersion: auditCodeVersion ?? null,
                         policyRefs: decisionPolicyRefs.get(phase) ?? {},
@@ -1151,7 +1181,13 @@ export const createReservedTurnHandler = async (options: {
                         selectedReason: last.reason,
                         executedAction: outcome.actionKey,
                         completed: outcome.completed ?? null,
-                        usedFallback: outcome.usedFallback,
+                        usedFallback:
+                            outcome.usedFallback ||
+                            steps.some(
+                                (step) =>
+                                    step.kind === 'EXECUTION_ATTEMPT' &&
+                                    (step.usedFallback || step.alternativeAction !== null)
+                            ),
                         blockedReason: outcome.blockedReason ?? null,
                     },
                     steps,
@@ -1177,6 +1213,15 @@ export const createReservedTurnHandler = async (options: {
                 completed: boolean;
                 blockedReason?: string;
             } => {
+                const checks: AiExecutionCheck[] = [];
+                const check = (
+                    stage: AiExecutionCheck['stage'],
+                    action: string,
+                    result: AiExecutionCheck['result'],
+                    reason: string | null = null
+                ): void => {
+                    if (collectDecisions && decisionSteps.has(kind)) checks.push({ stage, action, result, reason });
+                };
                 const resolvedDefinition = resolveDefinition(command.action, definitionMap, kind);
                 const rawArgs = extractArgsRecord(command.args);
                 const parsedArgs = resolvedDefinition.parseArgs(rawArgs);
@@ -1185,6 +1230,31 @@ export const createReservedTurnHandler = async (options: {
                 let actionKey = definition.key;
                 let usedFallback = false;
                 let blockedReason: string | undefined = undefined;
+                const recordAttempt = (
+                    completed: boolean,
+                    alternativeAction: string | null = null,
+                    preparation: { term: number; total: number } | null = null
+                ): void => {
+                    if (!collectDecisions || !decisionSteps.has(kind)) return;
+                    recordExecution(kind, {
+                        kind: 'EXECUTION_ATTEMPT',
+                        attempt: alternativeDepth,
+                        requestedAction: command.action,
+                        resolvedAction: resolvedDefinition.key,
+                        executedAction: preparation ? null : actionKey,
+                        checks,
+                        completed,
+                        usedFallback,
+                        alternativeAction,
+                        preparation,
+                    });
+                };
+                check(
+                    'ARGS',
+                    actionKey,
+                    parsedArgs === null ? 'deny' : 'allow',
+                    parsedArgs === null ? '인자가 올바르지 않습니다.' : null
+                );
 
                 if (parsedArgs === null) {
                     const failureText = `인자가 올바르지 않습니다. ${resolvedDefinition.name} 실패.`;
@@ -1216,6 +1286,7 @@ export const createReservedTurnHandler = async (options: {
                 });
                 const constraints = definition.buildConstraints(constraintCtx, actionArgs);
                 const result = evaluateConstraints(constraints, constraintCtx, view);
+                check('CONSTRAINT', definition.key, result.kind, result.kind === 'deny' ? result.reason : null);
                 if (result.kind !== 'allow') {
                     const failedDefinition = definition;
                     const failedActionArgs = actionArgs;
@@ -1237,6 +1308,14 @@ export const createReservedTurnHandler = async (options: {
                         kind === 'general'
                             ? readGeneralNextAvailableTurn(currentGeneral, definition.name)
                             : readNextAvailableTurn(currentNation!, definition.name);
+                    check(
+                        'COOLDOWN',
+                        definition.key,
+                        nextAvailableTurn !== null && currentYearMonth < nextAvailableTurn ? 'deny' : 'allow',
+                        nextAvailableTurn !== null && currentYearMonth < nextAvailableTurn
+                            ? `${nextAvailableTurn - currentYearMonth}턴 더 기다려야 합니다`
+                            : null
+                    );
                     if (nextAvailableTurn !== null && currentYearMonth < nextAvailableTurn) {
                         const remainTurn = nextAvailableTurn - currentYearMonth;
                         definition = fallbackDefinition;
@@ -1324,6 +1403,14 @@ export const createReservedTurnHandler = async (options: {
                         seedBase,
                     },
                     actionContextBuilders
+                );
+                check(
+                    'CONTEXT',
+                    actionKey,
+                    specificContext ? 'allow' : actionKey === fallbackDefinition.key ? 'allow' : 'deny',
+                    !specificContext && actionKey !== fallbackDefinition.key
+                        ? '예약된 명령을 실행하지 못했습니다.'
+                        : null
                 );
                 if (!specificContext && actionKey !== fallbackDefinition.key) {
                     definition = fallbackDefinition;
@@ -1416,6 +1503,7 @@ export const createReservedTurnHandler = async (options: {
                             executionDefinition.getProgressText?.(actionContext, actionArgs, nextTerm, termMax) ??
                             `${definition.name} 수행중... (${nextTerm}/${termMax})`;
                         logs.push(createGeneralActionLog(currentGeneral.id, progressText));
+                        recordAttempt(false, null, { term: nextTerm, total: termMax });
                         return { actionKey, usedFallback, completed: false, blockedReason };
                     }
                 }
@@ -1864,6 +1952,7 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
+                recordAttempt(resolution.completed, resolution.alternative?.commandKey ?? null);
                 if (resolution.alternative) {
                     if (alternativeDepth >= 5) {
                         throw new Error('Command fallback loop limit exceeded');
@@ -2270,6 +2359,21 @@ export const createReservedTurnHandler = async (options: {
                       blockedReason: '블럭 대상자입니다.',
                   }
                 : runAction('general', generalDefinitions, generalFallback, generalCommand, true);
+            if (isBlocked)
+                recordExecution('general', {
+                    kind: 'EXECUTION_ATTEMPT',
+                    attempt: 0,
+                    requestedAction: generalCommand.action,
+                    resolvedAction: DEFAULT_ACTION,
+                    executedAction: null,
+                    checks: [
+                        { stage: 'BLOCK', action: generalCommand.action, result: 'deny', reason: '블럭 대상자입니다.' },
+                    ],
+                    completed: false,
+                    usedFallback: true,
+                    alternativeAction: null,
+                    preparation: null,
+                });
             finishDecision('general', generalResult);
             const generalActionDurationNs = options.onActionProfiled
                 ? process.hrtime.bigint() - generalActionStartedAt

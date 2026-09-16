@@ -11,6 +11,8 @@ const zTick = z
 const zSummary = z.object({
     schemaVersion: z.literal(1),
     coverage: z.literal('PROCEDURES'),
+    executionCoverage: z.literal('ATTEMPTS').optional(),
+    executionStatus: z.enum(['PREPARING', 'BLOCKED', 'RESOLVED']).optional(),
     clockRevision: z.number().int(),
     codeVersion: z.string().nullable(),
     policyRefs: z.object({
@@ -48,6 +50,27 @@ const zStep = z.intersection(
         tick: z.number().nullable(),
     }),
     z.discriminatedUnion('kind', [
+        z.object({
+            kind: z.literal('EXECUTION_ATTEMPT'),
+            attempt: z.number().int().min(0).max(5),
+            requestedAction: z.string(),
+            resolvedAction: z.string(),
+            executedAction: z.string().nullable(),
+            completed: z.boolean(),
+            usedFallback: z.boolean(),
+            alternativeAction: z.string().nullable(),
+            preparation: z.object({ term: z.number().int().positive(), total: z.number().int().positive() }).nullable(),
+            checks: z
+                .array(
+                    z.object({
+                        stage: z.enum(['ARGS', 'CONSTRAINT', 'COOLDOWN', 'CONTEXT', 'BLOCK']),
+                        action: z.string(),
+                        result: z.enum(['allow', 'deny', 'unknown']),
+                        reason: z.string().nullable(),
+                    })
+                )
+                .max(5),
+        }),
         z.object({ kind: z.literal('DECISION_START'), reservedAction: z.string() }),
         z.object({ kind: z.literal('DECISION_END'), action: z.string().nullable(), reason: z.string().nullable() }),
         z.object({ kind: z.literal('DECISION_ERROR') }),

@@ -79,15 +79,34 @@ const loadDetail = async (more = false) => {
     }
 };
 const select = (id: string | null) => router.push({ query: { ...route.query, decision: id ?? undefined } });
-const outcome = (done: boolean | null) => (done === null ? '결과 미관측' : done ? '실행 완료' : '실행 실패');
+const outcome = (done: boolean | null, status?: 'PREPARING' | 'BLOCKED' | 'RESOLVED') =>
+    status === 'PREPARING'
+        ? '준비 중'
+        : status === 'BLOCKED'
+          ? '실행 차단'
+          : done === null
+            ? '결과 미관측'
+            : done
+              ? '실행 완료'
+              : '실행 실패';
 const rngValue = (value: Extract<Step, { kind: 'RNG' }>['result']): string => {
     if (Array.isArray(value)) return value.map(rngValue).join(', ');
     if (value === null) return '없음';
     if (typeof value === 'object') return 'entityId' in value ? `대상 #${value.entityId}` : '상세 값 미수집';
     return String(value);
 };
+const checkLabels = {
+    ARGS: '인자',
+    CONSTRAINT: '조건',
+    COOLDOWN: '재사용 대기',
+    CONTEXT: '실행 문맥',
+    BLOCK: '실행 제한',
+};
+const checkResultLabels = { allow: '통과', deny: '차단', unknown: '미확인' };
 const stepText = (step: Step): string => {
     switch (step.kind) {
+        case 'EXECUTION_ATTEMPT':
+            return `실행 시도 ${step.attempt + 1} · 요청 ${step.requestedAction} · 처리 ${step.resolvedAction} → 실행 ${step.executedAction ?? '미실행'} · ${step.preparation ? '준비 중' : outcome(step.completed)}${step.usedFallback ? ' · 대체 실행' : ''}${step.alternativeAction ? ` · 다음 대안 ${step.alternativeAction}` : ''}${step.preparation ? ` · 준비 ${step.preparation.term}/${step.preparation.total}` : ''}`;
         case 'DECISION_START':
             return `판단 시작 · 예약 ${step.reservedAction}`;
         case 'DECISION_END':
@@ -165,7 +184,8 @@ watch(
                         <td>{{ item.npcState < 2 ? '유저 자동턴' : item.npcState === 5 ? '부대장 NPC' : 'NPC' }}</td>
                         <td>{{ item.summary.selectedAction ?? '선택 없음' }} → {{ item.summary.executedAction }}</td>
                         <td>
-                            {{ outcome(item.summary.completed) }}{{ item.summary.usedFallback ? ' · 대체 실행' : '' }}
+                            {{ outcome(item.summary.completed, item.summary.executionStatus)
+                            }}{{ item.summary.usedFallback ? ' · 대체 실행' : '' }}
                         </td>
                     </tr>
                 </tbody>
@@ -182,6 +202,9 @@ watch(
                 <button class="legacy-button" @click="loadDetail(Boolean(detail))">결정 상세 다시 조회</button>
             </p>
             <template v-if="detail">
+                <p v-if="!detail.decision.summary.executionCoverage">
+                    이 기록에는 실행 단계의 시도 이력이 수집되지 않았습니다.
+                </p>
                 <p>
                     {{ detail.decision.year }}년 {{ detail.decision.month }}월 · 국가 #{{ detail.decision.nationId }} ·
                     도시 #{{ detail.decision.cityId }} · tick {{ detail.decision.tick }}
@@ -193,7 +216,7 @@ watch(
                 </p>
                 <p>
                     선택 사유: {{ detail.decision.summary.selectedReason ?? '미관측' }} ·
-                    {{ outcome(detail.decision.summary.completed) }}
+                    {{ outcome(detail.decision.summary.completed, detail.decision.summary.executionStatus) }}
                 </p>
                 <p v-if="detail.decision.summary.blockedReason">
                     차단 사유: {{ detail.decision.summary.blockedReason }}
@@ -222,6 +245,12 @@ watch(
                     <template v-for="chunk in detail.chunks" :key="chunk.ordinal"
                         ><li v-for="step in chunk.steps" :key="step.sequence" :value="step.sequence + 1">
                             {{ stepText(step) }}
+                            <ul v-if="step.kind === 'EXECUTION_ATTEMPT'">
+                                <li v-for="(check, index) in step.checks" :key="index">
+                                    {{ checkLabels[check.stage] }} · {{ check.action }} ·
+                                    {{ checkResultLabels[check.result] }}{{ check.reason ? ` · ${check.reason}` : '' }}
+                                </li>
+                            </ul>
                         </li></template
                     >
                 </ol>

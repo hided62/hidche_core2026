@@ -2298,7 +2298,34 @@ integration('game API security over HTTP transport', () => {
                         ordinal: 0,
                         steps: Array.from({ length: 128 }, (_, sequence) => ({ ...step, sequence })),
                     },
-                    { decisionId: decisionIds[0]!, ordinal: 1, steps: [{ ...step, sequence: 128 }] },
+                    {
+                        decisionId: decisionIds[0]!,
+                        ordinal: 1,
+                        steps: [
+                            {
+                                ...step,
+                                sequence: 128,
+                                kind: 'EXECUTION_ATTEMPT',
+                                attempt: 0,
+                                requestedAction: 'che_징병',
+                                resolvedAction: 'che_징병',
+                                executedAction: '휴식',
+                                completed: true,
+                                usedFallback: true,
+                                alternativeAction: null,
+                                preparation: null,
+                                checks: [
+                                    {
+                                        stage: 'CONSTRAINT',
+                                        action: 'che_징병',
+                                        result: 'deny',
+                                        reason: '자원 부족',
+                                        secret: 'decision-secret',
+                                    },
+                                ],
+                            },
+                        ],
+                    },
                 ],
             });
             const decisionInput = { generalId: decisionGeneral, month: { year: 190, month: 1 }, limit: 1 };
@@ -2351,8 +2378,27 @@ integration('game API security over HTTP transport', () => {
             });
             expect(JSON.stringify(decisionPage.body)).not.toContain('decision-secret');
             expect((await get('decisionDetail', admin, { ...decisionDetailInput, cursor: 0 })).body).toMatchObject({
-                result: { data: { chunks: [{ ordinal: 1, steps: [{ sequence: 128 }] }], nextCursor: null } },
+                result: {
+                    data: {
+                        chunks: [
+                            {
+                                ordinal: 1,
+                                steps: [
+                                    {
+                                        sequence: 128,
+                                        kind: 'EXECUTION_ATTEMPT',
+                                        checks: [{ stage: 'CONSTRAINT', result: 'deny', reason: '자원 부족' }],
+                                    },
+                                ],
+                            },
+                        ],
+                        nextCursor: null,
+                    },
+                },
             });
+            expect(
+                JSON.stringify((await get('decisionDetail', admin, { ...decisionDetailInput, cursor: 0 })).body)
+            ).not.toContain('decision-secret');
             expect((await get('decisionDetail', admin, { ...decisionDetailInput, generalId })).status).toBe(404);
             expect((await get('decisionDetail', admin, { ...decisionDetailInput, limit: 5 })).status).toBe(400);
             expect((await get('decisionHistory', admin, { ...decisionInput, limit: 201 })).status).toBe(400);

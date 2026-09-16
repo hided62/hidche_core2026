@@ -2,7 +2,26 @@ import type { RandUtil } from '@sammo-ts/common';
 
 /** 원문 meta/seed/임의 객체를 받지 않는 관측 계약. 내부 후보 조건은 별도 계측으로 확장한다. */
 export type AiTraceValue = string | number | boolean | null | { entityId: number } | { unprojected: true };
+export type AiExecutionCheck = {
+    stage: 'ARGS' | 'CONSTRAINT' | 'COOLDOWN' | 'CONTEXT' | 'BLOCK';
+    action: string;
+    result: 'allow' | 'deny' | 'unknown';
+    reason: string | null;
+};
+export type AiExecutionAttempt = {
+    kind: 'EXECUTION_ATTEMPT';
+    attempt: number;
+    requestedAction: string;
+    resolvedAction: string;
+    executedAction: string | null;
+    checks: AiExecutionCheck[];
+    completed: boolean;
+    usedFallback: boolean;
+    alternativeAction: string | null;
+    preparation: { term: number; total: number } | null;
+};
 export type AiTraceStep =
+    | AiExecutionAttempt
     | { kind: 'DECISION_START'; reservedAction: string }
     | { kind: 'DECISION_END'; action: string | null; reason: string | null }
     | { kind: 'DECISION_ERROR' }

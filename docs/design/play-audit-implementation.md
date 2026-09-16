@@ -28,6 +28,24 @@ migration58은 기존 장수 인덱스를 `(server, general, year, month, tick, 
 포함되지 않은 URL policy는 해당 결정의 정책으로 읽거나 표시하지 않는다.
 국가의 저장 설정과 NPC별 합성 유효 값은 구분하며 현재 설정으로 보충하지 않는다.
 
+### NPC 실행 단계와 대체 명령
+
+선택 이후 `runAction`이 실제 수행한 인자/조건/재사용 대기/실행 문맥 검사를
+`EXECUTION_ATTEMPT`로 상세 chunk에 기록한다. depth별 요청·해석·실행 명령과 결과,
+대안 명령, 준비 term/total을 남긴다. 검사 함수를 다시 호출하지 않으며 실제로 건너뛴
+검사는 추가하지 않는다. 준비·블럭으로 명령을 실행하지 않았으면 executedAction은 null이다.
+원래 resolve 결과의 alternative를 따라간 순서와 공유 RNG를 그대로 유지한다.
+
+저장 순번은 선택 관측과 실행 시도를 하나의 증가 순서로 매긴다. 기존 외부 AI observer의
+원래 sequence는 변경하지 않는다. `DECISION_END`는 선택 종료이며 새 저장 기록은 실행
+시도 뒤 종료한다. `executionCoverage=ATTEMPTS`로 기존 선택만 있는 기록과 구분하고,
+이 flag가 있는데 실행 시도가 없으면 persistence가 거부한다. 과거 hash/행을 재작성하지 않는다.
+요약의 대체 여부에는 이전 단계의 대안/휴식도 반영한다. 실제 게임 실행 결과 객체는 바꾸지 않는다.
+
+API는 검사/결과의 허용 필드만 읽고 UI는 순서와 한국어 검사명을 표시한다. 목록에 상세를
+추가하지 않는다. 체크 배열은 시도당 최대4개(블럭은1개), 기존 대안 depth 한도5를 유지한다.
+전체 월간 부하 gate와 throw/rollback 실행의 별도 실패 원장, 내부 후보 조건은 후속이다.
+
 ### NPC 결정 저장·복구 기반
 
 새 migration57은 `play_audit_decision` 요약과 `play_audit_decision_chunk` 상세를 분리한다.

@@ -629,7 +629,7 @@ describe('Reserved Turn Execution Integration', () => {
             currentMonth: 1,
             tickSeconds: 600,
             lastTurnTime: mockDate,
-            meta: {},
+            meta: { serverId: 'audit-execution' },
         };
 
         const invalidRows = [{ generalId: 1, turnIdx: 0, actionCode: 'che_농지개간', arg: {} }];
@@ -676,6 +676,11 @@ describe('Reserved Turn Execution Integration', () => {
         });
 
         const dirty = world.consumeDirtyState();
+        if (npcState === 2) {
+            const decision = dirty.pendingAuditDecisions.find(row => row.phase === 'general');
+            expect(decision?.summary).toMatchObject({ requestedAction: 'che_농지개간', executedAction: '휴식', usedFallback: true, executionCoverage: 'ATTEMPTS' });
+            expect(decision?.steps.at(-1)).toMatchObject({ kind: 'EXECUTION_ATTEMPT', attempt: 0, requestedAction: 'che_농지개간', executedAction: '휴식', usedFallback: true, checks: expect.arrayContaining([{ stage: 'CONSTRAINT', action: 'che_농지개간', result: 'deny', reason: '농지 개간이 충분합니다.' }]) });
+        } else expect(dirty.pendingAuditDecisions).toEqual([]);
         expect(world.getCityById(1)!.agriculture).toBe(2000);
         const denyLog = dirty.logs.find((log) => log.text.includes('농지 개간이 충분합니다.'));
         expect(denyLog?.text).toContain('농지 개간 실패.');

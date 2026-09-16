@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 import { persistAuditDecisions } from '../src/playAudit/decisionPersistence.js';
-import { buildAuditDecisionFixture as draft } from './fixtures/playAuditDecision.js';
+import { buildAuditExecutionFixture, buildAuditDecisionFixture as draft } from './fixtures/playAuditDecision.js';
 import { prunePreviousAuditBatch } from '../src/playAudit/retention.js';
 
 const databaseUrl = process.env.PLAY_AUDIT_DECISION_DATABASE_URL;
@@ -37,6 +37,11 @@ integration('decision persistence and bounded retention', () => {
     it('rolls back gameplay/header/chunks on insert failure, retries and rejects divergent replay', async () => {
         const decision = draft('decision-one');
         decision.summary.codeVersion = 'a'.repeat(40);
+        decision.summary.executionCoverage = 'ATTEMPTS';
+        decision.steps.push({ ...decision.steps[0]!, ...buildAuditExecutionFixture(), sequence: 302 });
+        await expect(
+            db.$transaction((tx) => persistAuditDecisions(tx, [{ ...decision, steps: decision.steps.slice(0, -1) }]))
+        ).rejects.toThrow('Incomplete play audit decision');
         await db.$executeRawUnsafe(
             `CREATE OR REPLACE FUNCTION decision_fixture_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.ordinal=1 THEN RAISE EXCEPTION 'decision chunk failure'; END IF; RETURN NEW; END $$`
         );
@@ -64,7 +69,7 @@ integration('decision persistence and bounded retention', () => {
         const header = await db.playAuditDecision.findUniqueOrThrow({ where: { id: decision.id } });
         expect(header).toMatchObject({
             tick: 4_320_000_000n,
-            stepCount: 302,
+            stepCount: 303,
             summary: { codeVersion: 'a'.repeat(40) },
         });
         await expect(

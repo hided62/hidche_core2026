@@ -43,3 +43,16 @@ export const buildAuditDecisionFixture = (id: string, serverId = 'decision-old')
         ],
     };
 };
+
+export const buildAuditExecutionFixture = () => ({
+    kind: 'EXECUTION_ATTEMPT' as const,
+    attempt: 0,
+    requestedAction: 'che_징병',
+    resolvedAction: 'che_징병',
+    executedAction: '휴식',
+    checks: [{ stage: 'CONSTRAINT' as const, action: 'che_징병', result: 'deny' as const, reason: '자원 부족' }],
+    completed: true,
+    usedFallback: true,
+    alternativeAction: null,
+    preparation: null,
+});
