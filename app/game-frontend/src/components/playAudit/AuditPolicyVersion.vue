@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { trpc } from '../../utils/trpc';
+import AuditRequestState from './AuditRequestState.vue';
 const props = withDefaults(defineProps<{ id: string; allowPrevious?: boolean }>(), { allowPrevious: true });
 const emit = defineEmits<{ select: [id: string | null] }>();
 type Detail = Awaited<ReturnType<typeof trpc.playAudit.policyVersion.query>>;
@@ -128,6 +129,7 @@ watch(
                 <p>요청 {{ detail.version.requestId ?? '해당 없음' }}</p>
                 <p>입력 순번 {{ detail.version.inputSequence ?? '해당 없음' }}</p>
             </details>
+            <AuditRequestState :id="detail.version.id" kind="POLICY" />
         </template>
     </section>
 </template>

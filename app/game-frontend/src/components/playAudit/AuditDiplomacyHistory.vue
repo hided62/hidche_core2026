@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { trpc } from '../../utils/trpc';
+import AuditRequestState from './AuditRequestState.vue';
 const props = defineProps<{
     nationId: number;
     otherNationId: number;
@@ -261,6 +262,7 @@ watch(
                         {{ detail.event.inputSequence ?? '해당 없음' }}
                     </p>
                 </details>
+                <AuditRequestState :id="detail.event.id" kind="DIPLOMACY" />
             </template>
         </section>
     </section>

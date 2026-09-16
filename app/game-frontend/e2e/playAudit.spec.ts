@@ -107,6 +107,32 @@ const install = async (
                                   },
                               }
                             : result({ profileName: gameProfile, read: true, accounts: false });
+                    case 'playAudit.requestState':
+                        return result({
+                            ...world,
+                            coverage: 'CURRENT_JOURNAL_STATE',
+                            status: input.kind === 'POLICY' && input.id === 'a'.repeat(64) ? 'NOT_LINKED' : 'AVAILABLE',
+                            request:
+                                input.kind === 'POLICY' && input.id === 'a'.repeat(64)
+                                    ? null
+                                    : {
+                                          sequence: '9007199254740993',
+                                          requestId: 'fixture-request',
+                                          target: 'ENGINE',
+                                          eventType: 'setNpcPolicy',
+                                          status: 'SUCCEEDED',
+                                          attempts: 2,
+                                          acceptedGameTick: null,
+                                          processingGameTick: '4320000000',
+                                          acceptedClockRevision: null,
+                                          processingClockRevision: '3',
+                                          createdAt: world.asOf,
+                                          processingAt: world.asOf,
+                                          completedAt: world.asOf,
+                                          resultRecorded: true,
+                                          errorRecorded: false,
+                                      },
+                        });
                     case 'playAudit.decisionHistory':
                         return result({
                             ...world,
@@ -1228,3 +1254,65 @@ for (const [status, label] of [
         await expect(region).not.toContainText('실행 실패');
     });
 }
+
+test('policy request state is explicit, retries independently and resets on version change', async ({ page }) => {
+    const requests = await install(page);
+    let fail = true;
+    await page.route(gameTrpcRoute, async (route) => {
+        if (fail && route.request().url().includes('playAudit.requestState')) {
+            fail = false;
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify([
+                    {
+                        error: {
+                            message: '요청 조회 일시 오류',
+                            code: -32603,
+                            data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 },
+                        },
+                    },
+                ]),
+            });
+        } else await route.fallback();
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(
+        gamePath('/play-audit?tab=policies&nation=2&policyArea=DEFENCE&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await page.getByRole('button', { name: '버전 2', exact: true }).click();
+    await expect(page.getByRole('button', { name: '요청 처리 조회', exact: true })).toBeVisible();
+    expect(requests.some((r) => r.operation === 'playAudit.requestState')).toBe(false);
+    const before = requests.length;
+    await page.getByRole('button', { name: '요청 처리 조회', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('요청 조회 일시 오류');
+    await page.getByRole('button', { name: '요청 처리 다시 조회', exact: true }).click();
+    const region = page.getByRole('region', { name: '요청 처리 기록', exact: true });
+    await expect(region).toContainText('9007199254740993');
+    await expect(region).toContainText('처리 성공');
+    await expect(region).toContainText('시도별 전체 이력이나 실제 변경 횟수는 아닙니다');
+    expect(requests.slice(before).map((r) => r.operation)).toEqual(['playAudit.requestState']);
+    expect(requests.at(-1)?.input).toEqual({ kind: 'POLICY', id: 'b'.repeat(64) });
+    await capture(page, 'mobile-policy-request');
+    const count = requests.filter((r) => r.operation === 'playAudit.requestState').length;
+    await page.getByRole('button', { name: '이전 정책 버전', exact: true }).click();
+    await expect(region).not.toContainText('9007199254740993');
+    expect(requests.filter((r) => r.operation === 'playAudit.requestState')).toHaveLength(count);
+    await page.getByRole('button', { name: '요청 처리 조회', exact: true }).click();
+    await expect(region).toContainText('연결된 요청이 없습니다');
+});
+
+test('diplomacy request state does not reload documents or lists', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(
+        gamePath('/play-audit?tab=diplomacy&nation=2&otherNation=3&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await page.getByRole('button', { name: '문서 승인', exact: true }).click();
+    await expect(page.getByRole('button', { name: '요청 처리 조회', exact: true })).toBeVisible();
+    const before = requests.length;
+    await page.getByRole('button', { name: '요청 처리 조회', exact: true }).click();
+    await expect(page.getByRole('region', { name: '요청 처리 기록', exact: true })).toContainText('처리 성공');
+    expect(requests.slice(before).map((r) => r.operation)).toEqual(['playAudit.requestState']);
+    expect(requests.at(-1)?.input.kind).toBe('DIPLOMACY');
+    await capture(page, 'desktop-diplomacy-request');
+});

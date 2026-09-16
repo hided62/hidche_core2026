@@ -9,6 +9,21 @@ NPC 결정 trace와 조사 A~F의 완성, 전체 종료 경계 및 COST gate는 
 
 ## 현재 구현
 
+### 정책·외교 사건의 요청 처리 상태
+
+`playAudit.requestState`는 현재 기수의 정책 버전 또는 외교 사건 ID만 받는다.
+참조된 requestId와 inputSequence가 모두 실제 input_event와 일치할 때 현재 상태,
+처리 시도 횟수·접수/처리 tick·시계 버전·시각과 결과/오류 존재 여부를 반환한다.
+기준 기록의 연결 없음, 불완전 참조, 삭제된 요청과 순번 불일치를 구분한다.
+임의 requestId 검색, payload/result/error 원문·계정·lease owner 조회는 제공하지 않는다.
+
+권한 검사 뒤 읽기 transaction 안에서 world, 사건 한 행, unique request_id 한 행을
+최대3회 읽는다. SQL은 필요한 scalar와 존재 여부만 투영하며 쓰기·COUNT·전역 검색이 없다.
+정책·외교 상세의 공통 component에서 버튼을 눌러 조회하며 재시도는 이 요청만 반복한다.
+다른 버전으로 바꾸면 결과를 지우고 진행 중 응답을 무시한다. 자동 조회/polling은 없다.
+R7 E의 연결 기반 일부이며 전체 실패·시도별 이력, 실제 mutation 횟수와 replay가 아니다.
+F의 알려진 버그 조사 preset은 아직 구현하지 않았다. schema migration58은 그대로다.
+
 ### NPC 결정 조회 API와 화면
 
 `playAudit.decisionHistory/decisionDetail`은 같은 프로필 감사 권한·현재 기수 경계를 따른다.

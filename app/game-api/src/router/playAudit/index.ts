@@ -1,3 +1,4 @@
+import { requestState } from './requests.js';
 import { decisionHistory, decisionDetail } from './decisions.js';
 import { diplomacyHistory, diplomacyEvent } from './diplomacy.js';
 import { nationSeries, zAuditNation } from './nationSeries.js';
@@ -26,6 +27,7 @@ import {
 } from './projection.js';
 
 export const playAuditRouter = router({
+    requestState,
     decisionHistory,
     decisionDetail,
     diplomacyHistory,

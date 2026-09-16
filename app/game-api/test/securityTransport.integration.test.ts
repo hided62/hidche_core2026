@@ -2242,6 +2242,27 @@ integration('game API security over HTTP transport', () => {
                 },
             });
             const admin = await token([`admin.playAudit.read:${profileName}`]);
+            await db.inputEvent.create({
+                data: {
+                    sequence: 9007199254740993n,
+                    requestId: 'audit-policy-request',
+                    target: 'ENGINE',
+                    eventType: 'setNpcPolicy',
+                    status: 'SUCCEEDED',
+                    attempts: 2,
+                    payload: { secret: 'request-secret' },
+                    result: { secret: 'request-secret' },
+                    error: 'request-secret',
+                    actorUserId: 'request-secret',
+                    lockedBy: 'request-secret',
+                    acceptedGameTick: 4320000000n,
+                    processingGameTick: 4356000000n,
+                    acceptedClockRevision: 3n,
+                    processingClockRevision: 4n,
+                    processingAt: new Date('2026-09-16T00:00:01Z'),
+                    completedAt: new Date('2026-09-16T00:00:02Z'),
+                },
+            });
             const beforeInputs = await db.inputEvent.count();
             const decisionIds = [policyId(501), policyId(502)].sort().reverse();
             const decisionGeneral = 99129; // live general 없이 보존 이력을 읽는다.
@@ -2584,6 +2605,59 @@ integration('game API security over HTTP transport', () => {
                     after: { scout: revision },
                     hash: 'fixture',
                 })),
+            });
+            const requestInput = { kind: 'POLICY', id: policyId(2) };
+            expect((await get('requestState', undefined, requestInput)).status).toBe(401);
+            for (const roles of [['admin'], ['admin.playAudit.read:other:default']])
+                expect((await get('requestState', await token(roles), requestInput)).status).toBe(403);
+            const requestState = await get('requestState', admin, requestInput);
+            expect(requestState.status).toBe(200);
+            expect(requestState.body).toMatchObject({
+                result: {
+                    data: {
+                        status: 'AVAILABLE',
+                        coverage: 'CURRENT_JOURNAL_STATE',
+                        request: {
+                            sequence: '9007199254740993',
+                            requestId: 'audit-policy-request',
+                            status: 'SUCCEEDED',
+                            attempts: 2,
+                            acceptedGameTick: '4320000000',
+                            processingGameTick: '4356000000',
+                            acceptedClockRevision: '3',
+                            processingClockRevision: '4',
+                            resultRecorded: true,
+                            errorRecorded: true,
+                        },
+                    },
+                },
+            });
+            for (const excluded of ['request-secret', 'payload', 'actorUserId', 'lockedBy'])
+                expect(JSON.stringify(requestState.body)).not.toContain(excluded);
+            expect((await get('requestState', admin, { kind: 'POLICY', id: policyId(1) })).body).toMatchObject({
+                result: { data: { status: 'NOT_LINKED', request: null } },
+            });
+            expect((await get('requestState', admin, { kind: 'POLICY', id: policyId(99) })).status).toBe(404);
+            expect((await get('requestState', admin, { ...requestInput, requestId: 'arbitrary' })).status).toBe(400);
+            expect((await get('requestState', admin, { ...requestInput, id: '../bad' })).status).toBe(400);
+            await db.playAuditPolicy.update({ where: { id: policyId(2) }, data: { inputSequence: null } });
+            expect((await get('requestState', admin, requestInput)).body).toMatchObject({
+                result: { data: { status: 'INCOMPLETE_REFERENCE', request: null } },
+            });
+            await db.playAuditPolicy.update({ where: { id: policyId(2) }, data: { inputSequence: 9007199254740994n } });
+            expect((await get('requestState', admin, requestInput)).body).toMatchObject({
+                result: { data: { status: 'REFERENCE_MISMATCH', request: null } },
+            });
+            await db.playAuditPolicy.update({ where: { id: policyId(2) }, data: { inputSequence: 9007199254740993n } });
+            expect((await get('requestState', admin, { kind: 'DIPLOMACY', id: policyId(101) })).body).toMatchObject({
+                result: { data: { status: 'MISSING_REQUEST', request: null } },
+            });
+            await db.playAuditDiplomacyEvent.update({
+                where: { id: policyId(101) },
+                data: { requestId: 'audit-policy-request' },
+            });
+            expect((await get('requestState', admin, { kind: 'DIPLOMACY', id: policyId(101) })).body).toMatchObject({
+                result: { data: { status: 'AVAILABLE', request: { sequence: '9007199254740993' } } },
             });
             const policyPage = await get('policyHistory', admin, { ...policyInput, limit: 1 });
             expect(policyPage.status).toBe(200);
@@ -3169,6 +3243,7 @@ integration('game API security over HTTP transport', () => {
                 result: { data: { items: [] } },
             });
             expect((await get('policyVersion', admin, { id: policyId(3) })).status).toBe(404);
+            expect((await get('requestState', admin, requestInput)).status).toBe(404);
             expect((await get('diplomacyHistory', admin, diplomacyInput)).body).toMatchObject({
                 result: { data: { items: [] } },
             });
@@ -3190,6 +3265,7 @@ integration('game API security over HTTP transport', () => {
         } finally {
             await db.playAuditDecisionChunk.deleteMany({ where: { decision: { serverId: seasonId } } });
             await db.playAuditDecision.deleteMany({ where: { serverId: seasonId } });
+            await db.inputEvent.deleteMany({ where: { requestId: 'audit-policy-request' } });
             await db.playAuditPolicy.deleteMany({ where: { serverId: seasonId } });
             await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: seasonId } });
             await db.diplomacyLetter.deleteMany({ where: { srcNationId: 99121, destNationId: 99122 } });
