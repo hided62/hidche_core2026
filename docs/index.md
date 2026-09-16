@@ -39,6 +39,8 @@ Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따�
 상단 링크와 dropdown을 바꾸는 JSON 형식과 복구 경계를 설명합니다.
 관리자 화면의 메뉴와 권한·운영 경계는
 [관리자 콘솔](./admin-console.md)에서 확인할 수 있습니다.
+[프로필별 플레이 감사 설계](./design/play-audit.md)는 현재 미구현인 국가·장수·도시·
+외교·NPC 감사와 질문별 조사 도구의 구현 기준 및 DB 비용 검토를 정의합니다.
 게임 진행 시각과 운영 벽시계의 경계는
 [게임 시계](./architecture/game-clock.md)에 설명합니다.
 [패키지와 파일 경계](./architecture/package-boundaries.md)는 source import와
@@ -51,6 +53,7 @@ Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따�
 - `architecture/`: 현재 runtime, action module, scenario와 차등 검증 계약
 - `developer/`: 파일 위치, 도메인 조립, 요청·저장 흐름
 - `user/`: 화면, 시간, 국가 기능과 생성된 command catalog
+- `design/`: 확정한 신규 기능의 구현 목표·비용·검증 계약과 미구현 상태
 - 루트 문서: 통합 테스트, Chromium 비교, Caddy, DB 이관과 운영 절차
 
 작업 이력은 상위 작업공간의 `report/`에 보존합니다. ref PHP와 core2026의
