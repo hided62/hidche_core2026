@@ -226,6 +226,11 @@ describeDb('scenario database seed', () => {
                     clockTick: 0n,
                     lastTurnTick: 0n,
                     clockPhase: 'PREOPEN',
+                    meta: {
+                        initYear: (scenario.startYear ?? 0) + yearOffset,
+                        initMonth: month,
+                        scenarioMeta: { startYear: scenario.startYear },
+                    },
                 });
                 const clock = new GameClock({
                     baseTime: world.clockBaseTime!,

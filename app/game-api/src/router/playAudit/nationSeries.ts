@@ -112,9 +112,9 @@ export const nationSeries = auditProcedure
             const current = monthOrdinal(world.year, world.month);
             const from = input.from
                 ? monthOrdinal(input.from.year, input.from.month)
-                : Math.max(world.startYear * 12, current - 5);
+                : Math.max(monthOrdinal(world.startYear, world.startMonth), current - 5);
             const to = input.to ? monthOrdinal(input.to.year, input.to.month) : current;
-            if (from < world.startYear * 12 || to > current || from > to) {
+            if (from < monthOrdinal(world.startYear, world.startMonth) || to > current || from > to) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '현재 기수 안에서 시작·종료 월을 선택해 주세요.' });
             }
             const width = input.resolution === 'month' ? 1 : 6;

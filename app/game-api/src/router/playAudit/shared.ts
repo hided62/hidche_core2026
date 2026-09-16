@@ -66,17 +66,35 @@ export const readAuditWorld = async (tx: GamePrisma.TransactionClient) => {
     const serverId = typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId : null;
     const scenario = asRecord(meta.scenarioMeta);
     const config = asRecord(world.config);
-    const startYear =
+    const scenarioStartYear =
         typeof scenario.startYear === 'number'
             ? scenario.startYear
             : typeof asRecord(config.scenarioMeta).startYear === 'number'
               ? Number(asRecord(config.scenarioMeta).startYear)
               : world.currentYear;
+    // 동기화 개방은 시나리오 시작 전년도에 시작할 수 있다. 저장된 실제 달력을
+    // 조회 경계로 쓰며 gameplay 규칙인 scenario.startYear는 변경하지 않는다.
+    const hasInitialCalendar =
+        typeof meta.initYear === 'number' &&
+        Number.isInteger(meta.initYear) &&
+        meta.initYear >= 0 &&
+        typeof meta.initMonth === 'number' &&
+        Number.isInteger(meta.initMonth) &&
+        meta.initMonth >= 1 &&
+        meta.initMonth <= 12 &&
+        monthOrdinal(meta.initYear, meta.initMonth) <= monthOrdinal(world.currentYear, world.currentMonth);
+    const startYear = hasInitialCalendar
+        ? Number(meta.initYear)
+        : Number.isInteger(scenarioStartYear) && scenarioStartYear >= 0
+          ? Math.min(scenarioStartYear, world.currentYear)
+          : world.currentYear;
+    const startMonth = hasInitialCalendar ? Number(meta.initMonth) : 1;
     return {
         serverId,
         year: world.currentYear,
         month: world.currentMonth,
         startYear,
+        startMonth,
         tick: world.lastTurnTick?.toString() ?? null,
         asOf: new Date().toISOString(),
     };
@@ -89,7 +107,7 @@ export const findAuditMonth = async (
     at: z.infer<typeof zAuditMonth>
 ) => {
     const ordinal = monthOrdinal(at.year, at.month);
-    if (at.year < world.startYear || ordinal > monthOrdinal(world.year, world.month)) {
+    if (ordinal < monthOrdinal(world.startYear, world.startMonth) || ordinal > monthOrdinal(world.year, world.month)) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: '현재 기수의 게임 연월을 선택해 주세요.' });
     }
     if (!world.serverId) return null;

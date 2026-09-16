@@ -28,7 +28,7 @@ export const generalLogs = auditProcedure
             const world = await readAuditWorld(tx);
             if (
                 input.month &&
-                (input.month.year < world.startYear ||
+                (monthOrdinal(input.month.year, input.month.month) < monthOrdinal(world.startYear, world.startMonth) ||
                     monthOrdinal(input.month.year, input.month.month) > monthOrdinal(world.year, world.month))
             ) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '현재 기수 안의 로그 월을 선택해 주세요.' });

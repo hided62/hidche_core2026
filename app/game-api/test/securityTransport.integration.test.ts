@@ -2570,6 +2570,71 @@ integration('game API security over HTTP transport', () => {
                 result: { data: { items: [{ complete: false, stock: null, flows: { incomeGold: null } }] } },
             });
 
+            // A synchronized opening may start before the scenario's gameplay year.
+            await db.worldState.update({
+                where: { id: fixtureWorldId },
+                data: {
+                    currentYear: 189,
+                    currentMonth: 10,
+                    meta: { serverId: seasonId, initYear: 189, initMonth: 10, scenarioMeta: { startYear: 190 } },
+                },
+            });
+            await db.playAuditMonth.create({
+                data: {
+                    id: `${seasonId}:initial`,
+                    serverId: seasonId,
+                    year: 189,
+                    month: 10,
+                    kind: 'MONTH_END',
+                    settlementsComplete: false,
+                    hash: 'initial-calendar',
+                },
+            });
+            await db.logEntry.create({
+                data: {
+                    serverId: seasonId,
+                    scope: 'GENERAL',
+                    category: 'HISTORY',
+                    generalId: logGeneralId,
+                    year: 189,
+                    month: 10,
+                    text: `${seasonId}:initial-log`,
+                },
+            });
+            const initial = { year: 189, month: 10 };
+            for (const [path, input] of [
+                ['nationSnapshot', { nationId: ownerNationId, at: initial }],
+                ['generalDetail', { id: generalId, at: initial }],
+                ['cityDetail', { id: 99123, at: initial }],
+            ] as const) {
+                const response = await get(path, admin, input);
+                expect(response.status).toBe(200);
+                expect(response.body).toMatchObject({
+                    result: { data: { startYear: 189, startMonth: 10, collected: true } },
+                });
+                expect((await get(path, admin, { ...input, at: { year: 189, month: 9 } })).status).toBe(400);
+            }
+            expect((await get('nationSeries', admin, { nationId: ownerNationId })).body).toMatchObject({
+                result: { data: { items: [{ from: initial, to: initial }] } },
+            });
+            expect(
+                (await get('nationSeries', admin, { nationId: ownerNationId, from: { year: 189, month: 9 } })).status
+            ).toBe(400);
+            expect(
+                (await get('generalLogs', admin, { generalId: logGeneralId, type: 'generalHistory', month: initial }))
+                    .body
+            ).toMatchObject({ result: { data: { items: [{ text: `${seasonId}:initial-log` }] } } });
+            expect(
+                (
+                    await get('generalLogs', admin, {
+                        generalId: logGeneralId,
+                        type: 'generalHistory',
+                        month: { year: 189, month: 9 },
+                    })
+                ).status
+            ).toBe(400);
+            await db.worldState.update({ where: { id: fixtureWorldId }, data: { currentYear: 190, currentMonth: 7 } });
+
             await db.worldState.update({
                 where: { id: fixtureWorldId },
                 data: {

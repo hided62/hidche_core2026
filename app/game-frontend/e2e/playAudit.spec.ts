@@ -7,6 +7,7 @@ const world = {
     year: 190,
     month: 7,
     startYear: 190,
+    startMonth: 1,
     serverId: 'audit-fixture',
     tick: '100',
     asOf: '2026-09-16T00:00:00.000Z',
@@ -473,4 +474,39 @@ test('historical log failure retries independently and sends only the selected m
     });
     expect(requests.filter((r) => r.operation === 'playAudit.generalTurns')).toHaveLength(0);
     await capture(page, 'historical-general-logs-mobile');
+});
+
+test('initial calendar before the scenario year bounds default periods and month controls', async ({ page }) => {
+    const requests = await install(page);
+    await page.route(gameTrpcRoute, async (route) => {
+        if (decodeURIComponent(route.request().url()).includes('playAudit.coverage')) {
+            await route.fulfill({
+                contentType: 'application/json',
+                body: JSON.stringify([
+                    {
+                        result: {
+                            data: {
+                                ...world,
+                                year: 189,
+                                month: 10,
+                                startYear: 189,
+                                startMonth: 10,
+                                status: 'COLLECTED',
+                                samples: [],
+                                nextCursor: null,
+                            },
+                        },
+                    },
+                ]),
+            });
+        } else await route.fallback();
+    });
+    await page.goto(gamePath('/play-audit?tab=nations&nation=2'));
+    await expect(page.getByLabel('시작 연도', { exact: true })).toHaveValue('189');
+    await expect(page.getByLabel('시작 월', { exact: true })).toHaveValue('10');
+    await expect(page.getByLabel('시작 월', { exact: true })).toHaveAttribute('min', '10');
+    await expect(page.getByLabel('월', { exact: true })).toHaveAttribute('min', '10');
+    await expect
+        .poll(() => requests.find((r) => r.operation === 'playAudit.nationSeries')?.input)
+        .toMatchObject({ from: { year: 189, month: 10 }, to: { year: 189, month: 10 } });
 });

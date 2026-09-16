@@ -102,7 +102,10 @@ const readQuery = () => {
     moment.value = ['month', 'final'].includes(String(route.query.at)) ? String(route.query.at) : 'current';
     year.value = numeric(route.query.year, coverage.value?.year ?? 0);
     month.value = numeric(route.query.month, coverage.value?.month ?? 1);
-    const defaultStart = Math.max((coverage.value?.startYear ?? year.value) * 12, year.value * 12 + month.value - 6);
+    const defaultStart = Math.max(
+        (coverage.value?.startYear ?? year.value) * 12 + (coverage.value?.startMonth ?? 1) - 1,
+        year.value * 12 + month.value - 6
+    );
     fromYear.value = numeric(route.query.fromYear, Math.floor(defaultStart / 12));
     fromMonth.value = numeric(route.query.fromMonth, (defaultStart % 12) + 1);
     resolution.value = route.query.resolution === 'month' ? 'month' : 'halfYear';
@@ -333,7 +336,14 @@ onMounted(async () => {
                             :max="coverage.year"
                             required
                     /></label>
-                    <label>월<input v-model.number="month" type="number" min="1" max="12" required /></label>
+                    <label
+                        >월<input
+                            v-model.number="month"
+                            type="number"
+                            :min="year === coverage.startYear ? coverage.startMonth : 1"
+                            :max="year === coverage.year ? coverage.month : 12"
+                            required
+                    /></label>
                     <template v-if="tab === 'nations' && moment !== 'final'">
                         <label
                             >시작 연도<input
@@ -344,7 +354,12 @@ onMounted(async () => {
                                 required
                         /></label>
                         <label
-                            >시작 월<input v-model.number="fromMonth" type="number" min="1" max="12" required
+                            >시작 월<input
+                                v-model.number="fromMonth"
+                                type="number"
+                                :min="fromYear === coverage.startYear ? coverage.startMonth : 1"
+                                :max="fromYear === coverage.year ? coverage.month : 12"
+                                required
                         /></label>
                         <label
                             >간격<select class="legacy-sort-select" v-model="resolution">
