@@ -45,7 +45,7 @@ integration('immutable policy persistence', () => {
             source: 'BASELINE',
             year: 190,
             month: 1,
-            tick: 1,
+            tick: 4_320_000_000,
             requestId: null,
             ordinal: 1,
             actor: null,
@@ -91,7 +91,7 @@ integration('immutable policy persistence', () => {
         await db.$transaction((tx) => persistAuditPolicies(tx, [baseline, change], context));
         const rows = await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { revision: 'asc' } });
         expect(rows).toHaveLength(2);
-        expect(rows[0]).toMatchObject({ inputSequence: null, actor: null });
+        expect(rows[0]).toMatchObject({ inputSequence: null, actor: null, tick: 4_320_000_000n });
         expect(rows[1]).toMatchObject({
             inputSequence: input.sequence,
             requestId,

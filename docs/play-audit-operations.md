@@ -1,0 +1,95 @@
+# 플레이 감사 사용과 DB 적용
+
+플레이 감사는 각 프로필의 `/play-audit`에서 읽는다. Gateway 관리자 조치 원장과
+다른 기능이다. 현재 전달은 [전체 설계](design/play-audit.md)의 부분 구현이며
+구현·검증 source는 [inventory](design/play-audit-implementation.md)에 기록한다.
+이번 전달 대상은 sam.hided.net의 전체 프로필이다. 코드와 migration을 main에 push하고,
+운영자는 각 프로필에 직접 DB 보존 업데이트를 적용한다. 이 문서의 검증 결과는 실제
+운영 DB에 이미 적용되었다는 뜻이 아니다.
+
+## 지금 사용할 수 있는 기능
+
+| 화면 | 사용할 수 있는 정보 | 읽을 때 주의할 점 |
+| --- | --- | --- |
+| 국가 | 월말 금·쌀·기술력, 세율·실제 정산, 유저/NPC/부대장 NPC별 자원·숙련 집계, 월/6개월 그래프 | 보유량은 마지막 월말, 수입/지급액은 기간 합. 부분 기간/미수집은 0과 다름 |
+| 장수 | 모든 국가·재야의 현재/월말 장수, 자원·능력·숙련·병력·훈련·사기·장비·특기·위치, 독립 로그 상세 | 현재 예약은 현재 조회에서만 제공. 과거 월말은 그달 모든 명령의 이력이 아님 |
+| 도시 | 현재/월말 소유·내정 상태와 국가별 주둔 장수 상세 연결 | 월말 주둔은 그달 모든 방문자가 아님. 지도 기반 탐색은 미완성 |
+| 외교 | 국가쌍·기간별 문서 제안/승인/철회/파기, 즉시 합의와 월간·명령 관계 전이, 생성/소멸 관계 | 문서 내용과 실제 관계는 별개. 최초 관측 이전 사건은 복원하지 않음 |
+| 정책 | NPC 국가 값·국가/장수 우선순위·국방 설정의 기준 버전과 변경 전후, 당시 주체 | 수뇌용 공개 화면과 NPC 결정의 정책 참조 연결은 아직 없음 |
+
+목록/그래프와 선택 상세를 분리해 읽는다. 표는 기본50건이며 더 보기를 명시적으로
+누른다. 현재 상태는 수동으로 조회하며 백그라운드 polling은 하지 않는다. 필터·월·선택
+대상은 URL에 남으므로 같은 권한으로 직접 열기/새로고침할 수 있다.
+
+## 진입과 권한
+
+1. Gateway의 사용자 관리에서 대상 관리자에게 정확한 프로필 scope를 부여한다.
+   예: `admin.playAudit.read:che:default`, `admin.playAudit.read:hwe:default`.
+   일반 `admin` 역할이나 게임 수뇌 직책만으로 이 권한을 대신하지 않는다.
+2. Gateway 관리자 서버 목록에서 해당 프로필의 **플레이 감사** 진입을 사용한다.
+   기존 게임 session 발급을 재사용하며 장수가 없어도 접근할 수 있다.
+3. 같은 origin의 `/che/play-audit`, `/hwe/play-audit`로 이동한다. 직접 URL은 해당
+   프로필의 유효한 session이 필요하다. token을 URL에 넣지 않는다.
+4. 외교/정책은 대상 국가·기간을 적용하고 사건을 눌러 상세를 읽는다. 멸망국은
+   해당 월의 국가 목록에서 선택한다. 상세 실패는 목록을 유지한 채 다시 시도한다.
+
+권한 취소, 다른 프로필 token, 게임 입장 제재는 backend에서 다시 검사한다.
+공통 계정 조사용 `admin.playAudit.accounts` scope는 준비되어 있으나 계정 조사 기능은
+아직 제공하지 않는다. 이 scope만으로 프로필 조회가 허용되지 않는다.
+
+## DB migration과 적용 순서
+
+정식 game migration에 감사 테이블과 인덱스가 포함되어 있다. `prisma db push`나
+수동 CREATE TABLE로 대신 적용하지 않는다. 현재 game chain은56개이며 다음 감사
+migration들을 포함한다. 기존 기록을 삭제하거나 지난달 상세를 역산하지 않는다.
+
+| migration | 준비되는 저장소/제약 |
+| --- | --- |
+| `20260916010000_add_play_audit_month` | 월 표본과 국가·도시·장수 projection 4개 테이블 |
+| `20260916020000_add_log_entry_server_id` | 새 장수 로그의 불변 기수 identity |
+| `20260916030000_add_play_audit_policy` | 국가별 불변 정책 revision |
+| `20260916031000_add_play_audit_policy_schema_version` | 정책 payload 버전 |
+| `20260916040000_add_play_audit_initial` | 기수당 INITIAL 표본 1개 제약 |
+| `20260916050000_add_play_audit_diplomacy` | 방향·국가쌍·실행 순서 기반 외교 사건과 불변 원문 보호 |
+| `20260916060000_widen_play_audit_ticks` | 월 표본/정책 tick을 BIGINT로 확장하여 약60개월 이후 INTEGER 초과 방지 |
+
+운영은 [릴리스 절차](release-operations.md)의 **DB 보존 버전 업데이트**로 해당 고정
+commit을 적용한다. 이 기능을 켜기 위해 시나리오를 초기화할 필요는 없다. 수동 환경의
+동등한 migration 명령은 infra의 `pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game`이며,
+올바른 profile DB/schema를 환경 또는 기존 secret 경로로 전달해야 한다. credential을
+CLI/보고서에 출력하지 않는다. Gateway schema에는 이번 구현 때문에 새 테이블을 요구하지 않는다.
+`release-manifest.json`의 gameSchemaHead도 위 마지막 migration을 가리킨다. 여러 프로필은
+Gateway의 DB 보존 일괄 업데이트로 같은 고정 commit을 순차 적용할 수 있다. 각 프로필은
+자기 schema에 migration을 적용해야 하며 한 프로필의 성공을 전체 적용 성공으로 보지 않는다.
+Gateway의 새 진입/권한 catalog도 사용하려면 같은 commit의 Gateway 구성요소를 업데이트한다.
+
+적용 전 기존 backup/운영 보호 절차를 따르고, migration 후 API/engine/frontend를 같은
+버전으로 전환한다. 엔진은 clock 복구 후 조회 준비를 공개하기 전에 INITIAL·정책·관계·
+보유 문서의 기준을 같은 fenced transaction에 저장한다. 문서 원문은200건씩 읽어 hash만
+사건에 남긴다. 이 단계가 실패하면 정상 준비 상태로 숨기지 않는다. 원인을 해결하고
+재시작하면 전체 transaction 재시도가 가능하다. 기존 migration을 되돌리거나 수정하지 않는다. tick 확장 migration은 기존 감사 행의
+값과 hash를 보존하지만 열 형식 변경의 테이블 잠금/재작성 비용이 있다. 첫 감사 도입에서는
+앞 migration이 만든 빈 테이블에 적용되며, 시험판 감사 기록이 이미 많다면 기존 업데이트
+유지보수 구간에서 적용 시간을 확인한다. API의 tick은 정밀도 손실을 막기 위해 문자열로 반환한다.
+
+확인은 프로필 감사 진입 → 현재 장수/도시 → 초기 표본 → 정책/외교 기준 → 다음 정상
+월 경계 후 월말 표본 순서로 한다. 조기 수집 구간의 정산 coverage가 부분일 수 있으므로
+화면의 0/null/미수집·부분 표시에 따라 해석한다. 감사 migration을 적용했다고 과거 NPC
+결정이나 자원 이동이 자동으로 채워지는 것은 아니다.
+
+## 보존과 미완성 범위
+
+- 현재 기수 자료만 제공한다. RESET이 새 serverId를 활성화하면 이전 기수 조회를
+  즉시 차단하고 이전 감사 자료를200행 단위로 정리한다. 기존 연감/계정 원장은 별도다.
+- 통일 시 FINAL 표본은 정규 월말과 구분한다. **CANCELLED가 runtime을 중단한 프로필은
+  현재 감사 API도 사용할 수 없다.** 취소 후 다음 초기화까지 읽는 수명주기는 후속 작업이다.
+- NPC의 개인/수뇌/유저 자동턴 상세 판정 trace는 아직 수집·조회하지 않는다.
+- 계정/IP HMAC 조사, 상세 자원 이동, 예약 변경/실행 연결, 실패·rollback 조사와 알려진
+  버그 사례 조회는 미완성이다. 자동 탐지·자동 제재 기능도 제공하지 않는다.
+- 일부 국가 생성/소멸 사건은 actor/request가 null이다. 원인을 현재 주체로 추정하지 않는다.
+- 장수 이름 검색·자유 정렬·지도 탐색·모든 전투 지표/연결과 전체 COST gate는 남아 있다.
+- 격리 PostgreSQL/Redis 및 mock API를 쓰는 실제 Chromium 검증은 운영 HTTPS 검증과 다르다.
+
+후속 NPC/행위/계정 저장소의 필드·순서·보존·인덱스 요구는 설계의 R5/조사 A~F와 비용
+표를 유지한다. 미구현 저장소를 현재 수집 중이라고 표시하지 않는다. 다음 작업은 해당
+writer와 rollback·정리 경계를 함께 추가하는 정식 migration으로 이어가야 한다.

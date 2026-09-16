@@ -133,7 +133,7 @@ export const findAuditMonth = async (
         throw new TRPCError({ code: 'BAD_REQUEST', message: '현재 기수의 게임 연월을 선택해 주세요.' });
     }
     if (!world.serverId) return null;
-    return tx.playAuditMonth.findUnique({
+    const sample = await tx.playAuditMonth.findUnique({
         where: {
             serverId_year_month_kind: {
                 serverId: world.serverId,
@@ -152,6 +152,7 @@ export const findAuditMonth = async (
             createdAt: true,
         },
     });
+    return sample ? { ...sample, tick: sample.tick?.toString() ?? null } : null;
 };
 
 export const pageResult = <T>(

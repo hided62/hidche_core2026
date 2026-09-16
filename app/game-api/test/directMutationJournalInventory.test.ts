@@ -89,6 +89,7 @@ const classifications = {
         'tournament.placeBet',
     ],
     redisProjection: [
+        'tournament.start',
         'tournament.patchState',
         'tournament.seedParticipants',
         'tournament.setBettingEntries',
@@ -160,7 +161,7 @@ describe('game-api direct mutation journal inventory', () => {
         // count independently catches mutations that were added to a router but never mounted.
         expect(declaredCount).toBe(actual.length);
         expect(new Set(classified).size).toBe(classified.length);
-        expect(classified).toHaveLength(87);
+        expect(classified).toHaveLength(88);
         expect(actual).toEqual(classified);
     });
 

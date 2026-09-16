@@ -43,7 +43,7 @@ const general = {
         items: { horse: null, weapon: null, book: null, item: null },
     },
 };
-const install = async (page: Page, denied = false, baseline: boolean | 'document' = false) => {
+const install = async (page: Page, denied = false, baseline: boolean | 'document' | 'created' | 'removed' = false) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_audit');
@@ -103,7 +103,14 @@ const install = async (page: Page, denied = false, baseline: boolean | 'document
                                         destNationId: 3,
                                         category: baseline === 'document' ? 'DOCUMENT' : 'RELATION',
                                         source: 'BASELINE',
-                                        eventType: baseline === 'document' ? 'LETTER_BASELINE' : 'RELATION_BASELINE',
+                                        eventType:
+                                            baseline === 'document'
+                                                ? 'LETTER_BASELINE'
+                                                : baseline === 'created'
+                                                  ? 'NATION_RELATION_CREATED'
+                                                  : baseline === 'removed'
+                                                    ? 'NATION_RELATION_REMOVED'
+                                                    : 'RELATION_BASELINE',
                                         documentId: baseline === 'document' ? 8 : null,
                                         previousDocumentId: null,
                                         year: 190,
@@ -152,18 +159,27 @@ const install = async (page: Page, denied = false, baseline: boolean | 'document
                                     destNationId: 3,
                                     category: baseline === 'document' ? 'DOCUMENT' : 'RELATION',
                                     source: 'BASELINE',
-                                    eventType: baseline === 'document' ? 'LETTER_BASELINE' : 'RELATION_BASELINE',
+                                    eventType:
+                                        baseline === 'document'
+                                            ? 'LETTER_BASELINE'
+                                            : baseline === 'created'
+                                              ? 'NATION_RELATION_CREATED'
+                                              : baseline === 'removed'
+                                                ? 'NATION_RELATION_REMOVED'
+                                                : 'RELATION_BASELINE',
                                     documentId: baseline === 'document' ? 8 : null,
                                     previousDocumentId: null,
                                     year: 190,
                                     month: 1,
                                     actor: null,
                                     createdAt: world.asOf,
-                                    before: null,
+                                    before: baseline === 'removed' ? { state: 7, term: 12, dead: 0 } : null,
                                     after:
                                         baseline === 'document'
                                             ? { state: 'ACTIVATED' }
-                                            : { state: 2, term: 0, dead: 0 },
+                                            : baseline === 'removed'
+                                              ? null
+                                              : { state: 2, term: 0, dead: 0 },
                                     tick: '0',
                                     clockRevision: '1',
                                     ordinal: 1,
@@ -951,3 +967,18 @@ test('existing diplomacy document is an initial observation with its preserved s
     await expect(page.getByRole('region', { name: '당시 외교 문서' })).toContainText('도입 전 본문');
     await expect(page.getByRole('heading', { name: '문서 #8' })).toBeVisible();
 });
+
+for (const [kind, label, value] of [
+    ['created', '신생국 관계 생성', '교역'],
+    ['removed', '멸망국 관계 종료', '불가침'],
+] as const) {
+    test(`nation relation lifecycle displays ${kind} with a missing side`, async ({ page }) => {
+        await install(page, false, kind);
+        await page.goto(
+            gamePath('/play-audit?tab=diplomacy&nation=2&otherNation=3&fromYear=190&fromMonth=1&year=190&month=6')
+        );
+        await page.getByRole('button', { name: label, exact: true }).click();
+        await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText(value);
+        await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText('미관측 / 없음');
+    });
+}

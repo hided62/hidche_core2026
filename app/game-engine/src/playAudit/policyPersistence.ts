@@ -8,6 +8,8 @@ export const persistAuditPolicies = async (
 ): Promise<void> => {
     for (let offset = 0; offset < policies.length; offset += 200) {
         const batch = policies.slice(offset, offset + 200).map((policy) => {
+            if (!Number.isSafeInteger(policy.tick) || policy.tick < 0)
+                throw new Error('Invalid play audit policy tick');
             if (policy.requestId && !command) throw new Error('Play audit policy input event context missing');
             if (
                 policy.requestId &&
@@ -18,6 +20,7 @@ export const persistAuditPolicies = async (
             }
             return {
                 ...policy,
+                tick: BigInt(policy.tick),
                 inputSequence: policy.requestId && command ? command.sequence : null,
                 actor: policy.actor ? (JSON.parse(JSON.stringify(policy.actor)) as InputJsonValue) : GamePrisma.DbNull,
                 before: policy.before

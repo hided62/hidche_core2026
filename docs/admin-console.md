@@ -6,8 +6,8 @@ Gateway 관리자 콘솔은 `/gateway/admin`에서 시작합니다. 공개 로�
 
 플레이 행위·국가 통계·NPC 결정의 감사는
 [프로필별 플레이 감사 설계](./design/play-audit.md)에서 별도로 정의합니다.
-현재는 설계 단계이며 각 profile의 `/play-audit`와 game-api가 화면·조회를
-소유할 예정입니다. 아래 `/gateway/admin/audit`는 기존 관리자 조치 원장입니다.
+각 profile의 `/play-audit`와 game-api가 화면·조회를 소유합니다. 현재 사용 가능한
+기능과 DB 적용·권한·미완성 범위는 [플레이 감사 운영 안내](./play-audit-operations.md)를 따릅니다. 아래 `/gateway/admin/audit`는 기존 관리자 조치 원장입니다.
 
 ## 화면 구성
 

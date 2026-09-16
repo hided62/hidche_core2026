@@ -65,6 +65,7 @@ tournament.setBettingEntries	redis-projection	core-only	session-admin-role	endpo
 tournament.setMatches	redis-projection	core-only	session-admin-role	endpoint-unit	app/game-api/test/tournamentRouter.test.ts	no-route-real-redis
 tournament.setParticipants	redis-projection	core-only	session-admin-role	endpoint-unit	app/game-api/test/tournamentRouter.test.ts	no-route-real-redis
 tournament.setState	redis-projection	core-only	session-admin-role	endpoint-unit	app/game-api/test/tournamentRouter.test.ts	no-route-real-redis
+tournament.start	redis-projection	core-only	session-admin-role	endpoint-unit	app/game-api/test/tournamentRouter.test.ts	no-route-real-redis
 troop.create	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/troopRouter.test.ts	no-route-actual-db
 troop.exit	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/troopRouter.test.ts	no-route-actual-db
 troop.join	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/troopRouter.test.ts	no-route-actual-db

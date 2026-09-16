@@ -55,7 +55,7 @@ const expectedOwnerCounts: Record<string, number> = {
     'mixed-saga': 9,
     operational: 3,
     'read-only-mutation-transport': 2,
-    'redis-projection': 6,
+    'redis-projection': 7,
     'separate-access-journal': 1,
     'session-only': 1,
 };
@@ -105,7 +105,7 @@ describe('game-api mutation evidence manifest', () => {
         const rows = parseManifest();
         const manifestRoutes = rows.map(({ route }) => route);
 
-        expect(rows).toHaveLength(87);
+        expect(rows).toHaveLength(88);
         expect(new Set(manifestRoutes).size).toBe(manifestRoutes.length);
         expect(manifestRoutes).toEqual([...manifestRoutes].sort());
         expect(manifestRoutes).toEqual(mountedMutationNames());

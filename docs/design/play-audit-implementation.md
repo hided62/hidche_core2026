@@ -1,11 +1,22 @@
 # 플레이 감사 구현 기록과 수집 inventory
 
-[확정 설계](play-audit.md)의 P1~P6를 구현하는 작업 기록이다. 전체 기능은 진행 중이며,
-월별 projection과 runtime 수집·DB transaction 연결을 구현했다. 프로필 권한과 장수·도시 현재/월말 조회 API,
-국가 월/반기 시계열과 `/play-audit` 기본 조회 화면을 연결했다. 정책 이력 저장과 목록/상세 조회, 초기 기준 내구화를 추가했으며 전체 종료 경계, 외교, NPC trace와 조사 도구는 남아 있다.
-Push 요청 이후 `feat/play-audit` 전용 worktree에서 계속 구현하며 전체 완료 후 main 통합·push한다.
+[확정 설계](play-audit.md)의 P1~P6 구현 기록이다. 현재 월별 상태·국가 시계열,
+장수/도시 상세와 로그, 외교 이력, 정책 버전과 프로필별 관리자 진입을 사용할 수 있다.
+NPC 결정 trace와 조사 A~F의 완성, 전체 종료 경계 및 COST gate는 남아 있다.
+2026-09-16 사용자는 주간 한도 약20%를 남기고 사용 가능한 기능과 DB migration을
+정리·통합·push하는 중간 전달을 요청했다. 전체 설계 완료와 이 전달을 구분한다.
+실제 적용 방법과 제한은 [운영 안내](../play-audit-operations.md)를 따른다.
 
 ## 현재 구현
+
+### 전달 전 DB tick 정밀도 보완
+
+월 표본과 정책의 기존 INTEGER tick은 1개월36,000,000 기준 약60개월에 넘친다.
+`20260916060000_widen_play_audit_ticks`로 두 열을 BIGINT로 확장하고 writer의 안전한
+정수 검증/변환, 월 표본 상세의 문자열 응답을 연결했다. pending payload와 hash 생성은
+기존 number 의미를 유지해 이미 저장한 hash를 바꾸지 않는다. 릴리스 manifest도 이
+migration head를 가리킨다. 실제 PG의55→56/빈56/no-op·기존 값/null/hash 보존과 큰 tick
+저장 및 실제 HTTP의 월 표본/정책 상세 tick 문자열을 검증했다.
 
 ### 기본 조회 화면
 
@@ -244,6 +255,27 @@ writer의 batch INSERT/hash 확인 SELECT를 사용한다. 원문은 해시 계�
 실제 PG fixture는 201건/2 batch와 INITIAL 저장 실패의 전체 rollback, 원문 hash와 상태,
 재시작의 동일 event/표식을 확인한다. 화면에서는 '문서 최초 관측'으로 구분한다.
 
+### 국가 생성·멸망 관계
+
+국가 생성은 `addNation`(월간 NPC/이민족/즉시 명령)과 예약 턴의 직접 created.nations
+반영 경로를 모두 수집한다. 기본 matrix를 만든 뒤 신생국과 연결된 방향별 관계만 가져오고,
+한 번에 여러 국가를 생성해도 같은 관계를 중복 기록하지 않는다. 후자의 누락된 정책
+기준 4영역 초기화도 같은 지점에 연결했다. 생성 시 조회 범위는 대상 국가 수×기존 국가 수며
+전체 관계 matrix를 감사용으로 복제하지 않는다.
+
+멸망은 후계자 없음/전투/월간 방랑 처리의 공통 removeNation에서 기존 삭제 순회가
+제거하는 관계를 재사용한다. 생성은 before null, 제거는 after null이며 default 교역
+생성을 월간 외교 상태 전이로 바꾸지 않는다. 기존 world 감사 순번은 `nation-relations:N`
+실행 identity에만 쓰고 사건 안의 ordinal은 방향별 정렬 순서다. checkpoint 복원과 기존
+fenced transaction/pending acknowledgement를 그대로 따른다. 원인 actor/request 연결은
+관측되지 않으면 null이며 향후 조사 C/E context 연결 대상으로 남긴다. 예약 턴에서 생성·멸망한 관계는 전역 clock 대신 해당 장수의 실행 tick을 전달한다.
+
+단위 검증은 같은 ID 생성·삭제·재생성, 중복 add/remove, rollback, 예약 턴 복수 신생국의
+정책 기준/관계 중복 방지를 확인한다. 실제 PG는 제거 저장 실패의 nation/관계 rollback,
+재시도, 삭제 뒤 재생성, 정책 4개 및 이력 중복 방지를 검증한다. CHE/HWE에서 생성·종료의
+한쪽 상태 부재를 표시한다. 상대국이 없는 단독 신생국은 관계 사건이 없으며 독립 국가
+생멸 원장은 향후 조사 C에 속한다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.
@@ -449,9 +481,11 @@ no-general 허용, 무인증·일반 admin·다른 profile·제재 거부, 200 �
 반환하고 수입/급여만 기간 합산한다. 누락·국가 없음·불완전 정산의 흐름은 null,
 관측한 정산 없음은 0이다. 기간 일부 요청은 from/to와 complete=false로 표시한다.
 
-장수·도시 상세와 독립 로그, FINAL 별도 표시와 정책 조회는 기본 화면에 연결했다. 외교·NPC 결정과 조사 기능은 남았다.
+장수·도시 상세와 독립 로그, FINAL 별도 표시와 정책 조회는 기본 화면에 연결했다. 외교 이력도 연결했으며 NPC 결정과 조사 기능의 완성은 남았다.
 
-## 수집 지점과 쓰기 재검토
+## 초기 수집 지점과 쓰기 재검토
+
+아래 표와 검증 진입점은 초기 구현 당시 inventory다. 이후 연결·검증 결과는 위의 현재 구현과 운영 안내를 기준으로 읽는다.
 
 기준 Core commit은 `5ac961dfd17738dc4c39e6401f975296f39403a5`이다.
 SQL/bytes는 아직 실측하지 않았으며 아래는 현재 소스에서 확인한 연결 지점과 구현 경계다.

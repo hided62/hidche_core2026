@@ -23,6 +23,8 @@ let detailGeneration = 0;
 const selected = computed(() => (typeof route.query.event === 'string' ? route.query.event : null));
 const labels: Record<string, string> = {
     LETTER_BASELINE: '문서 최초 관측',
+    NATION_RELATION_CREATED: '신생국 관계 생성',
+    NATION_RELATION_REMOVED: '멸망국 관계 종료',
     RELATION_BASELINE: '관계 최초 관측',
     LETTER_PROPOSED: '문서 제안',
     LETTER_REPLACED: '문서 교체',

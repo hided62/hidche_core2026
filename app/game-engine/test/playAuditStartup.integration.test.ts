@@ -193,7 +193,7 @@ integration('initial audit durability before runtime readiness', () => {
             policies.every(
                 (policy) =>
                     policy.source === 'BASELINE' &&
-                    policy.tick === Number(beforeClock.clockTick) &&
+                    policy.tick === beforeClock.clockTick &&
                     policy.inputSequence === null
             )
         ).toBe(true);
@@ -256,7 +256,7 @@ integration('initial audit durability before runtime readiness', () => {
         expect(recovered.clockRevision).toBeGreaterThan(original.clockRevision);
         const policies = await db.playAuditPolicy.findMany({ where: { serverId, nationId: 91992 } });
         expect(policies).toHaveLength(4);
-        expect(policies.every((policy) => policy.tick === runtime!.world.getGameClockState().tick)).toBe(true);
+        expect(policies.every((policy) => policy.tick === BigInt(runtime!.world.getGameClockState().tick))).toBe(true);
         expect(await db.playAuditMonth.findMany({ where: { serverId, kind: 'INITIAL' } })).toEqual([initial]);
     }, 30_000);
     it('adopts an empty document collection without duplicating an existing initial sample', async () => {

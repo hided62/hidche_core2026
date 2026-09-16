@@ -49,6 +49,7 @@ integration('monthly diplomacy persistence', () => {
         db = connector.prisma;
         closeDb = () => connector.disconnect();
         await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: scenarioCode } });
+        await db.playAuditPolicy.deleteMany({ where: { serverId: scenarioCode } });
         await db.diplomacy.deleteMany({
             where: {
                 OR: [{ srcNationId: { in: nationIds } }, { destNationId: { in: nationIds } }],
@@ -61,6 +62,7 @@ integration('monthly diplomacy persistence', () => {
 
     afterAll(async () => {
         await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: scenarioCode } });
+        await db.playAuditPolicy.deleteMany({ where: { serverId: scenarioCode } });
         await db.diplomacy.deleteMany({
             where: {
                 OR: [{ srcNationId: { in: nationIds } }, { destNationId: { in: nationIds } }],
@@ -278,6 +280,54 @@ integration('monthly diplomacy persistence', () => {
                 currentYear: 193,
                 currentMonth: 4,
             });
+            const endingNation = nationIds[3]!;
+            expect(world.removeNation(endingNation)).toBe(true);
+            const removals = world.peekDirtyState().pendingAuditDiplomacy;
+            expect(removals).toHaveLength(6);
+            expect(
+                removals.every((event) => event.eventType === 'NATION_RELATION_REMOVED' && event.after === null)
+            ).toBe(true);
+            await db.$executeRawUnsafe(`CREATE FUNCTION reject_lifecycle_audit_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'lifecycle audit fixture failure'; END; $$`);
+            await db.$executeRawUnsafe(`CREATE TRIGGER reject_lifecycle_audit_fixture BEFORE INSERT ON play_audit_diplomacy_event
+                FOR EACH ROW EXECUTE FUNCTION reject_lifecycle_audit_fixture()`);
+            try {
+                await expect(hooks.flushChanges()).rejects.toThrow('lifecycle audit fixture failure');
+                expect(await db.nation.count({ where: { id: endingNation } })).toBe(1);
+                expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(removals);
+            } finally {
+                await db.$executeRawUnsafe('DROP TRIGGER reject_lifecycle_audit_fixture ON play_audit_diplomacy_event');
+                await db.$executeRawUnsafe('DROP FUNCTION reject_lifecycle_audit_fixture()');
+            }
+            await hooks.flushChanges();
+            expect(await db.nation.count({ where: { id: endingNation } })).toBe(0);
+            expect(
+                await db.diplomacy.count({
+                    where: { OR: [{ srcNationId: endingNation }, { destNationId: endingNation }] },
+                })
+            ).toBe(0);
+            expect(
+                await db.playAuditDiplomacyEvent.count({
+                    where: { serverId: scenarioCode, eventType: 'NATION_RELATION_REMOVED' },
+                })
+            ).toBe(6);
+            expect(world.addNation(buildNation(endingNation, '재건국', 1))).toBe(true);
+            await hooks.flushChanges();
+            expect(await db.nation.count({ where: { id: endingNation } })).toBe(1);
+            expect(
+                await db.diplomacy.count({
+                    where: { OR: [{ srcNationId: endingNation }, { destNationId: endingNation }] },
+                })
+            ).toBe(6);
+            expect(await db.playAuditPolicy.count({ where: { serverId: scenarioCode, nationId: endingNation } })).toBe(
+                4
+            );
+            await hooks.flushChanges();
+            expect(
+                await db.playAuditDiplomacyEvent.count({
+                    where: { serverId: scenarioCode, eventType: 'NATION_RELATION_CREATED' },
+                })
+            ).toBe(6);
         } finally {
             await hooks.close();
         }

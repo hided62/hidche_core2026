@@ -1,4 +1,8 @@
-import { recordTurnAuditDiplomacy, type AuditDiplomacyAction } from '../playAudit/diplomacy.js';
+import {
+    recordTurnAuditDiplomacy,
+    recordNationAuditDiplomacy,
+    type AuditDiplomacyAction,
+} from '../playAudit/diplomacy.js';
 import type { AuditDiplomacyEventDraft } from '@sammo-ts/infra';
 import { initializeNationAuditPolicies, type PendingAuditPolicy } from '../playAudit/policy.js';
 import type { PendingAuditMonth } from '../playAudit/persistence.js';
@@ -1635,6 +1639,7 @@ export class InMemoryTurnWorld {
         this.createdNationIds.add(nation.id);
         this.ensureDiplomacyMatrix();
         initializeNationAuditPolicies(this, nation.id);
+        recordNationAuditDiplomacy(this, [nation.id], this.collectNationDiplomacy([nation.id]), 'CREATED');
         return true;
     }
 
@@ -1723,7 +1728,7 @@ export class InMemoryTurnWorld {
         return true;
     }
 
-    removeNation(id: number): boolean {
+    removeNation(id: number, auditTick?: number): boolean {
         if (!this.nations.has(id)) {
             return false;
         }
@@ -1731,13 +1736,16 @@ export class InMemoryTurnWorld {
         this.dirtyNationIds.delete(id);
         this.createdNationIds.delete(id);
         this.deletedNationIds.add(id);
+        const removedRelations: TurnDiplomacy[] = [];
         for (const [key, entry] of this.diplomacy) {
             if (entry.fromNationId === id || entry.toNationId === id) {
+                removedRelations.push(entry);
                 this.diplomacy.delete(key);
                 this.dirtyDiplomacyKeys.delete(key);
                 this.createdDiplomacyKeys.delete(key);
             }
         }
+        recordNationAuditDiplomacy(this, [id], removedRelations, 'REMOVED', auditTick);
         return true;
     }
 
@@ -2100,7 +2108,7 @@ export class InMemoryTurnWorld {
                 this.createdGeneralIds.add(createdGeneral.id);
             }
             if (result.created.nations) {
-                let addedNation = false;
+                const addedNationIds: number[] = [];
                 for (const createdNation of result.created.nations) {
                     if (this.nations.has(createdNation.id)) {
                         continue;
@@ -2108,10 +2116,18 @@ export class InMemoryTurnWorld {
                     this.nations.set(createdNation.id, { ...createdNation });
                     this.dirtyNationIds.add(createdNation.id);
                     this.createdNationIds.add(createdNation.id);
-                    addedNation = true;
+                    addedNationIds.push(createdNation.id);
                 }
-                if (addedNation) {
+                if (addedNationIds.length) {
                     this.ensureDiplomacyMatrix();
+                    for (const id of addedNationIds) initializeNationAuditPolicies(this, id);
+                    recordNationAuditDiplomacy(
+                        this,
+                        addedNationIds,
+                        this.collectNationDiplomacy(addedNationIds),
+                        'CREATED',
+                        executionTick
+                    );
                 }
             }
             if (result.created.troops) {
@@ -2133,7 +2149,7 @@ export class InMemoryTurnWorld {
         if (result.successorlessNationId !== undefined) {
             // 사망 군주도 삭제 전 archive의 장수 목록과 멸망 로그에 포함한다.
             this.generals.set(currentGeneral.id, result.general ?? currentGeneral);
-            this.dissolveNationWithoutSuccessor(result.successorlessNationId, currentGeneral.id);
+            this.dissolveNationWithoutSuccessor(result.successorlessNationId, currentGeneral.id, executionTick);
         }
         if (result.deleted?.general) {
             this.removeGeneral(currentGeneral.id);
@@ -2142,7 +2158,7 @@ export class InMemoryTurnWorld {
             this.lifecycleEvents.push(result.lifecycleEvent);
         }
 
-        this.removeCollapsedNations();
+        this.removeCollapsedNations(executionTick);
 
         return {
             nextTurnAt,
@@ -2343,7 +2359,7 @@ export class InMemoryTurnWorld {
         return changes;
     }
 
-    dissolveNationWithoutSuccessor(nationId: number, dyingLordId?: number): boolean {
+    dissolveNationWithoutSuccessor(nationId: number, dyingLordId?: number, auditTick?: number): boolean {
         const nation = this.nations.get(nationId);
         if (!nation) {
             return false;
@@ -2398,10 +2414,10 @@ export class InMemoryTurnWorld {
         }
         // 과거 누락으로 군주가 이미 삭제된 국가의 운영 복구도 같은 정산을 쓴다.
         if (dyingLordId === undefined) pushHistory();
-        return this.collapseNation(nationId);
+        return this.collapseNation(nationId, auditTick);
     }
 
-    collapseNation(nationId: number): boolean {
+    collapseNation(nationId: number, auditTick?: number): boolean {
         const nation = this.nations.get(nationId);
         if (!nation) {
             return false;
@@ -2480,11 +2496,11 @@ export class InMemoryTurnWorld {
                 this.removeTroop(troop.id);
             }
         }
-        this.removeNation(nationId);
+        this.removeNation(nationId, auditTick);
         return true;
     }
 
-    private removeCollapsedNations(): void {
+    private removeCollapsedNations(auditTick?: number): void {
         const collapsedNationIds: number[] = [];
         for (const nation of this.nations.values()) {
             if (nation.id <= 0) {
@@ -2502,8 +2518,24 @@ export class InMemoryTurnWorld {
         }
 
         for (const nationId of collapsedNationIds) {
-            this.collapseNation(nationId);
+            this.collapseNation(nationId, auditTick);
         }
+    }
+
+    /** 감사 때문에 전체 관계 matrix를 복제하지 않고 대상 국가에 연결된 행만 가져온다. */
+    private collectNationDiplomacy(nationIds: readonly number[]): TurnDiplomacy[] {
+        const relations = new Map<string, TurnDiplomacy>();
+        for (const nationId of nationIds) {
+            if (nationId <= 0) continue;
+            for (const otherId of this.nations.keys()) {
+                if (otherId <= 0 || otherId === nationId) continue;
+                for (const key of [buildDiplomacyKey(nationId, otherId), buildDiplomacyKey(otherId, nationId)]) {
+                    const relation = this.diplomacy.get(key);
+                    if (relation) relations.set(key, relation);
+                }
+            }
+        }
+        return Array.from(relations.values());
     }
 
     private ensureDiplomacyMatrix(): void {

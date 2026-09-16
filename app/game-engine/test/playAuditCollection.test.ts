@@ -129,10 +129,67 @@ const buildWorld = (generalTurnHandler?: GeneralTurnHandler) => {
     return world;
 };
 describe('play audit collection durability state', () => {
+    it('captures direct reserved-turn nation batches once and initializes their policies', () => {
+        const world = buildWorld({
+            execute: () => ({ created: { generals: [], nations: [buildNation(3, 0, {}), buildNation(4, 0, {})] } }),
+        });
+        world.updateGeneral(3, { turnTick: 123 });
+        world.executeGeneralTurn(world.getGeneralById(3)!);
+        const changes = world.peekDirtyState();
+        expect(changes.pendingAuditDiplomacy).toHaveLength(10);
+        expect(changes.pendingAuditDiplomacy.every((event) => event.tick === 123n)).toBe(true);
+        expect(
+            new Set(changes.pendingAuditDiplomacy.map((event) => `${event.srcNationId}:${event.destNationId}`)).size
+        ).toBe(10);
+        expect(changes.pendingAuditPolicies).toHaveLength(8);
+        expect(world.getNationById(3)?.meta._playAuditPolicy).toBeDefined();
+        expect(world.getNationById(4)?.meta._playAuditPolicy).toBeDefined();
+    });
+
+    it('keeps nation creation and removal relations ordered across repeated IDs and rollback', () => {
+        const world = buildWorld();
+        const checkpoint = world.captureState();
+        const nation = buildNation(3, 0, {});
+        expect(world.addNation(nation)).toBe(true);
+        const created = world.peekDirtyState().pendingAuditDiplomacy;
+        expect(created).toHaveLength(4);
+        expect(created.map(({ srcNationId, destNationId }) => [srcNationId, destNationId])).toEqual([
+            [1, 3],
+            [2, 3],
+            [3, 1],
+            [3, 2],
+        ]);
+        expect(created.every((event) => event.before === null && event.eventType === 'NATION_RELATION_CREATED')).toBe(
+            true
+        );
+        expect(world.addNation(nation)).toBe(false);
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(created);
+        world.applyDiplomacyPatch({ srcNationId: 1, destNationId: 3, patch: { state: 7, term: 12 } });
+        expect(world.removeNation(3)).toBe(true);
+        const removed = world.peekDirtyState().pendingAuditDiplomacy.slice(4);
+        expect(removed).toHaveLength(4);
+        expect(removed[0]).toMatchObject({
+            eventType: 'NATION_RELATION_REMOVED',
+            after: null,
+            before: { state: 7, term: 12, dead: 0 },
+        });
+        expect(world.removeNation(3)).toBe(false);
+        expect(world.addNation(nation)).toBe(true);
+        const replayedId = world.peekDirtyState().pendingAuditDiplomacy.slice(8);
+        expect(replayedId).toHaveLength(4);
+        expect(replayedId[0]!.executionId).not.toBe(created[0]!.executionId);
+        world.restoreState(checkpoint);
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+        expect(world.addNation(nation)).toBe(true);
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(created);
+    });
+
     it('marks an empty diplomacy baseline without inventing relations and validates before queuing', () => {
         const world = buildWorld();
+        world.updateWorldMeta({ serverId: null });
         world.removeNation(1);
         world.removeNation(2);
+        world.updateWorldMeta({ serverId: 'yearbook-projection-test' });
         expect(() => initializeAuditDiplomacy(world, new Date('invalid'))).toThrow(RangeError);
         expect(world.getState().meta.playAuditDiplomacy).toBeUndefined();
         expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);

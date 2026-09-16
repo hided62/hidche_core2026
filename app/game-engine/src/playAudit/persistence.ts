@@ -28,7 +28,8 @@ export const persistAuditMonth = async (
         !Number.isInteger(snapshot.year) ||
         !Number.isInteger(snapshot.month) ||
         snapshot.month < 1 ||
-        snapshot.month > 12
+        snapshot.month > 12 ||
+        (snapshot.tick !== null && (!Number.isSafeInteger(snapshot.tick) || snapshot.tick < 0))
     ) {
         throw new Error('Invalid play audit month identity');
     }
@@ -42,7 +43,7 @@ export const persistAuditMonth = async (
             year: snapshot.year,
             month: snapshot.month,
             kind: snapshot.kind,
-            tick: snapshot.tick,
+            tick: snapshot.tick === null ? null : BigInt(snapshot.tick),
             settlementsComplete: snapshot.settlementsComplete,
             hash,
         },

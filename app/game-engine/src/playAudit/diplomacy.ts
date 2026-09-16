@@ -178,3 +178,55 @@ export const initializeAuditDiplomacy = (world: InMemoryTurnWorld, observedAt = 
     });
     return true;
 };
+
+/** 국가 생멸로 생성/제거된 관계를 기록한다. 행위자나 명령은 관측하지 못했다면 추정하지 않는다. */
+export const recordNationAuditDiplomacy = (
+    world: InMemoryTurnWorld,
+    nationIds: readonly number[],
+    relations: readonly TurnDiplomacy[],
+    operation: 'CREATED' | 'REMOVED',
+    observedTick?: number
+): void => {
+    const state = world.getState();
+    const serverId = state.meta.serverId;
+    if (typeof serverId !== 'string' || !serverId.trim()) return;
+    const targets = new Set(nationIds.filter((id) => id > 0));
+    const observed = relations
+        .filter(
+            (entry) =>
+                entry.fromNationId > 0 &&
+                entry.toNationId > 0 &&
+                (targets.has(entry.fromNationId) || targets.has(entry.toNationId))
+        )
+        .sort((left, right) => left.fromNationId - right.fromNationId || left.toNationId - right.toNationId);
+    if (!observed.length) return;
+    // 전역 순번은 실행 identity에만 사용한다. 한 사건 묶음 안의 순서는 방향별 local ordinal이다.
+    const executionId = `nation-relations:${world.nextAuditOrdinal()}`;
+    const clock = world.getGameClockState();
+    for (const [index, entry] of observed.entries()) {
+        const value = { state: entry.state, term: entry.term, dead: entry.dead };
+        world.queueAuditDiplomacy({
+            schemaVersion: 1,
+            serverId,
+            srcNationId: entry.fromNationId,
+            destNationId: entry.toNationId,
+            category: 'RELATION',
+            source: 'ENGINE',
+            eventType: `NATION_RELATION_${operation}`,
+            documentId: null,
+            documentHash: null,
+            previousDocumentId: null,
+            year: state.currentYear,
+            month: state.currentMonth,
+            tick: BigInt(observedTick ?? clock.tick),
+            clockRevision: BigInt(clock.revision),
+            executionId,
+            ordinal: index + 1,
+            requestId: null,
+            inputSequence: null,
+            actor: null,
+            before: operation === 'REMOVED' ? value : null,
+            after: operation === 'CREATED' ? value : null,
+        });
+    }
+};

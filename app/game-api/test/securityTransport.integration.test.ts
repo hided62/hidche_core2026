@@ -2200,6 +2200,7 @@ integration('game API security over HTTP transport', () => {
                     month: 1,
                     kind: 'MONTH_END',
                     settlementsComplete: true,
+                    tick: 4_320_000_000n,
                     hash: 'http-fixture',
                     cities: {
                         create: {
@@ -2392,7 +2393,7 @@ integration('game API security over HTTP transport', () => {
                     year: 190,
                     month: revision === 3 ? 2 : 1,
                     ordinal: revision,
-                    tick: 12,
+                    tick: 4_320_000_000n,
                     requestId: revision > 1 ? 'audit-policy-request' : null,
                     inputSequence: revision > 1 ? 9007199254740993n : null,
                     actor:
@@ -2438,6 +2439,7 @@ integration('game API security over HTTP transport', () => {
                     data: {
                         version: {
                             previousId: policyId(2),
+                            tick: '4320000000',
                             inputSequence: '9007199254740993',
                             fields: [{ key: 'scout', beforeJson: '2', afterJson: '3', changed: true }],
                         },
@@ -2556,7 +2558,12 @@ integration('game API security over HTTP transport', () => {
                 (await get('generalDetail', admin, { id: generalId, at: { year: 190, month: 1 } })).body
             ).toMatchObject({
                 result: {
-                    data: { collected: true, general: { name: '과거이름' }, city: { id: 99123, name: '과거도시' } },
+                    data: {
+                        collected: true,
+                        sample: { tick: '4320000000' },
+                        general: { name: '과거이름' },
+                        city: { id: 99123, name: '과거도시' },
+                    },
                 },
             });
             expect(

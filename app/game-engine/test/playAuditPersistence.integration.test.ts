@@ -14,7 +14,7 @@ integration('play audit transactional month persistence', () => {
         serverId,
         year: 200,
         month: 1,
-        tick: 10,
+        tick: 4_320_000_000,
         kind: 'MONTH_END',
         settlementsComplete: true,
         ...buildAuditSnapshot({
@@ -67,7 +67,7 @@ integration('play audit transactional month persistence', () => {
         await expect(db.$transaction((tx) => persistAuditMonth(tx, { ...snapshot, tick: 11 }))).rejects.toThrow(
             'replay payload conflict'
         );
-        expect((await db.playAuditMonth.findUniqueOrThrow({ where: { id: saved.id } })).tick).toBe(10);
+        expect((await db.playAuditMonth.findUniqueOrThrow({ where: { id: saved.id } })).tick).toBe(4_320_000_000n);
         await db.playAuditMonth.delete({ where: { id: saved.id } });
         expect(await db.playAuditNation.count({ where: { sampleId: saved.id } })).toBe(0);
     });

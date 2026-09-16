@@ -1090,7 +1090,7 @@ model PlayAuditMonth {
   year                Int
   month               Int
   kind                String
-  tick                Int?
+  tick                BigInt?
   schemaVersion       Int                @default(1) @map("schema_version")
   settlementsComplete Boolean            @map("settlements_complete")
   hash                String
@@ -1152,7 +1152,7 @@ model PlayAuditPolicy {
   source         String
   year           Int
   month          Int
-  tick           Int?
+  tick           BigInt?
   requestId      String?  @map("request_id")
   inputSequence  BigInt?  @map("input_sequence")
   ordinal        Int
