@@ -12,6 +12,7 @@ import { encryptGameSessionToken, type GameSessionTokenPayload } from '@sammo-ts
 import {
     createGamePostgresConnector,
     GamePrisma,
+    hashAuditDiplomacyDocument,
     createRedisConnector,
     enqueueWebPushOutboxEvents,
     resolveRedisConfigFromEnv,
@@ -2241,6 +2242,135 @@ integration('game API security over HTTP transport', () => {
             });
             const admin = await token([`admin.playAudit.read:${profileName}`]);
             const beforeInputs = await db.inputEvent.count();
+            const diplomacyInput = {
+                nationId: 99121,
+                otherNationId: 99122,
+                from: { year: 190, month: 1 },
+                to: { year: 190, month: 2 },
+            };
+            const letter = await db.diplomacyLetter.create({
+                data: {
+                    srcNationId: 99121,
+                    destNationId: 99122,
+                    srcSignerId: generalId,
+                    state: 'CANCELLED',
+                    textBrief: '당시 외교 문서',
+                    textDetail: '<p>역사 본문</p>',
+                },
+            });
+            await db.playAuditDiplomacyEvent.createMany({
+                data: [1, 2, 3].map((ordinal) => ({
+                    id: policyId(100 + ordinal),
+                    sequence: 9007199254741000n + BigInt(ordinal),
+                    schemaVersion: 1,
+                    serverId: seasonId,
+                    nationA: 99121,
+                    nationB: 99122,
+                    srcNationId: 99121,
+                    destNationId: 99122,
+                    category: ordinal === 2 ? 'RELATION' : 'DOCUMENT',
+                    source: 'API',
+                    eventType: 'LETTER_ACCEPTED',
+                    documentId: ordinal === 2 ? null : letter.id,
+                    documentHash: ordinal === 3 ? 'wrong-hash' : hashAuditDiplomacyDocument(letter),
+                    year: 190,
+                    month: ordinal === 3 ? 2 : 1,
+                    executionId: 'http-fixture',
+                    ordinal,
+                    requestId: 'hidden-request-in-list',
+                    inputSequence: 9007199254740993n,
+                    actor: {
+                        userId: 'hidden-account',
+                        generalId,
+                        name: '당시군주',
+                        nationId: 99121,
+                        officerLevel: 12,
+                        npcState: 0,
+                        debug: 'hidden-debug',
+                    },
+                    before: { state: 'PROPOSED', debug: 'hidden-before' },
+                    after: { state: 'ACTIVATED', debug: 'hidden-after' },
+                    hash: 'fixture',
+                })),
+            });
+            const diplomacyPage = await get('diplomacyHistory', admin, { ...diplomacyInput, limit: 1 });
+            expect(diplomacyPage.status).toBe(200);
+            expect(diplomacyPage.body).toMatchObject({
+                result: {
+                    data: {
+                        nextCursor: '9007199254741003',
+                        coverage: 'RECORDED_EVENTS_ONLY',
+                        items: [{ id: policyId(103), sequence: '9007199254741003' }],
+                    },
+                },
+            });
+            for (const hidden of [
+                'hidden-account',
+                'hidden-debug',
+                'hidden-request-in-list',
+                'before',
+                'after',
+                '역사 본문',
+            ])
+                expect(JSON.stringify(diplomacyPage.body)).not.toContain(hidden);
+            expect(
+                (
+                    await get('diplomacyHistory', admin, {
+                        ...diplomacyInput,
+                        nationId: 99122,
+                        otherNationId: 99121,
+                        cursor: '9007199254741003',
+                    })
+                ).body
+            ).toMatchObject({
+                result: { data: { nextCursor: null, items: [{ id: policyId(102) }, { id: policyId(101) }] } },
+            });
+            expect(
+                (await get('diplomacyHistory', admin, { ...diplomacyInput, category: 'RELATION' })).body
+            ).toMatchObject({ result: { data: { items: [{ id: policyId(102) }] } } });
+            const eventDetail = await get('diplomacyEvent', admin, { id: policyId(101) });
+            expect(eventDetail.status).toBe(200);
+            expect(eventDetail.body).toMatchObject({
+                result: {
+                    data: {
+                        event: {
+                            before: { state: 'PROPOSED' },
+                            after: { state: 'ACTIVATED' },
+                            inputSequence: '9007199254740993',
+                            documentStatus: 'AVAILABLE',
+                            document: { detail: '<p>역사 본문</p>' },
+                        },
+                    },
+                },
+            });
+            for (const hidden of ['hidden-account', 'hidden-debug', 'hidden-before', 'hidden-after'])
+                expect(JSON.stringify(eventDetail.body)).not.toContain(hidden);
+            expect((await get('diplomacyEvent', admin, { id: policyId(103) })).body).toMatchObject({
+                result: { data: { event: { documentStatus: 'HASH_MISMATCH', document: null } } },
+            });
+            await db.diplomacyLetter.delete({ where: { id: letter.id } });
+            expect((await get('diplomacyEvent', admin, { id: policyId(101) })).body).toMatchObject({
+                result: { data: { event: { documentStatus: 'MISSING_REFERENCE', document: null } } },
+            });
+            for (const patch of [
+                { cursor: 'x' },
+                { cursor: '9223372036854775808' },
+                { limit: 201 },
+                { otherNationId: 99121 },
+                { from: { year: 189, month: 12 } },
+                { to: { year: 191, month: 1 } },
+            ])
+                expect((await get('diplomacyHistory', admin, { ...diplomacyInput, ...patch })).status).toBe(400);
+            expect((await get('diplomacyEvent', admin, { id: '../bad' })).status).toBe(400);
+            for (const [operation, input] of [
+                ['diplomacyHistory', diplomacyInput],
+                ['diplomacyEvent', { id: policyId(101) }],
+            ] as const) {
+                expect((await get(operation, undefined, input)).status).toBe(401);
+                for (const roles of [['admin'], ['admin.playAudit.read:other:default']])
+                    expect((await get(operation, await token(roles), input)).status).toBe(403);
+            }
+
             const policyInput = {
                 nationId: 99128,
                 area: 'DEFENCE',
@@ -2496,6 +2626,8 @@ integration('game API security over HTTP transport', () => {
             });
             expect((await get('capabilities', blocked)).status).toBe(403);
             expect((await get('policyHistory', blocked, policyInput)).status).toBe(403);
+            expect((await get('diplomacyHistory', blocked, diplomacyInput)).status).toBe(403);
+            expect((await get('diplomacyEvent', blocked, { id: policyId(101) })).status).toBe(403);
             expect((await get('policyVersion', blocked, { id: policyId(3) })).status).toBe(403);
             const population = {
                 count: 0,
@@ -2819,6 +2951,10 @@ integration('game API security over HTTP transport', () => {
                 result: { data: { items: [] } },
             });
             expect((await get('policyVersion', admin, { id: policyId(3) })).status).toBe(404);
+            expect((await get('diplomacyHistory', admin, diplomacyInput)).body).toMatchObject({
+                result: { data: { items: [] } },
+            });
+            expect((await get('diplomacyEvent', admin, { id: policyId(101) })).status).toBe(404);
             expect(await db.inputEvent.count()).toBe(beforeInputs);
             await redis!.client.publish(
                 `${redisPrefix}:flush`,
@@ -2831,6 +2967,8 @@ integration('game API security over HTTP transport', () => {
             await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
         } finally {
             await db.playAuditPolicy.deleteMany({ where: { serverId: seasonId } });
+            await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: seasonId } });
+            await db.diplomacyLetter.deleteMany({ where: { srcNationId: 99121, destNationId: 99122 } });
             await db.logEntry.deleteMany({ where: { text: { startsWith: `${seasonId}:` } } });
             await db.playAuditMonth.deleteMany({ where: { serverId: seasonId } });
             await db.generalTurn.deleteMany({ where: { generalId, turnIdx: { in: [9001, 9002] } } });

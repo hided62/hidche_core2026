@@ -166,6 +166,25 @@ sequence를 예약 턴의 실행 ID로 오인하지 않는다. 메모리 Map을 
 실제 DB 재로드와 당시 NPC 정책/결정 trace 연결은 후속 gate다. 즉시 명령 executor와
 특수 상태 변경을 포함한 최종 mutation inventory 및 초기 기준/조회 화면도 남았다.
 
+### 외교 이력 조회 API
+
+프로필 game-api의 `diplomacyHistory/diplomacyEvent`는 공통 감사 권한과 read-only
+transaction을 재사용한다. 목록은 서로 다른 국가 두 개와 현재 기수 안의 기간을
+필수로 받아 sequence 역순 기본50/최대200개만 반환한다. 국가쌍의 입력 순서는 무관하지만
+각 사건의 방향은 유지한다. sequence/cursor/tick은 정밀도를 잃지 않는 문자열이다.
+
+목록에는 본문·전후 값·요청 원장 정보를 싣지 않는다. 상세는 해당 기수 event 1개와
+필요한 문서 1개만 읽고 원문 hash를 검증한다. AVAILABLE/NOT_APPLICABLE/
+MISSING_REFERENCE/HASH_MISMATCH를 구분하고 원문 부재·불일치에서는 본문을 반환하지
+않는다. 기록의 before/after를 보여 주며 현재 문서 상태로 덮어쓰지 않는다. actor와
+상태는 allowlist로 투영하여 계정 ID·debug 등 내부 값을 제외한다.
+
+coverage는 RECORDED_EVENTS_ONLY이며 최초 수집 전의 상태 완전성을 주장하지 않는다.
+국가쌍/sequence index를 사용 가능한 형태지만 실제 큰 기수의 기간별 scan/EXPLAIN 비용
+검증은 후속 gate다. 실제 HTTP+PG/Redis에서 권한·sanction·잘못된 범위/cursor,
+본문 지연 조회/hash 상태·기수 전환의 접근 차단과 input_event 무증가를 검증했다.
+외교 화면과 초기 기준 수집은 아직 남아 있다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.
