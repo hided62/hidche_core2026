@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { projectCurrentGeneral } from '../src/router/playAudit/projection.js';
 import { asRecord } from '@sammo-ts/common';
 import fs from 'node:fs/promises';
@@ -2154,6 +2155,8 @@ integration('game API security over HTTP transport', () => {
         const auditUserId = `audit-http-${process.pid}`;
         const seasonId = `audit-season-${process.pid}`;
         const sampleId = `${seasonId}:190:1`;
+        const policyId = (revision: number) =>
+            createHash('sha256').update(`${seasonId}:policy:${revision}`).digest('hex');
         const originalWorld = await db.worldState.findUniqueOrThrow({ where: { id: fixtureWorldId } });
         const token = async (roles: string[], sanctions: GameSessionTokenPayload['sanctions'] = {}) => {
             const payload = buildPayload(`audit-${roles.join('-')}`, sanctions, auditUserId);
@@ -2238,6 +2241,100 @@ integration('game API security over HTTP transport', () => {
             });
             const admin = await token([`admin.playAudit.read:${profileName}`]);
             const beforeInputs = await db.inputEvent.count();
+            const policyInput = {
+                nationId: 99128,
+                area: 'DEFENCE',
+                from: { year: 190, month: 1 },
+                to: { year: 190, month: 2 },
+            };
+            await db.playAuditPolicy.createMany({
+                data: [1, 2, 3].map((revision) => ({
+                    id: policyId(revision),
+                    serverId: seasonId,
+                    nationId: 99128,
+                    area: 'DEFENCE',
+                    revision,
+                    previousId: revision > 1 ? policyId(revision - 1) : null,
+                    source: revision === 1 ? 'BASELINE' : 'CHANGE',
+                    year: 190,
+                    month: revision === 3 ? 2 : 1,
+                    ordinal: revision,
+                    tick: 12,
+                    requestId: revision > 1 ? 'audit-policy-request' : null,
+                    inputSequence: revision > 1 ? 9007199254740993n : null,
+                    actor:
+                        revision > 1
+                            ? {
+                                  userId: 'hidden-account',
+                                  generalId,
+                                  name: '당시군주',
+                                  nationId: 99128,
+                                  officerLevel: 12,
+                                  npcState: 0,
+                                  permission: 3,
+                                  extra: 'hidden-extra',
+                              }
+                            : GamePrisma.DbNull,
+                    before: revision === 1 ? GamePrisma.DbNull : { scout: revision - 1 },
+                    after: { scout: revision },
+                    hash: 'fixture',
+                })),
+            });
+            const policyPage = await get('policyHistory', admin, { ...policyInput, limit: 1 });
+            expect(policyPage.status).toBe(200);
+            expect(policyPage.body).toMatchObject({
+                result: {
+                    data: {
+                        nextCursor: 3,
+                        items: [{ revision: 3, source: 'CHANGE', actor: { name: '당시군주', officerLevel: 12 } }],
+                    },
+                },
+            });
+            for (const excluded of ['hidden-account', 'hidden-extra', 'before', 'after', 'inputSequence', 'requestId'])
+                expect(JSON.stringify(policyPage.body)).not.toContain(excluded);
+            expect((await get('policyHistory', admin, { ...policyInput, cursor: 3 })).body).toMatchObject({
+                result: { data: { nextCursor: null, items: [{ revision: 2 }, { revision: 1, actor: null }] } },
+            });
+            expect(
+                (await get('policyHistory', admin, { ...policyInput, to: { year: 190, month: 1 } })).body
+            ).toMatchObject({ result: { data: { items: [{ revision: 2 }, { revision: 1 }] } } });
+            const policyDetail = await get('policyVersion', admin, { id: policyId(3) });
+            expect(policyDetail.status).toBe(200);
+            expect(policyDetail.body).toMatchObject({
+                result: {
+                    data: {
+                        version: {
+                            previousId: policyId(2),
+                            inputSequence: '9007199254740993',
+                            fields: [{ key: 'scout', beforeJson: '2', afterJson: '3', changed: true }],
+                        },
+                    },
+                },
+            });
+            expect(JSON.stringify(policyDetail.body)).not.toContain('hidden-account');
+            expect((await get('policyVersion', admin, { id: policyId(1) })).body).toMatchObject({
+                result: { data: { version: { fields: [{ beforeJson: null, changed: false }] } } },
+            });
+            expect((await get('policyVersion', admin, { id: policyId(99) })).status).toBe(404);
+            for (const patch of [
+                { limit: 201 },
+                { cursor: 0 },
+                { area: 'ANY' },
+                { from: { year: 189, month: 12 } },
+                { to: { year: 191, month: 1 } },
+                { from: { year: 190, month: 2 }, to: { year: 190, month: 1 } },
+            ])
+                expect((await get('policyHistory', admin, { ...policyInput, ...patch })).status).toBe(400);
+            expect((await get('policyVersion', admin, { id: '../bad' })).status).toBe(400);
+            for (const [operation, input] of [
+                ['policyHistory', policyInput],
+                ['policyVersion', { id: policyId(3) }],
+            ] as const) {
+                expect((await get(operation, undefined, input)).status).toBe(401);
+                for (const roles of [['admin'], ['admin.playAudit.read:other:default']])
+                    expect((await get(operation, await token(roles), input)).status).toBe(403);
+            }
+
             const logGeneralId = 99129; // No live general: death must not hide retained records.
             const ownLogs = await Promise.all(
                 ['HISTORY', 'ACTION', 'BATTLE_BRIEF', 'BATTLE_DETAIL'].map((category) =>
@@ -2398,6 +2495,8 @@ integration('game API security over HTTP transport', () => {
                 serverRestrictions: { [profileName]: { blockedFeatures: ['gameplay'] } },
             });
             expect((await get('capabilities', blocked)).status).toBe(403);
+            expect((await get('policyHistory', blocked, policyInput)).status).toBe(403);
+            expect((await get('policyVersion', blocked, { id: policyId(3) })).status).toBe(403);
             const population = {
                 count: 0,
                 gold: 0,
@@ -2647,6 +2746,10 @@ integration('game API security over HTTP transport', () => {
             expect((await get('generals', admin, { at: { year: 190, month: 1 } })).body).toMatchObject({
                 result: { data: { collected: false, items: [] } },
             });
+            expect((await get('policyHistory', admin, policyInput)).body).toMatchObject({
+                result: { data: { items: [] } },
+            });
+            expect((await get('policyVersion', admin, { id: policyId(3) })).status).toBe(404);
             expect(await db.inputEvent.count()).toBe(beforeInputs);
             await redis!.client.publish(
                 `${redisPrefix}:flush`,
@@ -2658,6 +2761,7 @@ integration('game API security over HTTP transport', () => {
             );
             await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
         } finally {
+            await db.playAuditPolicy.deleteMany({ where: { serverId: seasonId } });
             await db.logEntry.deleteMany({ where: { text: { startsWith: `${seasonId}:` } } });
             await db.playAuditMonth.deleteMany({ where: { serverId: seasonId } });
             await db.generalTurn.deleteMany({ where: { generalId, turnIdx: { in: [9001, 9002] } } });

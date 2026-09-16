@@ -88,6 +88,72 @@ const install = async (page: Page, denied = false) => {
                             ],
                             nextCursor: null,
                         });
+                    case 'playAudit.policyHistory':
+                        return result({
+                            ...world,
+                            coverage: 'RECORDED_VERSIONS_ONLY',
+                            items: [
+                                {
+                                    id: String(input.cursor ? 'a' : 'b').repeat(64),
+                                    nationId: 2,
+                                    area: input.area,
+                                    revision: input.cursor ? 1 : 2,
+                                    source: input.cursor ? 'BASELINE' : 'CHANGE',
+                                    year: 190,
+                                    month: 6,
+                                    previousId: input.cursor ? null : 'a'.repeat(64),
+                                    actor: input.cursor
+                                        ? null
+                                        : {
+                                              generalId: 1,
+                                              name: '당시군주',
+                                              nationId: 2,
+                                              officerLevel: 12,
+                                              npcState: 0,
+                                          },
+                                    createdAt: world.asOf,
+                                },
+                            ],
+                            nextCursor: input.cursor ? null : 2,
+                        });
+                    case 'playAudit.policyVersion': {
+                        const baseline = input.id === 'a'.repeat(64);
+                        return result({
+                            ...world,
+                            version: {
+                                id: input.id,
+                                nationId: 2,
+                                area: 'DEFENCE',
+                                revision: baseline ? 1 : 2,
+                                source: baseline ? 'BASELINE' : 'CHANGE',
+                                year: 190,
+                                month: 6,
+                                previousId: baseline ? null : 'a'.repeat(64),
+                                actor: baseline
+                                    ? null
+                                    : { generalId: 1, name: '당시군주', nationId: 2, officerLevel: 12, npcState: 0 },
+                                createdAt: world.asOf,
+                                tick: '100',
+                                ordinal: baseline ? 1 : 2,
+                                requestId: baseline ? null : 'policy-request-fixture',
+                                inputSequence: baseline ? null : '9007199254740993',
+                                fields: [
+                                    {
+                                        key: 'scout',
+                                        beforeJson: baseline ? null : '0',
+                                        afterJson: '1',
+                                        changed: !baseline,
+                                    },
+                                    {
+                                        key: 'priority',
+                                        beforeJson: baseline ? null : 'null',
+                                        afterJson: '["<script>window.auditInjected=true</script>"]',
+                                        changed: !baseline,
+                                    },
+                                ],
+                            },
+                        });
+                    }
                     case 'playAudit.coverage':
                         return result({ ...world, status: 'COLLECTED', samples: [], nextCursor: null });
                     case 'playAudit.nations':
@@ -509,4 +575,110 @@ test('initial calendar before the scenario year bounds default periods and month
     await expect
         .poll(() => requests.find((r) => r.operation === 'playAudit.nationSeries')?.input)
         .toMatchObject({ from: { year: 189, month: 10 }, to: { year: 189, month: 10 } });
+});
+
+test('policy history reads summaries and selected versions only, preserving deep links and pagination', async ({
+    page,
+}) => {
+    const requests = await install(page);
+    const path = '/play-audit?tab=policies&nation=2&policyArea=DEFENCE&fromYear=190&fromMonth=1&year=190&month=6';
+    await page.goto(gamePath(path));
+    await expect(page.getByRole('button', { name: '버전 2', exact: true })).toBeVisible();
+    expect(
+        requests.some(({ operation }) =>
+            ['playAudit.policyVersion', 'playAudit.nationSeries', 'playAudit.generals'].includes(operation)
+        )
+    ).toBe(false);
+    const listReads = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
+    const nationReads = requests.filter(({ operation }) => operation === 'playAudit.nations').length;
+    await page.getByRole('button', { name: '버전 2', exact: true }).click();
+    await expect(page.getByText('임관 권유 설정 (변경)', { exact: true })).toBeVisible();
+    await expect(page.getByText(/국가 #2 · 버전 2/)).toBeVisible();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory')).toHaveLength(listReads);
+    expect(requests.filter(({ operation }) => operation === 'playAudit.nations')).toHaveLength(nationReads);
+    await page.getByText('요청 연결', { exact: true }).click();
+    await expect(page.getByText('입력 순번 9007199254740993', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => Object.hasOwn(window, 'auditInjected'))).toBe(false);
+    await capture(page, 'desktop-policy-detail');
+    await page.reload();
+    await expect(page.getByText(/국가 #2 · 버전 2/)).toBeVisible();
+    await page.getByRole('button', { name: '이전 정책 버전', exact: true }).click();
+    await expect(page.getByText(/국가 #2 · 버전 1/)).toBeVisible();
+    await expect(page.getByRole('cell', { name: '관측하지 않음', exact: true })).toHaveCount(2);
+    await page.goBack();
+    await expect(page.getByText(/국가 #2 · 버전 2/)).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await capture(page, 'mobile-policy-detail');
+    await page.getByRole('button', { name: '정책 상세 닫기' }).click();
+    await expect(page.getByRole('heading', { name: /선택 정책 버전/ })).toHaveCount(0);
+    await page.getByRole('button', { name: '다음 정책 50개' }).click();
+    await expect(page.getByRole('button', { name: '버전 1', exact: true })).toBeVisible();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory').at(-1)?.input).toMatchObject({
+        area: 'DEFENCE',
+        cursor: 2,
+        nationId: 2,
+    });
+    await page.getByLabel('정책 영역').selectOption('NPC_GENERAL_PRIORITY');
+    const before = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
+    await page.getByRole('button', { name: '조회', exact: true }).click();
+    await expect
+        .poll(() => requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length)
+        .toBeGreaterThan(before);
+    expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory').at(-1)?.input.area).toBe(
+        'NPC_GENERAL_PRIORITY'
+    );
+});
+
+test('policy detail failure retries independently without reloading its history', async ({ page }) => {
+    const requests = await install(page);
+    let fail = true;
+    await page.route(gameTrpcRoute, async (route) => {
+        if (fail && route.request().url().includes('playAudit.policyVersion')) {
+            fail = false;
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify([
+                    {
+                        error: {
+                            message: '정책 버전 일시 오류',
+                            code: -32603,
+                            data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 },
+                        },
+                    },
+                ]),
+            });
+            return;
+        }
+        await route.fallback();
+    });
+    await page.goto(
+        gamePath('/play-audit?tab=policies&nation=2&policyArea=DEFENCE&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await page.getByRole('button', { name: '버전 2', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('정책 버전 일시 오류');
+    await expect(page.getByRole('button', { name: '버전 2', exact: true })).toBeVisible();
+    const count = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
+    await page.getByRole('button', { name: '버전 다시 조회', exact: true }).click();
+    await expect(page.getByText(/국가 #2 · 버전 2/)).toBeVisible();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory')).toHaveLength(count);
+});
+
+test('policy filter drafts do not read until applied, including default dates', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=policies&nation=2'));
+    await expect(page.getByRole('button', { name: '버전 2', exact: true })).toBeVisible();
+    const count = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
+    await page.getByLabel('시작 월', { exact: true }).fill('3');
+    await page.getByLabel('정책 영역').selectOption('DEFENCE');
+    await page.getByRole('button', { name: '조회', exact: true }).focus();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory')).toHaveLength(count);
+    await page.getByRole('button', { name: '조회', exact: true }).click();
+    await expect
+        .poll(() => requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length)
+        .toBe(count + 1);
+    expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory').at(-1)?.input).toMatchObject({
+        area: 'DEFENCE',
+        from: { year: 190, month: 3 },
+    });
 });

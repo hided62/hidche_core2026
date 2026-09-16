@@ -1,6 +1,7 @@
 import { nationSeries, zAuditNation } from './nationSeries.js';
 import { cityDetail, generalDetail, generalTurns } from './details.js';
 import { generalLogs } from './logs.js';
+import { policyHistory, policyVersion } from './policies.js';
 import { z } from 'zod';
 import { canReadPlayAuditAccounts } from '@sammo-ts/common';
 import { router } from '../../trpc.js';
@@ -23,6 +24,8 @@ import {
 } from './projection.js';
 
 export const playAuditRouter = router({
+    policyHistory,
+    policyVersion,
     generalLogs,
     cityDetail,
     generalDetail,
