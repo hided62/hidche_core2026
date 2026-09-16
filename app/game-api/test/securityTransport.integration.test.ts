@@ -2197,23 +2197,90 @@ integration('game API security over HTTP transport', () => {
                     kind: 'MONTH_END',
                     settlementsComplete: true,
                     hash: 'http-fixture',
+                    cities: {
+                        create: {
+                            cityId: 99123,
+                            nationId: ownerNationId,
+                            data: {
+                                id: 99123,
+                                name: '과거도시',
+                                nationId: ownerNationId,
+                                level: 4,
+                                state: 0,
+                                population: 100,
+                                populationMax: 200,
+                                agriculture: 10,
+                                agricultureMax: 20,
+                                commerce: 10,
+                                commerceMax: 20,
+                                security: 10,
+                                securityMax: 20,
+                                wall: 10,
+                                wallMax: 20,
+                                defence: 10,
+                                defenceMax: 20,
+                                supplyState: 1,
+                                frontState: 0,
+                                trust: 80,
+                            },
+                        },
+                    },
                     generals: {
                         create: {
                             generalId,
                             nationId: current.nationId,
-                            cityId: current.cityId,
+                            cityId: 99123,
                             npcState: current.npcState,
-                            data: { ...past, name: '과거이름', hiddenSecret: 'must-not-expose' },
+                            data: { ...past, cityId: 99123, name: '과거이름', hiddenSecret: 'must-not-expose' },
                         },
                     },
                 },
             });
+            const admin = await token([`admin.playAudit.read:${profileName}`]);
             const beforeInputs = await db.inputEvent.count();
+            expect((await get('generalDetail', admin, { id: generalId })).body).toMatchObject({
+                result: { data: { collected: true, general: { id: generalId, name: current.name } } },
+            });
+            expect(
+                (await get('generalDetail', admin, { id: generalId, at: { year: 190, month: 1 } })).body
+            ).toMatchObject({
+                result: {
+                    data: { collected: true, general: { name: '과거이름' }, city: { id: 99123, name: '과거도시' } },
+                },
+            });
+            expect(
+                (await get('generalDetail', admin, { id: generalId, at: { year: 190, month: 2 } })).body
+            ).toMatchObject({ result: { data: { collected: false, general: null } } });
+            expect((await get('generalDetail', await token(['admin']), { id: generalId })).status).toBe(403);
+            expect((await get('cityDetail', admin, { id: 99123, at: { year: 190, month: 1 } })).body).toMatchObject({
+                result: { data: { collected: true, city: { id: 99123, name: '과거도시', population: 100 } } },
+            });
+            await db.generalTurn.createMany({
+                data: [9001, 9002].map((turnIdx) => ({
+                    generalId,
+                    turnIdx,
+                    actionCode: '휴식',
+                    arg: { fixture: turnIdx },
+                })),
+            });
+            expect((await get('generalTurns', admin, { generalId, cursor: 9000, limit: 1 })).body).toMatchObject({
+                result: {
+                    data: {
+                        currentOnly: true,
+                        items: [{ turnIdx: 9001, actionCode: '휴식', argumentJson: '{"fixture":9001}' }],
+                        nextCursor: 9001,
+                    },
+                },
+            });
+            expect((await get('generalTurns', admin, { generalId, cursor: 9001, limit: 1 })).body).toMatchObject({
+                result: { data: { items: [{ turnIdx: 9002 }], nextCursor: null } },
+            });
+            expect((await get('generalTurns', admin, { generalId, at: { year: 190, month: 1 } })).status).toBe(400);
+            expect((await get('generalTurns', admin, { generalId, limit: 201 })).status).toBe(400);
             expect((await get('capabilities')).status).toBe(401);
             for (const roles of [['user'], ['admin'], ['admin.audit.read'], ['admin.playAudit.read:other:default']]) {
                 expect((await get('capabilities', await token(roles))).status).toBe(403);
             }
-            const admin = await token([`admin.playAudit.read:${profileName}`]);
             expect(await db.general.findUnique({ where: { userId: auditUserId } })).toBeNull();
             expect((await get('capabilities', admin)).body).toMatchObject({
                 result: { data: { read: true, accounts: false } },
@@ -2446,6 +2513,7 @@ integration('game API security over HTTP transport', () => {
             await expect.poll(async () => (await get('capabilities', admin)).status).toBe(401);
         } finally {
             await db.playAuditMonth.deleteMany({ where: { serverId: seasonId } });
+            await db.generalTurn.deleteMany({ where: { generalId, turnIdx: { in: [9001, 9002] } } });
             await db.nation.deleteMany({ where: { id: { in: [99121, 99122] } } });
             await db.worldState.update({
                 where: { id: fixtureWorldId },

@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import AuditNationSeries from '../components/playAudit/AuditNationSeries.vue';
 import AuditNationSnapshot from '../components/playAudit/AuditNationSnapshot.vue';
+import AuditGeneralDetail from '../components/playAudit/AuditGeneralDetail.vue';
+import AuditCityDetail from '../components/playAudit/AuditCityDetail.vue';
 import { usePageExit } from '../composables/usePageExit';
 import { trpc } from '../utils/trpc';
 
@@ -39,6 +41,29 @@ const resolution = ref<'month' | 'halfYear'>('halfYear');
 let generation = 0;
 const numeric = (value: unknown, fallback: number) =>
     typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : fallback;
+const selectedGeneral = computed(() =>
+    typeof route.query.general === 'string' && /^\d+$/.test(route.query.general) ? Number(route.query.general) : null
+);
+const selectedAt = computed(() =>
+    route.query.at === 'month' || route.query.at === 'final'
+        ? {
+              year: numeric(route.query.year, coverage.value?.year ?? 0),
+              month: numeric(route.query.month, coverage.value?.month ?? 1),
+              kind: route.query.at === 'final' ? ('FINAL' as const) : ('MONTH_END' as const),
+          }
+        : undefined
+);
+const selectedCity = computed(() =>
+    typeof route.query.cityRecord === 'string' && /^\d+$/.test(route.query.cityRecord)
+        ? Number(route.query.cityRecord)
+        : null
+);
+const selectGeneral = (id: number) =>
+    router.push({ query: { ...route.query, general: String(id), cityRecord: undefined } });
+const closeGeneral = () => router.push({ query: { ...route.query, general: undefined } });
+const selectCity = (id: number) =>
+    router.push({ query: { ...route.query, cityRecord: String(id), general: undefined } });
+const closeCity = () => router.push({ query: { ...route.query, cityRecord: undefined } });
 const at = computed(() =>
     moment.value === 'current'
         ? undefined
@@ -189,6 +214,7 @@ const refresh = async () => {
     for (const response of results) if (response.status === 'rejected') error.value = message(response.reason);
 };
 const showCityGenerals = async (id: number) => {
+    readQuery();
     tab.value = 'generals';
     cityId.value = String(id);
     nationId.value = '';
@@ -207,7 +233,7 @@ const moreNations = async () => {
     }
 };
 watch(
-    () => route.fullPath,
+    () => JSON.stringify(Object.entries(route.query).filter(([key]) => key !== 'general' && key !== 'cityRecord')),
     () => {
         if (authorized.value) {
             readQuery();
@@ -369,7 +395,9 @@ onMounted(async () => {
                         <tbody>
                             <tr v-for="general in generals.items" :key="general.id">
                                 <th scope="row">
-                                    {{ general.name }} (#{{ general.id }})<br />{{
+                                    <button class="legacy-button" @click="selectGeneral(general.id)">
+                                        {{ general.name }} (#{{ general.id }})</button
+                                    ><br />{{
                                         general.npcState < 2 ? '유저' : general.npcState === 5 ? '부대장 NPC' : 'NPC'
                                     }}
                                 </th>
@@ -435,7 +463,11 @@ onMounted(async () => {
                         </thead>
                         <tbody>
                             <tr v-for="city in cities.items" :key="city.id">
-                                <th scope="row">{{ city.name }} (#{{ city.id }})</th>
+                                <th scope="row">
+                                    <button class="legacy-button" @click="selectCity(city.id)">
+                                        {{ city.name }} (#{{ city.id }})
+                                    </button>
+                                </th>
                                 <td>{{ nationName(city.nationId) }}</td>
                                 <td>{{ format(city.population) }} / {{ format(city.populationMax) }}</td>
                                 <td>
@@ -483,6 +515,19 @@ onMounted(async () => {
                 다시 조회
             </button>
         </PanelCard>
+        <AuditGeneralDetail
+            v-if="authorized && selectedGeneral !== null"
+            :general-id="selectedGeneral"
+            :at="selectedAt"
+            @close="closeGeneral"
+        />
+        <AuditCityDetail
+            v-if="authorized && selectedCity !== null"
+            :city-id="selectedCity"
+            :at="selectedAt"
+            @close="closeCity"
+            @generals="showCityGenerals"
+        />
     </main>
 </template>
 

@@ -1,4 +1,5 @@
 import { nationSeries, zAuditNation } from './nationSeries.js';
+import { cityDetail, generalDetail, generalTurns } from './details.js';
 import { z } from 'zod';
 import { canReadPlayAuditAccounts } from '@sammo-ts/common';
 import { router } from '../../trpc.js';
@@ -21,6 +22,9 @@ import {
 } from './projection.js';
 
 export const playAuditRouter = router({
+    cityDetail,
+    generalDetail,
+    generalTurns,
     nationSeries,
     nationSnapshot: auditProcedure
         .input(z.object({ nationId: z.number().int().nonnegative(), at: zAuditMonth }).strict())

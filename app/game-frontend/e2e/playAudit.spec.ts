@@ -151,6 +151,52 @@ const install = async (page: Page, denied = false) => {
                                           },
                                       ],
                         });
+                    case 'playAudit.generalDetail':
+                        return result({
+                            ...world,
+                            sample: input.at ?? null,
+                            collected: true,
+                            general: { ...general, name: input.at ? '과거감사장수' : general.name },
+                            nation: { id: 2, name: '촉' },
+                            city: { id: 3, name: '성도' },
+                        });
+                    case 'playAudit.cityDetail':
+                        return result({
+                            ...world,
+                            collected: true,
+                            sample: input.at ?? null,
+                            nation: { id: 2, name: '촉' },
+                            city: {
+                                id: 3,
+                                name: '성도',
+                                nationId: 2,
+                                level: 4,
+                                state: 0,
+                                population: 10000,
+                                populationMax: 20000,
+                                agriculture: 100,
+                                agricultureMax: 200,
+                                commerce: 100,
+                                commerceMax: 200,
+                                security: 100,
+                                securityMax: 200,
+                                wall: 100,
+                                wallMax: 200,
+                                defence: 100,
+                                defenceMax: 200,
+                                supplyState: 1,
+                                frontState: 0,
+                                trust: 80,
+                            },
+                        });
+                    case 'playAudit.generalTurns':
+                        return result({
+                            ...world,
+                            currentOnly: true,
+                            generalExists: true,
+                            items: [{ turnIdx: 0, actionCode: '휴식', argumentJson: '{}' }],
+                            nextCursor: null,
+                        });
                     case 'playAudit.cities':
                         return result({
                             ...world,
@@ -315,4 +361,46 @@ test('final nation snapshot is separate from the monthly series', async ({ page 
         at: { year: 190, month: 6, kind: 'FINAL' },
     });
     await capture(page, 'final-nation');
+});
+
+test('selected general reads detail on demand and separates current reservations from history', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=generals'));
+    await expect(page.getByRole('button', { name: '감사장수 (#1)', exact: true })).toBeVisible();
+    const before = requests.filter((request) => request.operation === 'playAudit.generals').length;
+    await page.getByRole('button', { name: '감사장수 (#1)', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '선택 장수 상세' })).toBeVisible();
+    await expect(page.getByText('국가 촉 · 도시 성도 · 부대 #0', { exact: true })).toBeVisible();
+    expect(requests.filter((request) => request.operation === 'playAudit.generals')).toHaveLength(before);
+    expect(requests.some((request) => request.operation === 'playAudit.generalTurns')).toBe(false);
+    await page.getByRole('button', { name: '현재 예약 명령 조회', exact: true }).click();
+    await expect(page.getByText(/위치 0: 휴식/)).toBeVisible();
+    await capture(page, 'general-detail');
+    await page.getByRole('button', { name: '상세 닫기', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '선택 장수 상세' })).toHaveCount(0);
+    await page.goto(gamePath('/play-audit?tab=generals&general=1&at=month&year=190&month=6'));
+    await expect(page.getByRole('heading', { name: '과거감사장수 (#1)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '현재 예약 명령 조회', exact: true })).toHaveCount(0);
+    expect(requests.filter((request) => request.operation === 'playAudit.generalTurns')).toHaveLength(1);
+});
+
+test('city detail is addressable without reloading the list and retains month for stationed generals', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=cities&at=month&year=190&month=6'));
+    const button = page.getByRole('button', { name: '성도 (#3)', exact: true });
+    await expect(button).toBeVisible();
+    const before = requests.filter((request) => request.operation === 'playAudit.cities').length;
+    await button.click();
+    await expect(page.getByRole('heading', { name: '성도 (#3) · 촉' })).toBeVisible();
+    expect(requests.filter((request) => request.operation === 'playAudit.cities')).toHaveLength(before);
+    await capture(page, 'city-detail-mobile');
+    await page.getByRole('button', { name: '이 시점의 모든 국가 주둔 장수', exact: true }).click();
+    await expect(page.getByRole('rowheader', { name: /감사장수/ })).toBeVisible();
+    expect(requests.filter((request) => request.operation === 'playAudit.generals').at(-1)?.input).toMatchObject({
+        cityId: 3,
+        at: { year: 190, month: 6, kind: 'MONTH_END' },
+    });
 });
