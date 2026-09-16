@@ -73,6 +73,7 @@ export interface TurnCommandFixtureRequest {
             develCost?: number;
             isUnited?: 0 | 1 | 2 | 3;
             hiddenSeed?: string;
+            fiction?: 0 | 1;
             scenarioEffect?: string | null;
             staticEventHandlers?: Record<string, string[]>;
             freezeClock?: boolean;
@@ -548,7 +549,7 @@ export const buildCoreTurnCommandWorldInput = (
             title: '턴 명령 차등',
             startYear: request.setup?.world?.startYear ?? Math.max(1, year - 5),
             life: null,
-            fiction: 0,
+            fiction: request.setup?.world?.fiction ?? 0,
             history: [],
             ignoreDefaultEvents: false,
         },

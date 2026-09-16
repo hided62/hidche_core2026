@@ -168,6 +168,83 @@ const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
 };
 
 integration('core ↔ legacy command-boundary differential', () => {
+    it.each([
+        {
+            name: 'fictional NPC chief priority',
+            expected: 4,
+            fiction: 1,
+            npc: 2,
+            affinities: [50, 90, 120],
+            levels: [1, 11, 10],
+        },
+        { name: 'positive affinity distances', expected: 5, npc: 2, affinities: [60, 90, 120], levels: [1, 1, 1] },
+        {
+            name: 'affinity order differs from general id',
+            expected: 3,
+            npc: 2,
+            affinities: [120, 60, 90],
+            levels: [1, 1, 1],
+        },
+        { name: 'zero affinity distance', expected: 3, npc: 2, affinities: [50, 90, 120], levels: [1, 1, 1] },
+        { name: 'human ruler chief priority', expected: 4, npc: 0, affinities: [60, 90, 120], levels: [9, 11, 10] },
+        { name: 'human ruler dedication fallback', expected: 5, npc: 0, affinities: [60, 90, 120], levels: [1, 1, 1] },
+    ])('matches ruler succession: $name', async ({ npc, affinities, levels, fiction, expected }) => {
+        const request = readFixture('fixtures/turn-differential/live-sortie-conquest.json');
+        request.setup!.world!.hiddenSeed = 'succession-0';
+        request.setup!.world!.fiction = fiction === 1 ? 1 : 0;
+        request.actorGeneralId = 2;
+        request.action = '휴식';
+        request.args = {};
+        request.includeLifecycle = true;
+        request.setup!.generals![1] = {
+            ...request.setup!.generals![1],
+            npcState: npc,
+            affinity: 50,
+            killTurn: 1,
+            deadYear: 185,
+        };
+        request.setup!.generals!.push(
+            ...affinities.map((affinity, index) => ({
+                id: index + 3,
+                name: `후계${index}`,
+                nationId: 2,
+                cityId: 70,
+                npcState: 2,
+                affinity,
+                officerLevel: levels[index],
+                dedication: (index + 1) * 100,
+                killTurn: 24,
+                crew: 0,
+            }))
+        );
+        request.observe = {
+            ...request.observe,
+            generalIds: [1, 2, 3, 4, 5],
+            nationIds: [1, 2],
+            cityIds: [3, 70],
+            includeGlobalHistoryLogs: true,
+        };
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const rulers = (snapshot: CanonicalTurnSnapshot) =>
+            snapshot.generals
+                .filter((general) => general.nationId === 2 && general.officerLevel === 12)
+                .map((general) => general.id);
+        expect(reference.after.generals.find((general) => general.id === 2)).toBeUndefined();
+        expect(core.after.generals.find((general) => general.id === 2)).toBeUndefined();
+        expect(reference.before.generals.find((general) => general.id === 2)?.affinity).toBe(50);
+        expect(
+            reference.before.generals.filter((general) => Number(general.id) >= 3).map((general) => general.affinity)
+        ).toEqual(affinities);
+        expect(rulers(reference.after)).toEqual([expected]);
+        expect(rulers(core.after)).toEqual(rulers(reference.after));
+        expect(rulers(core.after)).toHaveLength(1);
+        expect(core.rng).toEqual(reference.rng);
+    });
+
     it('dissolves a successorless ruler nation at the death boundary', async () => {
         const request = readFixture('fixtures/turn-differential/live-sortie-conquest.json');
         request.actorGeneralId = 2;

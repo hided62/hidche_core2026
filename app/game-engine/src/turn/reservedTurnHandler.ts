@@ -2498,7 +2498,13 @@ export const createReservedTurnHandler = async (options: {
                                     candidate.npcState !== 5
                             );
                         let successor: TurnGeneral | undefined;
-                        const fiction = readMetaNumber(worldMeta, 'fiction', 0);
+                        // 설치된 상성 모드는 world config가 소유한다. meta의 오래된 값으로
+                        // 가상 모드 군주까지 NPC 상성 승계를 실행하지 않는다.
+                        const fiction = readMetaNumber(
+                            options.getWorld()?.getWorldConfig() ?? {},
+                            'fiction',
+                            options.scenarioMeta?.fiction ?? readMetaNumber(worldMeta, 'fiction', 0)
+                        );
                         if (
                             fiction === 0 &&
                             currentGeneral.npcState > 0 &&
@@ -2514,11 +2520,17 @@ export const createReservedTurnHandler = async (options: {
                                 const distance = Math.abs((candidate.affinity ?? 0) - (currentGeneral.affinity ?? 0));
                                 return distance > 75 ? 150 - distance : distance;
                             };
-                            const minDistance = Math.min(...npcCandidates.map(affinityDistance));
-                            const nearest = npcCandidates.filter(
-                                (candidate) => affinityDistance(candidate) === minDistance
+                            npcCandidates.sort(
+                                (left, right) => affinityDistance(left) - affinityDistance(right) || left.id - right.id
                             );
-                            if (nearest.length > 0) {
+                            // Ref nextRuler의 !$candidate['npcmatch2'] == $minNPCMatch는
+                            // !가 먼저 평가된다. 거리 0이면 동률만, 양수이면 정렬된 전체
+                            // 후보를 추첨하는 실제 계승 계약을 보존한다.
+                            const hasExactMatch = npcCandidates[0] && affinityDistance(npcCandidates[0]) === 0;
+                            const eligible = hasExactMatch
+                                ? npcCandidates.filter((candidate) => affinityDistance(candidate) === 0)
+                                : npcCandidates;
+                            if (eligible.length > 0) {
                                 const rng = new RandUtil(
                                     new LiteHashDRBG(
                                         serializeSeed(
@@ -2530,7 +2542,7 @@ export const createReservedTurnHandler = async (options: {
                                         )
                                     )
                                 );
-                                successor = rng.choice(nearest);
+                                successor = rng.choice(eligible);
                             }
                         }
                         successor ??= candidates

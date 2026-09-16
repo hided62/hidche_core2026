@@ -408,6 +408,28 @@ describe('legacy general turn lifecycle', () => {
         expect(harness.world.peekDirtyState().deletedGenerals).toContain(1);
     });
 
+    it.each([
+        { name: 'installed fiction overrides stale meta', config: 1, scenario: 0, legacy: 0 },
+        { name: 'scenario fiction without installed override', config: undefined, scenario: 1, legacy: 0 },
+    ])('uses chief order for fictional NPC ruler: $name', async ({ config, scenario, legacy }) => {
+        const leader = makeGeneral({ officerLevel: 12, npcState: 2, meta: { killturn: 1 } });
+        const closeNpc = makeGeneral({ id: 2, npcState: 2, affinity: 50, officerLevel: 1 });
+        const chief = makeGeneral({ id: 3, npcState: 0, officerLevel: 11 });
+        const troopLeader = makeGeneral({ id: 4, npcState: 5, officerLevel: 11, dedication: 9999 });
+        const snapshot = makeSnapshot([leader, closeNpc, chief, troopLeader]);
+        snapshot.worldConfig = config === undefined ? {} : { fiction: config };
+        snapshot.scenarioMeta!.fiction = scenario;
+        const state = makeState();
+        state.meta = { ...state.meta, fiction: legacy };
+        const harness = await createTurnTestHarness({ snapshot, state, schedule, map });
+        await harness.runOneTick();
+        expect(harness.world.getGeneralById(1)).toBeNull();
+        expect(harness.world.getGeneralById(3)!.officerLevel).toBe(12);
+        expect(harness.world.getGeneralById(2)!.officerLevel).toBe(1);
+        expect(harness.world.getGeneralById(4)!.officerLevel).toBe(11);
+        expect(harness.world.getNationById(1)!.chiefGeneralId).toBe(3);
+    });
+
     it('dissolves a dying ruler nation when only troop-leader NPCs remain', async () => {
         const leader = makeGeneral({ officerLevel: 12, meta: { killturn: 1 } });
         const troopLeader = makeGeneral({
