@@ -1,6 +1,14 @@
-import { GameClock } from '@sammo-ts/common';
+import { GameClock, asRecord } from '@sammo-ts/common';
 import { createGamePostgresConnector } from '@sammo-ts/infra';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import {
+    ActionDefinition as RandomAppointmentAction,
+    actionContextBuilder,
+    type RandomAppointmentResolveContext,
+} from '@sammo-ts/logic/actions/turn/general/che_랜덤임관.js';
+import type { ActionContextWorldRef } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
+import { loadTurnWorldFromDatabase } from '../src/turn/worldLoader.js';
 import { resolveDatabaseUrl } from '../src/scenario/databaseUrl.js';
 import { loadScenarioDefinitionById } from '../src/scenario/scenarioLoader.js';
 import { seedScenarioToDatabase } from '../src/scenario/scenarioSeeder.js';
@@ -95,6 +103,97 @@ const canRun = await canConnectToDatabase(databaseUrl);
 const describeDb = describe.runIf(canRun);
 
 describeDb('scenario database seed', () => {
+    test.each([
+        { fiction: 1, expectedHistorical: false },
+        { fiction: 0, expectedHistorical: true },
+        { fiction: undefined, expectedHistorical: true },
+    ])('reloads installed fiction=$fiction into NPC random appointment', async ({ fiction, expectedHistorical }) => {
+        await seedScenarioToDatabase({
+            scenarioId: 1031,
+            databaseUrl,
+            resetTables: true,
+            now: new Date('2030-01-01T00:00:00.000Z'),
+            installOptions: { fiction },
+        });
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        try {
+            await connector.connect();
+            const persisted = await connector.prisma.worldState.findFirstOrThrow();
+            expect(asRecord(persisted.config).fiction).toBe(fiction);
+            // 설치 설정은 실행 시 우선하되 원본 시나리오 메타를 덮어쓰지 않는다.
+            expect(asRecord(asRecord(persisted.meta).scenarioMeta).fiction).toBe(0);
+
+            const loaded = await loadTurnWorldFromDatabase({ databaseUrl });
+            expect(loaded.snapshot.scenarioMeta?.fiction).toBe(fiction ?? 0);
+            expect(asRecord(asRecord(loaded.state.meta).scenarioMeta).fiction).toBe(0);
+
+            const nations = loaded.snapshot.nations.filter((nation) => nation.id > 0).slice(0, 2);
+            expect(nations).toHaveLength(2);
+            const sourceActor = loaded.snapshot.generals.find((general) => general.nationId === 0)!;
+            expect(sourceActor).toBeDefined();
+            const actor = { ...sourceActor, npcState: 2, meta: { ...sourceActor.meta, affinity: 0 } };
+            const chiefs = nations.map((nation) => {
+                const chief = loaded.snapshot.generals.find(
+                    (general) => general.nationId === nation.id && general.officerLevel === 12
+                )!;
+                expect(chief).toBeDefined();
+                return { ...chief, meta: { ...chief.meta, affinity: 75 } };
+            });
+            const generals = [actor, ...chiefs];
+            const worldRef: ActionContextWorldRef = {
+                listGenerals: () => generals,
+                listNations: () => nations,
+                listCities: () => loaded.snapshot.cities,
+                listTroops: () => [],
+                listDiplomacy: () => [],
+                getDiplomacyEntry: () => null,
+                getGeneralById: (id) => generals.find((general) => general.id === id) ?? null,
+                getNationById: (id) => nations.find((nation) => nation.id === id) ?? null,
+                getCityById: (id) => loaded.snapshot.cities.find((city) => city.id === id) ?? null,
+                getTroopById: () => null,
+            };
+            const rng = {
+                nextFloat1: vi.fn(() => 0),
+                nextBool: () => false,
+                nextInt: (min: number) => min,
+            };
+            const context = actionContextBuilder(
+                { general: actor, rng },
+                {
+                    // 초기 정원 제한이 풀린 후의 두 후보로 두 분기의 결과를 구분한다.
+                    world: { ...loaded.state, currentYear: 200 },
+                    scenarioConfig: loaded.snapshot.scenarioConfig,
+                    scenarioMeta: loaded.snapshot.scenarioMeta,
+                    worldRef,
+                    actionArgs: {},
+                    createGeneralId: () => 0,
+                    createNationId: () => 0,
+                    seedBase: 'installed-fiction',
+                }
+            ) as ReturnType<typeof actionContextBuilder> & RandomAppointmentResolveContext;
+            expect(context.historicalNpcAffinityMode).toBe(expectedHistorical);
+            const action = new RandomAppointmentAction(
+                buildCommandEnv(loaded.snapshot.scenarioConfig, loaded.snapshot.unitSet)
+            );
+            const result = action.resolve({ ...context, addLog: () => {} } as RandomAppointmentResolveContext, {});
+            // Ref: 가상은 첫 가중치 구간(U=0), 연의는 누적 상성 75→0인 두 번째 국가.
+            const expectedNation = nations[expectedHistorical ? 1 : 0]!;
+            expect(result.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'general:patch',
+                    patch: expect.objectContaining({ nationId: expectedNation.id }),
+                })
+            );
+            expect(rng.nextFloat1).toHaveBeenCalledTimes(expectedHistorical ? 2 : 1);
+            // 로딩/판정이 저장된 원본 메타에 쓰기를 발생시키지 않는지도 확인한다.
+            const after = await connector.prisma.worldState.findFirstOrThrow();
+            expect(after.config).toEqual(persisted.config);
+            expect(after.meta).toEqual(persisted.meta);
+        } finally {
+            await connector.disconnect();
+        }
+    });
+
     test.each([
         { sync: true, turnMinutes: 60, hour: 10, month: 10, yearOffset: -1 },
         { sync: true, turnMinutes: 60, hour: 1, month: 1, yearOffset: 0 },

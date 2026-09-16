@@ -148,10 +148,16 @@ const zScenarioMeta = z.object({
     ignoreDefaultEvents: z.boolean(),
 });
 
-const parseScenarioMeta = (meta: JsonRecord): ScenarioMeta | undefined => {
+const parseScenarioMeta = (meta: JsonRecord, worldConfig: JsonRecord): ScenarioMeta | undefined => {
     const raw = meta.scenarioMeta;
     const parsed = zScenarioMeta.safeParse(raw);
-    return parsed.success ? parsed.data : undefined;
+    if (!parsed.success) {
+        return undefined;
+    }
+    // 시나리오 원본 메타는 보존하되 실행 시에는 설치한 NPC 상성 설정을 우선한다.
+    // 기존 기수도 재로드하면 가상 모드의 랜덤 임관이 연의 분기로 들어가지 않는다.
+    const fiction = worldConfig.fiction;
+    return fiction === 0 || fiction === 1 ? { ...parsed.data, fiction } : parsed.data;
 };
 
 const parseLegacyLastTurnTime = (meta: JsonRecord): Date | null => {
@@ -513,7 +519,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
         const unitSetName = scenarioConfig.environment?.unitSet ?? 'che';
         const unitSet = await loadUnitSetDefinitionByName(unitSetName, options.unitSetOptions);
 
-        const scenarioMeta = parseScenarioMeta(meta);
+        const scenarioMeta = parseScenarioMeta(meta, worldConfig);
 
         const lastTurnTick =
             worldState.lastTurnTick === null
