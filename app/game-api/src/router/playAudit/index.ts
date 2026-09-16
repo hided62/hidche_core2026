@@ -140,7 +140,7 @@ export const playAuditRouter = router({
                             ? {
                                   year: samples[input.limit - 1]!.year,
                                   month: samples[input.limit - 1]!.month,
-                                  kind: z.enum(['MONTH_END', 'FINAL']).parse(samples[input.limit - 1]!.kind),
+                                  kind: z.enum(['MONTH_END', 'FINAL', 'INITIAL']).parse(samples[input.limit - 1]!.kind),
                               }
                             : null,
                 };

@@ -74,6 +74,7 @@ import { prepareRealtimeRecovery } from './prepareRealtimeRecovery.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
+    flushChanges(): Promise<void>;
     takeCommittedReadModelChanges(): RealtimeReadModelChanges | null;
     takeCommittedReadModelChangeReceipt(): CommittedReadModelChangeReceipt | null;
     close(): Promise<void>;
@@ -2078,12 +2079,13 @@ export const createDatabaseTurnHooks = async (
         };
     };
 
+    const flushChanges = async (): Promise<void> => {
+        const committed = await persistChanges();
+        committed.acknowledge();
+        enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
+    };
     const hooks: TurnDaemonHooks = {
-        flushChanges: async () => {
-            const committed = await persistChanges();
-            committed.acknowledge();
-            enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
-        },
+        flushChanges,
         commitCommand: async (requestId, result) => {
             const committed = await persistChanges(undefined, { requestId, result });
             committed.acknowledge();
@@ -2127,6 +2129,7 @@ export const createDatabaseTurnHooks = async (
 
     return {
         hooks,
+        flushChanges,
         takeCommittedReadModelChanges: () => {
             return takeCommittedReceipt()?.changes ?? null;
         },

@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
-import { createPlayAuditHandler, queueAuditMonth, recordAuditSettlement } from '../src/playAudit/collection.js';
+import {
+    createPlayAuditHandler,
+    initializeAuditCollection,
+    queueAuditMonth,
+    recordAuditSettlement,
+} from '../src/playAudit/collection.js';
 const turnTime = new Date('0200-01-01T00:00:00.000Z');
 
 const buildGeneral = (id: number, nationId: number): TurnGeneral => ({
@@ -122,6 +127,31 @@ const buildWorld = () => {
     return world;
 };
 describe('play audit collection durability state', () => {
+    it('freezes the initial observation separately from month-end and restores its marker on rollback', () => {
+        const world = buildWorld();
+        const before = world.captureState();
+        const observedAt = new Date('2026-09-16T00:00:00.000Z');
+        expect(initializeAuditCollection(world, observedAt)).toBe(true);
+        expect(world.peekDirtyState().pendingAuditMonths).toMatchObject([
+            { kind: 'INITIAL', year: 200, month: 1, settlementsComplete: false },
+        ]);
+        const marker = world.getState().meta.playAuditCollection;
+        expect(initializeAuditCollection(world, new Date(observedAt.getTime() + 1000))).toBe(false);
+        expect(world.getState().meta.playAuditCollection).toEqual(marker);
+        expect(world.peekDirtyState().pendingAuditMonths).toHaveLength(1);
+        const reloaded = buildWorld();
+        reloaded.restoreState(world.captureState());
+        expect(initializeAuditCollection(reloaded)).toBe(false);
+        world.restoreState(before);
+        expect(world.hasPendingAuditRecords()).toBe(false);
+        expect(world.getState().meta.playAuditCollection).toBeUndefined();
+        expect(initializeAuditCollection(world, observedAt)).toBe(true);
+        queueAuditMonth(world);
+        expect(world.peekDirtyState().pendingAuditMonths.map((sample) => sample.kind)).toEqual([
+            'INITIAL',
+            'MONTH_END',
+        ]);
+    });
     it('restores pending snapshots and monthly flows on rollback and acknowledges only persisted rows', () => {
         const world = buildWorld();
         const before = world.captureState();

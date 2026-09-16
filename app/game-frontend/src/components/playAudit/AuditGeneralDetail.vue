@@ -3,7 +3,10 @@ import { ref, watch } from 'vue';
 import PanelCard from '../ui/PanelCard.vue';
 import AuditGeneralLogs from './AuditGeneralLogs.vue';
 import { trpc } from '../../utils/trpc';
-const props = defineProps<{ generalId: number; at?: { year: number; month: number; kind: 'MONTH_END' | 'FINAL' } }>();
+const props = defineProps<{
+    generalId: number;
+    at?: { year: number; month: number; kind: 'MONTH_END' | 'FINAL' | 'INITIAL' };
+}>();
 defineEmits<{ close: [] }>();
 type Detail = Awaited<ReturnType<typeof trpc.playAudit.generalDetail.query>>;
 type Turns = Awaited<ReturnType<typeof trpc.playAudit.generalTurns.query>>;
@@ -69,7 +72,11 @@ watch(
 <template>
     <PanelCard
         title="선택 장수 상세"
-        :subtitle="at ? `${at.year}년 ${at.month}월 ${at.kind === 'FINAL' ? '최종 표본' : '월말'}` : '현재 상태'"
+        :subtitle="
+            at
+                ? `${at.year}년 ${at.month}월 ${at.kind === 'FINAL' ? '최종 표본' : at.kind === 'INITIAL' ? '수집 시작 기준' : '월말'}`
+                : '현재 상태'
+        "
     >
         <template #actions><button class="legacy-button" @click="$emit('close')">상세 닫기</button></template>
         <p v-if="loading" role="status">상세 조회 중…</p>
@@ -93,7 +100,7 @@ watch(
                     {{ format(data.general.dedication) }}
                 </p>
                 <p>숙련 (보 / 궁 / 기 / 귀 / 차): {{ Object.values(data.general.dex).map(format).join(' / ') }}</p>
-                <p v-if="at">과거 예약 명령은 월말 표본에 포함되지 않습니다.</p>
+                <p v-if="at">과거 예약 명령은 상태 표본에 포함되지 않습니다.</p>
                 <button v-else class="legacy-button" :disabled="turnsLoading" @click="loadTurns()">
                     현재 예약 명령 조회
                 </button>

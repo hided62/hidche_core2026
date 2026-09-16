@@ -2,7 +2,10 @@
 import { ref, watch } from 'vue';
 import PanelCard from '../ui/PanelCard.vue';
 import { trpc } from '../../utils/trpc';
-const props = defineProps<{ cityId: number; at?: { year: number; month: number; kind: 'MONTH_END' | 'FINAL' } }>();
+const props = defineProps<{
+    cityId: number;
+    at?: { year: number; month: number; kind: 'MONTH_END' | 'FINAL' | 'INITIAL' };
+}>();
 defineEmits<{ close: []; generals: [cityId: number] }>();
 type Detail = Awaited<ReturnType<typeof trpc.playAudit.cityDetail.query>>;
 const data = ref<Detail | null>(null);
@@ -37,7 +40,11 @@ watch(
 <template>
     <PanelCard
         title="선택 도시 상세"
-        :subtitle="at ? `${at.year}년 ${at.month}월 ${at.kind === 'FINAL' ? '최종 표본' : '월말'}` : '현재 상태'"
+        :subtitle="
+            at
+                ? `${at.year}년 ${at.month}월 ${at.kind === 'FINAL' ? '최종 표본' : at.kind === 'INITIAL' ? '수집 시작 기준' : '월말'}`
+                : '현재 상태'
+        "
     >
         <template #actions><button class="legacy-button" @click="$emit('close')">상세 닫기</button></template>
         <p v-if="loading" role="status">도시 조회 중…</p>

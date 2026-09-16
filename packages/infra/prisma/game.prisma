@@ -1084,6 +1084,7 @@ model VoteComment {
 
 // 현재 기수 플레이 감사. gameplay 엔티티 삭제 뒤에도 당시 ID/이름을 유지한다.
 model PlayAuditMonth {
+  // INITIAL은 migration의 부분 unique index로 serverId당 한 건만 허용한다.
   id                  String             @id
   serverId            String             @map("server_id")
   year                Int

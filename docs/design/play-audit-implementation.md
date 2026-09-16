@@ -2,7 +2,7 @@
 
 [확정 설계](play-audit.md)의 P1~P6를 구현하는 작업 기록이다. 전체 기능은 진행 중이며,
 월별 projection과 runtime 수집·DB transaction 연결을 구현했다. 프로필 권한과 장수·도시 현재/월말 조회 API,
-국가 월/반기 시계열과 `/play-audit` 기본 조회 화면을 연결했다. 정책 이력 저장과 목록/상세 조회 화면을 추가했으며 초기 기준 내구성, 외교, NPC trace와 조사 도구는 남아 있다.
+국가 월/반기 시계열과 `/play-audit` 기본 조회 화면을 연결했다. 정책 이력 저장과 목록/상세 조회, 초기 기준 내구화를 추가했으며 전체 종료 경계, 외교, NPC trace와 조사 도구는 남아 있다.
 Push 요청 이후 `feat/play-audit` 전용 worktree에서 계속 구현하며 전체 완료 후 main 통합·push한다.
 
 ## 현재 구현
@@ -100,8 +100,8 @@ NPC 설정은 기존 allowlist의 저장 값만 복사하며 setter/time이나 �
 daemon world 구성과 신규 `addNation`에서 네 기준 버전을 pending에 담는다. 기존 정상
 포인터가 있으면 재시작 때 재생성하지 않는다. 포인터 ID는 기수·국가·영역·revision으로
 검증하므로 다른 국가 metadata를 복사해도 기존 국가 이력을 이어받지 않는다.
-기준 버전은 현재 첫 gameplay flush에서 내구화된다. PREOPEN에서 아직 flush가 없을 때의
-초기 기준 버전 내구화/coverage는 후속 연결이 필요하며 현재 구현만으로 R6 완료가 아니다.
+DB runtime의 기준 수집은 clock recovery/synchronization 뒤 수행하고 readiness 전에
+startup flush로 내구화한다. PREOPEN에서 명령이 없어도 정책 기준을 저장한다.
 
 기존 NPC mutation의 검증·CAS와 국가 설정의 권한·횟수 제한을 통과한 뒤 변경 전후를 비교한다.
 setter/time 변경과 동일 설정 저장에는 새 적용 버전을 만들지 않는다. 기존 CAS token 갱신,
@@ -127,7 +127,7 @@ checksum은 수정하지 않고 schema_version 필드는 별도 증분 migration
 정리 worker는 이전 기수 정책 ID도 최대200개씩 삭제한다. policy version의 self-reference는
 삭제 FK로 강제하지 않아 과거 비공개 기수를 key batch로 정리할 수 있다. 현재 기수 포인터는
 같은 transaction으로 저장하고 조회 시 항상 현재 기수 범위를 검사해야 한다.
-완전한 초기 기준 내구화와 NPC 결정 연결은 아직 남았다.
+NPC 결정의 정책 참조와 거부/무변경 시도의 사건 연결은 아직 남았다.
 
 `policyHistory`는 국가/영역/기간을 필수로 받고 기본50·최대200개의 버전 요약을
 revision 내림차순 cursor로 반환한다. 목록에서는 전후 정책 본문과 요청 자료를 읽지 않는다.
@@ -147,6 +147,31 @@ world identity와 자료는 기존 RepeatableRead/timeout 계약을 공유한다
 입력 중인 필터는 조회 버튼을 누르기 전 SQL 요청을 발생시키지 않는다. 최초 관측,
 실제 변경, 관측 누락 이후 기준과 자료 없음의 의미를 구분한다. 기존 PanelCard와 제어
 스타일을 사용하고 NPC 설정 화면의 한국어 필드 이름을 따른다. 값은 텍스트로 출력한다.
+
+## 초기 도입 기준과 즉시 내구성
+
+`initializeAuditCollection`은 기수별 첫 관측에서만 INITIAL 표본과 world의
+`playAuditCollection` 시작 좌표/실제 관측 시각을 pending에 담는다. INITIAL은 기존
+국가·도시·장수 projection과 batch 저장을 재사용하며 월말과 FINAL을 대체하지 않는다.
+새 migration은 INITIAL kind를 허용하고 부분 unique index로 기수당 한 행만 허용한다.
+재시작은 저장된 marker를 사용하며 초기 상태를 현재 값으로 갱신하지 않는다.
+
+runtime은 기존 lease 획득·world load·clock 복구/동기화 후 정책/상태 기준을 수집한다.
+기존 fenced persistence로 기준과 국가 포인터/world marker를 함께 commit한 뒤에만
+clockReady를 공개한다. 별도 input_event를 만들지 않는다. 초기 저장 실패는 기존 startup
+오류 경로로 lease/연결을 정리하고 준비 완료를 알리지 않는다. 정상 재시작은 pending이
+없으면 추가 flush가 없다. pending 확인은 배열 길이만 검사하여 큰 snapshot을 복사하지 않는다.
+
+초기 수집은 이미 로드된 world를 각 한 번 순회한다. 추가 전체 엔티티 SELECT 없이 기존
+header/child batch transaction을 한 번 수행한다. readiness 전에 저장하므로 큰 기수의
+startup latency/WAL/heap 비용은 P6에서 함께 측정해야 한다. 값이나 표본을 생략하는
+방식으로 비용을 줄이지 않는다. 초기 read-model receipt는 첫 실제 명령에 섞지 않는다.
+
+조회 API의 표본 kind와 coverage cursor에 INITIAL을 포함한다. 현재 world meta에서
+`collectionStart`만 allowlist projection하여 추가 DB 조회 없이 시작 시점을 표시한다.
+국가·장수·도시의 수집 시작 기준 조회는 같은 snapshot identity를 유지하며 국가 시계열에는
+MONTH_END만 포함한다. INITIAL의 흐름을 정규 월/반기 합계에 더하지 않는다.
+시나리오 개방 달력과 실제 상세 수집 시작은 서로 다른 값이다.
 
 ## 이전 기수 월별 표본 정리
 
@@ -282,7 +307,7 @@ SQL/bytes는 아직 실측하지 않았으며 아래는 현재 소스에서 확�
 | 월별 내구성         | `turn/inMemoryWorld.ts`의 capture/restore, peek/acknowledge와 pending yearbook; `turn/databaseHooks.ts`의 `persistChanges` | 별도 audit pending을 같은 transaction과 savepoint에 포함. 기존 연감의 장기보존 테이블에 상세 감사를 넣지 않음                              | 실패·중복·재시작, bounded 삭제                                |
 | 기수 identity       | `scenario/scenarioSeeder.ts`의 `install.serverId`, `GameHistory` 충돌 검사                                                 | profile명으로 대체하지 않음. 외부 install 입력을 만드는 지점과 RESET 전체 경로를 추가 추적한 뒤 수집 활성화                                | 신규 identity 생성, 재시도, 기존 설치에 identity 누락 시 처리 |
 | 외교                | game-api `router/diplomacy/index.ts`, engine 월간 외교 처리                                                                | 불변 문서는 참조, 갱신되는 내용만 당시 버전 저장. 현재 상태 월복사만으로 사건을 대신하지 않음                                              | 모든 API/engine mutation별 inventory                          |
-| NPC 정책            | `turn/worldCommandHandler.ts` → `turn/npcPolicyMutation.ts`                                                                | CAS 성공하고 실제 값이 달라진 경우에만 불변 버전. 무변경/거부는 적용 버전에서 제외                                                         | 초기 버전, actor/직책, 국방 mutation inventory                |
+| NPC 정책            | `turn/worldCommandHandler.ts` → `turn/npcPolicyMutation.ts`                                                                | CAS 성공하고 실제 값이 달라진 경우에만 불변 버전. 무변경/거부는 적용 버전에서 제외                                                         | NPC 결정의 버전 참조, 거부/무변경 시도 원장                |
 | 권한                | Gateway `adminCapabilities.ts`, `adminAuth.ts`; game-api `trpc.ts` 인증·제재 middleware                                    | scoped 감사 권한과 공통 계정 추가 권한 분리. `getMyGeneral` 요구 없이 서버에서 검사                                                        | catalog/token/flush/HTTP matrix 전체 연결                     |
 
 월간 실행은 이전 월 snapshot → 달 변경 → 새달 `onMonthChanged` 순서다.

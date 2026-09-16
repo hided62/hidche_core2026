@@ -20,7 +20,7 @@ export const zAuditMonth = z
     .object({
         year: z.number().int().min(0).max(9999),
         month: z.number().int().min(1).max(12),
-        kind: z.enum(['MONTH_END', 'FINAL']).default('MONTH_END'),
+        kind: z.enum(['MONTH_END', 'FINAL', 'INITIAL']).default('MONTH_END'),
     })
     .strict();
 export const zAuditPage = z
@@ -89,12 +89,34 @@ export const readAuditWorld = async (tx: GamePrisma.TransactionClient) => {
           ? Math.min(scenarioStartYear, world.currentYear)
           : world.currentYear;
     const startMonth = hasInitialCalendar ? Number(meta.initMonth) : 1;
+    const collection = z
+        .object({
+            schemaVersion: z.literal(1),
+            serverId: z.string(),
+            year: z.number().int().nonnegative(),
+            month: z.number().int().min(1).max(12),
+            tick: z.number().int().nonnegative(),
+            observedAt: z.string().datetime(),
+        })
+        .safeParse(meta.playAuditCollection);
+    const collectionStart =
+        collection.success &&
+        collection.data.serverId === serverId &&
+        monthOrdinal(collection.data.year, collection.data.month) <= monthOrdinal(world.currentYear, world.currentMonth)
+            ? {
+                  year: collection.data.year,
+                  month: collection.data.month,
+                  tick: String(collection.data.tick),
+                  observedAt: collection.data.observedAt,
+              }
+            : null;
     return {
         serverId,
         year: world.currentYear,
         month: world.currentMonth,
         startYear,
         startMonth,
+        collectionStart,
         tick: world.lastTurnTick?.toString() ?? null,
         asOf: new Date().toISOString(),
     };

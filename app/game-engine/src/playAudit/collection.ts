@@ -46,7 +46,10 @@ export const recordAuditSettlement = (world: InMemoryTurnWorld, settlement: Audi
     world.updateWorldMeta({ playAuditFlows: flows });
 };
 
-export const queueAuditMonth = (world: InMemoryTurnWorld, kind: 'MONTH_END' | 'FINAL' = 'MONTH_END'): void => {
+export const queueAuditMonth = (
+    world: InMemoryTurnWorld,
+    kind: 'MONTH_END' | 'FINAL' | 'INITIAL' = 'MONTH_END'
+): void => {
     const state = world.getState();
     const serverId = state.meta.serverId;
     // identity 없는 레거시 fixture/설치에서 profile명으로 가짜 기수를 만들지 않는다.
@@ -64,10 +67,50 @@ export const queueAuditMonth = (world: InMemoryTurnWorld, kind: 'MONTH_END' | 'F
         serverId,
         year: state.currentYear,
         month: state.currentMonth,
-        tick: state.lastTurnTick ?? null,
+        tick: kind === 'INITIAL' ? world.getGameClockState().tick : (state.lastTurnTick ?? null),
         kind,
         settlementsComplete: flows.complete,
     });
+};
+
+/** 도입 당시 상태는 월말로 가장하지 않고 기수별 최초 기준으로 한 번 고정한다. */
+export const initializeAuditCollection = (world: InMemoryTurnWorld, observedAt = new Date()): boolean => {
+    const state = world.getState();
+    const serverId = state.meta.serverId;
+    if (typeof serverId !== 'string' || !serverId.trim()) return false;
+    const previous = asRecord(state.meta.playAuditCollection);
+    if (previous.serverId === serverId) {
+        if (
+            previous.schemaVersion !== 1 ||
+            typeof previous.year !== 'number' ||
+            !Number.isInteger(previous.year) ||
+            previous.year < 0 ||
+            typeof previous.month !== 'number' ||
+            !Number.isInteger(previous.month) ||
+            previous.month < 1 ||
+            previous.month > 12 ||
+            typeof previous.tick !== 'number' ||
+            !Number.isSafeInteger(previous.tick) ||
+            previous.tick < 0 ||
+            typeof previous.observedAt !== 'string' ||
+            !Number.isFinite(Date.parse(previous.observedAt)) ||
+            previous.year * 12 + previous.month > state.currentYear * 12 + state.currentMonth
+        )
+            throw new Error('Invalid play audit collection boundary');
+        return false;
+    }
+    queueAuditMonth(world, 'INITIAL');
+    world.updateWorldMeta({
+        playAuditCollection: {
+            schemaVersion: 1,
+            serverId,
+            year: state.currentYear,
+            month: state.currentMonth,
+            tick: world.getGameClockState().tick,
+            observedAt: observedAt.toISOString(),
+        },
+    });
+    return true;
 };
 
 export const createPlayAuditHandler = (getWorld: () => InMemoryTurnWorld | null): TurnCalendarHandler => ({

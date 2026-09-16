@@ -68,11 +68,16 @@ const selectedGeneral = computed(() =>
     typeof route.query.general === 'string' && /^\d+$/.test(route.query.general) ? Number(route.query.general) : null
 );
 const selectedAt = computed(() =>
-    route.query.at === 'month' || route.query.at === 'final'
+    route.query.at === 'month' || route.query.at === 'final' || route.query.at === 'initial'
         ? {
               year: numeric(route.query.year, coverage.value?.year ?? 0),
               month: numeric(route.query.month, coverage.value?.month ?? 1),
-              kind: route.query.at === 'final' ? ('FINAL' as const) : ('MONTH_END' as const),
+              kind:
+                  route.query.at === 'final'
+                      ? ('FINAL' as const)
+                      : route.query.at === 'initial'
+                        ? ('INITIAL' as const)
+                        : ('MONTH_END' as const),
           }
         : undefined
 );
@@ -93,16 +98,21 @@ const at = computed(() =>
         : {
               year: year.value,
               month: month.value,
-              kind: moment.value === 'final' ? ('FINAL' as const) : ('MONTH_END' as const),
+              kind:
+                  moment.value === 'final'
+                      ? ('FINAL' as const)
+                      : moment.value === 'initial'
+                        ? ('INITIAL' as const)
+                        : ('MONTH_END' as const),
           }
 );
 const format = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 const nationName = (id: number) =>
     nations.value?.items.find((item) => item.id === id)?.name ?? (id === 0 ? '무소속' : `국가 #${id}`);
 const scopeLabel = computed(() =>
-    route.query.at !== 'month' && route.query.at !== 'final'
+    route.query.at !== 'month' && route.query.at !== 'final' && route.query.at !== 'initial'
         ? '현재 상태'
-        : `${route.query.year}년 ${route.query.month}월 ${route.query.at === 'final' ? '최종 표본' : '월말'}`
+        : `${route.query.year}년 ${route.query.month}월 ${route.query.at === 'final' ? '최종 표본' : route.query.at === 'initial' ? '수집 시작 기준' : '월말'}`
 );
 const result = computed(() =>
     tab.value === 'generals'
@@ -123,7 +133,7 @@ const readQuery = () => {
     population.value = ['human', 'npc', 'troopNpc'].includes(String(route.query.population))
         ? String(route.query.population)
         : '';
-    moment.value = ['month', 'final'].includes(String(route.query.at)) ? String(route.query.at) : 'current';
+    moment.value = ['month', 'final', 'initial'].includes(String(route.query.at)) ? String(route.query.at) : 'current';
     year.value = numeric(route.query.year, coverage.value?.year ?? 0);
     month.value = numeric(route.query.month, coverage.value?.month ?? 1);
     const defaultStart = Math.max(
@@ -175,10 +185,10 @@ const load = async (append = false) => {
                 };
         } else if (tab.value === 'policies') {
             // 정책 목록/상세는 해당 component가 필요한 요청만 실행한다.
-        } else if (nationId.value !== '' && moment.value === 'final') {
+        } else if (nationId.value !== '' && (moment.value === 'final' || moment.value === 'initial')) {
             const response = await trpc.playAudit.nationSnapshot.query({
                 nationId: Number(nationId.value),
-                at: { year: year.value, month: month.value, kind: 'FINAL' },
+                at: { year: year.value, month: month.value, kind: moment.value === 'initial' ? 'INITIAL' : 'FINAL' },
             });
             if (request === generation) nationSnapshot.value = response;
         } else if (nationId.value !== '') {
@@ -310,6 +320,10 @@ onMounted(async () => {
                 <p v-else-if="coverage.status === 'NOT_COLLECTED'">
                     아직 수집된 월별 표본이 없습니다. 현재 상태는 조회할 수 있습니다.
                 </p>
+                <p v-if="coverage.collectionStart">
+                    상태·정책 수집 시작: {{ coverage.collectionStart.year }}년 {{ coverage.collectionStart.month }}월 ·
+                    {{ coverage.collectionStart.observedAt }}. 이전 상태를 소급 복원하지 않습니다.
+                </p>
                 <form class="filters" @submit.prevent="apply">
                     <label
                         >조회 대상<select class="legacy-sort-select" v-model="tab">
@@ -358,6 +372,7 @@ onMounted(async () => {
                             <option value="current">현재</option>
                             <option value="month">월말</option>
                             <option value="final">최종 표본</option>
+                            <option value="initial">수집 시작 기준</option>
                         </select></label
                     >
                     <label
@@ -377,7 +392,9 @@ onMounted(async () => {
                             :max="year === coverage.year ? coverage.month : 12"
                             required
                     /></label>
-                    <template v-if="(tab === 'nations' && moment !== 'final') || tab === 'policies'">
+                    <template
+                        v-if="(tab === 'nations' && moment !== 'final' && moment !== 'initial') || tab === 'policies'"
+                    >
                         <label
                             >시작 연도<input
                                 v-model.number="fromYear"

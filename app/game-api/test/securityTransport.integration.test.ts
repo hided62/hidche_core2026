@@ -2563,6 +2563,75 @@ integration('game API security over HTTP transport', () => {
                     },
                 },
             });
+            await db.playAuditMonth.create({
+                data: {
+                    id: `${seasonId}:adoption`,
+                    serverId: seasonId,
+                    year: 190,
+                    month: 1,
+                    kind: 'INITIAL',
+                    settlementsComplete: false,
+                    hash: 'http-initial-fixture',
+                    nations: {
+                        create: {
+                            nationId: ownerNationId,
+                            data: { ...asRecord(finalNation.data), gold: 777, incomeGold: null },
+                        },
+                    },
+                    generals: {
+                        create: {
+                            generalId,
+                            nationId: current.nationId,
+                            cityId: 99123,
+                            npcState: current.npcState,
+                            data: { ...past, name: '도입장수' },
+                        },
+                    },
+                },
+            });
+            await db.worldState.update({
+                where: { id: fixtureWorldId },
+                data: {
+                    meta: {
+                        serverId: seasonId,
+                        scenarioMeta: { startYear: 190 },
+                        playAuditCollection: {
+                            schemaVersion: 1,
+                            serverId: seasonId,
+                            year: 190,
+                            month: 1,
+                            tick: 0,
+                            observedAt: '2026-09-16T00:00:00.000Z',
+                        },
+                    },
+                },
+            });
+            expect((await get('coverage', admin, { limit: 1 })).body).toMatchObject({
+                result: {
+                    data: {
+                        collectionStart: { year: 190, month: 1, observedAt: '2026-09-16T00:00:00.000Z' },
+                        samples: [{ kind: 'INITIAL' }],
+                        nextCursor: { year: 190, month: 1, kind: 'INITIAL' },
+                    },
+                },
+            });
+            expect(
+                (await get('coverage', admin, { limit: 1, cursor: { year: 190, month: 1, kind: 'INITIAL' } })).body
+            ).toMatchObject({ result: { data: { samples: [{ kind: 'MONTH_END' }] } } });
+            expect(
+                (
+                    await get('nationSnapshot', admin, {
+                        nationId: ownerNationId,
+                        at: { year: 190, month: 1, kind: 'INITIAL' },
+                    })
+                ).body
+            ).toMatchObject({
+                result: { data: { nation: { gold: 777, incomeGold: null }, sample: { kind: 'INITIAL' } } },
+            });
+            expect(
+                (await get('generalDetail', admin, { id: generalId, at: { year: 190, month: 1, kind: 'INITIAL' } }))
+                    .body
+            ).toMatchObject({ result: { data: { general: { name: '도입장수' } } } });
             expect(
                 (
                     await get('nationSnapshot', admin, {

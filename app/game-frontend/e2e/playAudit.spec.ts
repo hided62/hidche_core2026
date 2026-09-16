@@ -11,6 +11,7 @@ const world = {
     serverId: 'audit-fixture',
     tick: '100',
     asOf: '2026-09-16T00:00:00.000Z',
+    collectionStart: { year: 190, month: 1, tick: '0', observedAt: '2026-09-16T00:00:00.000Z' },
 };
 const dex = { dex1: 100, dex2: 200, dex3: 300, dex4: 400, dex5: 500 };
 const population = { count: 2, gold: 200, rice: 400, dex, averageGold: 100, averageRice: 200, averageDex: dex };
@@ -201,7 +202,12 @@ const install = async (page: Page, denied = false) => {
                         return result({
                             ...world,
                             collected: true,
-                            sample: { year: 190, month: 6, kind: 'FINAL', settlementsComplete: true },
+                            sample: {
+                                year: 190,
+                                month: 6,
+                                kind: (input.at as { kind: string }).kind,
+                                settlementsComplete: (input.at as { kind: string }).kind !== 'INITIAL',
+                            },
                             nation: {
                                 id: 2,
                                 name: '촉',
@@ -463,6 +469,7 @@ test('selected general reads detail on demand and separates current reservations
     await expect(page.getByRole('heading', { name: '선택 장수 상세' })).toHaveCount(0);
     await page.goto(gamePath('/play-audit?tab=generals&general=1&at=month&year=190&month=6'));
     await expect(page.getByRole('heading', { name: '과거감사장수 (#1)' })).toBeVisible();
+    await expect(page.getByText('과거 예약 명령은 상태 표본에 포함되지 않습니다.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '현재 예약 명령 조회', exact: true })).toHaveCount(0);
     expect(requests.filter((request) => request.operation === 'playAudit.generalTurns')).toHaveLength(1);
 });
@@ -681,4 +688,26 @@ test('policy filter drafts do not read until applied, including default dates', 
         area: 'DEFENCE',
         from: { year: 190, month: 3 },
     });
+});
+
+test('initial observation is separate from month-end and final snapshots', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=nations&nation=2&at=initial&year=190&month=6'));
+    await expect(page.getByRole('heading', { name: '촉 · 190년 6월 수집 시작 기준' })).toBeVisible();
+    await expect(page.getByText(/상태·정책 수집 시작: 190년 1월/)).toBeVisible();
+    expect(requests.some(({ operation }) => operation === 'playAudit.nationSeries')).toBe(false);
+    expect(requests.find(({ operation }) => operation === 'playAudit.nationSnapshot')?.input).toMatchObject({
+        at: { kind: 'INITIAL' },
+    });
+    await page.getByLabel('조회 대상').selectOption('generals');
+    await page.getByRole('button', { name: '조회', exact: true }).click();
+    await page.getByRole('button', { name: '감사장수 (#1)', exact: true }).click();
+    await expect(page.getByText('190년 6월 수집 시작 기준', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '과거감사장수 (#1)' })).toBeVisible();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.generalDetail').at(-1)?.input).toMatchObject({
+        at: { kind: 'INITIAL' },
+    });
+    await capture(page, 'initial-observation');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await capture(page, 'mobile-initial-observation');
 });

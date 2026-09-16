@@ -1377,6 +1377,10 @@ export class InMemoryTurnWorld {
         this.pendingAuditPolicies.push(structuredClone(policy));
     }
 
+    hasPendingAuditRecords(): boolean {
+        return this.pendingAuditPolicies.length > 0 || this.pendingAuditMonths.length > 0;
+    }
+
     queueAuditMonth(snapshot: PendingAuditMonth): void {
         this.pendingAuditMonths.push(structuredClone(snapshot));
     }

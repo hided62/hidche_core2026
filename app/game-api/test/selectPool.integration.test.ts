@@ -167,6 +167,8 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         await db.inputEvent.deleteMany();
         await db.logEntry.deleteMany();
         await db.playAuditPolicy.deleteMany({ where: { serverId: profile } });
+        // 이 fixture는 기수 ID를 재사용하므로 실제 RESET과 달리 해당 초기 표본도 비운다.
+        await db.playAuditMonth.deleteMany({ where: { serverId: profile, kind: 'INITIAL' } });
         worldStateId = (await db.worldState.findFirstOrThrow()).id;
         await db.playAuditMonth.deleteMany({
             where: { id: { in: ['select-pool-audit-old', 'select-pool-audit-active'] } },

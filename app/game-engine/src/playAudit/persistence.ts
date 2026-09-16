@@ -6,7 +6,7 @@ export interface PendingAuditMonth {
     serverId: string;
     year: number;
     month: number;
-    kind: 'MONTH_END' | 'FINAL';
+    kind: 'MONTH_END' | 'FINAL' | 'INITIAL';
     tick: number | null;
     settlementsComplete: boolean;
     nations: AuditNationSnapshot[];

@@ -1,6 +1,6 @@
 import { initializeAuditPolicies } from '../playAudit/policy.js';
 import { startAuditRetentionWorker } from '../playAudit/retentionWorker.js';
-import { createPlayAuditHandler } from '../playAudit/collection.js';
+import { createPlayAuditHandler, initializeAuditCollection } from '../playAudit/collection.js';
 import { randomUUID } from 'node:crypto';
 import { createRuntimePauseGate } from './runtimePauseGate.js';
 
@@ -804,7 +804,10 @@ const createTurnDaemonRuntimeWithLease = async (
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
     worldRef = world;
-    initializeAuditPolicies(world);
+    if (!databaseFlushEnabled) {
+        initializeAuditPolicies(world);
+        initializeAuditCollection(world, new Date(clock.nowMs()));
+    }
 
     const stateManager = new EngineStateManager();
     stateManager.register('world', {
@@ -923,6 +926,14 @@ const createTurnDaemonRuntimeWithLease = async (
         });
         try {
             await dbHooks.prepareRealtimeRecovery({ paused: await gatewayGate?.shouldPause() });
+            // 복구된 clock에서 기준을 고정하고 readiness 공개 전에 원자적으로 저장한다.
+            // 명령 없는 PREOPEN도 기록하며 input_event나 게임 RNG를 만들지 않는다.
+            initializeAuditPolicies(world);
+            initializeAuditCollection(world, new Date(clock.nowMs()));
+            if (world.hasPendingAuditRecords()) {
+                await dbHooks.flushChanges();
+                dbHooks.takeCommittedReadModelChangeReceipt();
+            }
         } catch (error) {
             await Promise.allSettled([
                 dbHooks.close(),
