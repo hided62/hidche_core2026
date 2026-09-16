@@ -43,7 +43,7 @@ const general = {
         items: { horse: null, weapon: null, book: null, item: null },
     },
 };
-const install = async (page: Page, denied = false) => {
+const install = async (page: Page, denied = false, baseline = false) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_audit');
@@ -90,6 +90,29 @@ const install = async (page: Page, denied = false) => {
                             nextCursor: null,
                         });
                     case 'playAudit.diplomacyHistory':
+                        if (baseline)
+                            return result({
+                                ...world,
+                                coverage: 'RECORDED_EVENTS_ONLY',
+                                nextCursor: null,
+                                items: [
+                                    {
+                                        id: 'c'.repeat(64),
+                                        sequence: '1',
+                                        srcNationId: 2,
+                                        destNationId: 3,
+                                        category: 'RELATION',
+                                        source: 'BASELINE',
+                                        eventType: 'RELATION_BASELINE',
+                                        documentId: null,
+                                        previousDocumentId: null,
+                                        year: 190,
+                                        month: 1,
+                                        actor: null,
+                                        createdAt: world.asOf,
+                                    },
+                                ],
+                            });
                         return result({
                             ...world,
                             coverage: 'RECORDED_EVENTS_ONLY',
@@ -119,6 +142,35 @@ const install = async (page: Page, denied = false) => {
                             ],
                         });
                     case 'playAudit.diplomacyEvent':
+                        if (baseline)
+                            return result({
+                                ...world,
+                                event: {
+                                    id: input.id,
+                                    sequence: '1',
+                                    srcNationId: 2,
+                                    destNationId: 3,
+                                    category: 'RELATION',
+                                    source: 'BASELINE',
+                                    eventType: 'RELATION_BASELINE',
+                                    documentId: null,
+                                    previousDocumentId: null,
+                                    year: 190,
+                                    month: 1,
+                                    actor: null,
+                                    createdAt: world.asOf,
+                                    before: null,
+                                    after: { state: 2, term: 0, dead: 0 },
+                                    tick: '0',
+                                    clockRevision: '1',
+                                    ordinal: 1,
+                                    executionId: 'relation-baseline',
+                                    requestId: null,
+                                    inputSequence: null,
+                                    documentStatus: 'NOT_APPLICABLE',
+                                    document: null,
+                                },
+                            });
                         return result({
                             ...world,
                             event: {
@@ -862,4 +914,16 @@ test('diplomacy detail failure retries independently', async ({ page }) => {
     await page.getByRole('button', { name: '상세 다시 조회' }).click();
     await expect(page.getByRole('heading', { name: '문서 #8' })).toBeVisible();
     expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory')).toHaveLength(count);
+});
+
+test('diplomacy baseline displays observed state without a fictional document or actor', async ({ page }) => {
+    const requests = await install(page, false, true);
+    await page.goto(
+        gamePath('/play-audit?tab=diplomacy&nation=2&otherNation=3&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await page.getByRole('button', { name: '관계 최초 관측', exact: true }).click();
+    await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText('교역');
+    await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText('미관측 / 없음');
+    await expect(page.getByRole('region', { name: '당시 외교 문서' })).toHaveCount(0);
+    expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory')).toHaveLength(1);
 });

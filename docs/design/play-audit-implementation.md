@@ -204,6 +204,25 @@ Chromium의 CHE/HWE에서 desktop1280×720/mobile390×844, DPR1로 검증했다.
 원문 script 비실행을 검사한다. 외교 최초 기준과 최종 mutation inventory/전체 비용
 검증은 남아 있으며 화면 추가만으로 R4 전체 완료를 판단하지 않는다.
 
+### 외교 관계 최초 관측
+
+`initializeAuditDiplomacy`는 복구된 clock과 이미 로드한 관계에서 실제 국가쌍의
+방향별 state/term/dead를 한 번만 기록한다. 재야(0)는 제외하며 당시의 관측 값만
+보존한다. 이전 상태·원인·actor는 null이고 과거 체결 시점을 추정하지 않는다.
+`playAuditDiplomacy` 기수 표식과 사건을 readiness 전 기존 fenced flush에서 함께
+저장한다. 관계가 없는 경우에도 표식은 flush하고, 정상 재시작은 다시 쓰지 않는다.
+checkpoint rollback은 표식과 pending 사건을 함께 복원한다.
+
+추가 DB 전체 SELECT는 없다. 초기 관계 목록의 짧은 필드만 기존 200행 batch writer로
+저장하며 최초 저장량은 방향별 관계 수에 비례한다. 정상 재시작은 메모리 표식 검사만
+수행한다. 기본 교역 관계도 최초에는 보존해 국가쌍 조회의 시작 값을 제공하지만,
+월간 기본 matrix 생성은 계속 전이로 기록하지 않는다. 대규모 국가 수의 payload와
+WAL 실측, 이후 신생국·소멸국 및 기존 문서의 도입 기준은 별도 검증이 남아 있다.
+
+단위 검증은 재야 제외·빈 관계·잘못된 관측 시각·재호출·checkpoint 복원을 다룬다.
+실제 격리 PostgreSQL startup 검증은 실패 rollback, PREOPEN 저장, 재시작의 동일 행과
+표식 및 readiness 경계를 확인한다. UI는 이를 '관계 최초 관측'으로 구분한다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.

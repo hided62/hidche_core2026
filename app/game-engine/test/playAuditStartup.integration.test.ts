@@ -43,6 +43,7 @@ integration('initial audit durability before runtime readiness', () => {
         closeDb = () => connector.disconnect();
         await db.playAuditMonth.deleteMany();
         await db.playAuditPolicy.deleteMany();
+        await db.playAuditDiplomacyEvent.deleteMany();
         await seedScenarioToDatabase({
             scenarioId: 903,
             databaseUrl: databaseUrl!,
@@ -55,6 +56,15 @@ integration('initial audit durability before runtime readiness', () => {
                 serverId,
                 season: 1,
             },
+        });
+        await db.nation.createMany({
+            data: [
+                { id: 91990, name: '기준 발신국', color: '#ffffff' },
+                { id: 91991, name: '기준 수신국', color: '#000000' },
+            ],
+        });
+        await db.diplomacy.create({
+            data: { srcNationId: 91990, destNationId: 91991, stateCode: 7, term: 12, meta: { dead: 34 } },
         });
     }, 60_000);
     afterAll(async () => {
@@ -80,6 +90,8 @@ integration('initial audit durability before runtime readiness', () => {
             expect(String(error)).toContain('fixture initial audit failure');
             expect(await db.playAuditMonth.count()).toBe(0);
             expect(await db.playAuditPolicy.count()).toBe(0);
+            expect(await db.playAuditDiplomacyEvent.count()).toBe(0);
+            expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy).toBeUndefined();
             expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditCollection).toBeUndefined();
             expect(
                 (await db.nation.findMany()).every((nation) => asRecord(nation.meta)._playAuditPolicy === undefined)
@@ -104,6 +116,37 @@ integration('initial audit durability before runtime readiness', () => {
         expect((await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).clockReady).toBe(true);
         const initial = await db.playAuditMonth.findFirstOrThrow({ where: { serverId, kind: 'INITIAL' } });
         const policies = await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } });
+        const diplomacy = await db.playAuditDiplomacyEvent.findMany({
+            where: { serverId },
+            orderBy: { ordinal: 'asc' },
+        });
+        expect(diplomacy).toHaveLength(
+            await db.diplomacy.count({ where: { srcNationId: { gt: 0 }, destNationId: { gt: 0 } } })
+        );
+        expect(diplomacy).toHaveLength(2);
+        expect(diplomacy[0]).toMatchObject({
+            srcNationId: 91990,
+            destNationId: 91991,
+            before: null,
+            after: { state: 7, term: 12, dead: 34 },
+        });
+        expect(diplomacy[1]).toMatchObject({
+            srcNationId: 91991,
+            destNationId: 91990,
+            after: { state: 2, term: 0, dead: 0 },
+        });
+        expect(
+            diplomacy.every(
+                (event) =>
+                    event.source === 'BASELINE' &&
+                    event.before === null &&
+                    event.actor === null &&
+                    event.requestId === null
+            )
+        ).toBe(true);
+        const diplomacyMarker = asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy;
+        expect(diplomacyMarker).toMatchObject({ serverId, schemaVersion: 1, relationCount: diplomacy.length });
+
         expect(policies).toHaveLength((await db.nation.count()) * 4);
         expect(
             policies.every(
@@ -128,6 +171,10 @@ integration('initial audit durability before runtime readiness', () => {
         expect(await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } })).toEqual(policies);
         expect(await db.playAuditMonth.findMany({ where: { serverId, kind: 'INITIAL' } })).toEqual([initial]);
         expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditCollection).toEqual(marker);
+        expect(await db.playAuditDiplomacyEvent.findMany({ where: { serverId }, orderBy: { ordinal: 'asc' } })).toEqual(
+            diplomacy
+        );
+        expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy).toEqual(diplomacyMarker);
         expect(await clock()).toEqual(beforeClock);
         expect(await db.inputEvent.count()).toBe(beforeInputs);
         await expect(

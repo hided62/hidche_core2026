@@ -1,3 +1,4 @@
+import { initializeAuditDiplomacy } from '../src/playAudit/diplomacy.js';
 import { describe, expect, it } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
 import { InMemoryTurnWorld, type GeneralTurnHandler } from '../src/turn/inMemoryWorld.js';
@@ -128,6 +129,37 @@ const buildWorld = (generalTurnHandler?: GeneralTurnHandler) => {
     return world;
 };
 describe('play audit collection durability state', () => {
+    it('marks an empty diplomacy baseline without inventing relations and validates before queuing', () => {
+        const world = buildWorld();
+        world.removeNation(1);
+        world.removeNation(2);
+        expect(() => initializeAuditDiplomacy(world, new Date('invalid'))).toThrow(RangeError);
+        expect(world.getState().meta.playAuditDiplomacy).toBeUndefined();
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+        expect(initializeAuditDiplomacy(world)).toBe(true);
+        expect(world.getState().meta.playAuditDiplomacy).toMatchObject({ relationCount: 0 });
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+        expect(initializeAuditDiplomacy(world)).toBe(false);
+    });
+
+    it('captures a single diplomacy baseline and restores its marker and queue together', () => {
+        const world = buildWorld();
+        const checkpoint = world.captureState();
+        expect(initializeAuditDiplomacy(world, new Date('2026-09-16T00:00:00Z'))).toBe(true);
+        const events = world.peekDirtyState().pendingAuditDiplomacy;
+        expect(events).toHaveLength(2);
+        expect(events.map((event) => [event.srcNationId, event.destNationId])).toEqual([
+            [1, 2],
+            [2, 1],
+        ]);
+        expect(events[0]).toMatchObject({ source: 'BASELINE', before: null, after: { state: 2, term: 0, dead: 0 } });
+        expect(initializeAuditDiplomacy(world)).toBe(false);
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(events);
+        world.restoreState(checkpoint);
+        expect(world.getState().meta.playAuditDiplomacy).toBeUndefined();
+        expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
+    });
+
     it('preserves consecutive diplomacy transitions in one turn and restores them with the checkpoint', () => {
         const world = buildWorld({
             execute: ({ general }) => ({

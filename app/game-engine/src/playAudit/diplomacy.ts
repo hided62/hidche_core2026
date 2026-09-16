@@ -1,3 +1,4 @@
+import { asRecord } from '@sammo-ts/common';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
 import type { TurnDiplomacy } from '../turn/types.js';
 
@@ -98,4 +99,82 @@ export const recordTurnAuditDiplomacy = (
         before: previousState,
         after: nextState,
     });
+};
+
+/** 현재 로드된 관계를 도입 시 한 번만 고정한다. 과거 발생 원인/주체는 추정하지 않는다. */
+export const initializeAuditDiplomacy = (world: InMemoryTurnWorld, observedAt = new Date()): boolean => {
+    const state = world.getState();
+    const serverId = state.meta.serverId;
+    if (typeof serverId !== 'string' || !serverId.trim()) return false;
+    const previous = asRecord(state.meta.playAuditDiplomacy);
+    if (previous.serverId === serverId) {
+        if (
+            previous.schemaVersion !== 1 ||
+            typeof previous.year !== 'number' ||
+            previous.year < 0 ||
+            !Number.isInteger(previous.year) ||
+            !Number.isInteger(previous.month) ||
+            typeof previous.month !== 'number' ||
+            previous.month < 1 ||
+            previous.month > 12 ||
+            typeof previous.tick !== 'number' ||
+            !Number.isSafeInteger(previous.tick) ||
+            previous.tick < 0 ||
+            typeof previous.clockRevision !== 'number' ||
+            !Number.isSafeInteger(previous.clockRevision) ||
+            previous.clockRevision < 0 ||
+            typeof previous.relationCount !== 'number' ||
+            !Number.isInteger(previous.relationCount) ||
+            previous.relationCount < 0 ||
+            previous.year * 12 + previous.month > state.currentYear * 12 + state.currentMonth ||
+            typeof previous.observedAt !== 'string' ||
+            !Number.isFinite(Date.parse(previous.observedAt))
+        )
+            throw new Error('Invalid play audit diplomacy boundary');
+        return false;
+    }
+    const clock = world.getGameClockState();
+    const observedAtIso = observedAt.toISOString();
+    const relations = world
+        .listDiplomacy()
+        .filter((entry) => entry.fromNationId > 0 && entry.toNationId > 0)
+        .sort((left, right) => left.fromNationId - right.fromNationId || left.toNationId - right.toNationId);
+    for (const [index, entry] of relations.entries()) {
+        world.queueAuditDiplomacy({
+            schemaVersion: 1,
+            serverId,
+            srcNationId: entry.fromNationId,
+            destNationId: entry.toNationId,
+            category: 'RELATION',
+            source: 'BASELINE',
+            eventType: 'RELATION_BASELINE',
+            documentId: null,
+            documentHash: null,
+            previousDocumentId: null,
+            year: state.currentYear,
+            month: state.currentMonth,
+            tick: BigInt(clock.tick),
+            clockRevision: BigInt(clock.revision),
+            executionId: 'relation-baseline',
+            ordinal: index + 1,
+            requestId: null,
+            inputSequence: null,
+            actor: null,
+            before: null,
+            after: { state: entry.state, term: entry.term, dead: entry.dead },
+        });
+    }
+    world.updateWorldMeta({
+        playAuditDiplomacy: {
+            schemaVersion: 1,
+            serverId,
+            year: state.currentYear,
+            month: state.currentMonth,
+            tick: clock.tick,
+            clockRevision: clock.revision,
+            observedAt: observedAtIso,
+            relationCount: relations.length,
+        },
+    });
+    return true;
 };
