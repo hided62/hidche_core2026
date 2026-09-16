@@ -29,8 +29,16 @@ PanelCard, legacy-button, legacy-sort-select를 재사용한다. 새 차트 라�
 이 화면은 Core 신규 UX다. 최대 폭 1200px, 390px 모바일에서 문서 가로 넘침 없음,
 넓은 표만 내부 수평 스크롤, 공통 14px 기본 typography와 명시적 focus/disabled가 계약이다.
 월말/FINAL 장수·도시 projection을 보여주지만 국가 FINAL 별도 시계열, 지도,
-로그/예약 명령/전투 상세, 검색·정렬, 관리자 패널 진입 버튼은 후속 구현으로 남는다.
+로그/예약 명령/전투 상세, 검색·정렬은 후속 구현으로 남는다.
 따라서 기본 화면 추가만으로 R1~R3/P2를 완료 처리하지 않는다.
+
+Gateway 서버 관리의 프로필 카드에는 `admin.playAudit.read` capability의 해당 전체
+profile scope가 있을 때만 진입 버튼을 표시한다. 기존 `auth.issueGameSession` 발급과
+game session transfer를 사용하고 Gateway가 감사 데이터를 대신 읽지 않는다.
+기존 로비의 URL 구성/세션 전달을 `utils/gameEntry.ts`로 추출해 공유한다.
+새 감사 진입은 동일 origin의 sessionStorage 전달만 허용하며, 실패하면 현재 화면에
+재시도 가능한 오류를 표시한다. 기존 로비의 query fallback은 동작 변경 없이 유지하되
+새 감사 경로에는 적용하지 않는다. 서로 다른 origin의 관리자 진입은 지원하지 않는다.
 
 `app/game-engine/src/playAudit/snapshot.ts`는 기존 메모리 엔티티에서 명시적으로
 허용한 장수·도시 필드와 국가별 자원·숙련 집계를 만든다. 입력 iterable을 각각

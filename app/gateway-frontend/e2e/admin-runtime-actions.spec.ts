@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
 
 const response = (data: unknown) => ({ result: { data } });
 const operationNames = (route: Route): string[] => {
@@ -43,6 +44,7 @@ const installFixture = async (
         gameIsUnited?: number;
         openerOnly?: boolean;
         diagnosticsFixture?: boolean;
+        auditScopes?: string[];
     } = {}
 ) => {
     let requested = false;
@@ -86,6 +88,10 @@ const installFixture = async (
             installActive = true;
         }
         const results = operations.map((operation) => {
+            if (operation === 'auth.issueGameSession') {
+                requestBodies.push(body);
+                return response({ profile: 'hwe:default', gameToken: 'audit-fixture-token' });
+            }
             if (operation === 'admin.profiles.diagnostics' && options.diagnosticsFixture) {
                 diagnosticReads += 1;
                 return response({
@@ -154,6 +160,18 @@ const installFixture = async (
             }
             if (operation === 'admin.capabilities.list') {
                 const capabilities = [
+                    ...(options.auditScopes
+                        ? [
+                              {
+                                  permission: 'admin.playAudit.read',
+                                  label: '플레이 감사',
+                                  description: '조회',
+                                  risk: 'HIGH',
+                                  scope: 'PROFILE',
+                                  scopes: options.auditScopes,
+                              },
+                          ]
+                        : []),
                     {
                         permission: 'admin.users.manage',
                         label: '사용자·제재 관리',
@@ -682,4 +700,77 @@ test('runtime diagnostics shows expired lease and retains history after recovery
     await page.getByRole('button', { name: '장애 진단 새로고침' }).click();
     await expect(panel).toContainText('턴 프로세스와 실행 권한 정상');
     await expect(panel).toContainText('Heartbeat deadline exceeded');
+});
+
+for (const width of [1280, 390]) {
+    test(`play audit entry uses scoped capability and private session transfer at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const fixture = await installFixture(page, { auditScopes: ['hwe:default'] });
+        await page.route('**/hwe/play-audit', (route) =>
+            route.fulfill({ contentType: 'text/html', body: '<h1>감사 도착</h1>' })
+        );
+        await page.goto('/gateway/admin/servers/hwe%3Adefault');
+        const button = page.getByRole('button', { name: '플레이 감사', exact: true });
+        await expect(button).toBeVisible();
+        await button.scrollIntoViewIfNeeded();
+        await button.hover();
+        await button.focus();
+        await expect(button).toBeFocused();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await button.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return {
+                x: rect.x,
+                width: rect.width,
+                right: rect.right,
+                viewport: innerWidth,
+                fontSize: style.fontSize,
+                background: style.backgroundColor,
+                documentWidth: document.documentElement.scrollWidth,
+            };
+        });
+        expect(geometry.right).toBeLessThanOrEqual(width);
+        await mkdir('/tmp/play-audit-entry', { recursive: true });
+        await writeFile(`/tmp/play-audit-entry/${width}.json`, JSON.stringify(geometry));
+        await writeFile(`/tmp/play-audit-entry/${width}.html`, await page.content());
+        await page.screenshot({ path: `/tmp/play-audit-entry/${width}.png`, fullPage: true });
+        await button.click();
+        await expect(page).toHaveURL(/\/hwe\/play-audit$/);
+        expect(fixture.requestBodies).toHaveLength(1);
+        expect(JSON.stringify(fixture.requestBodies[0])).toContain('hwe:default');
+        expect(
+            await page.evaluate(() => {
+                const transfer = JSON.parse(sessionStorage.getItem('sammo-pending-game-session') ?? '{}');
+                return transfer.profile === 'hwe:default' && transfer.gatewayToken === 'audit-fixture-token';
+            })
+        ).toBe(true);
+    });
+}
+
+test('play audit entry is hidden for another profile scope', async ({ page }) => {
+    const fixture = await installFixture(page, { auditScopes: ['che:default'] });
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    await expect(page.getByRole('heading', { name: '서버 관리', exact: true, level: 1 })).toBeVisible();
+    await expect(page.getByText('현재 시나리오: 1010', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '플레이 감사', exact: true })).toHaveCount(0);
+    expect(fixture.requestBodies).toHaveLength(0);
+});
+
+test('play audit storage failure keeps credentials out of the URL and allows retry', async ({ page }) => {
+    await installFixture(page, { auditScopes: ['hwe:default'] });
+    await page.addInitScript(() => {
+        const original = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key: string, value: string) {
+            if (key === 'sammo-pending-game-session') throw new Error('fixture storage denied');
+            return original.call(this, key, value);
+        };
+    });
+    await page.goto('/gateway/admin/servers/hwe%3Adefault');
+    const button = page.getByRole('button', { name: '플레이 감사', exact: true });
+    await button.click();
+    await expect(page.getByRole('alert')).toContainText('세션 전달');
+    await expect(button).toBeEnabled();
+    expect(new URL(page.url()).search).toBe('');
+    expect(new URL(page.url()).pathname).toContain('/gateway/admin/servers/');
 });

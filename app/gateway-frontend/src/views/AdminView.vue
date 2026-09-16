@@ -19,6 +19,7 @@ import {
     type ResetAutorunOption,
 } from '../utils/resetDefaults';
 import { trpc } from '../utils/trpc';
+import { resolveGameUrl } from '../utils/gameEntry';
 
 type AdminSection = 'users' | 'servers' | 'system' | 'audit';
 
@@ -571,6 +572,29 @@ const rolesInput = ref('');
 const rolesMode = ref<'set' | 'grant' | 'revoke'>('grant');
 const rolesStatus = ref('');
 const capabilities = ref<AdminCapability[]>([]);
+const auditEntryLoading = ref<Record<string, boolean>>({});
+const auditEntryError = ref<Record<string, string>>({});
+const enterPlayAudit = async (profileName: string): Promise<void> => {
+    if (auditEntryLoading.value[profileName] || !hasCapability('admin.playAudit.read', profileName)) return;
+    auditEntryLoading.value[profileName] = true;
+    auditEntryError.value[profileName] = '';
+    try {
+        const sessionToken = window.localStorage.getItem('sammo-session-token');
+        if (!sessionToken) throw new Error('로그인 후 다시 시도해 주세요.');
+        const issued = await trpc.auth.issueGameSession.mutate({ sessionToken, profile: profileName });
+        const url = resolveGameUrl('/play-audit', issued.profile, issued.gameToken, false);
+        if (!url)
+            throw new Error(
+                '게임 주소 또는 세션 전달을 확인하지 못했습니다. 같은 사이트에서 쿠키·저장소를 허용한 뒤 다시 시도해 주세요.'
+            );
+        window.location.assign(url);
+    } catch (cause) {
+        auditEntryError.value[profileName] =
+            cause instanceof Error ? cause.message : '플레이 감사 화면에 연결하지 못했습니다.';
+    } finally {
+        auditEntryLoading.value[profileName] = false;
+    }
+};
 const hasCapability = (permission: string, profileName?: string): boolean =>
     capabilities.value.some((entry) => {
         if (entry.permission !== permission) return false;
@@ -2418,6 +2442,23 @@ onMounted(() => {
                                 :can-reset="hasCapability('admin.scenarios.reset', profile.profileName)"
                                 :can-cancel="hasCapability('admin.games.cancel', profile.profileName)"
                             />
+                            <div v-if="hasCapability('admin.playAudit.read', profile.profileName)">
+                                <button
+                                    type="button"
+                                    class="rounded bg-sky-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+                                    :disabled="auditEntryLoading[profile.profileName]"
+                                    @click="enterPlayAudit(profile.profileName)"
+                                >
+                                    {{ auditEntryLoading[profile.profileName] ? '연결 중…' : '플레이 감사' }}
+                                </button>
+                                <p
+                                    v-if="auditEntryError[profile.profileName]"
+                                    role="alert"
+                                    class="mt-2 text-sm text-red-300"
+                                >
+                                    {{ auditEntryError[profile.profileName] }}
+                                </p>
+                            </div>
 
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                                 <div>
