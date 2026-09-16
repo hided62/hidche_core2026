@@ -1,3 +1,4 @@
+import { purifyDiplomacyHtml } from '../../security/diplomacyHtml.js';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { hashAuditDiplomacyDocument, type GamePrisma } from '@sammo-ts/infra';
@@ -204,6 +205,8 @@ export const diplomacyEvent = auditProcedure.input(z.object({ id: zId }).strict(
                               id: document.id,
                               brief: document.textBrief,
                               detail: document.textDetail,
+                              briefHtml: purifyDiplomacyHtml(document.textBrief),
+                              detailHtml: purifyDiplomacyHtml(document.textDetail),
                               writtenAt: document.date,
                           }
                         : null,

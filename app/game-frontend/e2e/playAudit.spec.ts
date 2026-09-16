@@ -89,6 +89,79 @@ const install = async (page: Page, denied = false) => {
                             ],
                             nextCursor: null,
                         });
+                    case 'playAudit.diplomacyHistory':
+                        return result({
+                            ...world,
+                            coverage: 'RECORDED_EVENTS_ONLY',
+                            nextCursor: input.cursor ? null : '9007199254741001',
+                            items: [
+                                {
+                                    id: (input.cursor ? 'e' : 'd').repeat(64),
+                                    sequence: input.cursor ? '9007199254741000' : '9007199254741001',
+                                    srcNationId: 2,
+                                    destNationId: 3,
+                                    category: 'DOCUMENT',
+                                    source: 'API',
+                                    eventType: input.cursor ? 'LETTER_DESTROYED' : 'LETTER_ACCEPTED',
+                                    documentId: 8,
+                                    previousDocumentId: 7,
+                                    year: 190,
+                                    month: 6,
+                                    actor: {
+                                        generalId: 1,
+                                        name: '당시 외교권자',
+                                        nationId: 2,
+                                        officerLevel: 12,
+                                        npcState: 0,
+                                    },
+                                    createdAt: world.asOf,
+                                },
+                            ],
+                        });
+                    case 'playAudit.diplomacyEvent':
+                        return result({
+                            ...world,
+                            event: {
+                                id: input.id,
+                                sequence: '9007199254741001',
+                                srcNationId: 2,
+                                destNationId: 3,
+                                category: 'DOCUMENT',
+                                source: 'API',
+                                eventType: 'LETTER_ACCEPTED',
+                                documentId: 8,
+                                previousDocumentId: 7,
+                                year: 190,
+                                month: 6,
+                                actor: {
+                                    generalId: 1,
+                                    name: '당시 외교권자',
+                                    nationId: 2,
+                                    officerLevel: 12,
+                                    npcState: 0,
+                                },
+                                createdAt: world.asOf,
+                                before: { state: 'PROPOSED' },
+                                after: { state: 'ACTIVATED' },
+                                tick: '100',
+                                clockRevision: '1',
+                                ordinal: 1,
+                                executionId: 'fixture',
+                                requestId: 'fixture-request',
+                                inputSequence: '9007199254740993',
+                                documentStatus: String(input.id).startsWith('e') ? 'HASH_MISMATCH' : 'AVAILABLE',
+                                document: String(input.id).startsWith('e')
+                                    ? null
+                                    : {
+                                          id: 8,
+                                          writtenAt: world.asOf,
+                                          brief: '협정',
+                                          briefHtml: '<p>협정</p>',
+                                          detail: '<script>window.auditInjected=true</script><p>서명된 내용</p>',
+                                          detailHtml: '<p><b>서명된 내용</b></p>',
+                                      },
+                            },
+                        });
                     case 'playAudit.policyHistory':
                         return result({
                             ...world,
@@ -500,6 +573,7 @@ test('general logs load explicitly and cache each category without reloading ent
     await page.goto(gamePath('/play-audit?tab=generals&general=1'));
     await expect(page.getByRole('button', { name: '장수 기록 조회', exact: true })).toBeVisible();
     expect(requests.filter((r) => r.operation === 'playAudit.generalLogs')).toHaveLength(0);
+    await expect(page.getByRole('rowheader', { name: /감사장수/ })).toBeVisible();
     const listCount = requests.filter((r) => r.operation === 'playAudit.generals').length;
     await page.getByRole('button', { name: '장수 기록 조회', exact: true }).click();
     await expect(page.getByText('generalHistory 감사 로그', { exact: false })).toBeVisible();
@@ -710,4 +784,82 @@ test('initial observation is separate from month-end and final snapshots', async
     await capture(page, 'initial-observation');
     await page.setViewportSize({ width: 390, height: 844 });
     await capture(page, 'mobile-initial-observation');
+});
+
+test('diplomacy history loads selected safe document details without reloading the list', async ({ page }) => {
+    const requests = await install(page);
+    await page.goto(
+        gamePath('/play-audit?tab=diplomacy&nation=2&otherNation=3&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await expect(page.getByRole('button', { name: '문서 승인', exact: true })).toBeVisible();
+    expect(requests.some(({ operation }) => operation === 'playAudit.diplomacyEvent')).toBe(false);
+    const count = requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory').length;
+    const nations = requests.filter(({ operation }) => operation === 'playAudit.nations').length;
+    await page.getByRole('button', { name: '문서 승인', exact: true }).click();
+    await expect(
+        page.getByRole('region', { name: '당시 외교 문서' }).getByText('서명된 내용', { exact: true })
+    ).toBeVisible();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory')).toHaveLength(count);
+    expect(requests.filter(({ operation }) => operation === 'playAudit.nations')).toHaveLength(nations);
+    await page.getByText('원문 HTML 확인', { exact: true }).click();
+    await expect(page.locator('pre').filter({ hasText: '<script>window.auditInjected=true</script>' })).toBeVisible();
+    expect(await page.evaluate(() => Reflect.get(window, 'auditInjected'))).toBeUndefined();
+    await capture(page, 'desktop-diplomacy-detail');
+    await page.reload();
+    await expect(page.getByRole('heading', { name: '문서 #8' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await capture(page, 'mobile-diplomacy-detail');
+    const comparison = page.getByLabel('외교 전후 값', { exact: true });
+    await comparison.hover();
+    await page.mouse.wheel(650, 0);
+    await expect.poll(() => comparison.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    await page.getByRole('button', { name: '외교 상세 닫기' }).click();
+    await page.getByRole('button', { name: '다음 사건 50개' }).click();
+    await page.getByRole('button', { name: '문서 파기', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('해시와 달라');
+    await expect(page.getByRole('region', { name: '당시 외교 문서' })).toHaveCount(0);
+    const before = requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory').length;
+    await page.getByLabel('시작 월', { exact: true }).fill('2');
+    expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory')).toHaveLength(before);
+    await page.getByRole('button', { name: '조회', exact: true }).click();
+    await expect
+        .poll(() => requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory').length)
+        .toBeGreaterThan(before);
+    expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory').at(-1)?.input.from).toEqual({
+        year: 190,
+        month: 2,
+    });
+});
+
+test('diplomacy detail failure retries independently', async ({ page }) => {
+    const requests = await install(page);
+    let fail = true;
+    await page.route(gameTrpcRoute, async (route) => {
+        if (fail && route.request().url().includes('playAudit.diplomacyEvent')) {
+            fail = false;
+            await route.fulfill({
+                status: 500,
+                contentType: 'application/json',
+                body: JSON.stringify([
+                    {
+                        error: {
+                            message: '외교 상세 재시도',
+                            code: -32603,
+                            data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 },
+                        },
+                    },
+                ]),
+            });
+        } else await route.fallback();
+    });
+    await page.goto(
+        gamePath('/play-audit?tab=diplomacy&nation=2&otherNation=3&fromYear=190&fromMonth=1&year=190&month=6')
+    );
+    await expect(page.getByRole('button', { name: '문서 승인', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '문서 승인', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('외교 상세 재시도');
+    const count = requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory').length;
+    await page.getByRole('button', { name: '상세 다시 조회' }).click();
+    await expect(page.getByRole('heading', { name: '문서 #8' })).toBeVisible();
+    expect(requests.filter(({ operation }) => operation === 'playAudit.diplomacyHistory')).toHaveLength(count);
 });

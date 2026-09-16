@@ -2255,7 +2255,7 @@ integration('game API security over HTTP transport', () => {
                     srcSignerId: generalId,
                     state: 'CANCELLED',
                     textBrief: '당시 외교 문서',
-                    textDetail: '<p>역사 본문</p>',
+                    textDetail: '<p>역사 본문</p><script>window.auditInjected=true</script>',
                 },
             });
             await db.playAuditDiplomacyEvent.createMany({
@@ -2338,7 +2338,10 @@ integration('game API security over HTTP transport', () => {
                             after: { state: 'ACTIVATED' },
                             inputSequence: '9007199254740993',
                             documentStatus: 'AVAILABLE',
-                            document: { detail: '<p>역사 본문</p>' },
+                            document: {
+                                detail: '<p>역사 본문</p><script>window.auditInjected=true</script>',
+                                detailHtml: '<p>역사 본문</p>',
+                            },
                         },
                     },
                 },

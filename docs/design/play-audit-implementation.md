@@ -185,6 +185,25 @@ coverage는 RECORDED_EVENTS_ONLY이며 최초 수집 전의 상태 완전성을 
 본문 지연 조회/hash 상태·기수 전환의 접근 차단과 input_event 무증가를 검증했다.
 외교 화면과 초기 기준 수집은 아직 남아 있다.
 
+### 외교 감사 화면
+
+CHE/HWE의 기존 `PlayAuditView` 필터·PanelCard에 외교 이력을 추가했다. 국가/상대 국가,
+기간과 선택 event를 URL에 보존하고 기존 정책 이력과 같은 표·상세·pagination 흐름을
+사용한다. 상세 선택·닫기·오류 재시도는 국가/이력 목록을 다시 읽지 않는다. 필터 편집은
+조회 적용 전 요청하지 않는다. 본문은 선택한 상세 응답에서만 읽는다.
+
+원문 hash를 검증한 뒤 기존 `purifyDiplomacyHtml`로 만든 briefHtml/detailHtml만 렌더링한다.
+원문 HTML은 별도 details 안에서 escaped text로 보여준다. 이 때문에 선택 문서의
+응답에는 원문/정제본이 함께 오지만 추가 DB 조회나 중복 저장은 없다. 해시 불일치와
+참조 부재에는 본문을 표시하지 않는다. 이전 문서 번호와 당시 actor/상태/실행 연결을
+보이고, 무소속은 외교 국가 선택에서 제외한다.
+
+실제 HTTP에서 script 포함 원문의 보존/표시용 정제를 확인하고, production bundle
+Chromium의 CHE/HWE에서 desktop1280×720/mobile390×844, DPR1로 검증했다.
+선택적 상세/재시도·deep link/reload·pagination·draft 적용과 표 내부 가로 스크롤,
+원문 script 비실행을 검사한다. 외교 최초 기준과 최종 mutation inventory/전체 비용
+검증은 남아 있으며 화면 추가만으로 R4 전체 완료를 판단하지 않는다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.

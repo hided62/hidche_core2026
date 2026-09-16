@@ -5,6 +5,7 @@ import PanelCard from '../components/ui/PanelCard.vue';
 import AuditNationSeries from '../components/playAudit/AuditNationSeries.vue';
 import AuditNationSnapshot from '../components/playAudit/AuditNationSnapshot.vue';
 import AuditGeneralDetail from '../components/playAudit/AuditGeneralDetail.vue';
+import AuditDiplomacyHistory from '../components/playAudit/AuditDiplomacyHistory.vue';
 import AuditPolicyHistory from '../components/playAudit/AuditPolicyHistory.vue';
 import AuditCityDetail from '../components/playAudit/AuditCityDetail.vue';
 import { usePageExit } from '../composables/usePageExit';
@@ -52,6 +53,13 @@ const appliedPolicy = computed(() => {
         to,
     };
 });
+const otherNationId = ref('');
+const appliedDiplomacy = computed(() => ({
+    nationId: appliedPolicy.value.nationId,
+    otherNationId: numeric(route.query.otherNation, 0),
+    from: appliedPolicy.value.from,
+    to: appliedPolicy.value.to,
+}));
 const nationId = ref('');
 const cityId = ref('');
 const population = ref('');
@@ -124,10 +132,11 @@ const result = computed(() =>
             : series.value
 );
 const readQuery = () => {
-    tab.value = ['nations', 'generals', 'cities', 'policies'].includes(String(route.query.tab))
+    tab.value = ['nations', 'generals', 'cities', 'policies', 'diplomacy'].includes(String(route.query.tab))
         ? String(route.query.tab)
         : 'nations';
     policyArea.value = appliedPolicy.value.area;
+    otherNationId.value = route.query.otherNation ? String(numeric(route.query.otherNation, 0)) : '';
     nationId.value = route.query.nation ? String(numeric(route.query.nation, 0)) : '';
     cityId.value = route.query.city ? String(numeric(route.query.city, 0)) : '';
     population.value = ['human', 'npc', 'troopNpc'].includes(String(route.query.population))
@@ -183,7 +192,7 @@ const load = async (append = false) => {
                     ...response,
                     items: append ? [...(cities.value?.items ?? []), ...response.items] : response.items,
                 };
-        } else if (tab.value === 'policies') {
+        } else if (tab.value === 'policies' || tab.value === 'diplomacy') {
             // 정책 목록/상세는 해당 component가 필요한 요청만 실행한다.
         } else if (nationId.value !== '' && (moment.value === 'final' || moment.value === 'initial')) {
             const response = await trpc.playAudit.nationSnapshot.query({
@@ -229,6 +238,7 @@ const apply = async () => {
     const query = {
         tab: tab.value,
         nation: nationId.value || undefined,
+        otherNation: tab.value === 'diplomacy' ? otherNationId.value || undefined : undefined,
         city: cityId.value || undefined,
         population: population.value || undefined,
         at: moment.value,
@@ -275,7 +285,9 @@ const moreNations = async () => {
 watch(
     () =>
         JSON.stringify(
-            Object.entries(route.query).filter(([key]) => key !== 'general' && key !== 'cityRecord' && key !== 'policy')
+            Object.entries(route.query).filter(
+                ([key]) => key !== 'general' && key !== 'cityRecord' && key !== 'policy' && key !== 'event'
+            )
         ),
     () => {
         if (authorized.value) {
@@ -331,14 +343,19 @@ onMounted(async () => {
                             <option value="generals">전체 장수</option>
                             <option value="cities">도시 상태</option>
                             <option value="policies">정책 변경 이력</option>
+                            <option value="diplomacy">외교 이력</option>
                         </select></label
                     >
                     <label
                         >국가<select class="legacy-sort-select" v-model="nationId">
                             <option value="">
-                                {{ tab === 'nations' || tab === 'policies' ? '국가 선택' : '모든 국가' }}
+                                {{
+                                    tab === 'nations' || tab === 'policies' || tab === 'diplomacy'
+                                        ? '국가 선택'
+                                        : '모든 국가'
+                                }}
                             </option>
-                            <option value="0">무소속</option>
+                            <option v-if="tab !== 'diplomacy'" value="0">무소속</option>
                             <option
                                 v-for="nation in nations?.items.filter((item) => item.id !== 0)"
                                 :key="nation.id"
@@ -376,7 +393,7 @@ onMounted(async () => {
                         </select></label
                     >
                     <label
-                        >{{ tab === 'nations' || tab === 'policies' ? '종료 연도' : '표본 연도'
+                        >{{ tab === 'nations' || tab === 'policies' || tab === 'diplomacy' ? '종료 연도' : '표본 연도'
                         }}<input
                             v-model.number="year"
                             type="number"
@@ -393,7 +410,11 @@ onMounted(async () => {
                             required
                     /></label>
                     <template
-                        v-if="(tab === 'nations' && moment !== 'final' && moment !== 'initial') || tab === 'policies'"
+                        v-if="
+                            (tab === 'nations' && moment !== 'final' && moment !== 'initial') ||
+                            tab === 'policies' ||
+                            tab === 'diplomacy'
+                        "
                     >
                         <label
                             >시작 연도<input
@@ -418,6 +439,26 @@ onMounted(async () => {
                             </select></label
                         >
                     </template>
+                    <label v-if="tab === 'diplomacy'"
+                        >상대 국가<select class="legacy-sort-select" v-model="otherNationId">
+                            <option value="">국가 선택</option>
+                            <option
+                                v-for="nation in nations?.items.filter((item) => item.id > 0)"
+                                :key="nation.id"
+                                :value="String(nation.id)"
+                            >
+                                {{ nation.name }} (#{{ nation.id }})
+                            </option>
+                            <option
+                                v-if="
+                                    otherNationId && !nations?.items.some((item) => String(item.id) === otherNationId)
+                                "
+                                :value="otherNationId"
+                            >
+                                국가 #{{ otherNationId }}
+                            </option>
+                        </select></label
+                    >
                     <label v-if="tab === 'policies'"
                         >정책 영역<select class="legacy-sort-select" v-model="policyArea">
                             <option value="NPC_VALUES">NPC 국가 정책</option>
@@ -450,13 +491,25 @@ onMounted(async () => {
                       ? '전체 장수'
                       : tab === 'policies'
                         ? '정책 변경 이력'
-                        : '도시 상태'
+                        : tab === 'diplomacy'
+                          ? '외교 이력'
+                          : '도시 상태'
             "
         >
             <p v-if="result">조회 시각 {{ result.asOf }} · tick {{ result.tick ?? '없음' }}</p>
-            <p v-if="(tab === 'nations' || tab === 'policies') && !nationId">
+            <p v-if="(tab === 'nations' || tab === 'policies' || tab === 'diplomacy') && !nationId">
                 국가를 선택하고 조회해 주세요. 멸망한 국가는 해당 월말 기준의 국가 목록에서 선택할 수 있습니다.
             </p>
+            <p v-if="tab === 'diplomacy' && !otherNationId">상대 국가를 선택하고 조회해 주세요.</p>
+            <AuditDiplomacyHistory
+                v-if="
+                    tab === 'diplomacy' &&
+                    route.query.tab === 'diplomacy' &&
+                    route.query.nation &&
+                    route.query.otherNation
+                "
+                v-bind="appliedDiplomacy"
+            />
             <AuditPolicyHistory
                 v-if="tab === 'policies' && route.query.tab === 'policies' && route.query.nation"
                 v-bind="appliedPolicy"
