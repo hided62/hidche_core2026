@@ -29,7 +29,12 @@ p50/p95와 EXPLAIN ANALYZE BUFFERS를 `/tmp/play-audit-decision-cost.json`에 �
 2026-09-16 격리 PG 결과는 JSON12,271,836B, header행101,304B/chunk행666,924B,
 저장677.56ms, 목록51건 p50 0.76ms/p95 1.01ms였다. 월별 장수 index scan으로51행을
 읽었다. 반복 RNG 합성 fixture는 압축률이 높으므로 평균 운영 trace 크기의 근거가 아니다.
-SQL 왕복·WAL·retained heap, 실제 scenario 계측 전후와 전체 COST gate는 여전히 남는다.
+추가 query event 계측에서는 동일201결정의 저장에 INSERT6회(헤더2/chunk4),
+SELECT2회(hash 확인), COMMIT1회가 관측됐다. BEGIN 등 driver 내부 통신은 event에
+나타나지 않으므로 네트워크 왕복 전체로 해석하지 않는다. test는 INSERT/SELECT 수를
+assert하며 SQL/params 원문은 저장하지 않는다. 관측60,702단계마다 SQL을 쓰지 않고 batch당
+저장·hash 조회를 확인한 범위다. WAL·retained heap, 실제 scenario 계측 전후와 전체
+COST gate는 여전히 남는다.
 
 
 ### 정책·외교 사건의 요청 처리 상태

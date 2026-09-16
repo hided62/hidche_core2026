@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import { persistAuditDecisions } from '../src/playAudit/decisionPersistence.js';
 import { buildAuditDecisionFixture } from './fixtures/playAuditDecision.js';
 
@@ -9,12 +9,26 @@ const databaseUrl = process.env.PLAY_AUDIT_COST_DATABASE_URL;
 describe.skipIf(!databaseUrl)('decision storage cost probe', () => {
     let db: GamePrismaClient;
     let close: () => Promise<void>;
+    let recording = false;
+    let statements: Record<string, number> = {};
     beforeAll(async () => {
         if (new URL(databaseUrl!).searchParams.get('schema') !== 'play_audit_cost_decision_fixture')
             throw new Error('Dedicated audit cost fixture required');
-        const connector = createGamePostgresConnector({ url: databaseUrl!, maxConnections: 1 });
+        const connector = createGamePostgresConnector({
+            url: databaseUrl!,
+            maxConnections: 1,
+            log: [{ emit: 'event', level: 'query' }],
+        });
         await connector.connect();
         db = connector.prisma;
+        // connector의 반환 타입은 log generic을 지운다. 위에서 활성화한 event만 구독한다.
+        const observedDb = db as GamePrismaClient<GamePrisma.PrismaClientOptions, 'query'>;
+        observedDb.$on('query', (event) => {
+            if (!recording) return;
+            // 원문 SQL/params는 보존하거나 출력하지 않고 명령 종류만 집계한다.
+            const command = event.query.trim().split(/\s+/, 1)[0]!.toUpperCase();
+            statements[command] = (statements[command] ?? 0) + 1;
+        });
         close = () => connector.disconnect();
         await db.playAuditDecisionChunk.deleteMany();
         await db.playAuditDecision.deleteMany();
@@ -27,9 +41,19 @@ describe.skipIf(!databaseUrl)('decision storage cost probe', () => {
             return { ...decision, tick: decision.tick + index };
         });
         const payloadBytes = Buffer.byteLength(JSON.stringify(decisions));
+        statements = {};
+        recording = true;
         const start = performance.now();
-        await db.$transaction((tx) => persistAuditDecisions(tx, decisions), { timeout: 30_000 });
+        try {
+            await db.$transaction((tx) => persistAuditDecisions(tx, decisions), { timeout: 30_000 });
+        } finally {
+            recording = false;
+        }
         const writeMs = performance.now() - start;
+        const writeStatements = { ...statements };
+        // 200결정: header1 + chunk3, 나머지1결정: header1 + chunk1. hash 조회는 batch당1.
+        expect(writeStatements.INSERT).toBe(6);
+        expect(writeStatements.SELECT).toBe(2);
         expect(await db.playAuditDecision.count()).toBe(201);
         expect(await db.playAuditDecisionChunk.count()).toBe(603);
         const [storage] = await db.$queryRaw<
@@ -75,7 +99,7 @@ describe.skipIf(!databaseUrl)('decision storage cost probe', () => {
         `;
         const metrics = {
             scope: 'synthetic 201 decisions, 302 steps each; isolated schema, warm local reads',
-            limitations: 'Not production p95; no gameplay baseline, SQL count, WAL or retained heap measurement. Repetitive synthetic steps compress well. Relation allocation can retain space from previous runs.',
+            limitations: 'Not production p95; no gameplay baseline, WAL or retained heap measurement. SQL counts cover only the persistence transaction. Repetitive synthetic steps compress well. Relation allocation can retain space from previous runs.',
             decisions: 201,
             steps: Number(storage!.steps),
             chunks: 603,
@@ -89,6 +113,7 @@ describe.skipIf(!databaseUrl)('decision storage cost probe', () => {
                 totalBytes: Number(row.totalBytes),
             })),
             writeMs,
+            writeStatements,
             samples: timings.length,
             readP50Ms: timings[14],
             readP95Ms: timings[28],
