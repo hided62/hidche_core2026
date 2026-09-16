@@ -600,6 +600,8 @@ export const buildProcessDefinitions = (
         ...(turnDaemonNodeOptions ? { NODE_OPTIONS: turnDaemonNodeOptions } : {}),
         POSTGRES_POOL_MAX: managedPostgresPoolMax(baseEnv, 'TURN_DAEMON_POSTGRES_POOL_MAX', 2),
         GAME_ENGINE_ROLE: 'turn-daemon',
+        // 실행 worktree를 결정한 동일 프로필의 SHA를 전달한다. 부모 환경의 다른 버전은 상속하지 않는다.
+        TURN_BUILD_COMMIT_SHA: profile.buildCommitSha ?? '',
         TURN_PROFILE: profile.profile,
         PROFILE: profile.profile,
         SCENARIO: profile.currentScenario ?? 'default',

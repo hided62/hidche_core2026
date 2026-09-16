@@ -250,6 +250,7 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
         const decisionTrace: AiDecisionTraceEvent[] = [];
         const savedDecisions: PendingAuditDecision[] = [];
         const { runUntil } = await createTurnTestHarness({
+            auditCodeVersion: 'a'.repeat(40),
             onDecisionTrace: auditEnabled ? (event) => decisionTrace.push(event) : undefined,
             wrapGeneralTurnHandler: (handler) => ({ execute: (context) => {
                 const result = handler.execute(context);
@@ -447,6 +448,7 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
         expect(dispatchCount).toBeGreaterThan(0);
         if (auditEnabled) {
             expect(savedDecisions.length).toBeGreaterThan(0);
+            expect(savedDecisions.every((row) => row.summary.codeVersion === 'a'.repeat(40))).toBe(true);
             expect(new Set(savedDecisions.map((row) => row.id)).size).toBe(savedDecisions.length);
             expect(savedDecisions.some((row) => row.phase === 'nation' && row.summary.executedAction === 'che_선전포고')).toBe(true);
             expect(savedDecisions.some((row) => row.phase === 'general' && row.summary.executedAction === 'che_출병')).toBe(true);

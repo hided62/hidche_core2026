@@ -1,4 +1,4 @@
-import { auditDecisionIdentity, type PendingAuditDecision } from '../playAudit/decision.js';
+import { auditDecisionIdentity, normalizeAuditCodeVersion, type PendingAuditDecision } from '../playAudit/decision.js';
 import { auditPolicyHash, AUDIT_POLICY_AREAS } from '../playAudit/policy.js';
 import type { AiDecisionTraceEvent } from './ai/generalAi/trace.js';
 import type { AiDecisionTraceObserver } from './ai/generalAi/trace.js';
@@ -934,6 +934,7 @@ export const createReservedTurnHandler = async (options: {
         actionDurationNs: bigint;
     }) => void;
 }): Promise<GeneralTurnHandler> => {
+    const auditCodeVersion = normalizeAuditCodeVersion(options.auditCodeVersion);
     const env = options.commandEnv ?? buildCommandEnv(options.scenarioConfig, options.unitSet);
     const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
     const uniqueConfig = resolveUniqueConfig(asRecord(options.scenarioConfig.const));
@@ -1143,7 +1144,7 @@ export const createReservedTurnHandler = async (options: {
                         schemaVersion: 1,
                         coverage: 'PROCEDURES',
                         clockRevision: revision,
-                        codeVersion: options.auditCodeVersion ?? null,
+                        codeVersion: auditCodeVersion ?? null,
                         policyRefs: decisionPolicyRefs.get(phase) ?? {},
                         requestedAction: first.reservedAction,
                         selectedAction: last.action,

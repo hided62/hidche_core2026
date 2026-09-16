@@ -2274,7 +2274,7 @@ integration('game API security over HTTP transport', () => {
                     month: 1,
                     tick: 4_320_000_000n,
                     stepCount: 129,
-                    summary: decisionSummary,
+                    summary: { ...decisionSummary, codeVersion: index ? null : 'a'.repeat(40) },
                     hash: id,
                 })),
             });
@@ -2309,7 +2309,7 @@ integration('game API security over HTTP transport', () => {
                 result: {
                     data: {
                         coverage: 'PROCEDURES_ONLY',
-                        items: [{ id: decisionIds[0], tick: '4320000000' }],
+                        items: [{ id: decisionIds[0], tick: '4320000000', summary: { codeVersion: 'a'.repeat(40) } }],
                         nextCursor: { tick: '4320000000', id: decisionIds[0] },
                     },
                 },
@@ -2323,7 +2323,9 @@ integration('game API security over HTTP transport', () => {
                         cursor: { tick: '4320000000', id: decisionIds[0] },
                     })
                 ).body
-            ).toMatchObject({ result: { data: { items: [{ id: decisionIds[1] }], nextCursor: null } } });
+            ).toMatchObject({
+                result: { data: { items: [{ id: decisionIds[1], summary: { codeVersion: null } }], nextCursor: null } },
+            });
             expect((await get('decisionHistory', admin, { ...decisionInput, phase: 'nation' })).body).toMatchObject({
                 result: { data: { items: [{ id: decisionIds[1] }] } },
             });

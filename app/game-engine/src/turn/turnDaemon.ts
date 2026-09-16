@@ -106,6 +106,7 @@ import { applyRuntimeGameSettings } from './runtimeGameSettings.js';
 export interface TurnDaemonRuntimeOptions {
     profile: string;
     profileName?: string;
+    auditCodeVersion?: string;
     databaseUrl: string;
     gatewayDatabaseUrl?: string;
     defaultBudget?: TurnRunBudget;
@@ -779,6 +780,7 @@ const createTurnDaemonRuntimeWithLease = async (
             options.generalTurnHandler ??
             (await createReservedTurnHandler({
                 reservedTurns: reservedTurnStoreHandle!.store,
+                auditCodeVersion: options.auditCodeVersion,
                 scenarioConfig: snapshot.scenarioConfig,
                 scenarioMeta: snapshot.scenarioMeta,
                 map: snapshot.map,

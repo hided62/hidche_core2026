@@ -34,8 +34,10 @@ migration58은 기존 장수 인덱스를 `(server, general, year, month, tick, 
 reservedTurnHandler가 기수 identity가 있는 새 AI 실행을 phase별로 모으고 실제 요청/선택/
 실행·성공/대체 결과를 함께 반환한다. 실행 tick은 해당 장수 기준, ID는 serverId·장수·tick·
 clock revision·phase로 결정한다. 정책 head 참조는 시작 시 확보하며 없는 값은 채우지 않는다.
-현재 codeVersion 주입과 유효 정책 합성 상세, 내부 후보 조건은 남아 있어 coverage는
-`PROCEDURES`다. 수동 턴 중 AI를 사용하지 않은 경우 결정 행을 만들지 않는다.
+Gateway의 프로필 buildCommitSha→daemon 환경 TURN_BUILD_COMMIT_SHA→CLI→runtime→handler로
+실행 코드 버전을 전달한다. 전체40/64자리 SHA만 인정하며 누락/잘못된 값은 null이다.
+handler 생성 시 한 번 정규화하므로 턴마다 Git/DB를 읽지 않는다. 유효 정책 합성 상세와
+내부 후보 조건은 남아 있어 coverage는 `PROCEDURES`다. 수동 턴 중 AI를 사용하지 않은 경우 결정 행을 만들지 않는다.
 
 GeneralTurnResult→world pending→capture/restore/peek/ack→기존 fenced DB flush를 연결했다.
 요약 hash와 실행/phase unique로 같은 재시도는 중복 없이 통과하고 다른 payload는 실패한다.
@@ -63,7 +65,7 @@ GeneralAI와 예약 실행 handler에 선택적 `onDecisionTrace` 관측 경계�
 초기 관측 단계에서는 default daemon을 켜지 않았다. 이후 아래 저장 경계에서 현재 기수의 새 실행을 수집하도록 연결했다.
 이는 R5의 관측 기반일 뿐 완료가 아니다. 불변 결정 ID·기존 정책 참조·실행 결과·
 pending/rollback·migration·정리·목록/상세 API와 GUI는 위 절에서 연결했다.
-후보/조건별 실제 관측값, 합성 유효 정책과 code version 연결은 남는다.
+후보/조건별 실제 관측값, 합성 유효 정책의 실제 관측은 남는다. 코드 버전 전달은 위 저장 절에 연결했다.
 
 ### 전달 전 DB tick 정밀도 보완
 

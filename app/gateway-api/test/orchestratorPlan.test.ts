@@ -184,6 +184,17 @@ describe('buildProcessDefinitions', () => {
         gatewayInternalApiUrl: 'http://127.0.0.1:13000',
     };
 
+    it('does not inherit a different profile build SHA', () => {
+        const config = { ...processConfig, baseEnv: { TURN_BUILD_COMMIT_SHA: 'f'.repeat(40) } };
+        expect(buildProcessDefinitions(buildProfile(), config).daemon.env.TURN_BUILD_COMMIT_SHA).toBe(
+            buildProfile().buildCommitSha
+        );
+        expect(
+            buildProcessDefinitions({ ...buildProfile(), buildCommitSha: undefined }, config).daemon.env
+                .TURN_BUILD_COMMIT_SHA
+        ).toBe('');
+    });
+
     it('runs a built profile from its commit worktree', () => {
         const buildWorkspace = '/srv/sammo/worktrees/0123456789abcdef';
         const definitions = buildProcessDefinitions(buildProfile(buildWorkspace), processConfig);
@@ -217,6 +228,7 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
         expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
         expect(definitions.daemon.env.POSTGRES_POOL_MAX).toBe('2');
+        expect(definitions.daemon.env.TURN_BUILD_COMMIT_SHA).toBe(buildProfile().buildCommitSha);
         expect(definitions.auction).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),

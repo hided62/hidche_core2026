@@ -12,6 +12,7 @@ import { TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemon
 export interface TurnDaemonCliOptions {
     profile?: string;
     profileName?: string;
+    auditCodeVersion?: string;
     scenario?: string;
     databaseUrl?: string;
     gatewayDatabaseUrl?: string;
@@ -84,6 +85,7 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
         createTurnDaemonRuntime({
             profile,
             profileName,
+            auditCodeVersion: options.auditCodeVersion ?? env.TURN_BUILD_COMMIT_SHA,
             databaseUrl,
             gatewayDatabaseUrl,
             defaultBudget: budget,

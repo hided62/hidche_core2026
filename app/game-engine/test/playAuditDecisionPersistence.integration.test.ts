@@ -36,6 +36,7 @@ integration('decision persistence and bounded retention', () => {
     });
     it('rolls back gameplay/header/chunks on insert failure, retries and rejects divergent replay', async () => {
         const decision = draft('decision-one');
+        decision.summary.codeVersion = 'a'.repeat(40);
         await db.$executeRawUnsafe(
             `CREATE OR REPLACE FUNCTION decision_fixture_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.ordinal=1 THEN RAISE EXCEPTION 'decision chunk failure'; END IF; RETURN NEW; END $$`
         );
@@ -61,7 +62,18 @@ integration('decision persistence and bounded retention', () => {
         });
         await db.$transaction((tx) => persistAuditDecisions(tx, [decision]));
         const header = await db.playAuditDecision.findUniqueOrThrow({ where: { id: decision.id } });
-        expect(header).toMatchObject({ tick: 4_320_000_000n, stepCount: 302 });
+        expect(header).toMatchObject({
+            tick: 4_320_000_000n,
+            stepCount: 302,
+            summary: { codeVersion: 'a'.repeat(40) },
+        });
+        await expect(
+            db.$transaction((tx) =>
+                persistAuditDecisions(tx, [
+                    { ...decision, summary: { ...decision.summary, codeVersion: 'b'.repeat(40) } },
+                ])
+            )
+        ).rejects.toThrow('replay conflict');
         const chunks = await db.playAuditDecisionChunk.findMany({
             where: { decisionId: decision.id },
             orderBy: { ordinal: 'asc' },

@@ -73,6 +73,7 @@ export type TurnTestHarnessOptions = {
     };
     worldRef?: { current: InMemoryTurnWorld | null };
     onDecisionTrace?: Parameters<typeof createReservedTurnHandler>[0]['onDecisionTrace'];
+    auditCodeVersion?: string;
     onActionResolved?: Parameters<typeof createReservedTurnHandler>[0]['onActionResolved'];
     onActionProfiled?: Parameters<typeof createReservedTurnHandler>[0]['onActionProfiled'];
     commandRngFactory?: Parameters<typeof createReservedTurnHandler>[0]['commandRngFactory'];
@@ -115,6 +116,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         unitSet: options.snapshot.unitSet,
         getWorld: () => worldRef.current,
         onDecisionTrace: options.onDecisionTrace,
+        auditCodeVersion: options.auditCodeVersion,
         onActionResolved: options.onActionResolved,
         onActionProfiled: options.onActionProfiled,
         commandRngFactory: options.commandRngFactory,
