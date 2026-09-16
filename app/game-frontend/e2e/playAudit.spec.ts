@@ -982,3 +982,36 @@ for (const [kind, label, value] of [
         await expect(page.getByLabel('외교 전후 값', { exact: true })).toContainText('미관측 / 없음');
     });
 }
+
+test('general search is explicit and persists across pagination and reload', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const requests = await install(page);
+    await page.goto(gamePath('/play-audit?tab=generals&at=month&year=190&month=6'));
+    await expect(page.getByRole('rowheader', { name: /감사장수/ })).toBeVisible();
+    const count = requests.filter((r) => r.operation === 'playAudit.generals').length;
+    await page.getByLabel('장수 이름', { exact: true }).fill('감사');
+    await page.getByLabel('장수 번호 정렬', { exact: true }).selectOption('desc');
+    expect(requests.filter((r) => r.operation === 'playAudit.generals')).toHaveLength(count);
+    await page.getByRole('button', { name: '조회', exact: true }).click();
+    await expect(page).toHaveURL(/name=/);
+    await expect
+        .poll(() => requests.filter((r) => r.operation === 'playAudit.generals').at(-1)?.input)
+        .toMatchObject({
+            name: '감사',
+            order: 'desc',
+            at: { year: 190, month: 6, kind: 'MONTH_END' },
+        });
+    await page.getByRole('button', { name: '다음 50개 불러오기' }).click();
+    await expect
+        .poll(() => requests.filter((r) => r.operation === 'playAudit.generals').at(-1)?.input)
+        .toMatchObject({
+            name: '감사',
+            order: 'desc',
+            cursor: 1,
+        });
+    await page.reload();
+    await expect(page.getByLabel('장수 이름', { exact: true })).toHaveValue('감사');
+    await expect(page.getByLabel('장수 번호 정렬', { exact: true })).toHaveValue('desc');
+    await expect(page.getByRole('rowheader', { name: /감사장수/ })).toBeVisible();
+    await capture(page, 'mobile-general-search');
+});

@@ -2628,6 +2628,43 @@ integration('game API security over HTTP transport', () => {
                 result: { data: { collected: true, items: [{ name: '과거이름' }] } },
             });
             expect(JSON.stringify(history.body)).not.toContain('must-not-expose');
+            for (const name of ['과거', '  과거  ']) {
+                expect((await get('generals', admin, { at: { year: 190, month: 1 }, name })).body).toMatchObject({
+                    result: { data: { items: [{ name: '과거이름' }] } },
+                });
+            }
+            for (const name of ['없는이름', '%', '_', '\\']) {
+                expect((await get('generals', admin, { at: { year: 190, month: 1 }, name })).body).toMatchObject({
+                    result: { data: { items: [] } },
+                });
+            }
+            const currentName = (await db.general.findUniqueOrThrow({ where: { id: generalId } })).name;
+            expect((await get('generals', admin, { name: currentName })).body).toMatchObject({
+                result: { data: { items: expect.arrayContaining([expect.objectContaining({ id: generalId })]) } },
+            });
+            expect((await get('generals', admin, { name: '과거이름' })).body).toMatchObject({
+                result: { data: { items: [] } },
+            });
+            expect((await get('generals', admin, { name: '%' })).body).toMatchObject({
+                result: { data: { items: [] } },
+            });
+            const descendingIds = await db.general.findMany({ orderBy: { id: 'desc' }, select: { id: true } });
+            expect((await get('generals', admin, { order: 'desc', limit: 1 })).body).toMatchObject({
+                result: { data: { nextCursor: descendingIds[0]!.id, items: [descendingIds[0]] } },
+            });
+            expect(
+                (await get('generals', admin, { order: 'desc', limit: 1, cursor: descendingIds[0]!.id })).body
+            ).toMatchObject({
+                result: { data: { items: [descendingIds[1]] } },
+            });
+            expect(
+                (await get('generals', admin, { order: 'desc', at: { year: 190, month: 1 }, cursor: generalId })).body
+            ).toMatchObject({
+                result: { data: { items: [] } },
+            });
+            expect((await get('generals', admin, { name: '가'.repeat(65) })).status).toBe(400);
+            expect((await get('generals', admin, { order: 'gold' })).status).toBe(400);
+
             expect((await get('generals', admin, { at: { year: 190, month: 2 } })).body).toMatchObject({
                 result: { data: { collected: false, items: [] } },
             });

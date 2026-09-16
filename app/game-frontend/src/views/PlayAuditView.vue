@@ -63,6 +63,8 @@ const appliedDiplomacy = computed(() => ({
 const nationId = ref('');
 const cityId = ref('');
 const population = ref('');
+const generalName = ref('');
+const generalOrder = ref<'asc' | 'desc'>('asc');
 const moment = ref('current');
 const year = ref(0);
 const month = ref(1);
@@ -139,6 +141,8 @@ const readQuery = () => {
     otherNationId.value = route.query.otherNation ? String(numeric(route.query.otherNation, 0)) : '';
     nationId.value = route.query.nation ? String(numeric(route.query.nation, 0)) : '';
     cityId.value = route.query.city ? String(numeric(route.query.city, 0)) : '';
+    generalName.value = typeof route.query.name === 'string' ? route.query.name : '';
+    generalOrder.value = route.query.order === 'desc' ? 'desc' : 'asc';
     population.value = ['human', 'npc', 'troopNpc'].includes(String(route.query.population))
         ? String(route.query.population)
         : '';
@@ -171,6 +175,8 @@ const load = async (append = false) => {
             const response = await trpc.playAudit.generals.query({
                 ...filter,
                 cityId: cityId.value === '' ? undefined : Number(cityId.value),
+                name: generalName.value.trim() || undefined,
+                order: generalOrder.value,
                 population:
                     population.value === 'human' || population.value === 'npc' || population.value === 'troopNpc'
                         ? population.value
@@ -241,6 +247,8 @@ const apply = async () => {
         otherNation: tab.value === 'diplomacy' ? otherNationId.value || undefined : undefined,
         city: cityId.value || undefined,
         population: population.value || undefined,
+        name: tab.value === 'generals' ? generalName.value.trim() || undefined : undefined,
+        order: tab.value === 'generals' ? generalOrder.value : undefined,
         at: moment.value,
         year: String(year.value),
         month: String(month.value),
@@ -269,6 +277,8 @@ const showCityGenerals = async (id: number) => {
     cityId.value = String(id);
     nationId.value = '';
     population.value = '';
+    generalName.value = '';
+    generalOrder.value = 'asc';
     await apply();
 };
 const moreNations = async () => {
@@ -468,6 +478,19 @@ onMounted(async () => {
                         </select></label
                     >
                     <template v-if="tab === 'generals'">
+                        <label
+                            >장수 이름<input v-model="generalName" maxlength="64" placeholder="이름 부분 검색"
+                        /></label>
+                        <label
+                            >장수 번호 정렬<select
+                                class="legacy-sort-select"
+                                v-model="generalOrder"
+                                aria-label="장수 번호 정렬"
+                            >
+                                <option value="asc">오름차순</option>
+                                <option value="desc">내림차순</option>
+                            </select></label
+                        >
                         <label>도시 번호<input v-model="cityId" type="number" min="0" placeholder="모든 도시" /></label>
                         <label
                             >장수 분류<select class="legacy-sort-select" v-model="population">

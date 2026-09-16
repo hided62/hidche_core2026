@@ -154,6 +154,8 @@ export const playAuditRouter = router({
             zAuditPage.extend({
                 cityId: z.number().int().nonnegative().optional(),
                 population: z.enum(['human', 'npc', 'troopNpc']).optional(),
+                name: z.string().trim().max(64).optional(),
+                order: z.enum(['asc', 'desc']).default('asc'),
             })
         )
         .query(({ ctx, input }) =>
@@ -168,6 +170,14 @@ export const playAuditRouter = router({
                             ? 5
                             : undefined;
                 const filter = { nationId: input.nationId, cityId: input.cityId, npcState };
+                // LIKE wildcard도 이름의 문자로 취급한다. 과거 검색은 선택한 표본 안에서만 수행한다.
+                const name = input.name?.replace(/[\\%_]/g, '\\$&');
+                const idRange =
+                    input.cursor === undefined
+                        ? undefined
+                        : input.order === 'desc'
+                          ? { lt: input.cursor }
+                          : { gt: input.cursor };
                 if (input.at) {
                     const sample = await findAuditMonth(tx, world, input.at);
                     const rows = sample
@@ -175,9 +185,10 @@ export const playAuditRouter = router({
                               where: {
                                   sampleId: sample.id,
                                   ...filter,
-                                  generalId: input.cursor === undefined ? undefined : { gt: input.cursor },
+                                  generalId: idRange,
+                                  data: name ? { path: ['name'], string_contains: name } : undefined,
                               },
-                              orderBy: { generalId: 'asc' },
+                              orderBy: { generalId: input.order },
                               take: input.limit + 1,
                               select: { data: true },
                           })
@@ -194,8 +205,8 @@ export const playAuditRouter = router({
                     };
                 }
                 const rows = await tx.general.findMany({
-                    where: { ...filter, id: input.cursor === undefined ? undefined : { gt: input.cursor } },
-                    orderBy: { id: 'asc' },
+                    where: { ...filter, id: idRange, name: name ? { contains: name } : undefined },
+                    orderBy: { id: input.order },
                     take: input.limit + 1,
                     select: generalSelect,
                 });
