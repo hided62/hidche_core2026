@@ -61,7 +61,7 @@ const decision = {
         coverage: 'PROCEDURES',
         clockRevision: 1,
         codeVersion: null,
-        policyRefs: {},
+        policyRefs: { DEFENCE: 'a'.repeat(64) },
         requestedAction: '휴식',
         selectedAction: 'che_징병',
         selectedReason: '징병 선택',
@@ -1153,4 +1153,31 @@ test('NPC decision detail retry preserves history and other general information'
     await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('징병판정');
     expect(requests.filter((r) => r.operation === 'playAudit.decisionHistory')).toHaveLength(count);
     await capture(page, 'desktop-npc-decision');
+});
+
+test('NPC decision opens its immutable policy without querying policy history', async ({ page }) => {
+    const requests = await install(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(gamePath(`/play-audit?tab=generals&general=1&decision=${decision.id}`));
+    await expect(page.getByRole('list', { name: '판단 절차' })).toBeVisible();
+    expect(requests.some((r) => r.operation === 'playAudit.policyVersion')).toBe(false);
+    const before = requests.length;
+    await page.getByText('당시 정책 참조', { exact: true }).click();
+    await page.getByRole('button', { name: '국방 설정 당시 버전 조회', exact: true }).click();
+    await expect(page.getByText(/국가 #2 · 버전 1/)).toBeVisible();
+    expect(requests.slice(before).map((r) => r.operation)).toEqual(['playAudit.policyVersion']);
+    expect(requests.at(-1)?.input).toEqual({ id: 'a'.repeat(64) });
+    await expect(page.getByRole('button', { name: '이전 정책 버전', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => Object.hasOwn(window, 'auditInjected'))).toBe(false);
+    await capture(page, 'mobile-decision-policy');
+    await page.reload();
+    await expect(page.getByText(/국가 #2 · 버전 1/)).toBeVisible();
+    expect(requests.some((r) => r.operation === 'playAudit.policyHistory')).toBe(false);
+    await page.getByRole('button', { name: '정책 상세 닫기', exact: true }).click();
+    await expect(page.getByRole('heading', { name: /선택 정책 버전/ })).toHaveCount(0);
+    const policyReads = requests.filter((r) => r.operation === 'playAudit.policyVersion').length;
+    await page.goto(gamePath(`/play-audit?tab=generals&general=1&decision=${decision.id}&policy=${'b'.repeat(64)}`));
+    await expect(page.getByRole('list', { name: '판단 절차' })).toBeVisible();
+    expect(requests.filter((r) => r.operation === 'playAudit.policyVersion')).toHaveLength(policyReads);
+    await expect(page.getByRole('heading', { name: /선택 정책 버전/ })).toHaveCount(0);
 });

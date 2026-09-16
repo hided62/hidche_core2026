@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { trpc } from '../../utils/trpc';
+import AuditPolicyVersion from './AuditPolicyVersion.vue';
 const props = defineProps<{ generalId: number; month?: { year: number; month: number } }>();
 const route = useRoute();
 const router = useRouter();
@@ -17,6 +18,19 @@ const detailLoading = ref(false);
 let generation = 0;
 let detailGeneration = 0;
 const selected = computed(() => (typeof route.query.decision === 'string' ? route.query.decision : null));
+const policyLabels = {
+    NPC_VALUES: 'NPC 설정 값',
+    NPC_NATION_PRIORITY: '수뇌 우선순위',
+    NPC_GENERAL_PRIORITY: '개인 우선순위',
+    DEFENCE: '국방 설정',
+};
+const selectedPolicy = computed(() => {
+    const id = route.query.policy;
+    return typeof id === 'string' && Object.values(detail.value?.decision.summary.policyRefs ?? {}).includes(id)
+        ? id
+        : null;
+});
+const selectPolicy = (id: string | null) => router.push({ query: { ...route.query, policy: id ?? undefined } });
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : 'NPC 결정 기록을 조회하지 못했습니다.');
 const load = async (more = false) => {
     if (loading.value) return;
@@ -191,8 +205,19 @@ watch(
                 <details>
                     <summary>당시 정책 참조</summary>
                     <p v-if="!Object.keys(detail.decision.summary.policyRefs).length">확보된 정책 참조가 없습니다.</p>
-                    <p v-for="(id, area) in detail.decision.summary.policyRefs" :key="area">{{ area }}: {{ id }}</p>
+                    <p>선택 당시 저장된 국가 설정입니다. NPC별 합성 유효 값과 다를 수 있습니다.</p>
+                    <p v-for="(id, area) in detail.decision.summary.policyRefs" :key="area">
+                        <button class="legacy-button" @click="selectPolicy(id ?? null)">
+                            {{ policyLabels[area] }} 당시 버전 조회
+                        </button>
+                    </p>
                 </details>
+                <AuditPolicyVersion
+                    v-if="selectedPolicy"
+                    :id="selectedPolicy"
+                    :allow-previous="false"
+                    @select="selectPolicy"
+                />
                 <ol aria-label="판단 절차">
                     <template v-for="chunk in detail.chunks" :key="chunk.ordinal"
                         ><li v-for="step in chunk.steps" :key="step.sequence" :value="step.sequence + 1">
@@ -220,6 +245,9 @@ watch(
     margin-top: 12px;
     min-width: 0;
     overflow-wrap: anywhere;
+}
+.audit-decisions > section {
+    min-width: 0;
 }
 .table-scroll {
     overflow-x: auto;
