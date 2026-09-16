@@ -1,3 +1,4 @@
+import type { AiDecisionTraceObserver } from './trace.js';
 import type {
     City,
     GeneralActionDefinition,
@@ -14,6 +15,7 @@ import type { TurnGeneral, TurnWorldState } from '../../types.js';
 import type { AiReservedTurnProvider, AiWorldView } from '../types.js';
 
 export interface GeneralAIOptions {
+    onDecisionTrace?: AiDecisionTraceObserver;
     general: TurnGeneral;
     city?: City;
     nation?: Nation | null;

@@ -9,6 +9,23 @@ NPC 결정 trace와 조사 A~F의 완성, 전체 종료 경계 및 COST gate는 
 
 ## 현재 구현
 
+### NPC 판단 관측 기반 — 아직 운영 수집 아님
+
+GeneralAI와 예약 실행 handler에 선택적 `onDecisionTrace` 관측 경계를 추가했다.
+공유 AI의 수뇌→개인 결정 순서에 동일 sequence를 유지하며 시작/최종 선택/오류,
+우선순위 절차 진입·결과, 정책/자동화/handler 부재 skip, 명령 후보 validation 결과와
+실제로 호출한 RandUtil 결과를 관측한다. 예약 우선 반환 뒤의 절차는 만들어내지 않는다.
+메서드를 재호출하지 않으며 RandUtil 내부 helper는 중복 사건으로 기록하지 않는다.
+원문 seed/meta/debug 객체를 복제하지 않고 난수 결과의 객체는 ID만 투영한다. 투영할 수
+없는 값은 `unprojected`로 명시하며 완전한 후보 상세라고 주장하지 않는다.
+
+고정 seed3종에서16개 RNG utility 호출의 반환값·객체 identity·다음 RNG 결과가 같고,
+실제 NPC 선전포고→개전→점령 fixture에서도 수집 on/off 회귀가 통과했다.
+현재 default daemon에는 observer를 켜지 않았으며 DB 쓰기를 추가하지 않았다.
+이는 R5의 관측 기반일 뿐 완료가 아니다. 다음 작업은 불변 결정 ID·정책/code version,
+후보/조건별 실제 관측값, 실행 결과 연결, 같은 gameplay transaction의 pending/rollback,
+정식 migration·bounded 정리, 프로필 목록/상세 API와 GUI를 연결하는 것이다.
+
 ### 전달 전 DB tick 정밀도 보완
 
 월 표본과 정책의 기존 INTEGER tick은 1개월36,000,000 기준 약60개월에 넘친다.

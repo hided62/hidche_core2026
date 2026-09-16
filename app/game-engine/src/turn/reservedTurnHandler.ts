@@ -1,3 +1,4 @@
+import type { AiDecisionTraceObserver } from './ai/generalAi/trace.js';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import type {
     ActionContextBase,
@@ -900,6 +901,7 @@ export const createReservedTurnHandler = async (options: {
         nation: Nation,
         currentMonth: number
     ) => Nation['meta'] | null;
+    onDecisionTrace?: AiDecisionTraceObserver;
     onActionResolved?: (payload: {
         kind: 'nation' | 'general';
         generalId: number;
@@ -1934,6 +1936,7 @@ export const createReservedTurnHandler = async (options: {
                     nationUsedAi = true;
                     const aiStartedAt = options.onActionProfiled ? process.hrtime.bigint() : 0n;
                     sharedAi = new GeneralAI({
+                        onDecisionTrace: options.onDecisionTrace,
                         general: currentGeneral,
                         city: currentCity,
                         nation: currentNation,
@@ -2090,6 +2093,7 @@ export const createReservedTurnHandler = async (options: {
                 const ai =
                     sharedAi ??
                     new GeneralAI({
+                        onDecisionTrace: options.onDecisionTrace,
                         general: currentGeneral,
                         city: currentCity,
                         nation: currentNation,

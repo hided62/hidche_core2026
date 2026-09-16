@@ -1,3 +1,4 @@
+import { observeAiRng, type AiDecisionTraceObserver, type AiTraceStep } from './trace.js';
 import type {
     City,
     GeneralActionDefinition,
@@ -188,6 +189,65 @@ export class GeneralAI {
     public readonly nationFallback: GeneralActionDefinition;
 
     public readonly rng: RandUtil;
+    private onDecisionTrace?: AiDecisionTraceObserver;
+    private traceSequence = 0;
+    private tracePhase: 'general' | 'nation' | null = null;
+
+    private trace(step: AiTraceStep): void {
+        if (!this.onDecisionTrace || !this.tracePhase) return;
+        this.onDecisionTrace({
+            ...step,
+            sequence: this.traceSequence++,
+            phase: this.tracePhase,
+            generalId: this.general.id,
+            nationId: this.general.nationId,
+            cityId: this.general.cityId,
+            npcState: this.general.npcState,
+            year: this.world.currentYear,
+            month: this.world.currentMonth,
+            tick: this.general.turnTick ?? null,
+        });
+    }
+
+    private traceDecision(
+        phase: 'general' | 'nation',
+        reserved: ReservedTurnEntry,
+        choose: () => AiCommandCandidate | null
+    ): AiCommandCandidate | null {
+        if (!this.onDecisionTrace) return choose();
+        this.tracePhase = phase;
+        this.trace({ kind: 'DECISION_START', reservedAction: reserved.action });
+        try {
+            const result = choose();
+            this.trace({ kind: 'DECISION_END', action: result?.action ?? null, reason: result?.reason ?? null });
+            return result;
+        } catch (error) {
+            this.trace({ kind: 'DECISION_ERROR' });
+            throw error;
+        } finally {
+            this.tracePhase = null;
+        }
+    }
+
+    private traceProcedure(
+        procedure: string,
+        handler?: (ai: GeneralAI) => AiCommandCandidate | null
+    ): AiCommandCandidate | null {
+        if (!handler) {
+            this.trace({ kind: 'PROCEDURE_SKIP', procedure, reason: 'NO_HANDLER' });
+            return null;
+        }
+        this.trace({ kind: 'PROCEDURE_START', procedure });
+        const result = handler(this);
+        this.trace({
+            kind: 'PROCEDURE_END',
+            procedure,
+            action: result?.action ?? null,
+            reason: result?.reason ?? null,
+        });
+        return result;
+    }
+
     public readonly env: ConstraintEnv;
     public readonly startYear: number;
     public readonly turnTermMinutes: number;
@@ -302,6 +362,7 @@ export class GeneralAI {
                 })}\n`
             );
         }
+        this.onDecisionTrace = options.onDecisionTrace;
         const baseRng = new RandUtil(LiteHashDRBG.build(seed));
         const traceRng = (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id));
         let traceSequence = 0;
@@ -344,6 +405,8 @@ export class GeneralAI {
                   },
               })
             : baseRng;
+
+        if (this.onDecisionTrace) this.rng = observeAiRng(this.rng, (step) => this.trace(step));
 
         const constValues = asRecord(this.scenarioConfig.const);
         this.aiConst = {
@@ -401,6 +464,10 @@ export class GeneralAI {
     }
 
     chooseNationTurn(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
+        return this.traceDecision('nation', reservedTurn, () => this.chooseNationTurnObserved(reservedTurn));
+    }
+
+    private chooseNationTurnObserved(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
         this.updateInstance();
         if (!this.nation || !this.worldRef) {
             return null;
@@ -425,16 +492,15 @@ export class GeneralAI {
 
         for (const actionName of this.nationPolicy.priority) {
             if (!this.nationPolicy.can(actionName)) {
+                this.trace({ kind: 'PROCEDURE_SKIP', procedure: actionName, reason: 'POLICY' });
                 continue;
             }
             if (!canUseAutomatedNationAction(this.general, actionName)) {
+                this.trace({ kind: 'PROCEDURE_SKIP', procedure: actionName, reason: 'AUTOMATION' });
                 continue;
             }
             const handler = nationActionHandlers[actionName];
-            if (!handler) {
-                continue;
-            }
-            const result = handler(this);
+            const result = this.traceProcedure(actionName, handler);
             if (result) {
                 // Ref refreshes the cached AI state after these selected nation
                 // commands, before choosing the general command with the same
@@ -506,6 +572,10 @@ export class GeneralAI {
     }
 
     chooseGeneralTurn(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
+        return this.traceDecision('general', reservedTurn, () => this.chooseGeneralTurnObserved(reservedTurn));
+    }
+
+    private chooseGeneralTurnObserved(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
         this.updateInstance();
         if (!this.worldRef) {
             return null;
@@ -524,7 +594,7 @@ export class GeneralAI {
         }
 
         if (this.general.officerLevel === 12 && this.generalPolicy.can('선양')) {
-            const abdication = generalActionHandlers['선양']?.(this);
+            const abdication = this.traceProcedure('선양', generalActionHandlers['선양']);
             if (abdication) {
                 return abdication;
             }
@@ -535,7 +605,7 @@ export class GeneralAI {
                 this.general.meta = { ...this.general.meta, killturn: 1 };
                 return { action: reservedTurn.action, args: reservedTurn.args, reason: '사망' };
             }
-            const result = generalActionHandlers['집합']?.(this);
+            const result = this.traceProcedure('집합', generalActionHandlers['집합']);
             return result ?? this.buildGeneralCandidate(ACTION_REST, {}, 'npc_troop');
         }
 
@@ -550,18 +620,18 @@ export class GeneralAI {
         }
 
         if ([2, 3].includes(this.general.npcState) && this.general.nationId === 0) {
-            const rebellion = generalActionHandlers['거병']?.(this);
+            const rebellion = this.traceProcedure('거병', generalActionHandlers['거병']);
             if (rebellion) {
                 return rebellion;
             }
         }
 
         if (this.general.nationId === 0 && this.generalPolicy.can('국가선택')) {
-            const pickNation = generalActionHandlers['국가선택']?.(this);
+            const pickNation = this.traceProcedure('국가선택', generalActionHandlers['국가선택']);
             if (pickNation) {
                 return pickNation;
             }
-            const neutral = generalActionHandlers['중립']?.(this);
+            const neutral = this.traceProcedure('중립', generalActionHandlers['중립']);
             return neutral ?? this.buildGeneralCandidate(ACTION_REST, {}, 'neutral');
         }
 
@@ -576,17 +646,17 @@ export class GeneralAI {
             const relYearMonth =
                 joinYearMonth(this.world.currentYear, this.world.currentMonth) - joinYearMonth(initYear, initMonth);
             if (relYearMonth > 1) {
-                const establish = generalActionHandlers['건국']?.(this);
+                const establish = this.traceProcedure('건국', generalActionHandlers['건국']);
                 if (establish) {
                     return establish;
                 }
             }
-            const move = generalActionHandlers['방랑군이동']?.(this);
+            const move = this.traceProcedure('방랑군이동', generalActionHandlers['방랑군이동']);
             if (move) {
                 return move;
             }
             if (relYearMonth > 1) {
-                const disband = generalActionHandlers['해산']?.(this);
+                const disband = this.traceProcedure('해산', generalActionHandlers['해산']);
                 if (disband) {
                     return disband;
                 }
@@ -596,6 +666,7 @@ export class GeneralAI {
         for (const actionName of this.generalPolicy.priority) {
             const allowed = this.generalPolicy.can(actionName);
             if (!allowed) {
+                this.trace({ kind: 'PROCEDURE_SKIP', procedure: actionName, reason: 'POLICY' });
                 if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
                     process.stdout.write(
                         `AI_GENERAL_PRIORITY_TRACE ${JSON.stringify({ generalId: this.general.id, actionName, allowed, result: null })}\n`
@@ -604,10 +675,7 @@ export class GeneralAI {
                 continue;
             }
             const handler = generalActionHandlers[actionName];
-            if (!handler) {
-                continue;
-            }
-            const result = handler(this);
+            const result = this.traceProcedure(actionName, handler);
             if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
                 process.stdout.write(
                     `AI_GENERAL_PRIORITY_TRACE ${JSON.stringify({ generalId: this.general.id, actionName, allowed, result })}\n`
@@ -618,7 +686,7 @@ export class GeneralAI {
             }
         }
 
-        const neutral = generalActionHandlers['중립']?.(this);
+        const neutral = this.traceProcedure('중립', generalActionHandlers['중립']);
         return neutral ?? this.buildGeneralCandidate(ACTION_REST, {}, 'neutral');
     }
 
@@ -1047,6 +1115,7 @@ export class GeneralAI {
         const definition = definitions.get(action) ?? fallback;
         const parsedArgs = definition.parseArgs(args);
         if (parsedArgs === null) {
+            this.trace({ kind: 'CANDIDATE', action, result: 'INVALID_ARGS', constraint: null });
             return null;
         }
         const constraintArgs = withCanonicalArgumentAliases(parsedArgs as Record<string, unknown>);
@@ -1066,6 +1135,12 @@ export class GeneralAI {
         });
         const constraints = definition.buildConstraints(ctx, parsedArgs as never);
         const result = evaluateConstraints(constraints, ctx, view);
+        this.trace({
+            kind: 'CANDIDATE',
+            action: definition.key,
+            result: result.kind,
+            constraint: result.kind === 'deny' ? (result.constraintName ?? null) : null,
+        });
         if (result.kind !== 'allow') {
             if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
                 process.stdout.write(
@@ -1359,9 +1434,7 @@ export class GeneralAI {
             if (
                 asRecord(candidate.meta).permission !== 'ambassador' ||
                 assignedAmbassadorIds.has(candidate.id) ||
-                this.promotionPatches.some(
-                    (patch) => patch.generalId === candidate.id && patch.permission === 'normal'
-                )
+                this.promotionPatches.some((patch) => patch.generalId === candidate.id && patch.permission === 'normal')
             ) {
                 continue;
             }

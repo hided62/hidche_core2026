@@ -1,3 +1,4 @@
+import type { AiDecisionTraceEvent } from '../src/turn/ai/generalAi/trace.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
@@ -245,7 +246,9 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
             },
         };
 
+        const decisionTrace: AiDecisionTraceEvent[] = [];
         const { runUntil } = await createTurnTestHarness({
+            onDecisionTrace: auditEnabled ? (event) => decisionTrace.push(event) : undefined,
             snapshot,
             state,
             schedule,
@@ -435,5 +438,14 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
             debug.dumpWatched('출병 기록 누락');
         }
         expect(dispatchCount).toBeGreaterThan(0);
+        if (auditEnabled) {
+            expect(decisionTrace.some((step) => step.kind === 'DECISION_START' && step.phase === 'nation')).toBe(true);
+            expect(decisionTrace.some((step) => step.kind === 'DECISION_END' && step.phase === 'general')).toBe(true);
+            expect(decisionTrace.some((step) => step.kind === 'RNG')).toBe(true);
+            expect(decisionTrace.some((step) => step.kind === 'PROCEDURE_START')).toBe(true);
+            expect(decisionTrace.some((step) => step.kind === 'CANDIDATE')).toBe(true);
+            expect(JSON.stringify(decisionTrace)).not.toContain('seed');
+            expect(JSON.stringify(decisionTrace)).not.toContain('killturn');
+        } else expect(decisionTrace).toEqual([]);
     });
 });

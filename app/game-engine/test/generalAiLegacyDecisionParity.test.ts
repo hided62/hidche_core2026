@@ -1,3 +1,4 @@
+import type { AiDecisionTraceEvent } from '../src/turn/ai/generalAi/trace.js';
 import { describe, expect, it } from 'vitest';
 import { loadItemModules, type City, type General, type Nation } from '@sammo-ts/logic';
 import { createRefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
@@ -2188,5 +2189,47 @@ describe('legacy NPC AI final-decision parity', () => {
             .filter((args) => !args.isGold)
             .map((args) => args.destGeneralId);
         expect(riceCandidates).toEqual([534, 77]);
+    });
+});
+
+
+describe('AI decision observation boundaries', () => {
+    it('keeps policy skips and fallback order without evaluating policy twice', () => {
+        const ai = makeAi({ general: { npcState: 2, officerLevel: 1 } });
+        const events: AiDecisionTraceEvent[] = [];
+        const calls: string[] = [];
+        Object.assign(ai, {
+            onDecisionTrace: (event: AiDecisionTraceEvent) => events.push(event), traceSequence: 0,
+            updateInstance: () => undefined, categorizeNationCities: () => undefined,
+            categorizeNationGeneral: () => undefined,
+            nationPolicy: { priority: ['disabled', 'unregistered'], can: (name: string) => {
+                calls.push(name); return name !== 'disabled';
+            } },
+        });
+        const selected = ai.chooseNationTurn({ action: '휴식', args: {} });
+        expect(selected).toMatchObject({ action: '휴식', reason: 'neutral' });
+        expect(calls).toEqual(['disabled', 'unregistered']);
+        expect(events.map((step) => step.sequence)).toEqual([0, 1, 2, 3]);
+        expect(events).toMatchObject([
+            { kind: 'DECISION_START', phase: 'nation' },
+            { kind: 'PROCEDURE_SKIP', procedure: 'disabled', reason: 'POLICY' },
+            { kind: 'PROCEDURE_SKIP', procedure: 'unregistered', reason: 'NO_HANDLER' },
+            { kind: 'DECISION_END', action: '휴식' },
+        ]);
+    });
+    it('does not invent procedures after a reserved general command and propagates failures', () => {
+        const ai = makeAi({ general: { npcState: 1, officerLevel: 1 } });
+        const events: AiDecisionTraceEvent[] = [];
+        Object.assign(ai, { onDecisionTrace: (event: AiDecisionTraceEvent) => events.push(event),
+            traceSequence: 0, updateInstance: () => undefined });
+        expect(ai.chooseGeneralTurn({ action: 'che_이동', args: { destCityId: 2 } })).toEqual({
+            action: 'che_이동', args: { destCityId: 2 }, reason: 'do예약턴',
+        });
+        expect(events.map((step) => step.kind)).toEqual(['DECISION_START', 'DECISION_END']);
+        const failure = new Error('private diagnostic');
+        Object.assign(ai, { updateInstance: () => { throw failure; } });
+        expect(() => ai.chooseGeneralTurn({ action: '휴식', args: {} })).toThrow(failure);
+        expect(events.at(-1)).toMatchObject({ kind: 'DECISION_ERROR', sequence: 3 });
+        expect(JSON.stringify(events)).not.toContain('private diagnostic');
     });
 });
