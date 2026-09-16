@@ -540,7 +540,7 @@ onBeforeUnmount(() => {
     border-right-color: #000;
     border-bottom-color: #000;
     border-spacing: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     text-align: center;
     word-break: break-all;
 }
@@ -578,7 +578,7 @@ onBeforeUnmount(() => {
     margin: 0;
     padding: 0;
     color: inherit;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 700;
     line-height: 18.2px;
 }

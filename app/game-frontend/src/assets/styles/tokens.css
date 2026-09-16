@@ -1,4 +1,22 @@
 :root {
+    /* 검증된 화면이 공유하는 네 단계. 콘텐츠 내부 축소/숨김은 별도 계약이다. */
+    --sammo-font-size-small: calc(var(--sammo-font-size-normal) * 12 / 14);
+    --sammo-font-size-normal: 14px;
+    --sammo-font-size-emphasis: 16px;
+    --sammo-font-size-title: 24px;
+    /* 크기 변경을 보류한 밀집 UI와 콘텐츠의 상대 축소 계약. */
+    --sammo-font-size-nation-card: 12px;
+    --sammo-font-size-chief-compact-base: 0.75rem;
+    --sammo-font-size-chief-compact-row: 0.55rem;
+    --sammo-font-size-chief-compact-header: 0.65rem;
+    --sammo-font-size-chief-compact-name: 0.6rem;
+    --sammo-font-size-hall-name: 11px;
+    --sammo-font-size-hall-secondary: 95%;
+    --sammo-font-size-personnel-mobile-name: 15px;
+    --sammo-font-size-personnel-mobile-lock: 10px;
+    --sammo-font-size-bracket-bet-button: 11px;
+    --sammo-font-size-war-name: 0.75em;
+    --sammo-font-size-war-crew: 90%;
     --sammo-font-sans: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
     --sammo-color-text: #fff;
     --sammo-color-text-muted: rgba(232, 221, 196, 0.7);

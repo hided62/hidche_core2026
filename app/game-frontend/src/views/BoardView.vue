@@ -271,7 +271,7 @@ onMounted(() => {
     padding: 8px;
     color: #000;
     background: #fff;
-    font: 16px/normal var(--sammo-font-sans);
+    font: var(--sammo-font-size-emphasis)/normal var(--sammo-font-sans);
 }
 
 .legacy-board-page {
@@ -280,7 +280,7 @@ onMounted(() => {
     color: #fff;
     background: transparent;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -309,7 +309,7 @@ onMounted(() => {
 
 .top-back-bar h1 {
     margin: 0;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 500;
     line-height: 32px;
     text-align: center;
@@ -440,7 +440,7 @@ onMounted(() => {
 .date {
     width: 83.333px;
     flex: 0 0 auto;
-    font-size: 0.9em;
+    font-size: var(--sammo-font-size-small);
 }
 
 .article-body {

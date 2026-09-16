@@ -48,7 +48,7 @@ const detail = computed(() => (props.autorun ? formatAutorunUserDetail(props.aut
     background: #18181b;
     box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
     color: #f4f4f5;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
     line-height: 1.4;
     opacity: 0;

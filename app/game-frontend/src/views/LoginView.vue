@@ -28,7 +28,7 @@ onMounted(() => {
 
 h1 {
     margin: 0 0 12px;
-    font-size: 20px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 400;
 }
 

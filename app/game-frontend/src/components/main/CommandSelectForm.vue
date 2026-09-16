@@ -174,6 +174,11 @@ const commandTitle = (command: CommandAvailability) =>
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .command-form {
     display: flex;
     flex-direction: column;
@@ -194,7 +199,7 @@ const commandTitle = (command: CommandAvailability) =>
     --legacy-button-color: #fff;
     min-height: 0;
     padding-inline: 4px;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .category-btn.legacy-button--lumen.active {
@@ -220,7 +225,7 @@ const commandTitle = (command: CommandAvailability) =>
     align-items: center;
     justify-content: center;
     text-align: center;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .command-item.ok {
@@ -251,7 +256,7 @@ const commandTitle = (command: CommandAvailability) =>
 
 .command-duration {
     display: block;
-    font-size: 0.875em;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
     line-height: 1.1;
     white-space: nowrap;
@@ -260,7 +265,7 @@ const commandTitle = (command: CommandAvailability) =>
 .command-cost {
     display: block;
     color: #f3d58b;
-    font-size: 0.875em;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
     line-height: 1.1;
     overflow-wrap: anywhere;

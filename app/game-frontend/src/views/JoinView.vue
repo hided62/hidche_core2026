@@ -1276,6 +1276,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .join-page {
     min-height: 100vh;
     padding: 24px;
@@ -1298,12 +1303,12 @@ onUnmounted(() => {
 }
 
 .join-title {
-    font-size: 1.6rem;
+    font-size: var(--sammo-font-size-title);
     font-weight: 600;
 }
 
 .join-subtitle {
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
     color: rgba(232, 221, 196, 0.7);
 }
 
@@ -1315,14 +1320,14 @@ onUnmounted(() => {
 .join-tabs button {
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 6px 10px;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .simulator-link {
     border: 1px solid rgba(112, 170, 141, 0.55);
     padding: 6px 10px;
     color: #bfe2cd;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
     text-decoration: none;
 }
 
@@ -1371,7 +1376,7 @@ onUnmounted(() => {
 .nation-message {
     margin: 0;
     padding: 8px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.7);
 }
 
@@ -1400,12 +1405,12 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .primary-field > span:first-child {
     color: #f0d99e;
-    font-size: 0.85rem;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 700;
 }
 
@@ -1418,7 +1423,7 @@ onUnmounted(() => {
 
 .primary-field > .form-input {
     min-height: 36px;
-    font-size: 1rem;
+    font-size: var(--sammo-font-size-emphasis);
 }
 
 .stat-actions {
@@ -1433,7 +1438,7 @@ onUnmounted(() => {
     height: 40px;
     min-height: 40px;
     padding: 8px 14px;
-    font-size: 0.875rem;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.2;
 }
 
@@ -1449,7 +1454,7 @@ onUnmounted(() => {
 
 .stat-summary {
     margin-top: 10px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.7);
 }
 
@@ -1467,7 +1472,7 @@ onUnmounted(() => {
 .form-actions button {
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 6px 12px;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .form-actions .primary-action {
@@ -1520,13 +1525,13 @@ onUnmounted(() => {
 
 .advanced-title small {
     color: #ccc;
-    font-size: 0.7rem;
+    font-size: var(--sammo-font-size-small);
     font-weight: 400;
 }
 
 .advanced-point-summary {
     color: #ead8ac;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     white-space: nowrap;
 }
 
@@ -1546,7 +1551,7 @@ onUnmounted(() => {
     border: 0;
     border-right: 1px solid rgba(201, 164, 90, 0.25);
     color: rgba(232, 221, 196, 0.68);
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .context-tabs button:last-child {
@@ -1583,7 +1588,7 @@ onUnmounted(() => {
     gap: 12px;
     margin-bottom: 8px;
     color: rgba(232, 221, 196, 0.75);
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .general-list-head label {
@@ -1602,7 +1607,7 @@ onUnmounted(() => {
 .context-general-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .context-general-table th,
@@ -1629,7 +1634,7 @@ onUnmounted(() => {
     padding: 1px 3px;
     background: rgba(111, 74, 141, 0.8);
     color: #fff;
-    font-size: 0.6rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .context-error,
@@ -1637,7 +1642,7 @@ onUnmounted(() => {
     padding: 12px;
     color: rgba(240, 150, 150, 0.9);
     text-align: center;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .sr-only {
@@ -1662,7 +1667,7 @@ onUnmounted(() => {
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 8px;
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.85);
 }
 
@@ -1678,7 +1683,7 @@ onUnmounted(() => {
 }
 
 .bonus-title {
-    font-size: 0.8rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.8);
 }
 
@@ -1690,7 +1695,7 @@ onUnmounted(() => {
 
 .inherit-errors {
     color: rgba(240, 150, 150, 0.9);
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .form-actions .ghost,
@@ -1708,7 +1713,7 @@ onUnmounted(() => {
 .npc-token-status {
     min-height: 22px;
     text-align: center;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .npc-token-expired {
@@ -1738,14 +1743,14 @@ onUnmounted(() => {
     height: 25px;
     overflow: hidden;
     border: 1px solid rgba(201, 164, 90, 0.3);
-    font-size: 1rem;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 23px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .npc-card-name--long {
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .npc-card-image {
@@ -1755,7 +1760,7 @@ onUnmounted(() => {
 
 .npc-card p {
     min-height: 78px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     line-height: 1.3;
 }
 
@@ -1789,14 +1794,14 @@ onUnmounted(() => {
     width: 100%;
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 4px 8px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .npc-keep {
     display: block;
     padding-left: 15px;
     text-indent: -15px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .npc-keep input {
@@ -1830,7 +1835,7 @@ onUnmounted(() => {
     margin-bottom: 8px;
     color: rgba(240, 150, 150, 0.9);
     text-align: center;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .npc-general-list-wrap {
@@ -1843,7 +1848,7 @@ onUnmounted(() => {
     width: 970px;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     word-break: break-all;
 }
 
@@ -1872,7 +1877,7 @@ onUnmounted(() => {
 }
 
 .npc-general-name small {
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 
 #btn-print-more-generals {
@@ -1883,7 +1888,7 @@ onUnmounted(() => {
 
 .muted {
     color: rgba(232, 221, 196, 0.6);
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .ghost {

@@ -511,7 +511,7 @@ const repeatTurns = async (amount: number) => {
     padding: 8px;
     display: grid;
     gap: 6px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     margin-top: 12px;
 }
 
@@ -522,7 +522,7 @@ const repeatTurns = async (amount: number) => {
 .command-selected .meta {
     display: flex;
     gap: 8px;
-    font-size: 0.7rem;
+    font-size: var(--sammo-font-size-small);
     color: rgba(232, 221, 196, 0.6);
 }
 
@@ -535,7 +535,7 @@ const repeatTurns = async (amount: number) => {
 .turn-actions button {
     border: 1px solid rgba(201, 164, 90, 0.3);
     padding: 4px 8px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
     background: rgba(12, 12, 12, 0.6);
     color: inherit;
     cursor: pointer;
@@ -555,7 +555,7 @@ const repeatTurns = async (amount: number) => {
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 8px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .turn-info {
@@ -584,7 +584,7 @@ const repeatTurns = async (amount: number) => {
 .turn-buttons button {
     border: 1px solid rgba(201, 164, 90, 0.3);
     padding: 4px 8px;
-    font-size: 0.7rem;
+    font-size: var(--sammo-font-size-small);
     background: rgba(12, 12, 12, 0.6);
     color: inherit;
     cursor: pointer;
@@ -655,7 +655,7 @@ const repeatTurns = async (amount: number) => {
 .chief-page {
     margin: 0 auto;
     color: #fff;
-    font: 14px/21px var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/21px var(--sammo-font-sans);
 }
 .chief-top {
     height: 32px;
@@ -665,7 +665,7 @@ const repeatTurns = async (amount: number) => {
 }
 .chief-top h1 {
     margin: 0;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 400;
     line-height: 32px;
     text-align: center;
@@ -731,7 +731,7 @@ const repeatTurns = async (amount: number) => {
     justify-content: center;
     padding: 0;
     background-color: transparent;
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 14.7px;
 }
 .chief-grid-row :deep(.chief-title) {
@@ -742,7 +742,7 @@ const repeatTurns = async (amount: number) => {
 }
 .chief-grid-row :deep(.chief-level),
 .chief-grid-row :deep(.chief-name) {
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 400;
     line-height: 14.7px;
     color: inherit;
@@ -758,7 +758,7 @@ const repeatTurns = async (amount: number) => {
     gap: 0;
     padding: 0;
     border: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 14.7px;
     color: #fff;
     text-align: center;
@@ -832,7 +832,7 @@ const repeatTurns = async (amount: number) => {
     padding: 0;
     gap: 0;
     text-align: center;
-    font-size: 0.55rem;
+    font-size: var(--sammo-font-size-chief-compact-row);
     line-height: 11.25px !important;
 }
 .chief-overview :deep(.chief-card.compact .chief-header) {
@@ -859,7 +859,7 @@ const repeatTurns = async (amount: number) => {
     width: 12px;
     height: 155px;
     color: #fff;
-    font-size: 0.55rem;
+    font-size: var(--sammo-font-size-chief-compact-row);
     line-height: 11.25px;
     text-align: center;
 }
@@ -884,7 +884,7 @@ const repeatTurns = async (amount: number) => {
     justify-content: center;
     padding: 0;
     background-color: transparent;
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 14.7px;
 }
 .mobile-readonly :deep(.chief-title) {
@@ -895,7 +895,7 @@ const repeatTurns = async (amount: number) => {
 }
 .mobile-readonly :deep(.chief-level),
 .mobile-readonly :deep(.chief-name) {
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 400;
     line-height: 14.7px;
     color: inherit;
@@ -907,7 +907,7 @@ const repeatTurns = async (amount: number) => {
     height: 30px;
     grid-template-columns: 43.33px 216.67px;
     padding: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 14.7px;
     color: #fff;
 }

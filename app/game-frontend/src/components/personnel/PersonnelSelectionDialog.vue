@@ -216,6 +216,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .personnel-picker-backdrop {
     position: fixed;
     z-index: 2050;
@@ -237,7 +242,7 @@ onBeforeUnmount(() => {
     border: 1px solid #78653d;
     border-radius: 14px;
     box-shadow: 0 24px 70px rgb(0 0 0 / 78%);
-    font: 14px/1.45 var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/1.45 var(--sammo-font-sans);
 }
 .personnel-picker-header {
     display: flex;
@@ -251,13 +256,13 @@ onBeforeUnmount(() => {
 .personnel-picker-eyebrow {
     margin: 0 0 3px;
     color: #cbb171;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 700;
     letter-spacing: 0.13em;
 }
 .personnel-picker h2 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--sammo-font-size-title);
     line-height: 1.25;
 }
 .personnel-picker-header p:last-child {
@@ -273,7 +278,7 @@ onBeforeUnmount(() => {
     padding: 0;
     color: #ddd7ca;
     background: rgb(0 0 0 / 28%);
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     line-height: 1;
     cursor: pointer;
 }
@@ -371,7 +376,7 @@ onBeforeUnmount(() => {
     place-items: center;
     color: #d8be79;
     background: #25271f;
-    font: 700 24px/1 var(--sammo-font-sans);
+    font: 700 var(--sammo-font-size-title)/1 var(--sammo-font-sans);
 }
 .personnel-picker-card-body,
 .personnel-picker-card-title,
@@ -385,7 +390,7 @@ onBeforeUnmount(() => {
 }
 .personnel-picker-card-title strong,
 .vacancy-card strong {
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .personnel-picker-card-title small,
 .vacancy-card small {
@@ -397,7 +402,7 @@ onBeforeUnmount(() => {
     color: #13150f;
     background: #d5bb6f;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 800;
 }
 .personnel-picker-badges {
@@ -412,7 +417,7 @@ onBeforeUnmount(() => {
     background: #32352d;
     border: 1px solid #555948;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 .personnel-picker-stats {
     display: grid;
@@ -431,7 +436,7 @@ onBeforeUnmount(() => {
 .personnel-picker-stats small,
 .personnel-picker-details small {
     color: #aaa99f;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
 }
 .personnel-picker-stats strong {
     color: #f1d47e;

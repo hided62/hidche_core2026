@@ -171,7 +171,7 @@ onMounted(async () => {
 .global-page {
     width: 1000px;
     margin: 0 auto;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     background-color: transparent;
     background-image: none;
 }
@@ -188,7 +188,7 @@ onMounted(async () => {
     text-align: center;
 }
 .legacy-title strong {
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 400;
     line-height: 32px;
 }
@@ -206,7 +206,7 @@ onMounted(async () => {
     background-image: var(--sammo-texture-walnut);
 }
 .section h2 {
-    font-size: 16.8px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 400;
     text-align: center;
     margin: 0;

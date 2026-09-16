@@ -405,7 +405,7 @@ onMounted(() => {
 }
 :deep(.panel-title) {
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 500;
 }
 :deep(.panel-header) {
@@ -443,7 +443,7 @@ onMounted(() => {
 }
 .battle-top h1 {
     margin: 0;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     font-weight: 400;
     line-height: 32px;
     text-align: center;

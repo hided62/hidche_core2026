@@ -422,7 +422,7 @@ onMounted(() => {
     background-color: #302016;
     background-image: var(--sammo-texture-walnut);
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .title-row,
@@ -443,7 +443,7 @@ onMounted(() => {
 .title-row h1 {
     margin: 0;
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 
 .title-row nav,
@@ -615,7 +615,7 @@ th {
 
 .detail-grid :deep(.panel-title) {
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 500;
 }
 
@@ -642,7 +642,7 @@ th {
 
 .hall-battle-record__heading span {
     color: #bbb;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .hall-battle-record dl {

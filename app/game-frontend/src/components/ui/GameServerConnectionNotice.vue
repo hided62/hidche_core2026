@@ -30,7 +30,7 @@ const { reconnecting } = useGameServerConnectionRecovery();
     border-top: 0;
     background: #fff3bf;
     color: #3d3100;
-    font: 13px/1.45 var(--sammo-font-sans);
+    font: var(--sammo-font-size-small)/1.45 var(--sammo-font-sans);
     text-align: center;
     box-shadow: 0 2px 6px rgb(0 0 0 / 25%);
 }

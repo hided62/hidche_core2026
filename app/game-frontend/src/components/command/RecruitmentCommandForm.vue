@@ -270,13 +270,18 @@ watch(
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .recruitment-command-form {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
     color: #fff;
     background: #1d1d1d;
-    font: 14px/1.25 var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/1.25 var(--sammo-font-sans);
 }
 .recruitment-intro {
     padding: 6px;
@@ -335,7 +340,7 @@ watch(
 }
 .crew-group > header strong {
     padding: 0 12px;
-    font-size: 1.3em;
+    font-size: var(--sammo-font-size-title);
 }
 .crew-group > header button {
     min-height: 34px;
@@ -377,7 +382,7 @@ watch(
 }
 .crew-name small {
     display: block;
-    font-size: 0.72em;
+    font-size: var(--sammo-font-size-small);
 }
 .crew-row small {
     display: none;
@@ -509,11 +514,11 @@ watch(
     }
     .crew-row small {
         display: block;
-        font-size: 0.62em;
+        font-size: var(--sammo-font-size-small);
         line-height: 1;
     }
     .crew-row .crew-name small {
-        font-size: 0.72em;
+        font-size: var(--sammo-font-size-small);
     }
     .crew-header .attack,
     .crew-header .defence,
@@ -521,18 +526,18 @@ watch(
     .crew-header .avoid,
     .crew-header .cost,
     .crew-header .rice {
-        font-size: 0.78em;
+        font-size: var(--sammo-font-size-small);
     }
     .crew-group > header {
         grid-template-columns: 7fr 5fr;
     }
     .crew-group > header button {
-        font-size: 0.82em;
+        font-size: var(--sammo-font-size-small);
     }
     .crew-info {
         overflow: hidden;
         overflow-wrap: anywhere;
-        font-size: 0.9em;
+        font-size: var(--sammo-font-size-small);
     }
 }
 

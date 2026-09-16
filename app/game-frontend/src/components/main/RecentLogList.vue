@@ -42,7 +42,7 @@ const formattedLogs = computed(() =>
     min-width: 0;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.35;
 }
 

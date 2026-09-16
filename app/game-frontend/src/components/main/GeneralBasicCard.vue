@@ -465,7 +465,7 @@ const specialText = computed(() => {
     background-color: #172a52;
     background-image: var(--sammo-texture-blue);
     color: #fff;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .general-basic-grid {
@@ -523,7 +523,7 @@ const specialText = computed(() => {
 .general-title {
     grid-column: 2 / 8;
     grid-row: 1;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 700;
     line-height: 18px;
 }

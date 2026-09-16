@@ -186,7 +186,7 @@ watch(selectedSource, loadDynasty);
     width: 1000px;
     background-color: transparent;
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     word-break: break-all;
 }
 
@@ -241,7 +241,7 @@ watch(selectedSource, loadDynasty);
 }
 
 .large-text {
-    font-size: x-large;
+    font-size: var(--sammo-font-size-title);
 }
 
 .label-column {
@@ -261,7 +261,7 @@ watch(selectedSource, loadDynasty);
     background: buttonface;
     color: buttontext;
     font-family: var(--sammo-font-sans);
-    font-size: 13.3333px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     line-height: normal;
     cursor: default;
@@ -284,6 +284,6 @@ watch(selectedSource, loadDynasty);
 }
 
 .banner {
-    font-size: 13px;
+    font-size: var(--sammo-font-size-small);
 }
 </style>

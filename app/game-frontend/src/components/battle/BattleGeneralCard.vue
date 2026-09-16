@@ -352,7 +352,7 @@ const officerLevelOptions = [
 
 .general-title {
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .general-subtitle {
@@ -371,7 +371,7 @@ const officerLevelOptions = [
     background: #3498db;
     color: #fff;
     padding: 4px 9px;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 700;
     cursor: pointer;
 }
@@ -419,7 +419,7 @@ const officerLevelOptions = [
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     color: #ddd;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .field span {
@@ -438,7 +438,7 @@ const officerLevelOptions = [
     background: #ddd;
     color: #303030;
     padding: 6px 10px;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 21px;
     box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.075);
 }

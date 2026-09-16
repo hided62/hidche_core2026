@@ -308,7 +308,7 @@ onMounted(loadDetail);
     margin: 8px auto 0;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: normal;
 }
 
@@ -351,7 +351,7 @@ onMounted(loadDetail);
 }
 
 .large-text {
-    font-size: x-large;
+    font-size: var(--sammo-font-size-title);
 }
 
 .centered {
@@ -387,7 +387,7 @@ onMounted(loadDetail);
     background: buttonface;
     color: buttontext;
     font-family: var(--sammo-font-sans);
-    font-size: 13.3333px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     line-height: normal;
     cursor: default;
@@ -411,6 +411,6 @@ onMounted(loadDetail);
 }
 
 .banner {
-    font-size: 13px;
+    font-size: var(--sammo-font-size-small);
 }
 </style>

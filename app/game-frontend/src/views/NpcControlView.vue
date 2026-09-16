@@ -555,6 +555,11 @@ const submitPriority = async (section: PrioritySectionKey) => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 /*
  * The document contract belongs to this page only. An unscoped html/body rule
  * here leaked a 21px line-height and a 500px min-width onto every other screen.
@@ -566,7 +571,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
     margin: 0;
     background: #000;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 21px;
 }
 
@@ -576,7 +581,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
     box-sizing: border-box;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 21px;
 }
 .sortable-compat-controls {
@@ -605,7 +610,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
 }
 
 .top-back-bar strong {
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
     line-height: 32px;
     font-weight: 400;
 }
@@ -653,7 +658,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
     min-height: 21px;
     padding: 0 12px;
     color: #8e8e8e;
-    font-size: 12.25px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18.375px;
     text-align: right;
     box-sizing: border-box;
@@ -709,7 +714,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
     min-height: 18.375px;
     margin: 0;
     color: #888;
-    font-size: 12.25px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18.375px;
     text-align: right;
 }
@@ -807,7 +812,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
 }
 
 .priority-description small {
-    font-size: 12.25px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18.375px;
 }
 
@@ -867,7 +872,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
 }
 
 .drag-handle {
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 
 .help-button {
@@ -879,7 +884,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
     background: #444;
     border: 1px solid #3d3d3d;
     border-radius: 3px;
-    font-size: 12.25px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18.375px;
     cursor: pointer;
 }
@@ -896,7 +901,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
     border: 1px solid #777;
     border-radius: 4px;
     content: attr(data-text);
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     line-height: 18px;
     text-align: left;
     white-space: pre-line;

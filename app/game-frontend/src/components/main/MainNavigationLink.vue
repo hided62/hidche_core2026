@@ -94,7 +94,7 @@ const lumenClasses = computed(() =>
     background-image: var(--sammo-texture-walnut);
     color: #fff;
     font-family: inherit;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     line-height: 1.5;
     text-align: center;

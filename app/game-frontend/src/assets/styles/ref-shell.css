@@ -16,7 +16,7 @@
     background-image: var(--sammo-texture-walnut);
     color: var(--sammo-color-text);
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.5;
 }
 
@@ -35,7 +35,7 @@
 }
 
 .ref-shell__title {
-    font-size: 17px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 500;
 }
 

@@ -138,7 +138,7 @@ onMounted(async () => {
 .legacy-info-page {
     width: 1000px;
     margin: 0 auto;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .legacy-table {
     width: 100%;

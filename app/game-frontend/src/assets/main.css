@@ -27,7 +27,7 @@ body {
     background-repeat: repeat-y;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -143,7 +143,7 @@ input[inputmode='search'] {
 }
 
 .small_war_log .name_plate {
-    font-size: 0.75em;
+    font-size: var(--sammo-font-size-war-name);
 }
 
 .small_war_log .name_plate_cover {
@@ -152,5 +152,5 @@ input[inputmode='search'] {
 
 .small_war_log .crew_plate {
     color: orangered;
-    font-size: 90%;
+    font-size: var(--sammo-font-size-war-crew);
 }

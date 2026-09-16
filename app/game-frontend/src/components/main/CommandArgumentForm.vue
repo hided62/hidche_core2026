@@ -699,6 +699,11 @@ watch(
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .target-search-toggle {
     margin: 6px 8px;
 }
@@ -714,7 +719,7 @@ watch(
     flex: 1 1 140px;
     width: 140px;
     margin: 0;
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 .target-search small {
     flex-basis: 100%;
@@ -725,7 +730,7 @@ watch(
 
 .command-argument-form {
     border: 1px solid rgba(201, 164, 90, 0.35);
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .command-map {
@@ -765,7 +770,7 @@ watch(
 .status-key {
     border-radius: 2px;
     padding: 0 4px;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
     font-weight: 700;
 }
 
@@ -877,7 +882,7 @@ watch(
 .target-state {
     grid-column: 3;
     color: #aee6a7;
-    font-size: 10px;
+    font-size: var(--sammo-font-size-small);
     text-align: right;
 }
 

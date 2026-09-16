@@ -17,7 +17,7 @@ defineProps<{
 .record-panel {
     min-width: 0;
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     line-height: 21px;
 }

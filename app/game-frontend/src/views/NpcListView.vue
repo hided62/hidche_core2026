@@ -252,7 +252,7 @@ onMounted(() => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -261,7 +261,7 @@ onMounted(() => {
     border-collapse: collapse;
     padding: 0;
     table-layout: fixed;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     word-break: break-all;
 }
 
@@ -395,7 +395,7 @@ onMounted(() => {
 }
 
 .banner {
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .banner a {

@@ -67,7 +67,7 @@ const props = defineProps<{
 }
 
 .tag {
-    font-size: 0.65rem;
+    font-size: var(--sammo-font-size-small);
     padding: 2px 4px;
     border: 1px solid rgba(201, 164, 90, 0.4);
 }
@@ -76,7 +76,7 @@ const props = defineProps<{
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
     gap: 4px;
-    font-size: 0.75rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .empty {

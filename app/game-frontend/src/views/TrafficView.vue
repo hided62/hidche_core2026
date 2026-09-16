@@ -225,7 +225,7 @@ onMounted(() => {
     padding: 0;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: normal;
 }
 
@@ -233,7 +233,7 @@ onMounted(() => {
     border-collapse: collapse;
     padding: 0;
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 /*
@@ -291,7 +291,7 @@ onMounted(() => {
 
 .chart-title {
     height: 34px;
-    font-size: 24px;
+    font-size: var(--sammo-font-size-title);
 }
 
 .chart-row {

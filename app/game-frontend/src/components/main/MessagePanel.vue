@@ -273,7 +273,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
 <style scoped>
 .MessagePanel {
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 
 .MessageInputForm {
@@ -375,7 +375,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
     border: 1px solid transparent;
     border-radius: 3px;
     padding: 2px 6px;
-    font-size: 11.2px;
+    font-size: var(--sammo-font-size-small);
     line-height: 1.5;
     cursor: pointer;
 }

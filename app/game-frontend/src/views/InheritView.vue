@@ -787,6 +787,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .top-back-bar {
     width: min(100%, 1000px);
     height: 32px;
@@ -816,7 +821,7 @@ onMounted(() => {
     padding: 0 7px;
     color: #fff;
     min-height: 1597px;
-    font: 14px/21px var(--sammo-font-sans);
+    font: var(--sammo-font-size-normal)/21px var(--sammo-font-sans);
 }
 
 .inherit-page.legacy-bg0 {
@@ -892,7 +897,7 @@ onMounted(() => {
 }
 
 .section-title {
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 400;
     text-align: center;
     margin: 0 -8px;
@@ -969,7 +974,7 @@ onMounted(() => {
 
 .stat-layout strong {
     text-align: left;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .owner-result {

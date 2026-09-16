@@ -179,6 +179,11 @@ watch(viewMode, () => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 :global(body:has(.legacy-ranking-page)) {
     min-width: 500px;
     overflow-x: hidden;
@@ -191,7 +196,7 @@ watch(viewMode, () => {
     background-color: transparent;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 
@@ -251,7 +256,7 @@ watch(viewMode, () => {
 }
 
 .legacy-banner {
-    font-size: 13px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .legacy-banner a {
@@ -278,7 +283,7 @@ watch(viewMode, () => {
     margin: 0;
     border-bottom: 1px solid gray;
     padding: 2px;
-    font-size: calc(19px + 0.784615vw);
+    font-size: var(--sammo-font-size-title);
     font-weight: 500;
     line-height: 1.2;
     text-align: center;
@@ -341,7 +346,7 @@ watch(viewMode, () => {
 
 .hall-nation,
 .hall-name {
-    font-size: 11px;
+    font-size: var(--sammo-font-size-hall-name);
 }
 
 .hall-name {
@@ -352,7 +357,7 @@ watch(viewMode, () => {
 }
 
 .hall-name small {
-    font-size: 95%;
+    font-size: var(--sammo-font-size-hall-secondary);
 }
 
 .hall-value {
@@ -377,7 +382,7 @@ watch(viewMode, () => {
     }
 
     .rankType {
-        font-size: 28px;
+        font-size: var(--sammo-font-size-title);
     }
 }
 </style>

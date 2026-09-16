@@ -422,17 +422,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .directory-page {
     width: 1000px;
     margin: 0 auto;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
 }
 .directory-table {
     width: 1000px;
     border-collapse: collapse;
     table-layout: auto;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     word-break: break-all;
     background-color: transparent;
 }
@@ -456,7 +461,7 @@ onBeforeUnmount(() => {
     padding: 5.25px 10.5px;
     background-color: rgb(55 90 127);
     color: #fff;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     font-weight: 700;
     line-height: 21px;
     cursor: pointer;

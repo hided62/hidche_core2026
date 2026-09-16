@@ -342,7 +342,7 @@ const mobilePairs = computed(() => {
     border-radius: 3px;
     color: #fff3cd;
     background: #59400e;
-    font: 700 11px/1 var(--sammo-font-sans);
+    font: 700 var(--sammo-font-size-bracket-bet-button)/1 var(--sammo-font-sans);
     cursor: pointer;
 }
 .bracket-bet-button:hover,
@@ -418,12 +418,12 @@ const mobilePairs = computed(() => {
     left: 50%;
     transform: translate(-50%, -50%);
     color: #ffd25e;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 .tournament-bracket > p {
     margin: 8px 0 0;
     color: skyblue;
-    font-size: 18px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 @media (max-width: 800px) {
     .desktop-bracket {
@@ -434,13 +434,13 @@ const mobilePairs = computed(() => {
     }
     .tournament-bracket > p {
         padding: 0 8px;
-        font-size: 13px;
+        font-size: var(--sammo-font-size-small);
     }
 }
 
 /* Betting uses the same paired cards at every viewport; rounds remain selectable. */
 .inline-betting-bracket {
-    font-size: var(--bet-font-normal, 14px);
+    font-size: var(--sammo-font-size-normal);
 }
 .inline-betting-bracket .mobile-bracket {
     display: block;
@@ -471,14 +471,14 @@ const mobilePairs = computed(() => {
     text-align: left;
 }
 .bracket-candidate-identity :deep(.general-identity-name) {
-    font-size: var(--bet-font-large, 16px);
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 700;
     white-space: normal;
     overflow-wrap: anywhere;
 }
 .bracket-core-stat {
     color: #fff;
-    font-size: var(--bet-font-normal, 14px);
+    font-size: var(--sammo-font-size-normal);
 }
 .bracket-bet-summary {
     display: grid;
@@ -511,13 +511,13 @@ const mobilePairs = computed(() => {
     }
 }
 .bracket-info-identity :deep(.general-identity-name) {
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 18px;
 }
 .bracket-info-identity :deep(.general-identity-details) {
     display: flex;
     flex-direction: column;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
     line-height: 18px;
     text-align: left;
     overflow-wrap: anywhere;

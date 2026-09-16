@@ -281,11 +281,12 @@ const placeBet = async (target: TournamentBracketSlot) => {
 </template>
 
 <style scoped>
+/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
+small {
+    font-size: var(--sammo-font-size-small);
+}
+
 .betting-page {
-    --bet-font-title: 24px;
-    --bet-font-large: 16px;
-    --bet-font-normal: 14px;
-    --bet-font-small: 12px;
     width: 100%;
     max-width: 1200px;
     min-width: 0;
@@ -293,7 +294,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
-    font-size: var(--bet-font-normal);
+    font-size: var(--sammo-font-size-normal);
     line-height: 1.3;
     text-align: center;
 }
@@ -323,7 +324,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
     --legacy-button-height: 44px;
     min-width: 72px;
     padding: 10px 16px;
-    font-size: var(--bet-font-normal);
+    font-size: var(--sammo-font-size-normal);
 }
 .error {
     min-height: 32px;
@@ -333,7 +334,7 @@ const placeBet = async (target: TournamentBracketSlot) => {
 .state {
     min-height: 42px;
     padding: 5px;
-    font-size: var(--bet-font-title);
+    font-size: var(--sammo-font-size-title);
 }
 .state span {
     color: cyan;
@@ -342,11 +343,11 @@ const placeBet = async (target: TournamentBracketSlot) => {
     min-height: 50px;
     padding: 5px;
     color: limegreen;
-    font-size: var(--bet-font-title);
+    font-size: var(--sammo-font-size-title);
 }
 .section-title small {
     color: orange;
-    font-size: var(--bet-font-normal);
+    font-size: var(--sammo-font-size-normal);
 }
 select {
     width: 100%;
@@ -408,7 +409,7 @@ select:disabled {
     border-radius: 3px;
     color: #fff;
     background: #201610;
-    font-size: var(--bet-font-normal);
+    font-size: var(--sammo-font-size-normal);
 }
 .inline-bet .bracket-bet-button {
     position: static;
@@ -422,7 +423,7 @@ select:disabled {
 }
 .bet-message {
     grid-column: 1 / -1;
-    font-size: var(--bet-font-small);
+    font-size: var(--sammo-font-size-small);
     line-height: 16px;
     color: #b8e6ac;
     overflow-wrap: anywhere;
@@ -434,7 +435,7 @@ select:disabled {
     min-height: 50px;
     padding: 8px;
     color: yellow;
-    font-size: var(--bet-font-title);
+    font-size: var(--sammo-font-size-title);
 }
 .ranking-placeholder {
     min-height: 40px;
@@ -452,7 +453,7 @@ select:disabled {
     width: 100%;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
-    font-size: var(--bet-font-small);
+    font-size: var(--sammo-font-size-small);
     line-height: 14px;
 }
 .ranking-table th,
@@ -467,7 +468,7 @@ select:disabled {
 .ranking-table thead tr:first-child th {
     height: 18px;
     background: #000;
-    font-size: var(--bet-font-large);
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 18px;
     font-weight: normal;
 }
@@ -498,14 +499,14 @@ select:disabled {
 @media (max-width: 800px) {
     .betting-page {
         max-width: 100%;
-        font-size: var(--bet-font-normal);
+        font-size: var(--sammo-font-size-normal);
     }
     .state {
-        font-size: var(--bet-font-large);
+        font-size: var(--sammo-font-size-emphasis);
     }
     .section-title,
     .ranking-title {
-        font-size: var(--bet-font-title);
+        font-size: var(--sammo-font-size-title);
     }
     .ranking-placeholder {
         display: none;
@@ -533,7 +534,7 @@ select:disabled {
     .ranking-table {
         display: none;
         min-width: 390px;
-        font-size: var(--bet-font-small);
+        font-size: var(--sammo-font-size-small);
     }
     .ranking-table.mobile-active {
         display: table;
@@ -552,7 +553,7 @@ select:disabled {
     }
 }
 .betting-page small {
-    font-size: var(--bet-font-small);
+    font-size: var(--sammo-font-size-small);
 }
 .bet-preset {
     position: relative;
@@ -582,9 +583,9 @@ select:disabled {
     display: none;
 }
 .betting-page :deep(.tournament-page-title) {
-    font-size: var(--bet-font-large);
+    font-size: var(--sammo-font-size-emphasis);
 }
 .betting-page :deep(.tournament-page-header button) {
-    font-size: var(--bet-font-normal);
+    font-size: var(--sammo-font-size-normal);
 }
 </style>

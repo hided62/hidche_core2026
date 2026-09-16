@@ -62,7 +62,7 @@ defineProps<{
 .tournament-page-title {
     min-width: 0;
     overflow: hidden;
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
     font-weight: 400;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -76,7 +76,7 @@ defineProps<{
 button {
     --legacy-button-height: 44px;
     margin: 0;
-    font-size: 14px;
+    font-size: var(--sammo-font-size-normal);
 }
 .tournament-page-tabs button {
     min-width: 72px;
@@ -100,7 +100,7 @@ button:focus-visible {
         padding-inline: 2px;
     }
     .tournament-page-title {
-        font-size: 13px;
+        font-size: var(--sammo-font-size-small);
     }
     .tournament-page-actions,
     .tournament-page-tabs {

@@ -102,7 +102,7 @@ const experiencePercent = computed(() =>
     max-width: 100%;
     overflow: hidden;
     border-top: 1px solid #666;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
 }
 
 .stat-grid {

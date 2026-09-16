@@ -287,7 +287,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
     width: 125px;
     padding: 6px 4px;
     font-family: inherit;
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 1.5;
     text-align: center;
     cursor: pointer;
@@ -299,13 +299,13 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
     align-items: center;
     justify-content: center;
     padding: 2px 1px;
-    font-size: 12px;
+    font-size: var(--sammo-font-size-small);
     line-height: 1.15;
 }
 
 .auto-refresh-trigger strong {
     color: #bbb;
-    font-size: 11px;
+    font-size: var(--sammo-font-size-small);
     line-height: 1;
 }
 
@@ -315,7 +315,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
 
 .manual-refresh-trigger {
     padding: 0;
-    font-size: 22px;
+    font-size: var(--sammo-font-size-title);
     line-height: 1;
 }
 
@@ -360,7 +360,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
 .bottom-popup li {
     break-inside: avoid;
     min-width: 125px;
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
 }
 
 .bottom-popup :deep(.main-menu-link),
@@ -373,7 +373,7 @@ const onAction = (action: NonNullable<MainNavigationLinkItem['action']>) => {
     justify-content: flex-start;
     padding: 5px 16px;
     font-family: inherit;
-    font-size: 16px;
+    font-size: var(--sammo-font-size-emphasis);
     line-height: 1.5;
     text-align: left;
     text-decoration: none;

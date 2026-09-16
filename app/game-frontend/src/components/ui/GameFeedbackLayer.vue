@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
 
 .game-feedback-copy strong {
     color: #e5c982;
-    font-size: 0.78rem;
+    font-size: var(--sammo-font-size-small);
 }
 
 .game-feedback-close {
@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
     background: transparent;
     border: 0;
     cursor: pointer;
-    font-size: 1.25rem;
+    font-size: var(--sammo-font-size-title);
     line-height: 1;
 }
 
@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
 
 .game-dialog-panel h2 {
     color: #e5c982;
-    font-size: 1rem;
+    font-size: var(--sammo-font-size-emphasis);
 }
 
 .game-dialog-panel p {

@@ -20,6 +20,7 @@ export default defineConfig({
     testDir: '.',
     testMatch: [
         'troop.spec.ts',
+        'typographyPolicy.spec.ts',
         'board.spec.ts',
         'inGameInfo.spec.ts',
         'infoMobileLayout.spec.ts',
