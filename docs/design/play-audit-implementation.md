@@ -9,6 +9,29 @@ NPC 결정 trace와 조사 A~F의 완성, 전체 종료 경계 및 COST gate는 
 
 ## 현재 구현
 
+### NPC 저장 비용 probe
+
+`app/game-engine/test/playAuditDecisionCost.integration.test.ts`는 별도
+`PLAY_AUDIT_COST_DATABASE_URL`이 있을 때만 실행한다. schema는 정확히
+`play_audit_cost_decision_fixture`여야 하며 그 schema의 결정/chunk를 비운 뒤 측정한다.
+운영 URL을 사용하지 않는다. 정식 game migration을 먼저 적용하고 다음 명령을 실행한다.
+
+```sh
+pnpm --filter @sammo-ts/game-engine test playAuditDecisionCost.integration.test.ts --no-file-parallelism
+```
+
+201개 결정×302step을 실제 persistence로 저장해 200개 batch 경계를 넘긴다.
+201header/603chunk/60,702step을 검사하고 JSON bytes, pg_column_size 합계,
+테이블·TOAST 포함 할당과 index bytes, 저장 transaction 시간, warm 목록30회
+p50/p95와 EXPLAIN ANALYZE BUFFERS를 `/tmp/play-audit-decision-cost.json`에 기록한다.
+비밀·payload 본문·DB URL은 출력하지 않는다. 반복 실행에서는 이전 할당 공간이 남을 수 있다.
+
+2026-09-16 격리 PG 결과는 JSON12,271,836B, header행101,304B/chunk행666,924B,
+저장677.56ms, 목록51건 p50 0.76ms/p95 1.01ms였다. 월별 장수 index scan으로51행을
+읽었다. 반복 RNG 합성 fixture는 압축률이 높으므로 평균 운영 trace 크기의 근거가 아니다.
+SQL 왕복·WAL·retained heap, 실제 scenario 계측 전후와 전체 COST gate는 여전히 남는다.
+
+
 ### 정책·외교 사건의 요청 처리 상태
 
 `playAudit.requestState`는 현재 기수의 정책 버전 또는 외교 사건 ID만 받는다.
