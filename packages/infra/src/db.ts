@@ -23,6 +23,7 @@ export interface DatabaseClient {
     playAuditNation: GamePrisma.PlayAuditNationDelegate;
     playAuditCity: GamePrisma.PlayAuditCityDelegate;
     playAuditGeneral: GamePrisma.PlayAuditGeneralDelegate;
+    playAuditDiplomacyEvent: GamePrisma.PlayAuditDiplomacyEventDelegate;
     rankData: GamePrisma.RankDataDelegate;
     hallOfFame: GamePrisma.HallOfFameDelegate;
     gameHistory: GamePrisma.GameHistoryDelegate;

@@ -11,5 +11,6 @@ export * from './readModelOutboxDispatcher.js';
 export * from './readModelCoverageActivation.js';
 export * from './gameSchemaAdvisoryLock.js';
 export * from './inputEventClock.js';
+export * from './playAuditDiplomacy.js';
 export * from './messageEnvelope.js';
 export * from './webPushOutbox.js';

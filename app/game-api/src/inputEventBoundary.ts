@@ -18,6 +18,7 @@ export interface ApiInputPayloadIdentity {
 }
 
 interface LockedInputEvent {
+    sequence: bigint;
     target: 'API' | 'ENGINE';
     eventType: string;
     payload: GamePrisma.JsonValue;
@@ -25,6 +26,14 @@ interface LockedInputEvent {
     status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
     result: GamePrisma.JsonValue | null;
     attempts: number;
+}
+
+export interface ApiInputExecutionContext {
+    requestId: string;
+    sequence: bigint;
+    actorUserId: string | null;
+    eventType: string;
+    attempt: number;
 }
 
 type InputEventOutcome<T> =
@@ -115,6 +124,7 @@ const lockInputEvent = async (db: DatabaseClient, requestId: string): Promise<Lo
     const rows = await db.$queryRaw<LockedInputEvent[]>(
         GamePrisma.sql`
             SELECT
+                sequence,
                 target,
                 event_type AS "eventType",
                 payload,
@@ -235,7 +245,7 @@ export const executeInputEvent = async <T>(options: {
     payload: unknown;
     actorUserId?: string | null;
     acquireClockFence?: boolean;
-    execute(db: DatabaseClient): Promise<T>;
+    execute(db: DatabaseClient, context?: ApiInputExecutionContext): Promise<T>;
 }): Promise<T> => {
     const { db, requestId, eventType, payload, execute } = options;
     const actorUserId = options.actorUserId ?? null;
@@ -275,7 +285,13 @@ export const executeInputEvent = async <T>(options: {
             await savepointDb.$executeRawUnsafe(`SAVEPOINT ${BUSINESS_SAVEPOINT}`);
             businessStarted = true;
             try {
-                const value = await execute(transaction);
+                const value = await execute(transaction, {
+                    requestId,
+                    sequence: row.sequence,
+                    actorUserId,
+                    eventType,
+                    attempt: row.attempts + 1,
+                });
                 const durableResult = canonicalJsonValue(value);
                 await transaction.$executeRaw(GamePrisma.sql`
                     UPDATE input_event

@@ -15,6 +15,7 @@ import {
 import type { GameApiContext, GeneralRow, NationRow } from '../../context.js';
 import { insertMessage } from '../../messages/store.js';
 import { purifyDiplomacyHtml } from '../../security/diplomacyHtml.js';
+import { createDiplomacyDocumentAudit, projectAuditDocumentState } from '../../services/playAuditDiplomacy.js';
 import { readDatabaseWallTime } from '../../services/wallClock.js';
 import { accessAuthedInputProcedure, accessAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
@@ -216,6 +217,7 @@ export const diplomacyRouter = router({
             assertNationAccess(me);
 
             const permission = await resolvePermissionLevel(ctx, me.nationId);
+            const audit = createDiplomacyDocumentAudit(ctx, me, permission);
             if (permission < 4) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
             }
@@ -262,20 +264,21 @@ export const diplomacyRouter = router({
                 }
 
                 if (prevLetter.state === 'PROPOSED') {
+                    const before = projectAuditDocumentState(prevLetter);
                     const aux = asRecord(prevLetter.aux);
                     aux.reason = {
                         who: me.id,
                         action: 'new_letter',
                         reason: 'new_letter',
                     };
-                    await ctx.db.diplomacyLetter.update({
+                    const updated = await ctx.db.diplomacyLetter.update({
                         where: { id: prevId },
                         data: { state: 'REPLACED', aux: aux as GamePrisma.InputJsonValue },
                     });
+                    audit.record(updated, before, 'LETTER_REPLACED');
                 }
 
-                destNationId =
-                    prevLetter.srcNationId === me.nationId ? prevLetter.destNationId : prevLetter.srcNationId;
+                destNationId = prevLetter.srcNationId === me.nationId ? prevLetter.destNationId : prevLetter.srcNationId;
             }
 
             const nations = await ctx.db.nation.findMany({
@@ -320,6 +323,7 @@ export const diplomacyRouter = router({
                 },
             });
 
+            audit.record(created, null, 'LETTER_PROPOSED');
             const letterIdText = String(created.id);
             const josaYi = JosaUtil.pick(letterIdText, '이');
             const text = prevId
@@ -333,6 +337,7 @@ export const diplomacyRouter = router({
                 time: created.date,
             });
 
+            await audit.flush();
             return { id: created.id };
         }),
     respondLetter: accessAuthedInputProcedure(
@@ -347,6 +352,7 @@ export const diplomacyRouter = router({
             assertNationAccess(me);
 
             const permission = await resolvePermissionLevel(ctx, me.nationId);
+            const audit = createDiplomacyDocumentAudit(ctx, me, permission);
             if (permission < 4) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
             }
@@ -362,14 +368,11 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: '서신이 없습니다.' });
             }
 
-            const { srcNation, destNation } = await loadLetterNations(
-                ctx,
-                letter.srcNationId,
-                letter.destNationId
-            );
+            const { srcNation, destNation } = await loadLetterNations(ctx, letter.srcNationId, letter.destNationId);
             const messageSrc = buildActorTarget(me, destNation);
             const messageDest = buildNationTarget(srcNation);
             const messageTime = await readDatabaseWallTime(ctx.db);
+            const before = projectAuditDocumentState(letter);
             const aux = asRecord(letter.aux);
             let messageText: string;
             if (input.agree) {
@@ -379,7 +382,7 @@ export const diplomacyRouter = router({
                 dest.generalIcon = messageSrc.icon;
                 aux.dest = dest;
 
-                await ctx.db.diplomacyLetter.update({
+                const updated = await ctx.db.diplomacyLetter.update({
                     where: { id: letter.id },
                     data: {
                         state: 'ACTIVATED',
@@ -388,16 +391,20 @@ export const diplomacyRouter = router({
                     },
                 });
 
+                audit.record(updated, before, 'LETTER_ACCEPTED');
                 let prevId = letter.prevId;
                 while (prevId) {
                     const prevLetter = await ctx.db.diplomacyLetter.findFirst({ where: { id: prevId } });
                     if (!prevLetter) {
                         break;
                     }
-                    await ctx.db.diplomacyLetter.update({
+                    const updated = await ctx.db.diplomacyLetter.update({
                         where: { id: prevId },
                         data: { state: 'REPLACED' },
                     });
+                    if (prevLetter.state !== 'REPLACED') {
+                        audit.record(updated, projectAuditDocumentState(prevLetter), 'LETTER_REPLACED');
+                    }
                     prevId = prevLetter.prevId;
                 }
                 messageText = `외교 서신( #${letter.id})이 승인되었습니다.`;
@@ -407,10 +414,11 @@ export const diplomacyRouter = router({
                     action: 'disagree',
                     reason: input.reason ?? '',
                 };
-                await ctx.db.diplomacyLetter.update({
+                const updated = await ctx.db.diplomacyLetter.update({
                     where: { id: letter.id },
                     data: { state: 'CANCELLED', aux: aux as GamePrisma.InputJsonValue },
                 });
+                audit.record(updated, before, 'LETTER_REJECTED');
                 messageText = `외교 서신(#${letter.id})이 거부되었습니다.`;
                 if (input.reason && input.reason !== '0') {
                     messageText += ` 이유 : ${input.reason}`;
@@ -426,14 +434,16 @@ export const diplomacyRouter = router({
                 includeNational: true,
             });
 
+            await audit.flush();
             return { ok: true };
         }),
-    rollbackLetter: accessAuthedInputProcedure(z.object({ letterId: z.number().int().positive() }))
-        .mutation(async ({ ctx, input }) => {
+    rollbackLetter: accessAuthedInputProcedure(z.object({ letterId: z.number().int().positive() })).mutation(
+        async ({ ctx, input }) => {
             const me = await getMyGeneral(ctx);
             assertNationAccess(me);
 
             const permission = await resolvePermissionLevel(ctx, me.nationId);
+            const audit = createDiplomacyDocumentAudit(ctx, me, permission);
             if (permission < 4) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
             }
@@ -449,14 +459,11 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: '서신이 없습니다.' });
             }
 
-            const { srcNation, destNation } = await loadLetterNations(
-                ctx,
-                letter.srcNationId,
-                letter.destNationId
-            );
+            const { srcNation, destNation } = await loadLetterNations(ctx, letter.srcNationId, letter.destNationId);
             const messageSrc = buildActorTarget(me, srcNation);
             const messageDest = buildNationTarget(destNation);
             const messageTime = await readDatabaseWallTime(ctx.db);
+            const before = projectAuditDocumentState(letter);
             const aux = asRecord(letter.aux);
             aux.reason = {
                 who: me.id,
@@ -464,11 +471,12 @@ export const diplomacyRouter = router({
                 reason: '회수',
             };
 
-            await ctx.db.diplomacyLetter.update({
+            const updated = await ctx.db.diplomacyLetter.update({
                 where: { id: letter.id },
                 data: { state: 'CANCELLED', aux: aux as GamePrisma.InputJsonValue },
             });
 
+            audit.record(updated, before, 'LETTER_WITHDRAWN');
             await sendDocumentNotice({
                 ctx,
                 src: messageSrc,
@@ -477,14 +485,17 @@ export const diplomacyRouter = router({
                 time: messageTime,
             });
 
+            await audit.flush();
             return { ok: true };
-        }),
-    destroyLetter: accessAuthedInputProcedure(z.object({ letterId: z.number().int().positive() }))
-        .mutation(async ({ ctx, input }) => {
+        }
+    ),
+    destroyLetter: accessAuthedInputProcedure(z.object({ letterId: z.number().int().positive() })).mutation(
+        async ({ ctx, input }) => {
             const me = await getMyGeneral(ctx);
             assertNationAccess(me);
 
             const permission = await resolvePermissionLevel(ctx, me.nationId);
+            const audit = createDiplomacyDocumentAudit(ctx, me, permission);
             if (permission < 4) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
             }
@@ -500,6 +511,7 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: '서신이 없습니다.' });
             }
 
+            const before = projectAuditDocumentState(letter);
             const aux = asRecord(letter.aux);
             const stateOpt = typeof aux.state_opt === 'string' ? aux.state_opt : null;
             const myStateOpt = letter.srcNationId === me.nationId ? 'try_destroy_src' : 'try_destroy_dest';
@@ -508,11 +520,7 @@ export const diplomacyRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 파기 신청을 했습니다.' });
             }
 
-            const { srcNation, destNation } = await loadLetterNations(
-                ctx,
-                letter.srcNationId,
-                letter.destNationId
-            );
+            const { srcNation, destNation } = await loadLetterNations(ctx, letter.srcNationId, letter.destNationId);
             const actorNation = letter.srcNationId === me.nationId ? srcNation : destNation;
             const otherNation = letter.srcNationId === me.nationId ? destNation : srcNation;
             const messageSrc = buildActorTarget(me, actorNation);
@@ -522,18 +530,20 @@ export const diplomacyRouter = router({
             let messageText: string;
 
             if (stateOpt && stateOpt !== myStateOpt) {
-                await ctx.db.diplomacyLetter.update({
+                const updated = await ctx.db.diplomacyLetter.update({
                     where: { id: letter.id },
                     data: { state: 'CANCELLED', aux: aux as GamePrisma.InputJsonValue },
                 });
+                audit.record(updated, before, 'LETTER_DESTROYED');
                 resultState = 'CANCELLED';
                 messageText = `외교 서신(#${letter.id})을 파기했습니다.`;
             } else {
                 aux.state_opt = myStateOpt;
-                await ctx.db.diplomacyLetter.update({
+                const updated = await ctx.db.diplomacyLetter.update({
                     where: { id: letter.id },
                     data: { aux: aux as GamePrisma.InputJsonValue },
                 });
+                audit.record(updated, before, 'LETTER_DESTROY_REQUESTED');
                 resultState = 'ACTIVATED';
                 messageText = `외교 서신(#${letter.id})을 파기 요청합니다.`;
             }
@@ -545,6 +555,8 @@ export const diplomacyRouter = router({
                 text: messageText,
                 time: messageTime,
             });
+            await audit.flush();
             return { state: resultState };
-        }),
+        }
+    ),
 });

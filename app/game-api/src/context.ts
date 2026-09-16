@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ApiInputExecutionContext } from './inputEventBoundary.js';
 import type { ChangeJournal } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { DatabaseClient as InfraDatabaseClient, RedisConnector, GamePrisma } from '@sammo-ts/infra';
@@ -99,6 +100,8 @@ export type InputJsonValue = GamePrisma.InputJsonValue;
 export type DatabaseClient = InfraDatabaseClient;
 
 export interface GameApiContext {
+    /** 현재 API 업무 transaction이 잠근 입력 원장의 인증된 식별자다. */
+    auditInput?: ApiInputExecutionContext;
     requestId?: string;
     generalAccessTracking?: boolean;
     /** Validated server-issued proof for one realtime refresh burst. */

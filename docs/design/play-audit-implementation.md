@@ -88,6 +88,34 @@ R1을 완료했다고 판단하지 않는다.
 world metadata로 계산하며 추가 DB 조회·쓰기나 시나리오/AI 규칙 변경은 없다.
 PREOPEN은 wall-clock 대기 상태이며, 검증하는 것은 공식 개방 때의 논리 게임 달력이다.
 
+## 외교 문서 상태 이벤트 저장 기반
+
+`diplomacy.sendLetter/respondLetter/rollbackLetter/destroyLetter`의 기존 입력 원장
+transaction에 제안·교체·승인·거절·회수·파기 요청·파기를 연결했다. 기존 SELECT와
+UPDATE 반환값에서 변경 전후 allowlist를 만들고, 원장 잠금 SELECT의 sequence를
+재사용한다. 감사 실패는 문서/알림과 함께 rollback하며 실패한 입력 원장은 남는다.
+성공 재요청은 기존 결과를 반환해 이벤트를 중복 저장하지 않는다.
+
+- migration55의 `play_audit_diplomacy_event`는 기수, 방향 있는 국가쌍, 실행/로컬 순번,
+  DB sequence, 처리 당시 달력/tick/revision, actor와 작은 상태 전후 값을 저장한다.
+  DB sequence와 입력 접수 sequence는 다른 개념이며 숫자 간격은 허용한다.
+- 본문은 기존 `diplomacy_letter`를 ID/hash로 참조한다. 작성 본문·작성자·작성 시각·
+  국가쌍·prevId의 UPDATE를 DB trigger로 거부하고, 기존 새 문서 작성 경로를 유지한다.
+  상태·서명·aux 갱신은 허용한다. 기존 문서의 과거 상태를 소급 생성하지 않는다.
+- 문서 쓰기 요청당 작은 world/clock SELECT 1회, RUNNING realtime이면 readiness
+  SELECT 1회, 이벤트 200개당 bulk INSERT와 ID/hash 확인 SELECT 각 1회가 추가된다.
+  원문 SELECT와 본문 복사는 추가하지 않는다. 기존 알림 wall time 조회와 결합해
+  줄일 여지는 남으며, SQL/WAL 비용 gate의 실측 완료를 뜻하지 않는다.
+- reset 뒤 이전 이벤트는 기존 retention 경로에서 ID 최대200개씩 정리한다.
+  과거 tick/revision은 시계 이동 대상이 아닌 KEEP 이력으로 등록한다.
+- 기존 `rollbackLetter`는 회수다. 현재 복구 mutation은 없어 복구 이력을 꾸며내지 않는다.
+
+실제 PostgreSQL에서 문서 8개 시나리오, unit 7건, retention 4건, 신규55개/
+증분54→55/재실행 migration을 검증했다. 외교 상태의 API 즉시 응답·엔진 월간/턴
+변경, 도입 당시 기준, 감사 조회 API/UI는 후속 구현이며 **R4 전체 완료가 아니다**.
+일반 외교 알림은 WALL_TIME이고 제의 처리와 tombstone은 구분한다. 오래된 알림
+테스트의 게임 tick 가정을 현행 envelope 계약에 맞췄다.
+
 ## NPC·국방 정책 버전 저장 기반
 
 `PlayAuditPolicy`는 현재 기수/국가/영역별 불변 revision과 이전 버전 ID를 보존한다.

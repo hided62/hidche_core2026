@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { JosaUtil, MAX_SAFE_GAME_TICK } from '@sammo-ts/common';
+import { JosaUtil } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { createGamePostgresConnector, type GamePrismaClient, type RedisConnector } from '@sammo-ts/infra';
 import {
@@ -15,7 +15,7 @@ import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import type { GameApiContext } from '../src/context.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
-import { fetchMessagesFromMailbox, invalidateMessages } from '../src/messages/store.js';
+import { fetchMessagesFromMailbox, tombstoneMessages } from '../src/messages/store.js';
 import { appRouter } from '../src/router.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -82,6 +82,7 @@ integration('diplomacy document message persistence', () => {
     };
 
     const cleanupRouteState = async (): Promise<void> => {
+        await db.playAuditDiplomacyEvent.deleteMany({ where: { serverId: requestPrefix } });
         await db.message.deleteMany({ where: { mailbox: { in: [...fixtureMailboxes] } } });
         await db.diplomacyLetter.deleteMany({
             where: {
@@ -231,8 +232,9 @@ integration('diplomacy document message persistence', () => {
                     type,
                     src: srcMailbox,
                     dest: destMailbox,
-                    time: logicalGameTime,
-                    timeTick: logicalGameTick,
+                    time: expect.any(Date),
+                    timeTick: null,
+                    occurredGameTick: null,
                 });
                 expect(payload).toMatchObject({
                     src: options.src,
@@ -295,7 +297,7 @@ integration('diplomacy document message persistence', () => {
                 clockMode: 'manual',
                 clockWallAnchor: new Date('2026-08-24T00:00:00.000Z'),
                 config: {},
-                meta: {},
+                meta: { serverId: requestPrefix },
             },
         });
         await db.nation.createMany({
@@ -382,7 +384,7 @@ integration('diplomacy document message persistence', () => {
         await expectInputEvent(chainedRequestId, 'sendLetter', fixtureUserId);
     });
 
-    it('keeps permanent messages readable without a clock and does not resurrect them after invalidation', async () => {
+    it('keeps permanent messages readable without a clock and preserves tombstoned content after clock recovery', async () => {
         const created = await appRouter
             .createCaller(buildContext('legacy-clock-fallback', fixtureAuth))
             .diplomacy.sendLetter({
@@ -395,7 +397,7 @@ integration('diplomacy document message persistence', () => {
             where: { mailbox: receiverMailbox, type: 'diplomacy' },
             orderBy: { id: 'desc' },
         });
-        expect(receiver.validUntilTick).toBe(BigInt(MAX_SAFE_GAME_TICK));
+        expect(receiver.validUntilTick).toBeNull();
 
         await db.worldState.update({
             where: { id: fixtureWorldStateId },
@@ -416,10 +418,10 @@ integration('diplomacy document message persistence', () => {
                 })
             );
 
-            await invalidateMessages(db, [receiver.id]);
+            await tombstoneMessages(db, [receiver.id]);
             await expect(
-                db.message.findUniqueOrThrow({ where: { id: receiver.id }, select: { validUntilTick: true } })
-            ).resolves.toEqual({ validUntilTick: 0n });
+                db.message.findUniqueOrThrow({ where: { id: receiver.id }, select: { tombstonedAtWall: true } })
+            ).resolves.toEqual({ tombstonedAtWall: expect.any(Date) });
             await expect(
                 fetchMessagesFromMailbox({
                     db,
@@ -428,7 +430,7 @@ integration('diplomacy document message persistence', () => {
                     limit: 15,
                     fromSeq: 0,
                 })
-            ).resolves.not.toContainEqual(expect.objectContaining({ id: receiver.id }));
+            ).resolves.toContainEqual(expect.objectContaining({ id: receiver.id, text: '삭제된 메시지입니다.' }));
         } finally {
             await db.worldState.update({
                 where: { id: fixtureWorldStateId },
@@ -448,7 +450,7 @@ integration('diplomacy document message persistence', () => {
                 limit: 15,
                 fromSeq: 0,
             })
-        ).resolves.not.toContainEqual(expect.objectContaining({ id: receiver.id }));
+        ).resolves.toContainEqual(expect.objectContaining({ id: receiver.id, text: '삭제된 메시지입니다.' }));
     });
 
     it('stores diplomacy and national copies for both approval and rejection responses', async () => {
@@ -561,6 +563,86 @@ integration('diplomacy document message persistence', () => {
         await expectInputEvent(completeRequestId, 'destroyLetter', foreignUserId);
     });
 
+    it('records ordered document transitions once, bound to durable input and immutable content', async () => {
+        const input = { destNationId: foreignNationId, brief: '감사 문서', detail: '불변 본문' };
+        const sender = appRouter.createCaller(buildContext('audit-send', fixtureAuth));
+        const created = await sender.diplomacy.sendLetter(input);
+        await expect(sender.diplomacy.sendLetter(input)).resolves.toEqual(created);
+        await appRouter.createCaller(buildContext('audit-accept', foreignAuth)).diplomacy.respondLetter({
+            letterId: created.id,
+            agree: true,
+        });
+        await appRouter
+            .createCaller(buildContext('audit-destroy-src', fixtureAuth))
+            .diplomacy.destroyLetter({ letterId: created.id });
+        await appRouter
+            .createCaller(buildContext('audit-destroy-dest', foreignAuth))
+            .diplomacy.destroyLetter({ letterId: created.id });
+        const events = await db.playAuditDiplomacyEvent.findMany({
+            where: { serverId: requestPrefix },
+            orderBy: { sequence: 'asc' },
+        });
+        expect(events.map((event) => event.eventType)).toEqual([
+            'LETTER_PROPOSED',
+            'LETTER_ACCEPTED',
+            'LETTER_DESTROY_REQUESTED',
+            'LETTER_DESTROYED',
+        ]);
+        expect(events[0]).toMatchObject({
+            year: 208,
+            month: 4,
+            tick: logicalGameTick,
+            documentId: created.id,
+            before: null,
+            actor: { userId: fixtureUserId, generalId: fixtureGeneralId },
+        });
+        expect(events[1]).toMatchObject({
+            before: { state: 'PROPOSED', destSignerId: null },
+            after: { state: 'ACTIVATED', destSignerId: foreignGeneralId },
+        });
+        expect(events[2]).toMatchObject({ before: { stateOption: null }, after: { stateOption: 'try_destroy_src' } });
+        expect(events[3]).toMatchObject({ before: { state: 'ACTIVATED' }, after: { state: 'CANCELLED' } });
+        expect(new Set(events.map((event) => event.documentHash)).size).toBe(1);
+        for (const event of events) {
+            const journal = await db.inputEvent.findUniqueOrThrow({ where: { requestId: event.requestId! } });
+            expect(event.inputSequence).toBe(journal.sequence);
+            expect(JSON.stringify(event.after)).not.toContain('불변 본문');
+        }
+        await expect(
+            db.diplomacyLetter.update({ where: { id: created.id }, data: { textDetail: '변조' } })
+        ).rejects.toThrow('Diplomacy document content is immutable');
+        expect((await db.diplomacyLetter.findUniqueOrThrow({ where: { id: created.id } })).textDetail).toBe(
+            '불변 본문'
+        );
+    });
+
+    it('rolls back the document and notices if the audit insert fails', async () => {
+        await db.$executeRawUnsafe(`CREATE FUNCTION reject_audit_document_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'injected audit insert failure'; END; $$`);
+        await db.$executeRawUnsafe(`CREATE TRIGGER reject_audit_document_fixture BEFORE INSERT ON play_audit_diplomacy_event
+            FOR EACH ROW EXECUTE FUNCTION reject_audit_document_fixture()`);
+        try {
+            await expect(
+                appRouter.createCaller(buildContext('audit-failure', fixtureAuth)).diplomacy.sendLetter({
+                    destNationId: foreignNationId,
+                    brief: '감사 실패',
+                    detail: '롤백',
+                })
+            ).rejects.toThrow('injected audit insert failure');
+            expect(await db.diplomacyLetter.count({ where: { textBrief: '감사 실패' } })).toBe(0);
+            expect(await db.message.count({ where: { mailbox: { in: [...fixtureMailboxes] } } })).toBe(0);
+            expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: requestPrefix } })).toBe(0);
+            expect(
+                await db.inputEvent.findUniqueOrThrow({
+                    where: { requestId: `${requestPrefix}:audit-failure:diplomacy.sendLetter` },
+                })
+            ).toMatchObject({ status: 'FAILED', attempts: 1 });
+        } finally {
+            await db.$executeRawUnsafe('DROP TRIGGER reject_audit_document_fixture ON play_audit_diplomacy_event');
+            await db.$executeRawUnsafe('DROP FUNCTION reject_audit_document_fixture()');
+        }
+    });
+
     it('rolls letter and message writes back together while retaining the failed API input event', async () => {
         const failure = new Error('injected diplomacy message transaction rollback');
         const requestId = 'send-rollback';
@@ -576,6 +658,7 @@ integration('diplomacy document message persistence', () => {
 
         await expect(db.diplomacyLetter.findFirst({ where: { textBrief: 'rollback 외교문서' } })).resolves.toBeNull();
         await expect(db.message.count({ where: { mailbox: { in: [...fixtureMailboxes] } } })).resolves.toBe(0);
+        await expect(db.playAuditDiplomacyEvent.count({ where: { serverId: requestPrefix } })).resolves.toBe(0);
         await expect(
             db.readModelRevision.count({
                 where: {

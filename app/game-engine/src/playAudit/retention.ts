@@ -20,6 +20,18 @@ export const prunePreviousAuditBatch = async (
             if (!lock?.locked) return { status: 'busy', deleted: 0 };
             const world = await tx.worldState.findFirst({ orderBy: { id: 'asc' }, select: { meta: true } });
             if (asRecord(world?.meta).serverId !== expectedServerId) return { status: 'identityChanged', deleted: 0 };
+            const diplomacyEvents = await tx.playAuditDiplomacyEvent.findMany({
+                where: { serverId: { not: expectedServerId } },
+                orderBy: { sequence: 'asc' },
+                take: AUDIT_RETENTION_BATCH_SIZE,
+                select: { id: true },
+            });
+            if (diplomacyEvents.length) {
+                const deleted = await tx.playAuditDiplomacyEvent.deleteMany({
+                    where: { id: { in: diplomacyEvents.map((row) => row.id) } },
+                });
+                return { status: 'progress', deleted: deleted.count };
+            }
             const policies = await tx.playAuditPolicy.findMany({
                 where: { serverId: { not: expectedServerId } },
                 orderBy: { id: 'asc' },

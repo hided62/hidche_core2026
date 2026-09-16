@@ -4,6 +4,7 @@
     "tickPerTurn": 36000000,
     "policies": ["SHIFT", "KEEP", "REBUILD", "FORBID"],
     "coveredFields": [
+        "play_audit_diplomacy_event.clock_revision",
         "input_event.accepted_game_tick",
         "input_event.accepted_clock_revision",
         "input_event.accepted_deadline_generation",
@@ -84,6 +85,14 @@
         "board, authentication, account, audit, and operator timestamps"
     ],
     "participants": [
+        {
+            "key": "play-audit-diplomacy-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["play_audit_diplomacy_event.tick", "play_audit_diplomacy_event.clock_revision"],
+            "projectionFields": [],
+            "owner": "game-api/play-audit-diplomacy",
+            "migration": "Historical occurrence coordinates remain in their original revision; never shift them with future deadlines."
+        },
         {
             "key": "world-clock",
             "policy": "REBUILD",

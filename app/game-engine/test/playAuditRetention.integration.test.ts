@@ -215,4 +215,37 @@ integration('bounded previous-season audit retention', () => {
         expect(await prunePreviousAuditBatch(db, 'policy-active')).toEqual({ status: 'complete', deleted: 0 });
         expect(await db.playAuditPolicy.findUnique({ where: { id: 'active-policy' } })).not.toBeNull();
     });
+    it('prunes diplomacy history in bounded batches without touching the active season', async () => {
+        await db.playAuditMonth.deleteMany();
+        await db.playAuditPolicy.deleteMany();
+        await db.playAuditDiplomacyEvent.deleteMany();
+        await db.worldState.updateMany({ data: { meta: { serverId: 'diplomacy-active' } } });
+        const row = (id: string, serverId: string, ordinal: number) => ({
+            id,
+            serverId,
+            ordinal,
+            executionId: 'fixture',
+            nationA: 1,
+            nationB: 2,
+            srcNationId: 1,
+            destNationId: 2,
+            category: 'DOCUMENT',
+            source: 'API',
+            eventType: 'LETTER_PROPOSED',
+            year: 190,
+            month: 1,
+            hash: id,
+        });
+        await db.playAuditDiplomacyEvent.createMany({
+            data: [
+                ...Array.from({ length: 201 }, (_, index) => row(`old-diplomacy-${index}`, 'old-diplomacy', index + 1)),
+                row('active-diplomacy', 'diplomacy-active', 1),
+            ],
+        });
+        expect(await prunePreviousAuditBatch(db, 'diplomacy-active')).toEqual({ status: 'progress', deleted: 200 });
+        expect(await prunePreviousAuditBatch(db, 'diplomacy-active')).toEqual({ status: 'progress', deleted: 1 });
+        expect(await prunePreviousAuditBatch(db, 'diplomacy-active')).toEqual({ status: 'complete', deleted: 0 });
+        expect(await db.playAuditDiplomacyEvent.findUnique({ where: { id: 'active-diplomacy' } })).not.toBeNull();
+        await db.playAuditDiplomacyEvent.deleteMany();
+    });
 });

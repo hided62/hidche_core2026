@@ -1166,3 +1166,38 @@ model PlayAuditPolicy {
   @@index([serverId, nationId, year, month, ordinal])
   @@map("play_audit_policy")
 }
+
+model PlayAuditDiplomacyEvent {
+  id                 String   @id
+  sequence           BigInt   @unique @default(autoincrement())
+  schemaVersion      Int      @default(1) @map("schema_version")
+  serverId           String   @map("server_id")
+  nationA            Int      @map("nation_a")
+  nationB            Int      @map("nation_b")
+  srcNationId        Int      @map("src_nation_id")
+  destNationId       Int      @map("dest_nation_id")
+  category           String
+  source             String
+  eventType          String   @map("event_type")
+  documentId         Int?     @map("document_id")
+  documentHash       String?  @map("document_hash")
+  previousDocumentId Int?     @map("previous_document_id")
+  year               Int
+  month              Int
+  tick               BigInt?
+  clockRevision      BigInt?  @map("clock_revision")
+  executionId        String   @map("execution_id")
+  ordinal            Int
+  requestId          String?  @map("request_id")
+  inputSequence      BigInt?  @map("input_sequence")
+  actor              Json?
+  before             Json?
+  after              Json?
+  hash               String
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([serverId, executionId, ordinal])
+  @@index([serverId, nationA, nationB, sequence], map: "audit_diplomacy_pair_sequence_idx")
+  @@index([serverId, documentId, sequence])
+  @@map("play_audit_diplomacy_event")
+}

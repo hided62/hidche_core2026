@@ -81,11 +81,12 @@ const createInputEventMiddleware = (acquireClockFence: boolean) =>
                 payload,
                 actorUserId: ctx.auth?.user.id,
                 acquireClockFence,
-                execute: async (transaction) => {
+                execute: async (transaction, auditInput) => {
                     const result = await next({
                         ctx: {
                             ...ctx,
                             db: transaction,
+                            auditInput,
                             changeJournal,
                             turnDaemon: new IdempotentTurnDaemonTransport(ctx.turnDaemon, requestId),
                         },
