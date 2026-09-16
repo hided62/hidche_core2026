@@ -156,6 +156,7 @@ const install = async (
                                 {
                                     ordinal: input.cursor === undefined ? 0 : 1,
                                     steps: [
+                                        ...(input.cursor === undefined ? [{ phase: 'general', generalId: 1, nationId: 2, cityId: 3, npcState: 2, year: 190, month: 6, tick: 100, sequence: 0, kind: 'DECISION_START', reservedAction: '휴식', effectivePolicy: {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5]}} }] : []),
                                         {
                                             phase: 'general',
                                             generalId: 1,
@@ -165,7 +166,7 @@ const install = async (
                                             year: 190,
                                             month: 6,
                                             tick: 100,
-                                            sequence: input.cursor === undefined ? 0 : 128,
+                                            sequence: input.cursor === undefined ? 1 : 128,
                                             ...(input.cursor === undefined
                                                 ? { kind: 'PROCEDURE_START', procedure: '<b>징병판정</b>' }
                                                 : {
@@ -1156,6 +1157,9 @@ test('NPC decisions are explicit, paginated, independently addressable and escap
     await page.getByRole('button', { name: '개인 판단 · tick 100', exact: true }).click();
     await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('<b>징병판정</b>');
     await expect(page.getByRole('list', { name: '판단 절차' }).locator('b')).toHaveCount(0);
+    await page.getByText('당시 합성 정책', { exact: true }).click();
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('국가 권장 금');
+    await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('4321');
     await page.getByRole('button', { name: '판단 절차 더 불러오기', exact: true }).click();
     await expect(page.getByRole('list', { name: '판단 절차' })).toContainText('실행 시도 1');
     await expect(page.getByRole('list', { name: '판단 절차' })).toContainText(

@@ -366,10 +366,12 @@ const makeAi = (
             },
         },
         generalPolicy: {
+            priority: [], flags: {},
             can: (action: string) =>
                 !disabledPolicyActions.has(action) && !['모병', '고급병종', '한계징병'].includes(action),
         },
         nationPolicy: {
+            priority: [], flags: {}, combatForce: {}, supportForce: [], developForce: [],
             minWarCrew: 1500,
             minNpcRecruitCityPopulation: 30_000,
             safeRecruitCityPopulationRatio: 0.5,
@@ -2202,7 +2204,7 @@ describe('AI decision observation boundaries', () => {
             onDecisionTrace: (event: AiDecisionTraceEvent) => events.push(event), traceSequence: 0,
             updateInstance: () => undefined, categorizeNationCities: () => undefined,
             categorizeNationGeneral: () => undefined,
-            nationPolicy: { priority: ['disabled', 'unregistered'], can: (name: string) => {
+            nationPolicy: { ...ai.nationPolicy, priority: ['disabled', 'unregistered'], can: (name: string) => {
                 calls.push(name); return name !== 'disabled';
             } },
         });

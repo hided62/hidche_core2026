@@ -455,6 +455,13 @@ describe('NPC 선전포고·개전·점령 흐름 테스트', () => {
             expect(savedDecisions.every((row) => row.steps[0]?.kind === 'DECISION_START' && row.steps.at(-1)?.kind === 'EXECUTION_ATTEMPT')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'DECISION_START' && step.phase === 'nation')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'DECISION_END' && step.phase === 'general')).toBe(true);
+            const start = decisionTrace.find((step) => step.kind === 'DECISION_START');
+            expect(start?.kind === 'DECISION_START' && start.effectivePolicy?.schemaVersion).toBe(1);
+            if (start?.kind === 'DECISION_START') {
+                expect(start.effectivePolicy?.nation.values.minimumResourceActionAmount).toBeGreaterThan(0);
+                expect(start.effectivePolicy?.general.priority.length).toBeGreaterThan(0);
+            }
+
             expect(decisionTrace.some((step) => step.kind === 'RNG')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'PROCEDURE_START')).toBe(true);
             expect(decisionTrace.some((step) => step.kind === 'CANDIDATE')).toBe(true);

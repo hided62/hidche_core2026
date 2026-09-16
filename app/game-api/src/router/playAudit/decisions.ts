@@ -3,6 +3,39 @@ import { z } from 'zod';
 import type { GamePrisma } from '@sammo-ts/infra';
 import { auditProcedure, monthOrdinal, readAudit, readAuditWorld, zAuditMonth } from './shared.js';
 
+const zEffectivePolicy = z.object({
+    schemaVersion: z.literal(1),
+    general: z.object({ priority: z.array(z.string()), flags: z.record(z.string(), z.boolean()) }),
+    nation: z.object({
+        priority: z.array(z.string()),
+        flags: z.record(z.string(), z.boolean()),
+        values: z.object({
+            reqNationGold: z.number(),
+            reqNationRice: z.number(),
+            reqHumanWarUrgentGold: z.number(),
+            reqHumanWarUrgentRice: z.number(),
+            reqHumanWarRecommandGold: z.number(),
+            reqHumanWarRecommandRice: z.number(),
+            reqHumanDevelGold: z.number(),
+            reqHumanDevelRice: z.number(),
+            reqNpcWarGold: z.number(),
+            reqNpcWarRice: z.number(),
+            reqNpcDevelGold: z.number(),
+            reqNpcDevelRice: z.number(),
+            minimumResourceActionAmount: z.number(),
+            maximumResourceActionAmount: z.number(),
+            minNpcWarLeadership: z.number(),
+            minWarCrew: z.number(),
+            minNpcRecruitCityPopulation: z.number(),
+            safeRecruitCityPopulationRatio: z.number(),
+            properWarTrainAtmos: z.number(),
+            cureThreshold: z.number(),
+        }),
+        combatForce: z.record(z.string(), z.array(z.number()).length(2)),
+        supportForce: z.array(z.number()),
+        developForce: z.array(z.number()),
+    }),
+});
 const zId = z.string().regex(/^[a-f0-9]{64}$/);
 const zTick = z
     .string()
@@ -71,7 +104,11 @@ const zStep = z.intersection(
                 )
                 .max(5),
         }),
-        z.object({ kind: z.literal('DECISION_START'), reservedAction: z.string() }),
+        z.object({
+            kind: z.literal('DECISION_START'),
+            reservedAction: z.string(),
+            effectivePolicy: zEffectivePolicy.optional(),
+        }),
         z.object({ kind: z.literal('DECISION_END'), action: z.string().nullable(), reason: z.string().nullable() }),
         z.object({ kind: z.literal('DECISION_ERROR') }),
         z.object({ kind: z.literal('PROCEDURE_START'), procedure: z.string() }),

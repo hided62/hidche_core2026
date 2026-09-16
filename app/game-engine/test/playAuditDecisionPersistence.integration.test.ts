@@ -36,6 +36,7 @@ integration('decision persistence and bounded retention', () => {
     });
     it('rolls back gameplay/header/chunks on insert failure, retries and rejects divergent replay', async () => {
         const decision = draft('decision-one');
+        if (decision.steps[0]?.kind === 'DECISION_START') decision.steps[0].effectivePolicy = {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5]}};
         decision.summary.codeVersion = 'a'.repeat(40);
         decision.summary.executionCoverage = 'ATTEMPTS';
         decision.steps.push({ ...decision.steps[0]!, ...buildAuditExecutionFixture(), sequence: 302 });

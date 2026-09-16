@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuditEffectivePolicy from './AuditEffectivePolicy.vue';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { trpc } from '../../utils/trpc';
@@ -245,6 +246,10 @@ watch(
                     <template v-for="chunk in detail.chunks" :key="chunk.ordinal"
                         ><li v-for="step in chunk.steps" :key="step.sequence" :value="step.sequence + 1">
                             {{ stepText(step) }}
+                            <template v-if="step.kind === 'DECISION_START'">
+                                <AuditEffectivePolicy v-if="step.effectivePolicy" :policy="step.effectivePolicy" />
+                                <p v-else>당시 합성 정책 미수집</p>
+                            </template>
                             <ul v-if="step.kind === 'EXECUTION_ATTEMPT'">
                                 <li v-for="(check, index) in step.checks" :key="index">
                                     {{ checkLabels[check.stage] }} · {{ check.action }} ·

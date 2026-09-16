@@ -1,3 +1,4 @@
+import { snapshotEffectiveAiPolicy } from '../src/turn/ai/generalAi/effectivePolicy.js';
 import { initializeAuditPolicies } from '../src/playAudit/policy.js';
 import { describe, expect, it } from 'vitest';
 
@@ -5,7 +6,7 @@ import type { TurnCommandEnv, TurnSchedule, UnitSetDefinition } from '@sammo-ts/
 import { asRecord } from '@sammo-ts/common';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { AutorunNationPolicy } from '../src/turn/ai/policies.js';
+import { AutorunGeneralPolicy, AutorunNationPolicy } from '../src/turn/ai/policies.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { applyNpcPolicyMutation } from '../src/turn/npcPolicyMutation.js';
 
@@ -256,6 +257,15 @@ describe('NPC policy lifecycle', () => {
             scenarioConfig: snapshot.scenarioConfig,
             unitSet,
         });
+        const generalPolicy = new AutorunGeneralPolicy(world.getGeneralById(1)!, null, null, null);
+        const captured = snapshotEffectiveAiPolicy(generalPolicy, policy);
+        expect(captured.nation.values.reqNationGold).toBe(4_321);
+        expect(captured.nation.values.reqNpcDevelGold).toBe(540);
+        expect(captured.nation.priority).toEqual(['천도']);
+        policy.supportForce.push(123);
+        policy.flags['천도'] = false;
+        expect(captured.nation.supportForce).toEqual([]);
+        expect(captured.nation.flags['천도']).toBe(true);
         expect(policy.reqNationGold).toBe(4_321);
         expect(policy.priority).toEqual(['천도']);
         expect(policy.reqNpcDevelGold).toBe(540);

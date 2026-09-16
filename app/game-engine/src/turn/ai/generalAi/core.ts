@@ -1,3 +1,4 @@
+import { snapshotEffectiveAiPolicy } from './effectivePolicy.js';
 import { observeAiRng, type AiDecisionTraceObserver, type AiTraceStep } from './trace.js';
 import type {
     City,
@@ -216,7 +217,8 @@ export class GeneralAI {
     ): AiCommandCandidate | null {
         if (!this.onDecisionTrace) return choose();
         this.tracePhase = phase;
-        this.trace({ kind: 'DECISION_START', reservedAction: reserved.action });
+        this.trace({ kind: 'DECISION_START', reservedAction: reserved.action,
+            effectivePolicy: snapshotEffectiveAiPolicy(this.generalPolicy, this.nationPolicy) });
         try {
             const result = choose();
             this.trace({ kind: 'DECISION_END', action: result?.action ?? null, reason: result?.reason ?? null });

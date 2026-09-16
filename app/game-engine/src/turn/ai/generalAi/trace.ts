@@ -1,3 +1,4 @@
+import type { EffectiveAiPolicy } from './effectivePolicy.js';
 import type { RandUtil } from '@sammo-ts/common';
 
 /** 원문 meta/seed/임의 객체를 받지 않는 관측 계약. 내부 후보 조건은 별도 계측으로 확장한다. */
@@ -22,7 +23,7 @@ export type AiExecutionAttempt = {
 };
 export type AiTraceStep =
     | AiExecutionAttempt
-    | { kind: 'DECISION_START'; reservedAction: string }
+    | { kind: 'DECISION_START'; reservedAction: string; effectivePolicy?: EffectiveAiPolicy }
     | { kind: 'DECISION_END'; action: string | null; reason: string | null }
     | { kind: 'DECISION_ERROR' }
     | { kind: 'PROCEDURE_START'; procedure: string }

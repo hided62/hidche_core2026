@@ -52,6 +52,21 @@ COST gate는 여전히 남는다.
 R7 E의 연결 기반 일부이며 전체 실패·시도별 이력, 실제 mutation 횟수와 replay가 아니다.
 F의 알려진 버그 조사 preset은 아직 구현하지 않았다. schema migration58은 그대로다.
 
+### 당시 합성 정책 관측
+
+DECISION_START.effectivePolicy(schemaVersion1)는 생성자에서 이미 합성된
+General/Nation 정책 객체의 명시 필드를 복사한다. 서버→국가 설정, 사용자 자동턴 옵션,
+NPC 상태와 기술력/병종/시나리오 기반 파생 기본값이 반영된 실제 priority/flags,
+20개 국가 수치와 전투/지원/내정 부대 편성을 보존한다. 원문 meta 전체를 복사하지 않는다.
+can()/조건/RNG를 재평가하지 않고 후보당 SQL도 추가하지 않는다. 결정당 상세에1회씩
+기록하며 목록 summary에는 넣지 않는다. 기존 chunk/batch/transaction과 hash 계약을 따른다.
+
+API는 허용 필드로 투영하고 UI는 기존 정책 한글 label을 재사용한다. details를 펼쳐도
+추가 query가 없으며 이전 DECISION_START에 field가 없으면 미수집으로 표시한다.
+현재 정책으로 과거를 채우지 않는다. runtime의 동적 지급 상한·개별 후보 수치·별도
+자동화 권한의 판정 입력은 여전히 후속 관측이다. 초기 비용 probe의 반복 RNG fixture는
+이 신규 정책 payload를 포함하지 않으므로 그 bytes를 완성된 결정의 평균으로 쓰지 않는다.
+
 ### NPC 결정 조회 API와 화면
 
 `playAudit.decisionHistory/decisionDetail`은 같은 프로필 감사 권한·현재 기수 경계를 따른다.
@@ -65,7 +80,7 @@ migration58은 기존 장수 인덱스를 `(server, general, year, month, tick, 
 월 조건 밖의 기수 기록을 훑지 않으며 인덱스 개수는 늘리지 않는다. UI는 기존 장수 상세와
 버튼·표 스타일을 재사용한다. 열기/상세 선택/더 보기는 명시적으로 수행하고 polling하지
 않는다. 결정 URL 복원과 상세 재시도는 상위 장수 목록을 다시 읽지 않는다.
-절차 coverage와 미수집 코드 버전을 표시하며 전체 후보 조건·유효 정책 연결은 남는다.
+절차 coverage와 미수집 코드 버전을 표시하며 전체 후보 조건 관측은 남는다.
 당시 정책 참조는 공용 `AuditPolicyVersion`으로 연결했다. 기존 정책 이력의 버전 표시·
 필드 한국어 이름·실패 재시도를 재사용하며 클릭 시 버전1건만 읽는다. 결정의 참조 ID에
 포함되지 않은 URL policy는 해당 결정의 정책으로 읽거나 표시하지 않는다.
@@ -97,7 +112,7 @@ reservedTurnHandler가 기수 identity가 있는 새 AI 실행을 phase별로 �
 clock revision·phase로 결정한다. 정책 head 참조는 시작 시 확보하며 없는 값은 채우지 않는다.
 Gateway의 프로필 buildCommitSha→daemon 환경 TURN_BUILD_COMMIT_SHA→CLI→runtime→handler로
 실행 코드 버전을 전달한다. 전체40/64자리 SHA만 인정하며 누락/잘못된 값은 null이다.
-handler 생성 시 한 번 정규화하므로 턴마다 Git/DB를 읽지 않는다. 유효 정책 합성 상세와
+handler 생성 시 한 번 정규화하므로 턴마다 Git/DB를 읽지 않는다. 실행 직전 동적 정책 파생값과
 내부 후보 조건은 남아 있어 coverage는 `PROCEDURES`다. 수동 턴 중 AI를 사용하지 않은 경우 결정 행을 만들지 않는다.
 
 GeneralTurnResult→world pending→capture/restore/peek/ack→기존 fenced DB flush를 연결했다.
@@ -126,7 +141,7 @@ GeneralAI와 예약 실행 handler에 선택적 `onDecisionTrace` 관측 경계�
 초기 관측 단계에서는 default daemon을 켜지 않았다. 이후 아래 저장 경계에서 현재 기수의 새 실행을 수집하도록 연결했다.
 이는 R5의 관측 기반일 뿐 완료가 아니다. 불변 결정 ID·기존 정책 참조·실행 결과·
 pending/rollback·migration·정리·목록/상세 API와 GUI는 위 절에서 연결했다.
-후보/조건별 실제 관측값, 합성 유효 정책의 실제 관측은 남는다. 코드 버전 전달은 위 저장 절에 연결했다.
+후보/조건별 실제 관측값과 실행 직전 동적 파생값은 남는다. 코드 버전 전달은 위 저장 절에 연결했다.
 
 ### 전달 전 DB tick 정밀도 보완
 

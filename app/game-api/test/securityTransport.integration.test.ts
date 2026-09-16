@@ -2317,7 +2317,9 @@ integration('game API security over HTTP transport', () => {
                     {
                         decisionId: decisionIds[0]!,
                         ordinal: 0,
-                        steps: Array.from({ length: 128 }, (_, sequence) => ({ ...step, sequence })),
+                        steps: Array.from({ length: 128 }, (_, sequence) => sequence === 127
+                            ? { ...step, sequence, kind: 'DECISION_START', reservedAction: '휴식', effectivePolicy: {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5],"secret":"decision-secret"},"secret":"decision-secret"} }
+                            : ({ ...step, sequence })),
                     },
                     {
                         decisionId: decisionIds[0]!,
@@ -2398,6 +2400,8 @@ integration('game API security over HTTP transport', () => {
                 },
             });
             expect(JSON.stringify(decisionPage.body)).not.toContain('decision-secret');
+            expect(JSON.stringify(decisionPage.body)).toContain('effectivePolicy');
+            expect(JSON.stringify(decisionPage.body)).toContain('4321');
             expect((await get('decisionDetail', admin, { ...decisionDetailInput, cursor: 0 })).body).toMatchObject({
                 result: {
                     data: {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { fieldLabels } from './policyLabels';
 import { trpc } from '../../utils/trpc';
 import AuditRequestState from './AuditRequestState.vue';
 const props = withDefaults(defineProps<{ id: string; allowPrevious?: boolean }>(), { allowPrevious: true });
@@ -11,35 +12,7 @@ const detailLoading = ref(false);
 let detailGeneration = 0;
 const select = (id: string | null) => emit('select', id);
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : '정책 버전을 조회하지 못했습니다.');
-const fieldLabels: Record<string, string> = {
-    reqNationGold: '국가 권장 금',
-    reqNationRice: '국가 권장 쌀',
-    reqHumanWarUrgentGold: '유저전투장 긴급포상 금',
-    reqHumanWarUrgentRice: '유저전투장 긴급포상 쌀',
-    reqHumanWarRecommandGold: '유저전투장 권장 금',
-    reqHumanWarRecommandRice: '유저전투장 권장 쌀',
-    reqHumanDevelGold: '유저내정장 권장 금',
-    reqHumanDevelRice: '유저내정장 권장 쌀',
-    reqNPCWarGold: 'NPC전투장 권장 금',
-    reqNPCWarRice: 'NPC전투장 권장 쌀',
-    reqNPCDevelGold: 'NPC내정장 권장 금',
-    reqNPCDevelRice: 'NPC내정장 권장 쌀',
-    minimumResourceActionAmount: '포상/몰수/헌납/삼/팜 최소 단위',
-    maximumResourceActionAmount: '포상/몰수/헌납/삼/팜 최대 단위',
-    minWarCrew: '최소 전투 가능 병력 수',
-    minNPCRecruitCityPopulation: 'NPC 최소 징병 가능 인구 수',
-    safeRecruitCityPopulationRatio: '제자리 징병 허용 인구율 (비율)',
-    minNPCWarLeadership: 'NPC 전투 참여 통솔 기준',
-    properWarTrainAtmos: '훈련/사기진작 목표치',
-    cureThreshold: '요양 기준',
-    CombatForce: '전투 부대 편성',
-    SupportForce: '지원 부대 편성',
-    DevelopForce: '내정 부대 편성',
-    priority: '행동 우선순위',
-    war: '전쟁 금지 설정',
-    scout: '임관 권유 설정',
-    secretlimit: '기밀 공개 기준 (년)',
-};
+
 const labels = { BASELINE: '최초 관측', CHANGE: '실제 변경', OBSERVED_GAP: '관측 누락 이후 기준' };
 const loadDetail = async () => {
     const request = ++detailGeneration;
