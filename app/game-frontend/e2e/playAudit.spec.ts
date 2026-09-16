@@ -901,7 +901,7 @@ test('policy history reads summaries and selected versions only, preserving deep
         cursor: 2,
         nationId: 2,
     });
-    await page.getByLabel('정책 영역').selectOption('NPC_GENERAL_PRIORITY');
+    await page.getByRole('link', { name: '장수 행동 우선순위', exact: true }).click();
     const before = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
     await page.getByRole('button', { name: '조회', exact: true }).click();
     await expect
@@ -951,9 +951,10 @@ test('policy filter drafts do not read until applied, including default dates', 
     const requests = await install(page);
     await page.goto(gamePath('/play-audit?tab=policies&nation=2'));
     await expect(page.getByRole('button', { name: '버전 2', exact: true })).toBeVisible();
+    await page.getByRole('link', { name: '국방 설정', exact: true }).click();
+    await expect.poll(() => requests.filter(({ operation }) => operation === 'playAudit.policyHistory').at(-1)?.input.area).toBe('DEFENCE');
     const count = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
     await page.getByLabel('시작 월', { exact: true }).fill('3');
-    await page.getByLabel('정책 영역').selectOption('DEFENCE');
     await page.getByRole('button', { name: '조회', exact: true }).focus();
     expect(requests.filter(({ operation }) => operation === 'playAudit.policyHistory')).toHaveLength(count);
     await page.getByRole('button', { name: '조회', exact: true }).click();
@@ -975,7 +976,7 @@ test('initial observation is separate from month-end and final snapshots', async
     expect(requests.find(({ operation }) => operation === 'playAudit.nationSnapshot')?.input).toMatchObject({
         at: { kind: 'INITIAL' },
     });
-    await page.getByLabel('조회 대상').selectOption('generals');
+    await page.getByRole('link', { name: '장수', exact: true }).click();
     await page.getByRole('button', { name: '조회', exact: true }).click();
     await page.getByRole('button', { name: '감사장수 (#1)', exact: true }).click();
     await expect(page.getByText('190년 6월 수집 시작 기준', { exact: true })).toBeVisible();
@@ -1320,3 +1321,39 @@ test('diplomacy request state does not reload documents or lists', async ({ page
     expect(requests.at(-1)?.input.kind).toBe('DIPLOMACY');
     await capture(page, 'desktop-diplomacy-request');
 });
+
+for (const width of [1280, 390]) {
+    test(`two-level audit navigation preserves pages and bounds at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const requests = await install(page);
+        await page.goto(gamePath('/play-audit?tab=generals'));
+        const menu = page.getByRole('navigation', { name: '플레이 감사 메뉴' });
+        await menu.getByRole('link', { name: 'NPC', exact: true }).click();
+        await expect(page).toHaveURL(/population=npc/);
+        await expect(menu.getByRole('link', { name: 'NPC', exact: true })).toHaveAttribute('aria-current', 'page');
+        await page.reload();
+        await expect(menu.getByRole('link', { name: 'NPC', exact: true })).toHaveAttribute('aria-current', 'page');
+        await menu.getByRole('link', { name: '정책', exact: true }).click();
+        await menu.getByRole('link', { name: '국방 설정', exact: true }).click();
+        await expect(page).toHaveURL(/policyArea=DEFENCE/);
+        await page.goBack();
+        await expect(menu.getByRole('link', { name: 'NPC 국가 정책', exact: true })).toHaveAttribute('aria-current', 'page');
+        await page.goBack();
+        await expect(menu.getByRole('link', { name: 'NPC', exact: true })).toHaveAttribute('aria-current', 'page');
+        await menu.getByRole('link', { name: '도시', exact: true }).hover();
+        await menu.getByRole('link', { name: '도시', exact: true }).focus();
+        await expect(menu.getByRole('link', { name: '도시', exact: true })).toBeFocused();
+        const bounds = await menu.evaluate((node) => ({
+            right: node.getBoundingClientRect().right,
+            width: document.documentElement.scrollWidth,
+            viewport: innerWidth,
+        }));
+        expect(bounds.right).toBeLessThanOrEqual(width);
+        expect(bounds.width).toBeLessThanOrEqual(width);
+        expect(requests.some((request) => request.operation === 'playAudit.cities')).toBe(false);
+        await mkdir('/tmp/play-audit-menu', { recursive: true });
+        await writeFile(`/tmp/play-audit-menu/${width}.json`, JSON.stringify(bounds));
+        await writeFile(`/tmp/play-audit-menu/${width}.html`, await page.content());
+        await page.screenshot({ path: `/tmp/play-audit-menu/${width}.png`, fullPage: true });
+    });
+}

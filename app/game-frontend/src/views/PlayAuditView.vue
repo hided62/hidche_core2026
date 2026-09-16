@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import AuditNationSeries from '../components/playAudit/AuditNationSeries.vue';
 import AuditNationSnapshot from '../components/playAudit/AuditNationSnapshot.vue';
@@ -133,6 +133,71 @@ const result = computed(() =>
             ? { ...nationSnapshot.value, nextCursor: null }
             : series.value
 );
+// 메뉴 상태도 기존 query 계약을 사용해 저장된 링크와 뒤로가기를 보존한다.
+const primaryMenus = [
+    { key: 'nations', label: '국가' },
+    { key: 'generals', label: '장수' },
+    { key: 'cities', label: '도시' },
+    { key: 'diplomacy', label: '외교' },
+    { key: 'policies', label: '정책' },
+];
+const secondaryMenus = computed(() => {
+    if (tab.value === 'policies')
+        return [
+            { key: 'NPC_VALUES', label: 'NPC 국가 정책' },
+            { key: 'NPC_NATION_PRIORITY', label: '국가 행동 우선순위' },
+            { key: 'NPC_GENERAL_PRIORITY', label: '장수 행동 우선순위' },
+            { key: 'DEFENCE', label: '국방 설정' },
+        ];
+    if (tab.value === 'generals')
+        return [
+            { key: '', label: '전체 장수' },
+            { key: 'human', label: '유저' },
+            { key: 'npc', label: 'NPC' },
+            { key: 'troopNpc', label: '부대장 NPC' },
+        ];
+    if (tab.value === 'diplomacy') return [{ key: 'history', label: '문서·관계 이력' }];
+    if (tab.value === 'nations')
+        return [
+            { key: 'series', label: '자원·숙련도 추이' },
+            { key: 'initial', label: '수집 시작 표본' },
+            { key: 'final', label: '최종 표본' },
+        ];
+    return [
+        { key: 'current', label: '현재 도시' },
+        { key: 'month', label: '월말 도시' },
+        { key: 'initial', label: '수집 시작 표본' },
+        { key: 'final', label: '최종 표본' },
+    ];
+});
+const activeSecondary = computed(() => {
+    if (tab.value === 'policies') return policyArea.value;
+    if (tab.value === 'generals') return population.value;
+    if (tab.value === 'diplomacy') return 'history';
+    if (tab.value === 'nations') return ['initial', 'final'].includes(moment.value) ? moment.value : 'series';
+    return moment.value;
+});
+const menuTarget = (target: string, secondary?: string) => {
+    const query: LocationQueryRaw = { ...route.query, tab: target };
+    for (const key of [
+        'general',
+        'cityRecord',
+        'decision',
+        'policy',
+        'event',
+        'city',
+        'name',
+        'population',
+        'policyArea',
+    ])
+        delete query[key];
+    if (target !== 'diplomacy') delete query.otherNation;
+    if (target === 'generals' && secondary) query.population = secondary;
+    if (target === 'policies') query.policyArea = secondary ?? 'NPC_VALUES';
+    if (target === 'cities') query.at = secondary ?? 'current';
+    if (target === 'nations') query.at = secondary === 'initial' || secondary === 'final' ? secondary : 'current';
+    return { query };
+};
 const readQuery = () => {
     tab.value = ['nations', 'generals', 'cities', 'policies', 'diplomacy'].includes(String(route.query.tab))
         ? String(route.query.tab)
@@ -351,16 +416,31 @@ onMounted(async () => {
                     상태·정책 수집 시작: {{ coverage.collectionStart.year }}년 {{ coverage.collectionStart.month }}월 ·
                     {{ coverage.collectionStart.observedAt }}
                 </p>
+                <nav class="audit-navigation" aria-label="플레이 감사 메뉴">
+                    <div class="menu-row" aria-label="감사 분류">
+                        <RouterLink
+                            v-for="item in primaryMenus"
+                            :key="item.key"
+                            class="legacy-button"
+                            :class="{ selected: tab === item.key }"
+                            :aria-current="tab === item.key ? 'true' : undefined"
+                            :to="menuTarget(item.key)"
+                            >{{ item.label }}</RouterLink
+                        >
+                    </div>
+                    <div class="menu-row secondary-menu" aria-label="세부 조회">
+                        <RouterLink
+                            v-for="item in secondaryMenus"
+                            :key="item.key"
+                            class="legacy-button"
+                            :class="{ selected: activeSecondary === item.key }"
+                            :aria-current="activeSecondary === item.key ? 'page' : undefined"
+                            :to="menuTarget(tab, item.key)"
+                            >{{ item.label }}</RouterLink
+                        >
+                    </div>
+                </nav>
                 <form class="filters" @submit.prevent="apply">
-                    <label
-                        >조회 대상<select class="legacy-sort-select" v-model="tab">
-                            <option value="nations">국가 시계열</option>
-                            <option value="generals">전체 장수</option>
-                            <option value="cities">도시 상태</option>
-                            <option value="policies">정책 변경 이력</option>
-                            <option value="diplomacy">외교 이력</option>
-                        </select></label
-                    >
                     <label
                         >국가<select class="legacy-sort-select" v-model="nationId">
                             <option value="">
@@ -474,14 +554,6 @@ onMounted(async () => {
                             </option>
                         </select></label
                     >
-                    <label v-if="tab === 'policies'"
-                        >정책 영역<select class="legacy-sort-select" v-model="policyArea">
-                            <option value="NPC_VALUES">NPC 국가 정책</option>
-                            <option value="NPC_NATION_PRIORITY">국가 행동 우선순위</option>
-                            <option value="NPC_GENERAL_PRIORITY">장수 행동 우선순위</option>
-                            <option value="DEFENCE">국방 설정</option>
-                        </select></label
-                    >
                     <template v-if="tab === 'generals'">
                         <label
                             >장수 이름<input v-model="generalName" maxlength="64" placeholder="이름 부분 검색"
@@ -497,14 +569,6 @@ onMounted(async () => {
                             </select></label
                         >
                         <label>도시 번호<input v-model="cityId" type="number" min="0" placeholder="모든 도시" /></label>
-                        <label
-                            >장수 분류<select class="legacy-sort-select" v-model="population">
-                                <option value="">전체</option>
-                                <option value="human">유저</option>
-                                <option value="npc">NPC</option>
-                                <option value="troopNpc">부대장 NPC</option>
-                            </select></label
-                        >
                     </template>
                     <button class="legacy-button" type="submit" :disabled="loading">조회</button>
                 </form>
@@ -707,6 +771,33 @@ onMounted(async () => {
 }
 .audit-page > :deep(.panel-card) {
     min-width: 0;
+}
+.audit-navigation {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+}
+.menu-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.menu-row a {
+    padding: 6px 12px;
+    text-decoration: none;
+}
+.menu-row .selected {
+    background: #254e3c;
+    border-color: #b6d6c2;
+    color: #fff;
+}
+.menu-row a:focus-visible {
+    outline: 2px solid #d1e6a1;
+    outline-offset: 2px;
+}
+.secondary-menu {
+    padding-top: 8px;
+    border-top: 1px solid #536b60;
 }
 .filters {
     display: flex;
