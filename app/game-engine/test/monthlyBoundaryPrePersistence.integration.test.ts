@@ -1,3 +1,4 @@
+import { createPlayAuditHandler } from '../src/playAudit/collection.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LogCategory, LogScope, type TurnCommandEnv } from '@sammo-ts/logic';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
@@ -35,6 +36,7 @@ integration('monthly pre-update persistence', () => {
         await db.nation.deleteMany({ where: { id: nationId } });
         await db.worldState.deleteMany({ where: { scenarioCode: 'monthly-boundary-pre-persistence' } });
         await db.yearbookHistory.deleteMany({ where: { profileName: { in: [yearbookProfile, yearbookServerId] } } });
+        await db.playAuditMonth.deleteMany({ where: { serverId: yearbookServerId } });
         await db.logEntry.deleteMany({ where: { text: { in: archivedLogTexts } } });
     });
 
@@ -46,6 +48,7 @@ integration('monthly pre-update persistence', () => {
         await db.nation.deleteMany({ where: { id: nationId } });
         await db.worldState.deleteMany({ where: { scenarioCode: 'monthly-boundary-pre-persistence' } });
         await db.yearbookHistory.deleteMany({ where: { profileName: { in: [yearbookProfile, yearbookServerId] } } });
+        await db.playAuditMonth.deleteMany({ where: { serverId: yearbookServerId } });
         await db.logEntry.deleteMany({ where: { text: { in: archivedLogTexts } } });
         await closeDb?.();
     });
@@ -184,7 +187,12 @@ integration('monthly pre-update persistence', () => {
         });
         world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-            calendarHandler: composeCalendarHandlers(yearbook.handler, boundary, nations),
+            calendarHandler: composeCalendarHandlers(
+                yearbook.handler,
+                createPlayAuditHandler(() => world),
+                boundary,
+                nations
+            ),
         });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world, { profileName: yearbookProfile });
         try {
@@ -227,6 +235,17 @@ integration('monthly pre-update persistence', () => {
                 currentMonth: 1,
                 meta: expect.objectContaining({ develcost: 40 }),
             });
+            const audit = await db.playAuditMonth.findFirstOrThrow({
+                where: { serverId: yearbookServerId },
+                include: { nations: true, generals: true, cities: true },
+            });
+            expect(audit).toMatchObject({ year: 200, month: 12, kind: 'MONTH_END', settlementsComplete: false });
+            expect(audit.nations.find((row) => row.nationId === nationId)?.data).toMatchObject({ appliedRate: 10 });
+            expect(audit.generals).toHaveLength(generalIds.length);
+            expect(audit.cities).toHaveLength(cityIds.length);
+            expect(world.peekDirtyState().pendingAuditMonths).toEqual([]);
+            const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+            expect(reloaded!.state.meta.playAuditFlows).toMatchObject({ year: 201, month: 1, complete: true });
             const cityRows = await db.city.findMany({
                 where: { id: { in: cityIds } },
                 orderBy: { id: 'asc' },

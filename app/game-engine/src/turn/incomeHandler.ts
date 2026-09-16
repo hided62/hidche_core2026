@@ -1,3 +1,4 @@
+import { recordAuditSettlement } from '../playAudit/collection.js';
 import { asNumber, asRecord } from '@sammo-ts/common';
 import {
     ActionLogger,
@@ -175,8 +176,10 @@ const processIncomeForNation = (
     const incomeText = Math.round(incomeValue).toLocaleString('en-US');
     const incomeLog =
         type === 'gold' ? `이번 수입은 금 <C>${incomeText}</>입니다.` : `이번 수입은 쌀 <C>${incomeText}</>입니다.`;
+    let paid = 0;
     for (const general of nationGenerals) {
         const pay = Math.round(getBill(general.dedication) * ratio);
+        paid += pay;
         if (
             process.env.SEED_PARITY_MONTHLY_RESOURCE_TRACE === '1' &&
             (process.env.AI_TRACE_GENERAL_IDS ?? '').split(',').includes(String(general.id))
@@ -203,6 +206,7 @@ const processIncomeForNation = (
         logger.pushGeneralActionLog(payLog, LogFormat.PLAIN);
         pushLogs(world, logger.flush());
     }
+    recordAuditSettlement(world, { nationId: nation.id, resource: type, income: incomeValue, paid });
 };
 
 export interface IncomeHandler extends TurnCalendarHandler {

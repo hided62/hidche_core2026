@@ -1080,3 +1080,60 @@ model VoteComment {
   @@index([voteId, createdAt])
   @@map("vote_comment")
 }
+
+// 현재 기수 플레이 감사. gameplay 엔티티 삭제 뒤에도 당시 ID/이름을 유지한다.
+model PlayAuditMonth {
+  id                  String             @id
+  serverId            String             @map("server_id")
+  year                Int
+  month               Int
+  kind                String
+  tick                Int?
+  schemaVersion       Int                @default(1) @map("schema_version")
+  settlementsComplete Boolean            @map("settlements_complete")
+  hash                String
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  nations             PlayAuditNation[]
+  cities              PlayAuditCity[]
+  generals            PlayAuditGeneral[]
+
+  @@unique([serverId, year, month, kind])
+  @@map("play_audit_month")
+}
+
+model PlayAuditNation {
+  sampleId String         @map("sample_id")
+  nationId Int            @map("nation_id")
+  data     Json
+  sample   PlayAuditMonth @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@id([sampleId, nationId])
+  @@map("play_audit_nation")
+}
+
+model PlayAuditCity {
+  sampleId String         @map("sample_id")
+  cityId   Int            @map("city_id")
+  nationId Int            @map("nation_id")
+  data     Json
+  sample   PlayAuditMonth @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@id([sampleId, cityId])
+  @@index([sampleId, nationId, cityId])
+  @@map("play_audit_city")
+}
+
+model PlayAuditGeneral {
+  sampleId  String         @map("sample_id")
+  generalId Int            @map("general_id")
+  nationId  Int            @map("nation_id")
+  cityId    Int            @map("city_id")
+  npcState  Int            @map("npc_state")
+  data      Json
+  sample    PlayAuditMonth @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@id([sampleId, generalId])
+  @@index([sampleId, nationId, generalId])
+  @@index([sampleId, cityId, generalId])
+  @@map("play_audit_general")
+}

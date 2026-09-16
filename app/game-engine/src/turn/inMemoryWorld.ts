@@ -1,3 +1,4 @@
+import type { PendingAuditMonth } from '../playAudit/persistence.js';
 import type {
     City,
     LogEntryDraft,
@@ -199,6 +200,7 @@ export interface TurnWorldChanges {
     pendingNationBettingOpens: PendingNationBettingOpen[];
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
+    pendingAuditMonths: PendingAuditMonth[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
 }
 
@@ -239,6 +241,7 @@ export interface InMemoryTurnWorldStateSnapshot {
     pendingNationBettingOpens: PendingNationBettingOpen[];
     pendingNationBettingFinishes: PendingNationBettingFinish[];
     pendingYearbookSnapshots: PendingYearbookSnapshot[];
+    pendingAuditMonths: PendingAuditMonth[];
     pendingUnificationFinalizations: PendingUnificationFinalization[];
     pendingRealtimeBacklogShiftTicks: number;
 }
@@ -543,6 +546,7 @@ export class InMemoryTurnWorld {
     private readonly pendingNationBettingOpens: PendingNationBettingOpen[] = [];
     private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
     private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
+    private readonly pendingAuditMonths: PendingAuditMonth[] = [];
     private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private pendingRealtimeBacklogShiftTicks = 0;
     private readonly scenarioConfig: ScenarioConfig;
@@ -1091,6 +1095,7 @@ export class InMemoryTurnWorld {
             pendingNationBettingOpens: this.pendingNationBettingOpens,
             pendingNationBettingFinishes: this.pendingNationBettingFinishes,
             pendingYearbookSnapshots: this.pendingYearbookSnapshots,
+            pendingAuditMonths: this.pendingAuditMonths,
             pendingUnificationFinalizations: this.pendingUnificationFinalizations,
             pendingRealtimeBacklogShiftTicks: this.pendingRealtimeBacklogShiftTicks,
         } satisfies InMemoryTurnWorldStateSnapshot);
@@ -1137,6 +1142,7 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.pendingNationBettingOpens, restored.pendingNationBettingOpens);
         this.replaceArray(this.pendingNationBettingFinishes, restored.pendingNationBettingFinishes);
         this.replaceArray(this.pendingYearbookSnapshots, restored.pendingYearbookSnapshots);
+        this.replaceArray(this.pendingAuditMonths, restored.pendingAuditMonths);
         this.replaceArray(this.pendingUnificationFinalizations, restored.pendingUnificationFinalizations);
         this.pendingRealtimeBacklogShiftTicks = restored.pendingRealtimeBacklogShiftTicks ?? 0;
     }
@@ -1350,6 +1356,10 @@ export class InMemoryTurnWorld {
             winnerNationIds: [...finish.winnerNationIds],
             turnTime: new Date(finish.turnTime.getTime()),
         });
+    }
+
+    queueAuditMonth(snapshot: PendingAuditMonth): void {
+        this.pendingAuditMonths.push(structuredClone(snapshot));
     }
 
     queueYearbookSnapshot(snapshot: PendingYearbookSnapshot): void {
@@ -2194,6 +2204,7 @@ export class InMemoryTurnWorld {
             turnTime: new Date(entry.turnTime.getTime()),
         }));
         const pendingYearbookSnapshots = structuredClone(this.pendingYearbookSnapshots);
+        const pendingAuditMonths = structuredClone(this.pendingAuditMonths);
         const pendingUnificationFinalizations = structuredClone(this.pendingUnificationFinalizations);
         const accessScoreResetGeneralIds = Array.from(this.accessScoreResetGeneralIds).sort(
             (left, right) => left - right
@@ -2226,6 +2237,7 @@ export class InMemoryTurnWorld {
             pendingNationBettingOpens,
             pendingNationBettingFinishes,
             pendingYearbookSnapshots,
+            pendingAuditMonths,
             pendingUnificationFinalizations,
         };
     }
@@ -2264,6 +2276,7 @@ export class InMemoryTurnWorld {
         this.pendingNationBettingOpens.splice(0, changes.pendingNationBettingOpens.length);
         this.pendingNationBettingFinishes.splice(0, changes.pendingNationBettingFinishes.length);
         this.pendingYearbookSnapshots.splice(0, changes.pendingYearbookSnapshots.length);
+        this.pendingAuditMonths.splice(0, changes.pendingAuditMonths.length);
         this.pendingUnificationFinalizations.splice(0, changes.pendingUnificationFinalizations.length);
     }
 

@@ -1,3 +1,4 @@
+import { createPlayAuditHandler } from '../playAudit/collection.js';
 import { randomUUID } from 'node:crypto';
 import { createRuntimePauseGate } from './runtimePauseGate.js';
 
@@ -480,6 +481,7 @@ const createMonthlyCalendarRuntime = async (options: {
         options.monthlyEventHandler,
         options.hasEventAction('ProcessIncome') ? null : options.incomeHandler,
         createYearbookHandler({ profileName: options.profileName, getWorld: options.getWorld }).handler,
+        createPlayAuditHandler(options.getWorld),
         monthlyBoundaryPreHandler,
         createNationTurnMonthlyHandler({ getWorld: options.getWorld }),
         monthlyNationStatsHandler,

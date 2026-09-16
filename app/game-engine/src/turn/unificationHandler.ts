@@ -1,3 +1,4 @@
+import { queueAuditMonth } from '../playAudit/collection.js';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { createHash } from 'node:crypto';
 
@@ -177,6 +178,7 @@ export const createUnificationHandler = (options: {
             }
 
             queueYearbookSnapshot(world, options.profileName, context.currentYear, context.currentMonth);
+            queueAuditMonth(world, 'FINAL');
             world.queueUnificationFinalization({
                 generationKey: `unification:${serverId}`,
                 serverId,

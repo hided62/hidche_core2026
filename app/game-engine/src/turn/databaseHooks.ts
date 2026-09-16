@@ -1,3 +1,4 @@
+import { persistAuditMonth } from '../playAudit/persistence.js';
 import { persistGeneralAccessScores, persistGeneralUpdates } from './generalBatchPersistence.js';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import {
@@ -1138,6 +1139,7 @@ export const createDatabaseTurnHooks = async (
             pendingNationBettingOpens,
             pendingNationBettingFinishes,
             pendingYearbookSnapshots,
+            pendingAuditMonths,
             pendingUnificationFinalizations,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
@@ -1866,6 +1868,9 @@ export const createDatabaseTurnHooks = async (
                 await prisma.logEntry.createMany({
                     data: pendingLogRows,
                 });
+            }
+            for (const snapshot of pendingAuditMonths) {
+                await persistAuditMonth(prisma, snapshot);
             }
             for (const snapshot of pendingYearbookSnapshots) {
                 await persistYearbookSnapshot(prisma, snapshot);
