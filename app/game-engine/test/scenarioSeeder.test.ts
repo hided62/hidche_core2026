@@ -7,6 +7,9 @@ import {
     type RandomAppointmentResolveContext,
 } from '@sammo-ts/logic/actions/turn/general/che_랜덤임관.js';
 import type { ActionContextWorldRef } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
+import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import { loadTurnWorldFromDatabase } from '../src/turn/worldLoader.js';
 import { resolveDatabaseUrl } from '../src/scenario/databaseUrl.js';
@@ -103,6 +106,129 @@ const canRun = await canConnectToDatabase(databaseUrl);
 const describeDb = describe.runIf(canRun);
 
 describeDb('scenario database seed', () => {
+    test.each([2020, 1031])(
+        'executes reserved neutral-city sortie only after scenario %i opening boundary',
+        async (scenarioId) => {
+            await seedScenarioToDatabase({
+                scenarioId,
+                databaseUrl,
+                resetTables: true,
+                now: new Date('2030-01-01T00:00:00Z'),
+                installOptions: { sync: false, turnTermMinutes: 1 },
+            });
+            const connector = createGamePostgresConnector({ url: databaseUrl });
+            try {
+                await connector.connect();
+                for (const allowed of [false, true]) {
+                    // 매번 DB에서 재로드하여 이전 전투 결과나 생성 당시 객체를 재사용하지 않는다.
+                    const loaded = await loadTurnWorldFromDatabase({ databaseUrl });
+                    const snapshot = loaded.snapshot;
+                    const startYear = snapshot.scenarioMeta!.startYear!;
+                    const source = snapshot.cities.find(
+                        (city) =>
+                            city.nationId > 0 &&
+                            snapshot.map.cities.find((entry) => entry.id === city.id)!.connections.length > 0
+                    )!;
+                    const destId = snapshot.map.cities.find((entry) => entry.id === source.id)!.connections[0]!;
+                    const actor = {
+                        ...snapshot.generals[0]!,
+                        nationId: source.nationId,
+                        cityId: source.id,
+                        npcState: 0,
+                        officerLevel: 1,
+                        crew: 10000,
+                        rice: 100000,
+                        train: 100,
+                        atmos: 100,
+                        crewTypeId: snapshot.unitSet!.defaultCrewTypeId!,
+                        stats: { leadership: 100, strength: 100, intelligence: 100 },
+                        meta: { ...snapshot.generals[0]!.meta, killturn: 1000 },
+                    };
+                    snapshot.generals = [actor];
+                    snapshot.cities = snapshot.cities.map((city) =>
+                        city.id === destId ? { ...city, nationId: 0, defence: 0, wall: 0, population: 100 } : city
+                    );
+                    loaded.state.currentYear = startYear + (allowed ? 3 : 2);
+                    loaded.state.currentMonth = allowed ? 1 : 12;
+                    const store = new InMemoryReservedTurnStore(connector.prisma, {
+                        maxGeneralTurns: 30,
+                        maxNationTurns: 12,
+                    });
+                    await store.loadAll();
+                    store.setGeneralTurn(actor.id, 0, { action: 'che_출병', args: { destCityId: destId } });
+                    let world: InMemoryTurnWorld | null = null;
+                    const handler = await createReservedTurnHandler({
+                        reservedTurns: store,
+                        scenarioConfig: snapshot.scenarioConfig,
+                        scenarioMeta: snapshot.scenarioMeta,
+                        map: snapshot.map,
+                        unitSet: snapshot.unitSet,
+                        getWorld: () => world,
+                    });
+                    world = new InMemoryTurnWorld(loaded.state, snapshot, {
+                        schedule: { entries: [{ startMinute: 0, tickMinutes: 1 }] },
+                        generalTurnHandler: handler,
+                    });
+                    world.executeGeneralTurn(actor);
+                    const logs = world
+                        .peekDirtyState()
+                        .logs.map((entry) => entry.text)
+                        .join('\n');
+                    if (allowed) {
+                        expect(logs).not.toContain('초반 제한');
+                        expect(world.getCityById(destId)?.nationId).toBe(source.nationId);
+                    } else {
+                        expect(logs).toContain('초반 제한');
+                        expect(world.getCityById(destId)?.nationId).toBe(0);
+                    }
+                }
+            } finally {
+                await connector.disconnect();
+            }
+        }
+    );
+
+    test.each([2020, 1031, 915])(
+        'persists and reloads scenario %i calendar independently of the raw appearance year',
+        async (scenarioId) => {
+            const scenario = await loadScenarioDefinitionById(scenarioId);
+            const baseYear = scenario.startYear ?? 180;
+            for (const sync of [false, true]) {
+                await seedScenarioToDatabase({
+                    scenarioId,
+                    databaseUrl,
+                    resetTables: true,
+                    now: new Date('2030-01-01T00:03:00Z'),
+                    installOptions: { sync, turnTermMinutes: 1, openAt: new Date('2030-01-01T00:03:00Z') },
+                });
+                const connector = createGamePostgresConnector({ url: databaseUrl });
+                try {
+                    await connector.connect();
+                    const persisted = await connector.prisma.worldState.findFirstOrThrow();
+                    const meta = asRecord(persisted.meta);
+                    expect(asRecord(meta.scenarioMeta).startYear).toBe(baseYear);
+                    expect(persisted.currentYear).toBe(sync ? baseYear - 1 : baseYear);
+                    expect(persisted.currentMonth).toBe(sync ? 4 : 1);
+                    expect(meta.initYear).toBe(persisted.currentYear);
+                    expect(meta.initMonth).toBe(persisted.currentMonth);
+                    expect(meta.develcost).toBe(sync ? 18 : 20);
+                    const loaded = await loadTurnWorldFromDatabase({ databaseUrl });
+                    expect(loaded.snapshot.scenarioMeta?.startYear).toBe(baseYear);
+                    expect(loaded.state.currentYear).toBe(persisted.currentYear);
+                    if (scenario.startYear === null) {
+                        expect(await connector.prisma.general.count()).toBe(
+                            scenario.generals.length + scenario.generalsEx.length + scenario.generalsNeutral.length
+                        );
+                        const general = await connector.prisma.general.findFirstOrThrow();
+                        expect(general.age).toBeGreaterThan(0);
+                    }
+                } finally {
+                    await connector.disconnect();
+                }
+            }
+        }
+    );
+
     test.each([
         { fiction: 1, expectedHistorical: false },
         { fiction: 0, expectedHistorical: true },

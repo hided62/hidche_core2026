@@ -20,6 +20,7 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
+    resolveScenarioStartYear,
     DEFAULT_TURN_COMMAND_PROFILE,
     INTERNAL_GENERAL_TURN_COMMAND_KEYS,
     GeneralTurnCommandLoader,
@@ -277,8 +278,8 @@ const resolveConstraintEnv = (
     worldConfig: Record<string, unknown>
 ): Record<string, unknown> => {
     const worldMeta = asRecord(world.meta);
-    const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
-    const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
+    const startYear = resolveScenarioStartYear(scenarioMeta?.startYear);
+    const relYear = world.currentYear - startYear;
     const joinModeRaw = worldConfig.join_mode ?? worldConfig.joinMode ?? worldMeta.join_mode ?? worldMeta.joinMode;
     const joinMode = joinModeRaw === 'onlyRandom' ? 'onlyRandom' : 'full';
     const killturnRaw = worldMeta.killturn;

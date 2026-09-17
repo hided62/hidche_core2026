@@ -71,6 +71,7 @@ export interface ScenarioGeneral {
 
 export interface ScenarioDefinition {
     title: string;
+    /** 원본 등장 연도. null이면 시대에 따른 장수 등장/퇴장 필터를 적용하지 않는다. */
     startYear: number | null;
     life: number | null;
     fiction: number | null;

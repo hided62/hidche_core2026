@@ -24,6 +24,7 @@ import type {
     WorldSeedPayload,
     WorldSnapshot,
 } from './types.js';
+import { LEGACY_DEFAULT_OPENING_PART_YEAR, resolveScenarioStartYear } from '../scenario/constants.js';
 import { simpleSerialize } from '../war/utils.js';
 
 export interface ScenarioBootstrapOptions {
@@ -177,7 +178,7 @@ const resolveScenarioTraits = (
 
 const createScenarioMeta = (scenario: ScenarioDefinition): ScenarioMeta => ({
     title: scenario.title,
-    startYear: scenario.startYear,
+    startYear: resolveScenarioStartYear(scenario.startYear),
     life: scenario.life,
     fiction: scenario.fiction,
     history: scenario.history,
@@ -198,7 +199,7 @@ const LEGACY_DEFAULT_INITIAL_EVENTS: unknown[] = [
     [true, ['NoticeToHistoryLog', '<S>2년간 거병 및 건국이 가능합니다.</>', 6]],
 ];
 
-const LEGACY_DEFAULT_EVENTS: unknown[] = [
+const buildLegacyDefaultEvents = (openingPartYear: number): unknown[] => [
     ['pre_month', 9_000, true, ['UpdateCitySupply'], ['ProcessWarIncome']],
     [
         'month',
@@ -229,28 +230,28 @@ const LEGACY_DEFAULT_EVENTS: unknown[] = [
     [
         'month',
         2_000,
-        ['DateRelative', '==', 1, 1],
+        ['DateRelative', '==', openingPartYear - 2, 1],
         ['NoticeToHistoryLog', '<S>2년 뒤 출병 제한이 풀립니다.</>', 6],
         ['DeleteEvent'],
     ],
     [
         'month',
         2_000,
-        ['DateRelative', '==', 2, 1],
+        ['DateRelative', '==', openingPartYear - 1, 1],
         ['NoticeToHistoryLog', '<S>1년 뒤 출병 제한이 풀립니다.</>', 6],
         ['DeleteEvent'],
     ],
     [
         'month',
         2_000,
-        ['DateRelative', '==', 2, 7],
+        ['DateRelative', '==', openingPartYear - 1, 7],
         ['NoticeToHistoryLog', '<S>6개월 뒤 출병 제한이 풀립니다. 병력을 준비해주세요.</>', 6],
         ['DeleteEvent'],
     ],
     [
         'month',
         2_000,
-        ['DateRelative', '==', 3, 1],
+        ['DateRelative', '==', openingPartYear, 1],
         ['NoticeToHistoryLog', '<S>출병 제한이 풀렸습니다.</>', 6],
         ['DeleteEvent'],
     ],
@@ -533,7 +534,7 @@ const buildGeneralSeeds = (
             installRng.nextRangeInt(0, turnTermMinutes * 60 - 1) * 1_000_000 + installRng.nextRangeInt(0, 999_999);
         const deathMonth = installRng.nextRangeInt(1, 12);
         const officerLevel = resolveOfficerLevel(row.officerLevel, nationId);
-        const initialYear = options?.initialYear ?? scenario.startYear;
+        const initialYear = options?.initialYear ?? resolveScenarioStartYear(scenario.startYear);
         const initialMonth = options?.initialMonth ?? 1;
         const age = resolveAge(initialYear, birthYear);
         const initialized = initializedValues.get(row);
@@ -1008,7 +1009,13 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         ...actions,
         ['DeleteEvent'],
     ]);
-    const defaultEvents = scenario.ignoreDefaultEvents ? [] : LEGACY_DEFAULT_EVENTS;
+    // 출병 판정과 공지는 같은 설치 설정을 사용한다. 다른 상대연도 이벤트는 유지한다.
+    const configuredOpeningPartYear = scenario.config.const.openingPartYear;
+    const openingPartYear =
+        typeof configuredOpeningPartYear === 'number' && Number.isFinite(configuredOpeningPartYear)
+            ? configuredOpeningPartYear
+            : LEGACY_DEFAULT_OPENING_PART_YEAR;
+    const defaultEvents = scenario.ignoreDefaultEvents ? [] : buildLegacyDefaultEvents(openingPartYear);
     const defaultInitialEvents = scenario.ignoreDefaultEvents ? [] : LEGACY_DEFAULT_INITIAL_EVENTS;
     const events = [...defaultEvents, ...scenario.events, ...delayedGeneralEvents];
 

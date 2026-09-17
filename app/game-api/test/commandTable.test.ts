@@ -102,6 +102,30 @@ const buildNation = (): NationRow =>
     }) as unknown as NationRow;
 
 describe('buildTurnCommandTable', () => {
+    it.each([null, 180, 189, 2025, 0])(
+        'uses the resolved calendar for sortie reservation when startYear=%s',
+        async (startYear) => {
+            const base = startYear ?? 180;
+            for (const offset of [0, 1, 2, 3]) {
+                const worldState = buildWorldState('full');
+                worldState.currentYear = base + offset;
+                worldState.meta = { scenarioMeta: { startYear } };
+                const general = buildGeneral();
+                general.rice = 10000;
+                const table = await buildTurnCommandTable({
+                    worldState,
+                    general,
+                    city: buildCity(),
+                    nation: buildNation(),
+                    nationGenerals: [],
+                });
+                const sortie = table.general.flatMap(({ values }) => values).find(({ key }) => key === 'che_출병');
+                expect(sortie).toBeDefined();
+                expect(sortie?.status === 'blocked').toBe(offset === 0);
+            }
+        }
+    );
+
     const findCommand = (table: Awaited<ReturnType<typeof buildTurnCommandTable>>, key: string) =>
         [...table.general, ...table.nation].flatMap(({ values }) => values).find((command) => command.key === key);
 

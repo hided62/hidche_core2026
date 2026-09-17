@@ -44,6 +44,30 @@
 실제 설치는 `loadScenarioDefinitionById()`, Git commit 미리보기는
 `composeScenarioResource()`를 거쳐 같은 합성 규칙을 사용합니다.
 
+## 시작 연도와 출병 제한
+
+원본 `ScenarioDefinition.startYear`와 실행용 `ScenarioMeta.startYear`는 역할이
+다릅니다. 원본 값이 없거나 `null`이면 Ref처럼 시대에 따른 장수 등장·퇴장 필터를
+적용하지 않습니다. 영웅 집결처럼 모든 영웅이 함께 등장하는 시나리오는 이 값을
+생략한 채 유지합니다.
+
+게임 달력과 규칙은 `resolveScenarioStartYear()`로 기준을 확정합니다. 명시한
+숫자는 그대로 사용하고, 값이 없으면 Ref `GameConstBase::$defaultStartYear`와 같은
+**180년**을 사용합니다. Bootstrap과 DB seed는 이 값을 실행용 metadata에 저장하고,
+Gateway의 로컬/Git 시나리오 미리보기도 동일한 연도를 표시합니다.
+
+동기화 오픈의 `initYear/initMonth`는 실제 첫 달력입니다. 규칙 기준 180년이라도
+동기화 결과가 179년 4월일 수 있으며, 출병 제한 기준을 이 초기 연도로 바꾸지
+않습니다. 기본 `openingPartYear=3`이면 예약 최소 조건은 181년부터, 실제 출병은
+183년 1월부터 허용됩니다. 이는 오픈 후 정확히 36턴을 기다리는 정책이 아닙니다.
+API, NPC AI, 예약 실행과 월간 공지는 같은 기준 연도를 사용합니다. 기본 해제
+공지의 상대 연월은 설정된 `openingPartYear`를 따르며, 시나리오가 직접 정의한
+별도 이벤트와 `ignoreDefaultEvents` 계약은 유지합니다.
+
+이전 버전이 시작 연도 누락을 0년으로 설치한 진행 중 기수는 단순 배포로 달력이
+교정되지 않습니다. 운영 상태를 확인해 닫은 뒤 새 기수를 초기화하거나, 별도 검증한
+달력·상태·기록 migration을 적용해야 합니다. 현재 연도만 수정하지 않습니다.
+
 ## 제공하는 확장
 
 | 경로                                                | 내용                                     |

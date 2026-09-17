@@ -5,7 +5,12 @@ import { createPlayAuditHandler, initializeAuditCollection } from '../playAudit/
 import { randomUUID } from 'node:crypto';
 import { createRuntimePauseGate } from './runtimePauseGate.js';
 
-import { loadActionModuleBundle, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
+import {
+    resolveScenarioStartYear,
+    loadActionModuleBundle,
+    type TurnCommandProfile,
+    type TurnSchedule,
+} from '@sammo-ts/logic';
 import {
     buildGameEventChannel,
     buildGameReadModelDomainRevisionKey,
@@ -447,7 +452,7 @@ const createMonthlyCalendarRuntime = async (options: {
           });
     const monthlyBoundaryPreHandler = createMonthlyBoundaryPreHandler({
         getWorld: options.getWorld,
-        startYear: options.snapshot.scenarioMeta?.startYear ?? options.currentYear,
+        startYear: resolveScenarioStartYear(options.snapshot.scenarioMeta?.startYear),
         commandEnv: options.commandEnv,
     });
     const monthlyNationStatsHandler = createMonthlyNationStatsHandler({
@@ -493,7 +498,7 @@ const createMonthlyCalendarRuntime = async (options: {
         createMonthlyWarSettingHandler({ getWorld: options.getWorld }),
         createMonthlyWanderHandler({
             getWorld: options.getWorld,
-            startYear: options.snapshot.scenarioMeta?.startYear ?? options.currentYear,
+            startYear: resolveScenarioStartYear(options.snapshot.scenarioMeta?.startYear),
             commandEnv: options.commandEnv,
         }),
         createMonthlyNationCountHandler({ getWorld: options.getWorld }),
@@ -749,7 +754,7 @@ const createTurnDaemonRuntimeWithLease = async (
     });
     const monthlyEventHandler = createMonthlyEventHandler({
         getWorld: () => worldRef,
-        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
+        startYear: resolveScenarioStartYear(snapshot.scenarioMeta?.startYear),
         actions: eventActions,
     });
     const {

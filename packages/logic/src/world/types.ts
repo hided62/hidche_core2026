@@ -3,6 +3,7 @@ import type { ScenarioConfig, ScenarioDiplomacy } from '@sammo-ts/logic/scenario
 
 export interface ScenarioMeta {
     title: string;
+    /** 게임 달력/규칙의 기준 연도. 새 seed는 누락 시 180을 저장하며 null은 이전 저장값 호환용이다. */
     startYear: number | null;
     life: number | null;
     fiction: number | null;

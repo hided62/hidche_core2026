@@ -18,7 +18,13 @@ import type {
     TriggerValue,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
-import { evaluateConstraints, LEGACY_DEFAULT_MAX_LEVEL, resolveNonAggressionMaxEndYear } from '@sammo-ts/logic';
+import {
+    resolveScenarioStartYear,
+    LEGACY_DEFAULT_OPENING_PART_YEAR,
+    evaluateConstraints,
+    LEGACY_DEFAULT_MAX_LEVEL,
+    resolveNonAggressionMaxEndYear,
+} from '@sammo-ts/logic';
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import { CommandResolver as RecruitmentCommandResolver } from '@sammo-ts/logic/actions/turn/general/che_징병.js';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
@@ -344,7 +350,7 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
         sabotageDefenceCoefByGeneralCount: resolveNumber(constValues, ['sabotageDefenceCoefByGeneralCount'], 0),
         sabotageDamageMin: resolveNumber(constValues, ['sabotageDamageMin'], 0),
         sabotageDamageMax: resolveNumber(constValues, ['sabotageDamageMax'], 0),
-        openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
+        openingPartYear: resolveNumber(constValues, ['openingPartYear'], LEGACY_DEFAULT_OPENING_PART_YEAR),
         maxGeneral: resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], 0),
         defaultNpcGold: resolveNumber(constValues, ['defaultNpcGold', 'defaultGold'], DEFAULT_GENERAL_GOLD),
         defaultNpcRice: resolveNumber(constValues, ['defaultNpcRice', 'defaultRice'], DEFAULT_GENERAL_RICE),
@@ -370,8 +376,8 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
     const constValues = asRecord(config.const);
     const meta = asRecord(worldState.meta);
     const scenarioMeta = asRecord(meta.scenarioMeta);
-    const startYear = typeof scenarioMeta.startYear === 'number' ? scenarioMeta.startYear : undefined;
-    const relYear = typeof startYear === 'number' ? worldState.currentYear - startYear : undefined;
+    const startYear = resolveScenarioStartYear(scenarioMeta.startYear);
+    const relYear = worldState.currentYear - startYear;
     const joinModeRaw = config.join_mode ?? config.joinMode;
     const joinMode = typeof joinModeRaw === 'string' ? joinModeRaw : 'full';
 
@@ -383,7 +389,7 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
         startYear,
         relYear,
         join_mode: joinMode,
-        openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
+        openingPartYear: resolveNumber(constValues, ['openingPartYear'], LEGACY_DEFAULT_OPENING_PART_YEAR),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 12),
     };
 };
@@ -559,10 +565,7 @@ export const buildRecruitmentCommandInfo = (options: {
                     avoid: crewType.avoid,
                     baseCost: displayCost.gold,
                     baseRice: displayCost.rice,
-                    info: [
-                        ...crewType.info,
-                        ...crewType.requirements.map(formatCrewTypeRequirement).filter(Boolean),
-                    ],
+                    info: [...crewType.info, ...crewType.requirements.map(formatCrewTypeRequirement).filter(Boolean)],
                 };
             }),
     }));

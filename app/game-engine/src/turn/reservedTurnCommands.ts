@@ -12,6 +12,7 @@ import {
     LEGACY_RANDOM_GENERAL_FIRST_NAMES,
     LEGACY_RANDOM_GENERAL_LAST_NAMES,
     LEGACY_DEFAULT_MAX_LEVEL,
+    LEGACY_DEFAULT_OPENING_PART_YEAR,
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
     loadActionModuleBundle,
@@ -33,7 +34,6 @@ const DEFAULT_SABOTAGE_PROB_COEF = 300;
 const DEFAULT_SABOTAGE_DEFENCE_COEF = 0.04;
 const DEFAULT_SABOTAGE_DAMAGE_MIN = 100;
 const DEFAULT_SABOTAGE_DAMAGE_MAX = 800;
-const DEFAULT_OPENING_PART_YEAR = 3;
 const DEFAULT_MAX_GENERAL = 500;
 const DEFAULT_INITIAL_NATION_GEN_LIMIT = 10;
 const DEFAULT_MAX_TECH_LEVEL = 12;
@@ -103,7 +103,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         ),
         sabotageDamageMin: resolveNumber(constValues, ['sabotageDamageMin'], DEFAULT_SABOTAGE_DAMAGE_MIN),
         sabotageDamageMax: resolveNumber(constValues, ['sabotageDamageMax'], DEFAULT_SABOTAGE_DAMAGE_MAX),
-        openingPartYear: resolveNumber(constValues, ['openingPartYear'], DEFAULT_OPENING_PART_YEAR),
+        openingPartYear: resolveNumber(constValues, ['openingPartYear'], LEGACY_DEFAULT_OPENING_PART_YEAR),
         maxGeneral: resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], DEFAULT_MAX_GENERAL),
         defaultNpcGold: resolveNumber(constValues, ['defaultNpcGold', 'defaultGold'], DEFAULT_GENERAL_GOLD),
         defaultNpcRice: resolveNumber(constValues, ['defaultNpcRice', 'defaultRice'], DEFAULT_GENERAL_RICE),

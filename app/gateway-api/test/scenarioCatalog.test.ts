@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { listScenarioPreviews, resolveGitCommitSha } from '../src/scenario/scenarioCatalog.js';
 
 describe('scenarioCatalog git ref support', () => {
+    it.each([undefined, 'HEAD'])('publishes resolved start years for every scenario (%s)', async (gitRef) => {
+        const previews = await listScenarioPreviews({ gitRef });
+        expect(previews.every((scenario) => Number.isFinite(scenario.year))).toBe(true);
+        expect(previews.find((scenario) => scenario.id === 2020)?.year).toBe(180);
+        expect(previews.find((scenario) => scenario.id === 1031)?.year).toBe(192);
+        expect(previews.find((scenario) => scenario.id === 915)?.year).toBe(180);
+    });
+
     it('includes the CHE zero-season dawn scenario in the local catalog', async () => {
         const previews = await listScenarioPreviews();
 

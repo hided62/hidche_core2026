@@ -10,6 +10,8 @@ import {
 import { GameClock, asNumber, asRecord, type GameClockMode, type GameClockPhase } from '@sammo-ts/common';
 import {
     buildScenarioBootstrap,
+    resolveScenarioStartYear,
+    LEGACY_DEFAULT_OPENING_PART_YEAR,
     resolveScenarioGeneralDeathMonth,
     type GeneralMeta,
     type ScenarioBootstrapWarning,
@@ -29,7 +31,6 @@ import { applyInitialChangeCityEvents } from '../turn/monthlyChangeCityAction.js
 const DEFAULT_TICK_SECONDS = 120 * 60;
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
-const DEFAULT_OPENING_PART_YEAR = 3;
 const INTEGRATION_WORLD_SEED_ENV = 'INTEGRATION_WORLD_SEED';
 
 const MINUTES_TO_MS = 60_000;
@@ -148,7 +149,7 @@ const resolveStartState = (
     turnTermMinutes: number,
     sync: boolean
 ): { startTime: Date; currentYear: number; currentMonth: number } => {
-    const startYear = scenarioStartYear ?? 0;
+    const startYear = resolveScenarioStartYear(scenarioStartYear);
     if (!sync) {
         return {
             startTime: cutTurn(now, turnTermMinutes),
@@ -294,7 +295,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
 
     const scenarioConst = asRecord(seed.scenarioConfig.const);
     if (typeof scenarioConst.openingPartYear !== 'number' || Number.isNaN(scenarioConst.openingPartYear)) {
-        scenarioConst.openingPartYear = DEFAULT_OPENING_PART_YEAR;
+        scenarioConst.openingPartYear = LEGACY_DEFAULT_OPENING_PART_YEAR;
     }
     const scenarioConfig = {
         ...seed.scenarioConfig,
@@ -328,7 +329,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         killturn: install?.npcMode === 1 ? Math.trunc(4800 / turnTermMinutes / 3) : 4800 / turnTermMinutes,
         // Ref seeds game_env.develcost before the first general turn. The
         // monthly pre-handler recalculates the same value at each boundary.
-        develcost: (startState.currentYear - (scenario.startYear ?? startState.currentYear) + 10) * 2,
+        develcost: (startState.currentYear - resolveScenarioStartYear(scenario.startYear) + 10) * 2,
         starttime: formatDateTime(startState.startTime),
         turntime: formatDateTime(gameClockMode === 'manual' ? now : initialClock.baseTime),
         opentime: formatDateTime(initialClockWallAnchor),

@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 
 import { composeScenarioResource } from '@sammo-ts/game-engine/scenario/scenarioComposition.js';
 import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
-import { parseScenarioDefaults, parseScenarioDefinition, type ScenarioDefaults } from '@sammo-ts/logic';
+import {
+    resolveScenarioStartYear,
+    parseScenarioDefaults,
+    parseScenarioDefinition,
+    type ScenarioDefaults,
+} from '@sammo-ts/logic';
 import { resolveWorkspaceRoot } from '../orchestrator/workspaceRoot.js';
 
 export interface ScenarioNationPreview {
@@ -228,7 +233,7 @@ const buildScenarioPreview = async (scenarioId: number): Promise<ScenarioPreview
     return {
         id: scenarioId,
         title: scenario.title,
-        year: scenario.startYear ?? null,
+        year: resolveScenarioStartYear(scenario.startYear),
         defaultStatTotal: scenario.config.stat.total,
         fiction: scenario.fiction,
         npcCount: scenario.generals.length,
@@ -275,7 +280,7 @@ const buildScenarioPreviewFromGit = async (commitSha: string, scenarioId: number
     return {
         id: scenarioId,
         title: scenario.title,
-        year: scenario.startYear ?? null,
+        year: resolveScenarioStartYear(scenario.startYear),
         defaultStatTotal: scenario.config.stat.total,
         fiction: scenario.fiction,
         npcCount: scenario.generals.length,

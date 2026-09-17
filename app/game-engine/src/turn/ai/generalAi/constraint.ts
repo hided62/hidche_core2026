@@ -1,3 +1,4 @@
+import { resolveScenarioStartYear } from '@sammo-ts/logic';
 import type { ScenarioMeta, TurnCommandEnv } from '@sammo-ts/logic';
 
 import type { TurnWorldState } from '../../types.js';
@@ -9,8 +10,8 @@ export const resolveConstraintEnv = (
     scenarioMeta: ScenarioMeta | undefined,
     env: TurnCommandEnv
 ): ConstraintEnv => {
-    const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
-    const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
+    const startYear = resolveScenarioStartYear(scenarioMeta?.startYear);
+    const relYear = world.currentYear - startYear;
     const worldMeta = world.meta as Record<string, unknown>;
     const rawKillturn = worldMeta.killturn;
     const killturn =
