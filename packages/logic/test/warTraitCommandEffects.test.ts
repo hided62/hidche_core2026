@@ -199,7 +199,13 @@ describe('전투 특기의 비전투 커맨드 효과', () => {
             destGenerals: [],
             distance: 1,
         };
-        const base = general.stats[statKey] / env.sabotageProbCoefByStat;
+        const effectiveStat =
+            statKey === 'intelligence'
+                ? general.stats.intelligence + Math.round(general.stats.strength / 4)
+                : statKey === 'strength'
+                  ? general.stats.strength + Math.round(general.stats.intelligence / 4)
+                  : general.stats.leadership;
+        const base = effectiveStat / env.sabotageProbCoefByStat;
 
         expect(new StrategyCommandResolver([strategistTrait], env, config).getProbability(context).attack).toBeCloseTo(
             base + 0.1,

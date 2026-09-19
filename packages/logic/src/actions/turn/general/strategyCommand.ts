@@ -29,6 +29,8 @@ import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/c
 import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { GeneralStatName } from '@sammo-ts/logic/actionModules/types.js';
+import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 import { searchDistance } from '@sammo-ts/logic/world/distance.js';
 import { clamp } from 'es-toolkit';
 import { z } from 'zod';
@@ -64,8 +66,6 @@ export interface StrategyEnvironment {
     sabotageDamageMax: number;
     maxSuccessProbability?: number;
     getDistance?: (sourceCityId: number, destCityId: number) => number | null;
-    getDefenceCorrection?: (context: StrategyContext, defender: General) => number;
-    getInjuryProbability?: (context: StrategyContext, defender: General) => number;
 }
 
 export interface StrategyContext<
@@ -119,7 +119,65 @@ const INJURY_MAX = 80;
 
 const randomRangeInt = (rng: RandomGenerator, min: number, max: number): number => rng.nextInt(min, max + 1);
 
-const getStatValue = (general: General, statKey: StrategyStatKey): number => general.stats[statKey];
+const createTargetActionContext = <TriggerState extends GeneralTriggerState>(
+    context: StrategyContext<TriggerState>,
+    general: General<TriggerState>,
+    nation: Nation | null | undefined
+): GeneralActionContext<TriggerState> => ({
+    ...context,
+    general,
+    nation: nation ?? null,
+});
+
+interface EffectiveStatOptions {
+    withInjury?: boolean;
+    withStatAdjust?: boolean;
+    withActions?: boolean;
+    truncate?: boolean;
+}
+
+// Ref General::getStatValue()의 순서와 정수화 경계를 일반 장수 커맨드에서도 사용한다.
+const getEffectiveStatValue = <TriggerState extends GeneralTriggerState>(
+    pipeline: GeneralActionPipeline<TriggerState>,
+    context: GeneralActionContext<TriggerState>,
+    statKey: StrategyStatKey,
+    options: EffectiveStatOptions = {}
+): number => {
+    const withInjury = options.withInjury ?? true;
+    const withStatAdjust = options.withStatAdjust ?? true;
+    const withActions = options.withActions ?? true;
+    const truncate = options.truncate ?? true;
+    const general = context.general;
+    const injuryRatio = withInjury ? (100 - general.injury) / 100 : 1;
+    let value = general.stats[statKey] * injuryRatio;
+
+    if (withStatAdjust && statKey === 'strength') {
+        value += Math.round(
+            getEffectiveStatValue(pipeline, context, 'intelligence', {
+                withInjury,
+                withStatAdjust: false,
+                withActions,
+                truncate: false,
+            }) / 4
+        );
+    } else if (withStatAdjust && statKey === 'intelligence') {
+        value += Math.round(
+            getEffectiveStatValue(pipeline, context, 'strength', {
+                withInjury,
+                withStatAdjust: false,
+                withActions,
+                truncate: false,
+            }) / 4
+        );
+    }
+
+    value = clamp(value, 0, LEGACY_DEFAULT_MAX_LEVEL);
+    if (withActions) {
+        value = pipeline.onCalcStat(context, statKey as GeneralStatName, value);
+    }
+    value = clamp(value, 0, LEGACY_DEFAULT_MAX_LEVEL);
+    return truncate ? Math.trunc(value) : value;
+};
 
 const addMetaNumber = (meta: GeneralMeta, key: string, delta: number): GeneralMeta => {
     const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
@@ -144,7 +202,8 @@ export class StrategyCommandResolver<TriggerState extends GeneralTriggerState = 
     }
 
     getProbability(context: StrategyContext<TriggerState>): StrategyProbability {
-        const attackBase = getStatValue(context.general, this.config.statKey) / this.env.sabotageProbCoefByStat;
+        const attackBase =
+            getEffectiveStatValue(this.pipeline, context, this.config.statKey) / this.env.sabotageProbCoefByStat;
         const attack = this.pipeline.onCalcDomestic(context, '계략', 'success', attackBase);
 
         const destNationId = context.destCity.nationId;
@@ -156,8 +215,16 @@ export class StrategyCommandResolver<TriggerState extends GeneralTriggerState = 
                 continue;
             }
             affectCount += 1;
-            maxStat = Math.max(maxStat, getStatValue(defender, this.config.statKey));
-            defenceCorrection += this.env.getDefenceCorrection?.(context, defender) ?? 0;
+            const defenderContext = createTargetActionContext(context, defender, context.destNation);
+            maxStat = Math.max(
+                maxStat,
+                getEffectiveStatValue(this.pipeline, defenderContext, this.config.statKey)
+            );
+            defenceCorrection = this.pipeline.onCalcStat(
+                defenderContext,
+                'sabotageDefence',
+                defenceCorrection
+            );
         }
 
         let defence = maxStat / this.env.sabotageProbCoefByStat;
@@ -203,7 +270,8 @@ export class StrategyCommandResolver<TriggerState extends GeneralTriggerState = 
             if (defender.nationId !== context.destCity.nationId) {
                 continue;
             }
-            const injuryProbability = this.env.getInjuryProbability?.(context, defender) ?? 0.3;
+            const defenderContext = createTargetActionContext(context, defender, context.destNation);
+            const injuryProbability = this.pipeline.onCalcStat(defenderContext, 'injuryProb', 0.3);
             if (!rng.nextBool(injuryProbability)) {
                 continue;
             }

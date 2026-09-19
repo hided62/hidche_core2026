@@ -23,7 +23,7 @@ export const itemModule: ItemModule = {
         if (!context.unit) return null;
         return new WarTriggerCaller(
             new che_격노시도(context.unit, BaseWarUnitTrigger.TYPE_ITEM),
-            new che_격노발동(context.unit, BaseWarUnitTrigger.TYPE_ITEM)
+            new che_격노발동(context.unit)
         );
     },
 };

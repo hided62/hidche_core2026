@@ -8,7 +8,7 @@ const ITEM_KEY = 'che_저지_삼황내문';
 
 class ActivateItemHalt extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
-        super(unit, TriggerPriority.Pre);
+        super(unit, TriggerPriority.Begin);
     }
 
     protected actionWar(self: WarUnit): boolean {

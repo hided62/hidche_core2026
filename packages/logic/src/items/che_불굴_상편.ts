@@ -23,7 +23,7 @@ export const itemModule: ItemModule = {
             return null;
         }
         const general = unit.getGeneral();
-        const leadership = general.stats.leadership;
+        const leadership = unit.getComputedStat('leadership', general.stats.leadership);
         const crew = general.crew;
         const crewRatio = clamp(crew / (leadership * 100), 0, 1);
         return new WarTriggerCaller(new 전투력보정(unit, 1 + 0.6 * (1 - crewRatio)));
