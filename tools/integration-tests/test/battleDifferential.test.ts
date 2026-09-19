@@ -2151,6 +2151,127 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         }
     );
 
+    it('matches counter-stratagem items and stacked traits against wizards', { timeout: 180_000 }, () => {
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+        // Ref의 raiseType별 시도 중복 제거와 단일 반사 발동을 실제 귀병 전투로 검증한다.
+        const variants = [
+            { name: 'sima', book: 'che_서적_07_사마법' },
+            { name: 'shanhai', book: 'che_서적_12_산해경' },
+            { name: 'manual', item: 'event_전투특기_반계' },
+            { name: 'trait', special2: 'che_반계' },
+            { name: 'domestic', special: 'che_event_반계' },
+            { name: 'sima-trait', book: 'che_서적_07_사마법', special2: 'che_반계' },
+            { name: 'shanhai-trait', book: 'che_서적_12_산해경', special2: 'che_반계' },
+            { name: 'manual-trait', item: 'event_전투특기_반계', special2: 'che_반계' },
+            { name: 'sima-manual', book: 'che_서적_07_사마법', item: 'event_전투특기_반계' },
+            { name: 'shanhai-manual', book: 'che_서적_12_산해경', item: 'event_전투특기_반계' },
+            {
+                name: 'all',
+                book: 'che_서적_07_사마법',
+                item: 'event_전투특기_반계',
+                special2: 'che_반계',
+                special: 'che_event_반계',
+            },
+            { name: 'suppressed', book: 'che_서적_07_사마법', item: 'event_전투특기_반계', special2: 'che_반계' },
+            { name: 'no-magic', book: 'che_서적_07_사마법', item: 'event_전투특기_반계', special2: 'che_반계' },
+        ];
+        const cases = [];
+        for (const variant of variants) {
+            for (const side of ['attacker', 'defender'] as const) {
+                for (let seed = 0; seed < 8; seed += 1) {
+                    const base = readJson<BattleSimRequestPayload & { startYear: number }>(
+                        path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+                    );
+                    base.seed = `counter-stratagem-${seed}`;
+                    for (const general of [base.attackerGeneral, ...base.defenderGenerals]) {
+                        Object.assign(general, {
+                            personal: 'None',
+                            special: 'None',
+                            special2: 'None',
+                            crew: 10000,
+                            leadership: 100,
+                            strength: 70,
+                            intel: 100,
+                            dex1: 12000,
+                            dex4: 12000,
+                        });
+                    }
+                    const self = side === 'attacker' ? base.attackerGeneral : base.defenderGenerals[0]!;
+                    const oppose = side === 'attacker' ? base.defenderGenerals[0]! : base.attackerGeneral;
+                    const { name, ...equipment } = variant;
+                    Object.assign(self, equipment);
+                    oppose.crewtype = name === 'no-magic' ? 1100 : 1400;
+                    if (name === 'suppressed') oppose.item = 'che_진압_박혁론';
+                    const events: WarBattleTraceEvent[] = [];
+                    const logs = createCoreLogCapture();
+                    let rng: TracingRng | null = null;
+                    let outcome: WarBattleOutcome | null = null;
+                    processBattleSimJob(
+                        {
+                            ...base,
+                            unitSet,
+                            config,
+                            time: { year: base.year, month: base.month, startYear: base.startYear },
+                        },
+                        {
+                            trace: (event) => events.push(event),
+                            loggerFactory: logs.loggerFactory,
+                            onBattleResolved: (value) => {
+                                outcome = value;
+                            },
+                            rngFactory: (value) => {
+                                rng = new TracingRng(LiteHashDRBG.build(value));
+                                return rng.createRandUtil();
+                            },
+                        }
+                    );
+                    cases.push({ name, side, base, events, logs, rng, outcome });
+                }
+            }
+        }
+        const references = runReferenceTraceBatch(
+            workspaceRoot!,
+            cases.map(({ base }) => JSON.stringify(base))
+        );
+        const failures: string[] = [];
+        const activated = new Set<string>();
+        cases.forEach((entry, index) => {
+            const reference = references[index]!;
+            const label = `${entry.name}/${entry.side}/${entry.base.seed}`;
+            try {
+                assertTraceParity(entry.events, reference, entry.rng, entry.outcome);
+                assertAllLogBucketsParity(entry.logs, reference, entry.base, label);
+                const reflected = reference.events.some((event) => event[entry.side]?.activatedSkills['반계']);
+                if (entry.name === 'suppressed' || entry.name === 'no-magic') {
+                    expect(reflected, label).toBe(false);
+                } else if (reflected) {
+                    activated.add(`${entry.name}/${entry.side}`);
+                }
+            } catch (error) {
+                failures.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        });
+        expect(failures, failures.join('\n')).toEqual([]);
+        for (const variant of variants.filter(({ name }) => !['suppressed', 'no-magic'].includes(name))) {
+            for (const side of ['attacker', 'defender']) {
+                expect(activated.has(`${variant.name}/${side}`), `${variant.name}/${side} actually reflects`).toBe(
+                    true
+                );
+            }
+        }
+    });
+
     it('matches wizard strategy attempts, outcomes, and RNG consumption', () => {
         const base = readJson<BattleSimRequestPayload & { startYear: number }>(
             path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')

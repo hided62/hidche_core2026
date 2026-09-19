@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
 import type { UnitSetDefinition } from '../src/world/types.js';
 import { ActionLogger } from '../src/logging/actionLogger.js';
+import { traitModule as counterTrait } from '../src/actionModules/traits/war/che_반계.js';
 import { WarActionPipeline } from '../src/war/actions.js';
 import { resolveWarBattle } from '../src/war/engine.js';
 import { LegacyWarLogFlushSequence } from '../src/war/legacyFlushSequence.js';
@@ -167,6 +168,74 @@ const buildGeneral = (strength: number): General => ({
 });
 
 describe('war triggers', () => {
+    it.each([
+        { book: 'che_서적_07_사마법', item: null, trait: false, probabilities: [0.1] },
+        { book: 'che_서적_12_산해경', item: null, trait: false, probabilities: [0.1] },
+        { book: null, item: 'event_전투특기_반계', trait: false, probabilities: [0.4] },
+        { book: 'che_서적_07_사마법', item: null, trait: true, probabilities: [0.4, 0.1] },
+        { book: 'che_서적_12_산해경', item: null, trait: true, probabilities: [0.4, 0.1] },
+        { book: null, item: 'event_전투특기_반계', trait: true, probabilities: [0.4, 0.4] },
+        { book: 'che_서적_07_사마법', item: 'event_전투특기_반계', trait: true, probabilities: [0.4, 0.1, 0.4] },
+        // 산해경과 비급은 Ref에서 같은 ITEM raiseType: 뒤의 비급 시도 하나만 남는다.
+        { book: 'che_서적_12_산해경', item: 'event_전투특기_반계', trait: true, probabilities: [0.4, 0.4] },
+    ] as const)(
+        'preserves counter-stratagem attempts for $book / $item / trait=$trait',
+        async ({ book, item, trait, probabilities }) => {
+            const general = buildGeneral(80);
+            general.role.items.book = book;
+            general.role.items.item = item;
+            const keys = [book, item].filter((key) => key !== null);
+            const modules = createItemActionModules(createItemModuleRegistry(await loadItemModules(keys))).war;
+            const pipeline = new WarActionPipeline([...(trait ? [counterTrait] : []), ...modules]);
+            const rng = new RandUtil(new ConstantRNG(0));
+            const attempt = vi.spyOn(rng, 'nextBool').mockReturnValue(false);
+            const makeUnit = (attacker: boolean) =>
+                new WarUnitGeneral(
+                    rng,
+                    buildConfig(),
+                    { ...general, id: attacker ? 1 : 2 },
+                    buildCity(),
+                    buildNation(),
+                    attacker,
+                    new WarCrewType(buildUnitSet().crewTypes![0]!),
+                    new ActionLogger({ generalId: attacker ? 1 : 2 }),
+                    pipeline
+                );
+            const self = makeUnit(true);
+            const oppose = makeUnit(false);
+            const caller = pipeline.getBattlePhaseTriggerList(self.getActionContext());
+            const fire = () =>
+                caller.fire(
+                    { rng, attacker: self, defender: oppose },
+                    { e_attacker: {}, e_defender: { magic: ['화계', 1.5] } }
+                );
+            oppose.activateSkill('계략');
+            fire();
+            expect(attempt.mock.calls.map(([probability]) => probability)).toEqual(probabilities);
+            expect(self.hasActivatedSkill('반계')).toBe(false);
+            expect(oppose.hasActivatedSkill('계략')).toBe(true);
+
+            attempt.mockClear().mockReturnValue(true);
+            const multiply = vi.spyOn(self, 'multiplyWarPowerMultiply');
+            fire();
+            expect(attempt).toHaveBeenCalledTimes(1);
+            expect(self.hasActivatedSkill('반계')).toBe(true);
+            expect(oppose.hasActivatedSkill('계략')).toBe(false);
+            expect(multiply).toHaveBeenCalledExactlyOnceWith(1.5);
+
+            self.deactivateSkill('반계');
+            attempt.mockClear();
+            fire();
+            expect(attempt).not.toHaveBeenCalled();
+            oppose.activateSkill('계략');
+            self.activateSkill('반계불가');
+            fire();
+            expect(attempt).not.toHaveBeenCalled();
+            expect(self.hasActivatedSkill('반계')).toBe(false);
+            expect(oppose.hasActivatedSkill('계략')).toBe(true);
+        }
+    );
+
     it('applies the legacy talisman immunity to self and snipe restriction to the opponent', async () => {
         const attacker = buildGeneral(80);
         attacker.role.items.item = 'che_부적_태현청생부';

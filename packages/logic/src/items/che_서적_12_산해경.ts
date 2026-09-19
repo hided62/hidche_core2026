@@ -1,6 +1,6 @@
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
-import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import { che_반계발동, che_반계시도 } from '@sammo-ts/logic/war/triggers/che_반계.js';
 
 const baseModule = createStatItemModule({
@@ -19,5 +19,10 @@ const baseModule = createStatItemModule({
 export const itemModule: ItemModule = {
     ...baseModule,
     getBattlePhaseTriggerList: (context) =>
-        context.unit ? new WarTriggerCaller(new che_반계시도(context.unit, 0.1), new che_반계발동(context.unit)) : null,
+        context.unit
+            ? new WarTriggerCaller(
+                  new che_반계시도(context.unit, BaseWarUnitTrigger.TYPE_ITEM, 0.1),
+                  new che_반계발동(context.unit)
+              )
+            : null,
 };

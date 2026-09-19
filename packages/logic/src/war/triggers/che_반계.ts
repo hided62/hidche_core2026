@@ -7,8 +7,9 @@ import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 export class che_반계시도 extends BaseWarUnitTrigger {
     private readonly prob: number;
 
-    constructor(unit: WarUnit, prob = 0.4) {
-        super(unit, TriggerPriority.Body + 300);
+    constructor(unit: WarUnit, raiseType = BaseWarUnitTrigger.TYPE_NONE, prob = 0.4) {
+        // Ref는 특기와 아이템의 시도를 raiseType으로 구분하고 발동은 한 번만 합친다.
+        super(unit, TriggerPriority.Body + 300, raiseType);
         this.prob = prob;
     }
 
