@@ -2825,6 +2825,7 @@ export const createImmediateGeneralActionExecutor = async (options: {
                     baseContext,
                     {
                         world: state,
+                        worldConfig: options.world.getWorldConfig(),
                         scenarioConfig: options.world.getScenarioConfig(),
                         scenarioMeta: options.scenarioMeta,
                         map: options.map,

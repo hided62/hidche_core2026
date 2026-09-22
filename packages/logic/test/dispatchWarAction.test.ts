@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
 import { resolveGeneralAction } from '../src/actions/engine.js';
-import { ActionDefinition, orderDefenderGenerals } from '../src/actions/turn/general/che_출병.js';
+import { ActionDefinition, actionContextBuilder, orderDefenderGenerals } from '../src/actions/turn/general/che_출병.js';
 import type { DispatchResolveContext } from '../src/actions/turn/general/che_출병.js';
 import type { TurnSchedule } from '../src/turn/calendar.js';
 import type { WarAftermathConfig, WarEngineConfig } from '../src/war/types.js';
@@ -192,6 +192,44 @@ const uniqueItem: ItemModule = {
 };
 
 describe('che_출병', () => {
+    it.each(['full', 'onlyRandom'] as const)(
+        'reads %s join mode from current world config for collapse aftermath',
+        (joinMode) => {
+            const general = { ...buildGeneral(1, 1, 1), turnTime: new Date('0200-01-01T00:00:00.000Z') };
+            const destination = buildCity(2, 2);
+            const context = actionContextBuilder(
+                { general, rng },
+                {
+                    world: { currentYear: 200, currentMonth: 1, tickSeconds: 3600, meta: { joinMode: 'full' } },
+                    worldConfig: { joinMode },
+                    scenarioConfig: {
+                        stat: { total: 0, min: 0, max: 0, npcTotal: 0, npcMin: 0, npcMax: 0, chiefMin: 0 },
+                        iconPath: '',
+                        map: {},
+                        const: {},
+                        environment: { mapName: 'test', unitSet: 'test' },
+                    },
+                    map: { id: 'test', name: 'test', cities: [] },
+                    unitSet,
+                    worldRef: {
+                        getCityById: () => destination,
+                        getNationById: () => buildNation(2),
+                        listCities: () => [destination],
+                        listNations: () => [buildNation(2)],
+                        listGenerals: () => [general],
+                        listDiplomacy: () => [],
+                    } as never,
+                    actionArgs: { destCityId: destination.id },
+                    createGeneralId: () => 3,
+                    createNationId: () => 3,
+                    seedBase: 'test',
+                }
+            );
+
+            expect(context?.aftermathConfig).toMatchObject({ joinMode });
+        }
+    );
+
     it('runs war battle and emits patches/logs', () => {
         const attackerNation = buildNation(1);
         const defenderNation = buildNation(2);
@@ -494,7 +532,7 @@ describe('che_출병', () => {
         // assignment, so the aftermath alone would not patch it).
         const defenderPatch = resolution.patches?.generals.find((patch) => patch.id === defender.id);
         expect(defenderPatch).toBeDefined();
-        expect((defenderPatch?.patch.crew ?? defender.crew)).toBeLessThan(1500);
+        expect(defenderPatch?.patch.crew ?? defender.crew).toBeLessThan(1500);
     });
 
     it('orders equal-priority defender inputs by general number before the stable battle sort', () => {

@@ -824,7 +824,11 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const diplomacy = options.worldRef.listDiplomacy();
     const warConfig = buildWarConfig(options.scenarioConfig, options.unitSet);
     const aftermathConfig = buildWarAftermathConfig(options.scenarioConfig, warConfig.castleCrewTypeId);
-    const joinModeRaw = options.world.meta?.join_mode ?? options.world.meta?.joinMode;
+    const joinModeRaw =
+        options.worldConfig?.join_mode ??
+        options.worldConfig?.joinMode ??
+        options.world.meta?.join_mode ??
+        options.world.meta?.joinMode;
     aftermathConfig.joinMode = joinModeRaw === 'onlyRandom' ? 'onlyRandom' : 'full';
     return {
         ...base,

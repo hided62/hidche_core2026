@@ -76,6 +76,8 @@ export interface ActionContextWorldRef {
 
 export interface ActionContextOptions<TArgs extends Record<string, unknown> = Record<string, unknown>> {
     world: ActionContextWorldState;
+    /** Current game configuration, distinct from the legacy world meta. */
+    worldConfig?: Record<string, unknown>;
     /** Ref Message::sendRaw stamps the current logical game tick, not the actor turn time. */
     gameNow?: Date;
     /** Differential fixtures may point shared message icons at the Ref asset origin. */

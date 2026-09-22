@@ -726,6 +726,45 @@ describe('war aftermath', () => {
         ]);
     });
 
+    it('does not draw or send collapse recruitment in random-only mode', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        defenderNation.chiefGeneralId = 2;
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const attacker = buildGeneral(1, 1, 1);
+        const lord = buildGeneral(2, 2, 2);
+        lord.officerLevel = 12;
+        lord.npcState = 2;
+        const rng = {
+            nextRange: vi.fn(() => 0.2),
+            nextBool: vi.fn(() => true),
+            nextRangeInt: vi.fn(() => 1),
+        } as unknown as RandUtil;
+
+        const outcome = resolveWarAftermath({
+            battle: { attacker, defenders: [], defenderCity, logs: [], conquered: true, reports: [] },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity],
+            generals: [attacker, lord],
+            unitSet: buildUnitSet(),
+            map: DEFAULT_MAP,
+            config: { ...buildConfig(), joinMode: 'onlyRandom' },
+            time: { year: 186, month: 1, startYear: 179 },
+            messageTime: MESSAGE_TIME,
+            rng,
+        });
+
+        expect(outcome.conquest?.nationCollapsed).toBe(true);
+        expect(outcome.conquest?.messages).toEqual([]);
+        expect(outcome.conquest?.ruinedNpcJoinPlans).toEqual([]);
+        expect(rng.nextBool).not.toHaveBeenCalled();
+    });
+
     it('dispatches city conquest to every stationed defender before collapse RNG', () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const draws = [0.01, 0.02, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
