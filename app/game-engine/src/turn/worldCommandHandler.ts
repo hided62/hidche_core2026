@@ -2144,7 +2144,7 @@ async function handleChangePermission(
         };
     }
     const nation = world.getNationById(general.nationId);
-    if (!nation || general.officerLevel !== 12 || nation.chiefGeneralId !== general.id) {
+    if (!nation || general.officerLevel !== 12) {
         return { type: 'changePermission', ok: false, generalId: command.generalId, reason: '군주가 아닙니다.' };
     }
 

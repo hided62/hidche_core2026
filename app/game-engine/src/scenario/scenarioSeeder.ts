@@ -288,6 +288,12 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         },
     });
     seed.cities = applyInitialChangeCityEvents(seed.cities, seed.initialEvents);
+    const seededRulerIds = new Map<number, number>();
+    for (const general of [...seed.generals].sort((left, right) => left.id - right.id)) {
+        if (general.officerLevel === 12 && !seededRulerIds.has(general.nationId)) {
+            seededRulerIds.set(general.nationId, general.id);
+        }
+    }
 
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const generalGold = options.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
@@ -556,6 +562,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                             name: nation.name,
                             color: nation.color,
                             capitalCityId: nation.capitalCityId ?? null,
+                            chiefGeneralId: seededRulerIds.get(nation.id) ?? null,
                             gold: nation.gold,
                             rice: nation.rice,
                             tech: nation.tech,

@@ -591,6 +591,11 @@ describeDb('scenario database seed', () => {
             ]);
 
             expect(nationCount).toBe(seed.nations.length);
+            const seededRuler = seed.generals.find((general) => general.officerLevel === 12 && general.nationId > 0);
+            expect(seededRuler).toBeDefined();
+            expect(
+                (await connector.prisma.nation.findUnique({ where: { id: seededRuler!.nationId } }))?.chiefGeneralId
+            ).toBe(seededRuler!.id);
             expect(cityCount).toBe(seed.cities.length);
             expect(generalCount).toBe(seed.generals.length);
             expect(diplomacyCount).toBe(seed.nations.length * Math.max(0, seed.nations.length - 1));

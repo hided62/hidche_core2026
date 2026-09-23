@@ -52,6 +52,7 @@ const buildGeneral = (id: number, overrides: Partial<TurnGeneral> = {}): TurnGen
 const buildWorld = (options: {
     generals?: TurnGeneral[];
     nationMeta?: Record<string, TriggerValue>;
+    nationChiefGeneralId?: number | null;
     cityMeta?: Record<string, TriggerValue>;
     currentYear?: number;
     scenarioConst?: Record<string, unknown>;
@@ -106,7 +107,7 @@ const buildWorld = (options: {
                 name: '위',
                 color: '#777777',
                 capitalCityId: 1,
-                chiefGeneralId: 1,
+                chiefGeneralId: options.nationChiefGeneralId === undefined ? 1 : options.nationChiefGeneralId,
                 gold: 10_000,
                 rice: 20_000,
                 power: 0,
@@ -319,6 +320,26 @@ describe('nation personnel world commands', () => {
         await expect(fixture.handler.handle(clearCommand!)).resolves.toMatchObject({ ok: true });
         expect(fixture.world.getGeneralById(2)?.meta.permission).toBe('normal');
         expect(fixture.world.getGeneralById(3)?.meta.permission).toBe('normal');
+    });
+
+    it('allows a possessed ruler to appoint an ambassador when a seeded nation has no chief pointer', async () => {
+        const fixture = buildWorld({
+            nationChiefGeneralId: null,
+            generals: [
+                buildGeneral(1, { officerLevel: 12, npcState: 1 }),
+                buildGeneral(2, { npcState: 2 }),
+            ],
+        });
+        await expect(
+            fixture.handler.handle({
+                type: 'changePermission',
+                userId: 'user-1',
+                generalId: 1,
+                isAmbassador: true,
+                targetGeneralIds: [2],
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(fixture.world.getGeneralById(2)?.meta.permission).toBe('ambassador');
     });
 
     it('kicks for an unlocked head officer with resource, troop, permission, and log side effects', async () => {

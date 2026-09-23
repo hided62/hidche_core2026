@@ -249,9 +249,9 @@ describe('nation personnel router', () => {
     });
 
     it('keeps ambassador and auditor candidate pools mutually exclusive like Ref', async () => {
-        const me = { ...baseGeneral, officerLevel: 12 };
+        const me = { ...baseGeneral, officerLevel: 12, npcState: 1 };
         const rows = [
-            listRow({ id: 22, name: '군주', officerLevel: 12 }),
+            listRow({ id: 22, name: '군주', officerLevel: 12, npcState: 1 }),
             listRow({ id: 30, name: '현 외교권자', meta: { belong: 5, permission: 'ambassador' } }),
             listRow({ id: 31, name: '현 조언자', meta: { belong: 5, permission: 'auditor' } }),
             listRow({ id: 32, name: '일반 후보' }),
@@ -283,6 +283,7 @@ describe('nation personnel router', () => {
         });
 
         const result = await appRouter.createCaller(context).nation.getPersonnelInfo();
+        expect(result.me.canChangePermissions).toBe(true);
         expect(result.permissionCandidates.ambassadors.map((candidate) => candidate.id)).toEqual([30, 32]);
         expect(result.permissionCandidates.auditors.map((candidate) => candidate.id)).toEqual([31, 32]);
     });
