@@ -130,6 +130,8 @@ export interface TurnCommandInputOptions {
         nationGold?: number;
         nationRice?: number;
         nationLevel?: number;
+        /** 숙련전환 전/후 미리보기용 본인 병과별 숙련(`dex<armType>`). */
+        dexterity?: Record<string, number>;
     };
 }
 
@@ -164,6 +166,8 @@ export const buildEquipmentTradeItemOptions = (options: {
             {
                 value: 'None',
                 label: ownedItem ? `${ownedItem.name} 판매` : `${slotName} 판매`,
+                // Ref che_장비매매.vue: 소유하지 않은 종류의 판매는 붉은색 `(불가)`로 표시한다.
+                ...(ownedItem ? {} : { availableNow: false }),
                 description: ownedItem
                     ? `소유 물품 판매 · 판매가 ${Math.floor((ownedItem.cost ?? 0) / 2).toLocaleString()}금`
                     : ownedCode && ownedCode !== 'None'
@@ -190,6 +194,7 @@ export const buildEquipmentTradeItemOptions = (options: {
         items[item.slot].push({
             value: item.key,
             label: item.name,
+            availableNow: options.currentSecurity >= item.reqSecu && options.generalGold >= cost,
             description: `${availability} · 가격 ${cost.toLocaleString()} · ${plainLegacyInfo(item.info)}`,
         });
     }
@@ -242,8 +247,9 @@ const FIELD_LABELS: Record<string, string> = {
     nationName: '국가명',
     nationType: '국가 성향',
     colorType: '국기 색상',
-    srcArmType: '기존 병과',
-    destArmType: '변경 병과',
+    // 숙련전환 전용. Ref che_숙련전환.vue의 '감소 대상 숙련 :'·'전환 대상 숙련 :'.
+    srcArmType: '감소 대상 숙련',
+    destArmType: '전환 대상 숙련',
     itemType: '장비 종류',
     itemCode: '장비',
     crewType: '병종',

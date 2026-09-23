@@ -71,6 +71,11 @@ describe('turn command argument input', () => {
                 ],
             },
         ]);
+        // Ref che_숙련전환.vue: '감소 대상 숙련 :', '전환 대상 숙련 :'.
+        expect(fields.find((entry) => entry.key === 'che_숙련전환')?.fields).toMatchObject([
+            { key: 'srcArmType', label: '감소 대상 숙련', kind: 'select', optionSource: 'armTypes' },
+            { key: 'destArmType', label: '전환 대상 숙련', kind: 'select', optionSource: 'armTypes' },
+        ]);
 
         expect(
             nationFields
@@ -339,6 +344,9 @@ describe('turn command argument input', () => {
             'che_계략_향낭',
         ]);
         expect(items.item[1]?.description).toBe('현재 구입 가능 · 가격 100 · 환약 · 설명');
+        expect(items.item[1]?.availableNow).toBe(true);
+        // Ref che_장비매매.vue: 소유하지 않은 종류의 판매는 불가로 표시한다.
+        expect(items.item[0]?.availableNow).toBe(false);
     });
 
     it('shows only zero-count buyable items selected by an explicit scenario pool', () => {
@@ -359,5 +367,6 @@ describe('turn command argument input', () => {
 
         expect(items.item.map((item) => item.value)).toEqual(['None', 'event_전투특기_격노']);
         expect(items.item[1]?.description).toContain('현재 구입 불가: 치안 3,000 필요');
+        expect(items.item[1]?.availableNow).toBe(false);
     });
 });

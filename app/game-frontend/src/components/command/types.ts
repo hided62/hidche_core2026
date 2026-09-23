@@ -61,6 +61,8 @@ export type CommandInputContext = {
     nationGold?: number;
     nationRice?: number;
     nationLevel?: number;
+    /** 숙련전환 전/후 미리보기용 본인 병과별 숙련. */
+    dexterity?: Record<string, number>;
 };
 
 export type CommandInputField = {

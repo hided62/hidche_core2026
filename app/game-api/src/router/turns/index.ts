@@ -415,6 +415,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             item: general.itemCode,
         },
     });
+    const dexterityByArmType: Record<string, number> = {};
     const inputOptions: TurnCommandInputOptions = {
         cities: cities.map((entry) => ({
             value: entry.id,
@@ -432,6 +433,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             .map((entry) => ({ value: entry.id, label: entry.name })),
         armTypes: Object.entries(environment.unitSet.armTypes ?? {}).map(([value, label]) => {
             const dexterity = readGeneralMetaNumber(general.meta, `dex${value}`);
+            if (dexterity !== null) dexterityByArmType[value] = dexterity;
             return {
                 value: Number(value),
                 label,
@@ -468,6 +470,7 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             actorRice: general.rice,
             ...(city ? { citySecurity: city.security } : {}),
             ...(nation ? { nationGold: nation.gold, nationRice: nation.rice, nationLevel: nation.level } : {}),
+            dexterity: dexterityByArmType,
         },
     };
 

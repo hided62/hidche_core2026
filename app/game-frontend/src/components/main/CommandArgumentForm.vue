@@ -24,6 +24,12 @@ import {
     type ScoutMessageRow,
 } from '../command/commandNationDetails';
 import {
+    dexConversionPreview,
+    dexGradeName,
+    equipmentOptionText,
+    nationTypeRows,
+} from '../command/commandPersonalDetails';
+import {
     commandArgumentFieldContract,
     shouldPreserveCommandArgumentValue,
     type CommandArgumentFieldContract,
@@ -259,14 +265,41 @@ const colorOptionStyle = (field: CommandInputField, option?: CommandOption): CSS
     if (isCounterStrategyField(field) && option && strategyOption(option).remainTurn > 0) {
         return { color: 'red' };
     }
+    if (field.optionSource === 'items' && option?.availableNow === false) {
+        return { color: 'red' };
+    }
     return undefined;
 };
 
 const isCounterStrategyField = (field: CommandInputField): boolean =>
     props.commandKey === 'che_피장파장' && field.key === 'commandType';
 const strategyOption = (option: CommandOption) => counterStrategyOption(option, props.options.strategyCooldowns);
-const optionText = (field: CommandInputField, option: CommandOption): string =>
-    isCounterStrategyField(field) ? strategyOption(option).label : option.label;
+const isDexConversionField = (field: CommandInputField): boolean =>
+    props.commandKey === 'che_숙련전환' && field.optionSource === 'armTypes';
+const optionText = (field: CommandInputField, option: CommandOption): string => {
+    if (isCounterStrategyField(field)) return strategyOption(option).label;
+    if (field.optionSource === 'items') return equipmentOptionText(option);
+    if (isDexConversionField(field)) {
+        // Ref che_숙련전환.vue: `병과 (등급)`.
+        const grade = dexGradeName(props.options.context?.dexterity?.[String(option.value)]);
+        return grade ? `${option.label} (${grade})` : option.label;
+    }
+    return option.label;
+};
+const dexPreview = computed(() =>
+    props.commandKey === 'che_숙련전환'
+        ? dexConversionPreview(
+              values.srcArmType,
+              values.destArmType,
+              props.options.armTypes,
+              props.options.context?.dexterity
+          )
+        : null
+);
+const nationTypeTable = computed(() =>
+    props.fields.some((field) => field.optionSource === 'nationTypes') ? nationTypeRows(props.options.nationTypes) : []
+);
+const nationTypeField = computed(() => props.fields.find((field) => field.optionSource === 'nationTypes'));
 
 const cityTargetField = computed(() =>
     props.fields.find(
@@ -584,6 +617,24 @@ watch(
                     >: {{ row.amount.toLocaleString() }}
                 </li>
             </ul>
+            <ul v-if="nationTypeTable.length" class="nation-type-list" data-testid="nation-type-list">
+                <li
+                    v-for="row in nationTypeTable"
+                    :key="String(row.value)"
+                    :class="{ selected: nationTypeField && row.value === values[nationTypeField.key] }"
+                >
+                    <button
+                        type="button"
+                        class="nation-type-name"
+                        :aria-pressed="Boolean(nationTypeField && row.value === values[nationTypeField.key])"
+                        @click="nationTypeField && setSelectValue(nationTypeField, String(row.value))"
+                    >
+                        - {{ row.name }}
+                    </button>
+                    <span>: <span class="nation-type-pros">{{ row.pros }}</span>,</span>
+                    <span class="nation-type-cons">{{ row.cons }}</span>
+                </li>
+            </ul>
             <div v-for="field in visibleFields" :key="field.key" class="argument-row">
                 <label :for="`command-arg-${field.key}`">{{ field.label }}</label>
                 <input
@@ -836,6 +887,27 @@ watch(
                     </template>
                 </div>
             </div>
+            <div v-if="dexPreview" class="dex-conversion-preview" data-testid="dex-conversion-preview">
+                <div v-for="row in dexPreview" :key="row.armName" class="dex-conversion-row">
+                    <div>{{ row.armName }}</div>
+                    <div class="dex-bracket-open">[</div>
+                    <div :style="{ color: row.before.color }">{{ row.before.name }}</div>
+                    <div class="dex-amount">{{ row.before.amount.toLocaleString() }}</div>
+                    <div>]</div>
+                    <div class="dex-arrow">→</div>
+                    <div class="dex-bracket-open">[</div>
+                    <div :style="{ color: row.after.color }">{{ row.after.name }}</div>
+                    <div class="dex-amount">{{ row.after.amount.toLocaleString() }}</div>
+                    <div>]</div>
+                </div>
+            </div>
+            <div
+                v-else-if="commandKey === 'che_숙련전환' && values.srcArmType === values.destArmType"
+                class="dex-conversion-same"
+                data-testid="dex-conversion-same"
+            >
+                감소 대상과 전환 대상 숙련이 같습니다. 다른 병과를 고르세요.
+            </div>
             <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
         </div>
         <section
@@ -972,6 +1044,100 @@ small {
 .aid-level-table li.current .aid-level-name {
     font-weight: bold;
     text-decoration: underline;
+}
+
+/* Ref che_건국.vue 성향표: col-2/col-4/col-4, lg 이상 col-lg-1/col-lg-2/col-lg-2. */
+.nation-type-list {
+    margin: 0;
+    padding: 4px 0 6px 2rem;
+    color: #e8ddc4;
+    font-size: var(--sammo-font-size-normal);
+    line-height: 1.45;
+    list-style: none;
+}
+
+.nation-type-list li {
+    display: grid;
+    grid-template-columns: calc(100% / 6) calc(100% / 3) calc(100% / 3);
+}
+
+@media (min-width: 992px) {
+    .nation-type-list li {
+        grid-template-columns: calc(100% / 12) calc(100% / 6) calc(100% / 6);
+    }
+}
+
+/* Ref 최소 폭 500px보다 좁으면 비율 칸이 장단점을 줄바꿈하므로 내용 폭 열로 바꾼다(Core 보조). */
+@media (max-width: 499px) {
+    .nation-type-list {
+        padding-left: 1rem;
+    }
+
+    .nation-type-list li {
+        grid-template-columns: max-content max-content minmax(0, 1fr);
+        column-gap: 0.5em;
+    }
+}
+
+.nation-type-list li.selected {
+    background: rgba(201, 164, 90, 0.18);
+}
+
+.nation-type-name {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.nation-type-list li.selected .nation-type-name {
+    font-weight: bold;
+}
+
+.nation-type-pros {
+    color: cyan;
+}
+
+.nation-type-cons {
+    color: magenta;
+}
+
+/*
+ * Ref che_숙련전환.vue 전/후 grid(3ch 1ch 2ch 10ch 1ch 3ch 1ch 2ch 10ch 1ch).
+ * 한글 병과명과 EX 등급이 옆 칸을 덮지 않도록 병과명은 4em, 등급은 3ch로 넓힌다.
+ */
+.dex-conversion-preview {
+    padding: 4px 8px;
+    color: #e8ddc4;
+    font-size: var(--sammo-font-size-normal);
+}
+
+.dex-conversion-row {
+    display: grid;
+    grid-template-columns: 4em 1ch 3ch 10ch 1ch 3ch 1ch 3ch 10ch 1ch;
+}
+
+.dex-bracket-open,
+.dex-amount {
+    text-align: end;
+}
+
+.dex-amount {
+    font-variant-numeric: tabular-nums;
+}
+
+.dex-arrow {
+    text-align: center;
+}
+
+.dex-conversion-same {
+    padding: 4px 8px;
+    color: #ffb4a8;
+    font-size: var(--sammo-font-size-normal);
 }
 
 /*

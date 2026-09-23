@@ -4595,4 +4595,268 @@ for (const width of [1200, 390]) {
         await writeFile(testInfo.outputPath(`aid-levels-${width}.json`), JSON.stringify(geometry, null, 2));
         await picker.screenshot({ path: testInfo.outputPath(`aid-levels-${width}.png`) });
     });
+
+    test(`shows Ref equipment, dex conversion and nation type details at ${width}px`, async ({ page }, testInfo) => {
+        const requests = await install(page, false, {
+            ...commandTable,
+            general: [
+                {
+                    category: '개인',
+                    values: [
+                        {
+                            key: 'che_장비매매',
+                            name: '장비매매',
+                            reqArg: true,
+                            possible: true,
+                            status: 'needsInput',
+                            inputFields: [
+                                {
+                                    key: 'itemType',
+                                    label: '장비 종류',
+                                    kind: 'select',
+                                    required: true,
+                                    options: [
+                                        { value: 'horse', label: '명마' },
+                                        { value: 'weapon', label: '무기' },
+                                    ],
+                                },
+                                { key: 'itemCode', label: '장비', kind: 'select', required: true, optionSource: 'items' },
+                            ],
+                        },
+                        {
+                            key: 'che_숙련전환',
+                            name: '숙련전환',
+                            reqArg: true,
+                            possible: true,
+                            status: 'needsInput',
+                            inputFields: [
+                                {
+                                    key: 'srcArmType',
+                                    label: '감소 대상 숙련',
+                                    kind: 'select',
+                                    required: true,
+                                    optionSource: 'armTypes',
+                                },
+                                {
+                                    key: 'destArmType',
+                                    label: '전환 대상 숙련',
+                                    kind: 'select',
+                                    required: true,
+                                    optionSource: 'armTypes',
+                                },
+                            ],
+                        },
+                        {
+                            key: 'che_건국',
+                            name: '건국',
+                            reqArg: true,
+                            possible: true,
+                            status: 'needsInput',
+                            inputFields: [
+                                { key: 'nationName', label: '국가명', kind: 'text', required: true, min: 1, max: 18 },
+                                {
+                                    key: 'nationType',
+                                    label: '국가 성향',
+                                    kind: 'select',
+                                    required: true,
+                                    optionSource: 'nationTypes',
+                                },
+                                { key: 'colorType', label: '국기 색상', kind: 'select', required: true, optionSource: 'colors' },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            inputOptions: {
+                ...inputOptions,
+                armTypes: [
+                    { value: 1, label: '보병' },
+                    { value: 2, label: '궁병' },
+                    { value: 3, label: '기병' },
+                ],
+                nationTypes: [
+                    { value: 'che_도적', label: '도적', description: '계략↑ 금수입↓ 치안↓ 민심↓' },
+                    { value: 'che_덕가', label: '덕가', description: '치안↑ 인구↑ 민심↑ 쌀수입↓ 수성↓' },
+                    { value: 'che_묵가', label: '묵가', description: '수성↑ 기술↓' },
+                ],
+                items: {
+                    horse: [
+                        { value: 'None', label: '노기 판매', description: '소유 물품 판매 · 판매가 500금' },
+                        {
+                            value: 'che_명마_갈색마',
+                            label: '갈색마',
+                            availableNow: true,
+                            description: '현재 구입 가능 · 가격 1,000 · 통솔 +1',
+                        },
+                        {
+                            value: 'che_명마_적토마',
+                            label: '적토마',
+                            availableNow: false,
+                            description: '현재 구입 불가: 치안 5,000 필요 · 가격 6,000 · 통솔 +6',
+                        },
+                    ],
+                    weapon: [
+                        {
+                            value: 'None',
+                            label: '무기 판매',
+                            availableNow: false,
+                            description: '현재 보유한 장비가 없습니다.',
+                        },
+                    ],
+                },
+                context: { ...inputOptions.context, citySecurity: 2_000, dexterity: { '1': 1001, '2': 3000, '3': 500_000 } },
+            },
+        });
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await page.goto(gamePath('/'));
+        const picker = page.getByTestId('command-picker');
+        const form = picker.getByTestId('command-argument-form');
+
+        // 장비매매: Ref처럼 불가 항목은 붉은색 `(불가)`이고 치안·자금을 함께 보인다.
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        await picker.getByRole('button', { name: /장비매매/ }).click();
+        await expect(form.getByTestId('command-argument-guidance')).toContainText(
+            '현재 구입 불가능한 것은 붉은색으로 표시됩니다.'
+        );
+        await expect(form.getByTestId('command-resource-summary')).toContainText('현재 도시 치안 2,000');
+        await expect(form.getByTestId('command-resource-summary')).toContainText('현재 자금');
+        const itemType = form.locator('#command-arg-itemType');
+        const itemCode = form.locator('#command-arg-itemCode');
+        await itemType.selectOption('horse');
+        await expect(itemCode.locator('option')).toHaveText(['노기 판매', '갈색마', '적토마 (불가)']);
+        await expect(itemCode.locator('option').nth(2)).toHaveCSS('color', 'rgb(255, 0, 0)');
+        await expect(itemCode.locator('option').nth(1)).not.toHaveCSS('color', 'rgb(255, 0, 0)');
+        await itemCode.selectOption('che_명마_적토마');
+        await expect(itemCode).toHaveCSS('color', 'rgb(255, 0, 0)');
+        await expect(form.locator('.option-detail')).toContainText('치안 5,000 필요');
+        await itemType.selectOption('weapon');
+        await expect(itemCode.locator('option')).toHaveText(['무기 판매 (불가)']);
+        await itemType.selectOption('horse');
+        await itemCode.selectOption('che_명마_갈색마');
+        await picker.screenshot({ path: testInfo.outputPath(`equipment-${width}.png`) });
+        await picker.getByRole('button', { name: '장비매매 입력', exact: true }).click();
+        await expect
+            .poll(() => JSON.stringify(requests))
+            .toContain('"action":"che_장비매매","args":{"itemType":"horse","itemCode":"che_명마_갈색마"}');
+
+        // 숙련전환: Ref 라벨·`병과 (등급)`과 감소/전환 대상 전후 두 줄.
+        await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+        await picker.getByRole('button', { name: /숙련전환/ }).click();
+        const src = form.getByLabel('감소 대상 숙련');
+        const dest = form.getByLabel('전환 대상 숙련');
+        await expect(src.locator('option')).toHaveText(['보병 (F)', '궁병 (F+)', '기병 (S-)']);
+        await expect(form.getByTestId('dex-conversion-same')).toBeVisible();
+        await src.selectOption('3');
+        await dest.selectOption('2');
+        const preview = form.getByTestId('dex-conversion-preview');
+        const previewRows = preview.locator('.dex-conversion-row');
+        // cut = trunc(500,000 × 0.4) = 200,000, add = trunc(200,000 × 0.9) = 180,000.
+        await expect(previewRows.nth(0).locator('> div')).toHaveText([
+            '기병',
+            '[',
+            'S-',
+            '500,000',
+            ']',
+            '→',
+            '[',
+            'A-',
+            '300,000',
+            ']',
+        ]);
+        await expect(previewRows.nth(1).locator('> div')).toHaveText([
+            '궁병',
+            '[',
+            'F+',
+            '3,000',
+            ']',
+            '→',
+            '[',
+            'B',
+            '183,000',
+            ']',
+        ]);
+        await expect(previewRows.nth(0).locator('> div').nth(2)).toHaveCSS('color', 'rgb(255, 99, 71)');
+        await expect(previewRows.nth(0).locator('> div').nth(7)).toHaveCSS('color', 'rgb(255, 140, 0)');
+        await expect(previewRows.nth(1).locator('> div').nth(2)).toHaveCSS('color', 'rgb(0, 0, 128)');
+        await expect(previewRows.nth(1).locator('> div').nth(7)).toHaveCSS('color', 'rgb(50, 205, 50)');
+        const dexGeometry = await picker.evaluate((element) => ({
+            url: location.href,
+            viewport: [innerWidth, innerHeight],
+            overlayOverflow: element.scrollWidth - element.clientWidth,
+            rows: [...element.querySelectorAll('.dex-conversion-row')].map((row) => ({
+                columns: getComputedStyle(row).gridTemplateColumns,
+                cells: [...row.children].map((cell) => {
+                    const rect = cell.getBoundingClientRect();
+                    return { text: cell.textContent?.trim(), left: rect.left, right: rect.right, scroll: cell.scrollWidth };
+                }),
+            })),
+        }));
+        expect(dexGeometry.overlayOverflow).toBe(0);
+        for (const row of dexGeometry.rows) {
+            // 병과명 4em(56px) 칸 안에 이름이 들어가고 칸끼리 겹치지 않는다.
+            expect(row.columns.split(' ')[0]).toBe('56px');
+            for (let index = 1; index < row.cells.length; index += 1) {
+                expect(row.cells[index]!.left).toBeGreaterThanOrEqual(row.cells[index - 1]!.right - 0.5);
+            }
+        }
+        await writeFile(testInfo.outputPath(`dex-conversion-${width}.json`), JSON.stringify(dexGeometry, null, 2));
+        await picker.screenshot({ path: testInfo.outputPath(`dex-conversion-${width}.png`) });
+        await picker.getByRole('button', { name: '숙련전환 입력', exact: true }).click();
+        await expect
+            .poll(() => JSON.stringify(requests))
+            .toContain('"action":"che_숙련전환","args":{"srcArmType":3,"destArmType":2}');
+
+        // 건국: Ref 성향표(`- 이름 : 장점, 단점`)를 입력 위에 보이고, 행을 누르면 성향을 고른다(Core 보조).
+        await page.getByRole('button', { name: '3턴 명령 입력', exact: true }).click();
+        await picker.getByRole('button', { name: /^건국/ }).click();
+        const typeList = form.getByTestId('nation-type-list');
+        const typeRows = typeList.locator('li');
+        await expect(typeRows).toHaveText([
+            /- 도적\s*: 계략↑,\s*금수입↓ 치안↓ 민심↓/,
+            /- 덕가\s*: 치안↑ 인구↑ 민심↑,\s*쌀수입↓ 수성↓/,
+            /- 묵가\s*: 수성↑,\s*기술↓/,
+        ]);
+        await expect(typeRows.first().locator('.nation-type-pros')).toHaveCSS('color', 'rgb(0, 255, 255)');
+        await expect(typeRows.first().locator('.nation-type-cons')).toHaveCSS('color', 'rgb(255, 0, 255)');
+        await expect(typeRows.first()).toHaveClass(/selected/);
+        await typeRows.nth(1).locator('.nation-type-name').click();
+        await expect(form.getByLabel('국가 성향')).toHaveValue('che_덕가');
+        await expect(typeRows.nth(1).locator('.nation-type-name')).toHaveAttribute('aria-pressed', 'true');
+        const typeGeometry = await picker.evaluate((element) => {
+            const list = element.querySelector('[data-testid=nation-type-list]')!;
+            const row = list.querySelector('li')!;
+            return {
+                url: location.href,
+                viewport: [innerWidth, innerHeight],
+                overlayOverflow: element.scrollWidth - element.clientWidth,
+                list: list.getBoundingClientRect().toJSON(),
+                rowWidth: row.getBoundingClientRect().width,
+                rowHeights: [...list.querySelectorAll('li')].map((node) => node.getBoundingClientRect().height),
+                lineHeight: Number.parseFloat(getComputedStyle(list).lineHeight),
+                columns: getComputedStyle(row).gridTemplateColumns.split(' ').map(Number.parseFloat),
+                listBeforeFields:
+                    list.compareDocumentPosition(element.querySelector('#command-arg-nationType')!) &
+                    Node.DOCUMENT_POSITION_FOLLOWING,
+            };
+        });
+        expect(typeGeometry.overlayOverflow).toBe(0);
+        expect(typeGeometry.listBeforeFields).toBeTruthy();
+        if (width >= 992) {
+            // Ref bootstrap: lg(992px) 이상 col-lg-1/2/2.
+            const [first, second, third] = typeGeometry.columns;
+            const unit = typeGeometry.rowWidth / 12;
+            expect(first).toBeCloseTo(unit, 0);
+            expect(second).toBeCloseTo(unit * 2, 0);
+            expect(third).toBeCloseTo(unit * 2, 0);
+        }
+        // 390px은 Ref 최소 폭보다 좁아 내용 폭 열을 쓴다. 어느 폭에서도 한 성향이 한 줄이다.
+        for (const height of typeGeometry.rowHeights) {
+            expect(height).toBeLessThan(typeGeometry.lineHeight * 1.5);
+        }
+        await writeFile(testInfo.outputPath(`nation-types-${width}.json`), JSON.stringify(typeGeometry, null, 2));
+        await picker.screenshot({ path: testInfo.outputPath(`nation-types-${width}.png`) });
+        await form.getByLabel('국가명').fill('신국');
+        await picker.getByRole('button', { name: '건국 입력', exact: true }).click();
+        await expect.poll(() => JSON.stringify(requests)).toContain('"nationType":"che_덕가"');
+    });
 }
