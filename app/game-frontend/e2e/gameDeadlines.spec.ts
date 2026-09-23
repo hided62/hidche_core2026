@@ -5,7 +5,7 @@ import { gameBasePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const wall = new Date('2026-09-16T12:00:00Z');
 const game = new Date('2026-09-16T11:50:00Z');
-type ClockCase = 'normal' | 'recovery' | 'recovery-end' | 'suspended';
+type ClockCase = 'normal' | 'recovery' | 'recovery-end' | 'suspended' | 'preopen';
 const install = async (page: Page, routeName: string, clockCase: ClockCase, displayMode: string) => {
     await page.clock.install({ time: wall });
     await page.clock.setFixedTime(wall);
@@ -48,7 +48,9 @@ const install = async (page: Page, routeName: string, clockCase: ClockCase, disp
                     serverTime: game.toISOString(),
                     serverWallTime: wall.toISOString(),
                     clockMode: 'realtime',
-                    clockRunning: clockCase !== 'suspended',
+                    clockRunning: clockCase !== 'suspended' && clockCase !== 'preopen',
+                    clockStartsAt: clockCase === 'preopen' ? new Date(wall.getTime() + 600_000).toISOString() : null,
+                    turnEngineRunning: clockCase === 'preopen' ? false : true,
                     clockRecovery:
                         clockCase === 'recovery' || clockCase === 'recovery-end'
                             ? {
@@ -170,8 +172,9 @@ const capture = async (page: Page, info: TestInfo, name: string) => {
     await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true });
 };
 for (const width of [1365, 390]) {
-    for (const clockCase of ['normal', 'recovery', 'recovery-end', 'suspended'] as const) {
+    for (const clockCase of ['normal', 'recovery', 'recovery-end', 'suspended', 'preopen'] as const) {
         for (const routeName of ['survey', 'select-general', 'join']) {
+            if (clockCase === 'preopen' && routeName !== 'join') continue;
             test(`${routeName} GAME deadline ${clockCase} ${width}px`, async ({ page }, info) => {
                 await page.setViewportSize({ width, height: 900 });
                 const calls = await install(page, routeName, clockCase, width === 390 ? 'real' : 'game');
