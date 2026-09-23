@@ -450,6 +450,33 @@ integration('database command queue', () => {
         }
     );
 
+    it.each([
+        ['SUSPENDED', 2, true],
+        ['COMPLETED', 2, true],
+        ['COMPLETED', 3, true],
+        ['SUSPENDED', 0, false],
+        ['RECONCILING', 2, false],
+    ] as const)('claims survey rewards in phase %s with unification state %i: %s', async (phase, united, allowed) => {
+        await db.worldState.updateMany({ data: { clockPhase: phase, meta: { isunited: united } } });
+        const requestId = `integration:engine:post-unification-vote:${phase}:${united}`;
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'ENGINE',
+                eventType: 'voteReward',
+                actorUserId: 'user-7',
+                payload: { type: 'voteReward', requestId, userId: 'user-7', voteId: 1, generalId: 7, selection: [0] },
+            },
+        });
+        const commands = await new DatabaseTurnDaemonCommandQueue(db).drain();
+        expect(commands.map((command) => command.type)).toEqual(allowed ? ['voteReward'] : []);
+        expect(await db.inputEvent.findUniqueOrThrow({ where: { requestId } })).toMatchObject({
+            status: allowed ? 'PROCESSING' : 'PENDING',
+            attempts: allowed ? 1 : 0,
+            processingGameTick: allowed ? 123n : null,
+        });
+    });
+
     it('dequeues gameplay only in an executable phase and records the processing clock generation', async () => {
         const existingWorld = await db.worldState.findFirst({ orderBy: { id: 'asc' } });
         const world = existingWorld

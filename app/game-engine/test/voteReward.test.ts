@@ -414,6 +414,7 @@ describe('voteReward command', () => {
     it.each([
         ['PREOPEN', new Date('2026-08-27T10:30:00.000Z'), 1, 'preopen-seed'],
         ['OPEN', new Date('2026-08-27T11:00:05.000Z'), 2, 'open-seed'],
+        ['COMPLETED', new Date('2026-08-27T11:00:05.000Z'), 2, 'open-seed'],
     ] as const)(
         'awards a survey unique from the Ref default pool at coefficient 1 during %s',
         async (_phase, wallNow, voteId, hiddenSeed) => {
@@ -428,12 +429,14 @@ describe('voteReward command', () => {
                 clockTick: 36_000_000,
                 clockMode: 'realtime',
                 clockWallAnchor: new Date('2026-08-27T11:00:00.000Z'),
+                ...(_phase === 'COMPLETED' ? { clockPhase: 'COMPLETED' as const } : {}),
                 meta: {
                     hiddenSeed,
                     scenarioId: 0,
                     initYear: 180,
                     initMonth: 1,
                     scenarioMeta: { startYear: 180 },
+                    ...(_phase === 'COMPLETED' ? { isunited: 2, isUnited: 2 } : {}),
                     preopenAt: '2026-08-27 19:30:00',
                     opentime: '2026-08-27 20:00:00',
                 },
@@ -442,7 +445,7 @@ describe('voteReward command', () => {
                 schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
             });
             const acceptedGameTick = world.dateToGameTick(world.getGameNow(wallNow));
-            expect(acceptedGameTick).toBe(_phase === 'PREOPEN' ? 36_000_000 : 36_300_000);
+            expect(acceptedGameTick).toBe(_phase === 'OPEN' ? 36_300_000 : 36_000_000);
 
             const commandDb = {
                 ...actorBindingDb(),

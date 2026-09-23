@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { asRecord } from '@sammo-ts/common';
 import { GamePrisma, readInputEventClockCoordinate, type GamePrismaClient } from '@sammo-ts/infra';
 
 import { normalizeTurnDaemonCommand } from '../turn/commandRegistry.js';
@@ -119,7 +120,7 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
             const claimCoordinate = await readInputEventClockCoordinate(transaction);
             const world = await transaction.worldState.findFirst({
                 orderBy: { id: 'asc' },
-                select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true },
+                select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true, meta: true },
             });
             // 가오픈도 장수 생성·삭제·거병·예약 등 사용자 명령은 처리한다.
             // 자동 턴의 RUNNING/MANUAL gate는 TurnDaemonLifecycle이 별도로 지킨다.
@@ -129,6 +130,10 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                 world.clockPhase === 'RUNNING' ||
                 world.clockPhase === 'MANUAL';
             const suspendedTournamentBetCommand = world?.clockPhase === 'SUSPENDED';
+            const worldMeta = asRecord(world?.meta);
+            const postUnificationSurvey =
+                (world?.clockPhase === 'SUSPENDED' || world?.clockPhase === 'COMPLETED') &&
+                Number(worldMeta.isunited ?? worldMeta.isUnited ?? 0) >= 2;
             const currentRevision = world?.clockRevision ?? null;
             const maintenanceSuspended =
                 world?.clockPhase === 'SUSPENDED' &&
@@ -176,6 +181,7 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                               'selectPoolReserve', 'selectPoolCreate', 'selectPoolReselect'
                           )
                       )
+                      OR (${postUnificationSurvey} AND "event_type" = 'voteReward')
                       OR (
                           ${suspendedTournamentBetCommand}
                           AND "event_type" IN ('adjustGeneralResources', 'adjustGeneralMeta')
