@@ -16,7 +16,7 @@ test('keeps every non-database conditional Ref suite in one requirement group', 
     );
 
     assert.deepEqual(counts, {
-        reference_command: 5,
+        reference_command: 3,
         reference_full_lifecycle: 1,
         reference_instant_diplomacy: 1,
         reference_monthly: 1,
@@ -49,7 +49,7 @@ test('enables Ref suites only with the Ref runtime and saved traces only as a pa
     });
     assert.equal(
         selectEnabledConditionalIntegrationFiles(entries, { TURN_DIFFERENTIAL_REFERENCE: '1' }).referenceFiles.length,
-        9
+        7
     );
     assert.deepEqual(
         selectEnabledConditionalIntegrationFiles(entries, {

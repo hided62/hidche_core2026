@@ -5,6 +5,7 @@ import { SystemClock } from '@sammo-ts/common';
 import {
     createDatabaseTurnHooks,
     DatabaseTurnDaemonCommandQueue,
+    DatabaseTurnDaemonLease,
     EngineStateManager,
     InMemoryTurnStateStore,
     InMemoryTurnWorld,
@@ -695,6 +696,10 @@ liveDescribe('auction worker durable recovery', () => {
 
             const redisConnector = createRedisConnector(resolveRedisConfigFromEnv());
             await redisConnector.connect();
+            // 독립 worker는 활성 daemon의 clock_ready fence가 있을 때만 GAME_TIME을 진행한다.
+            const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, { profile: profileName });
+            await lease.acquire();
+            await lease.markClockReady();
             const keys = buildAuctionTimerKeys(profileName);
             const abortController = new AbortController();
             const worker = runAuctionWorker({ signal: abortController.signal });
@@ -725,6 +730,8 @@ liveDescribe('auction worker durable recovery', () => {
             } finally {
                 abortController.abort();
                 await worker;
+                await lease.close();
+                await connector.prisma.turnDaemonLease.delete({ where: { profile: profileName } });
                 await redisConnector.client.del([keys.timerKey, keys.historyKey]);
                 await redisConnector.disconnect();
                 await connector.prisma.errorLog.deleteMany({

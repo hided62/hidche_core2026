@@ -384,8 +384,8 @@ integration('generic general creation through the durable turn daemon', () => {
             actorUserId: userId,
         });
         expect(access.lastRefresh?.getTime()).toBe(event.createdAt.getTime());
-        const turnGridOffsetSeconds =
-            ((created.turnTime.getTime() - runtime!.world.getState().lastTurnTime.getTime()) / 1000 + 300) % 300;
+        // 상속 턴 시간대는 daemon cursor가 아닌 5분 격자의 위상을 보존한다.
+        const turnGridOffsetSeconds = ((created.turnTime.getTime() / 1000) % 300 + 300) % 300;
         expect(turnGridOffsetSeconds).toBeGreaterThanOrEqual(35);
         expect(turnGridOffsetSeconds).toBeLessThan(40);
 
