@@ -1237,7 +1237,7 @@ test('shows and reserves the Ref spy command for a user on desktop and mobile', 
     );
     await form.locator('select').selectOption('2');
     await picker.screenshot({ path: test.info().outputPath('spy-command-desktop-1200.png') });
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(editor.locator('.action-column > div').first()).toHaveText('【허창】에 첩보 실행');
     expect(JSON.stringify(requests)).toContain('"action":"che_첩보","args":{"destCityId":2}');
 
@@ -1355,7 +1355,7 @@ test('defaults founding to a Ref-selectable nation trait and opens colored optio
     await mobilePicker.getByRole('button', { name: '건국', exact: true }).click();
     await mobilePicker.getByLabel('국가명').fill('가나다라마바사아자차');
     await expect(mobilePicker.getByText('국가명은 전각 9자 또는 반각 18자 이하여야 합니다.')).toBeVisible();
-    await expect(mobilePicker.getByRole('button', { name: '입력', exact: true })).toBeDisabled();
+    await expect(mobilePicker.getByRole('button', { name: / 입력$/ })).toBeDisabled();
     await mobilePicker.getByLabel('국가명').fill('신국');
     const mobileColorType = mobilePicker.getByLabel('국기 색상');
     await mobileColorType.click();
@@ -1384,7 +1384,7 @@ test('defaults founding to a Ref-selectable nation trait and opens colored optio
     expect(colorSelectRect.right).toBeLessThanOrEqual(500);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(500);
     await mobilePicker.screenshot({ path: test.info().outputPath('founding-colored-option-mobile-500.png') });
-    await mobilePicker.getByRole('button', { name: '입력', exact: true }).click();
+    await mobilePicker.getByRole('button', { name: / 입력$/ }).click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toContainText('신국');
     await expect.poll(() => JSON.stringify(requests)).toContain('"colorType":15');
 });
@@ -1499,7 +1499,7 @@ test('shows speciality reset cooldowns and reserves special user commands from t
     const forceMoveForm = picker.getByTestId('command-argument-form');
     await expect(forceMoveForm.getByTestId('command-argument-guidance')).toContainText('선택한 도시로 강행합니다.');
     await forceMoveForm.locator('select').selectOption('2');
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(editor.locator('.action-column > div').nth(2)).toHaveText('【허창】으로 강행');
 
     const serialized = JSON.stringify(requests);
@@ -1669,7 +1669,7 @@ test('keeps general and chief command categories after input and across page rel
     await picker.getByRole('button', { name: '군사', exact: true }).click();
     await picker.getByRole('button', { name: '출병', exact: true }).click();
     await picker.getByTestId('command-argument-form').locator('select').selectOption('3');
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(generalEditor.locator('.action-column > div').first()).toHaveText('【단양】으로 출병');
 
     await generalEditor.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
@@ -2032,7 +2032,7 @@ test('enters general and nation command arguments and sends exact values', async
         const rect = area.getBoundingClientRect();
         return { width: rect.width, height: rect.height };
     });
-    await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
+    await page.getByTestId('command-picker').getByRole('button', { name: / 입력$/ }).click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
         '【허창】에 화계실행'
     );
@@ -2059,7 +2059,7 @@ test('enters general and nation command arguments and sends exact values', async
             fontSize: style.fontSize,
         };
     });
-    await chiefPicker.getByRole('button', { name: '입력', exact: true }).click();
+    await chiefPicker.getByRole('button', { name: / 입력$/ }).click();
     await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText(
         '【여포NPC】 쌀 300 포상'
     );
@@ -2184,7 +2184,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await infantry.getByRole('button', { name: '절반', exact: true }).click();
     await expect(estimatedGold).toHaveText('363금');
     await page.screenshot({ path: testInfo.outputPath('recruitment-desktop.png') });
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
         '【보병】 3500명 징병'
     );
@@ -2307,7 +2307,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await unavailableMercenary.click();
     await mercenaryForm.locator('.mobile-selected-panel input[type=number]').fill('25');
     await expect(mercenaryForm.locator('.mobile-selected-panel .submit-recruit')).toBeEnabled();
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').nth(1)).toHaveText(
         '【정예병】 2500명 모병'
     );
@@ -2593,7 +2593,7 @@ test('limits non-aggression end years to the Ref twenty-year window on desktop a
             await expect(yearInput).toHaveAttribute('max', '210');
             await expect(yearInput).toHaveValue('191');
 
-            const submit = picker.getByRole('button', { name: '입력', exact: true });
+            const submit = picker.getByRole('button', { name: / 입력$/ });
             await yearInput.fill('211');
             await expect(submit).toBeDisabled();
             await yearInput.fill('210');
@@ -2881,7 +2881,7 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     await expect(generalList.locator('.target-option strong')).toHaveText(['장수 (업)', '관우 (업)', '여포NPC (업)']);
     await generalList.locator('.target-option').filter({ hasText: '여포NPC' }).click();
     const awardResponse = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await awardResponse;
 
     await page.goto('/che/chief-center');
@@ -2946,7 +2946,7 @@ test('offers Ref amount presets and rich, command-specific general lists', async
     await expect(tupleInputs.nth(0)).toHaveValue('20000');
     await expect(tupleInputs.nth(1)).toHaveValue('1370');
     const aidResponse = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await aidResponse;
 
     const serialized = JSON.stringify(requests);
@@ -3088,7 +3088,7 @@ for (const width of [1200, 500]) {
         );
         await picker.screenshot({ path: testInfo.outputPath('assignment-details.png') });
         const saved = page.waitForResponse((response) => response.url().includes('turns.reserved.setNationBulk'));
-        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        await picker.getByRole('button', { name: / 입력$/ }).click();
         await saved;
         expect(JSON.stringify(requests)).toContain('"destGeneralId":3');
         expect(JSON.stringify(requests)).toContain('"destCityId":2');
@@ -3163,7 +3163,7 @@ test('keeps the entered command visible and reports a server validation error', 
     await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
     await page.getByTestId('command-picker').getByRole('button', { name: /화계/ }).click();
     await page.getByTestId('command-argument-form').locator('select').selectOption('2');
-    const submit = page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true });
+    const submit = page.getByTestId('command-picker').getByRole('button', { name: / 입력$/ });
     await submit.click();
 
     await expect(page.getByRole('alert')).toContainText('대상 도시를 선택할 수 없습니다.');
@@ -3212,7 +3212,7 @@ test('keeps Ref command briefs and autonomous-action state after a turn mutation
     await picker.getByRole('button', { name: '군사', exact: true }).click();
     await picker.getByRole('button', { name: '출병', exact: true }).click();
     await picker.getByTestId('command-argument-form').locator('select').selectOption('3');
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
 
     await expect(firstRow).toHaveText('【단양】으로 출병');
     await expect(firstRow).toHaveAttribute('data-autorun-tooltip', /자율 행동: 200年 3月 · .*까지/u);
@@ -3305,7 +3305,7 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     await expect(blockedFire).toBeEnabled();
     await blockedFire.click();
     await picker.getByTestId('command-argument-form').locator('select').selectOption('2');
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(editor.locator('.action-column > div').nth(2)).toHaveText('【허창】에 화계실행');
 
     const recentMenu = editor.locator('details').filter({ has: page.getByText('최근 실행', { exact: true }) });
@@ -3495,7 +3495,7 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     await chiefArgumentForm.getByRole('button', { name: '쌀' }).click();
     await chiefArgumentForm.locator('input[type=number]').fill('300');
     await chiefArgumentForm.locator('select').selectOption('2');
-    await page.getByTestId('command-picker').getByRole('button', { name: '입력', exact: true }).click();
+    await page.getByTestId('command-picker').getByRole('button', { name: / 입력$/ }).click();
     await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText(
         '【관우】 쌀 300 포상'
     );
@@ -3748,7 +3748,7 @@ for (const width of [1200, 390]) {
             await expect(input).toHaveCount(0);
             await expect(results.locator('button')).toHaveCount(3);
             await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
-            await picker.getByRole('button', { name: '입력', exact: true }).click();
+            await picker.getByRole('button', { name: / 입력$/ }).click();
             await expect.poll(() => JSON.stringify(requests)).toContain('"destCityId":2');
 
             await page.goto(gamePath('/chief-center'));
@@ -3794,7 +3794,7 @@ for (const width of [1200, 390]) {
             expect(geometry.viewport.scale).toBe(initialScale);
             await writeFile(testInfo.outputPath(`search-${width}.json`), JSON.stringify(geometry, null, 2));
             await form.screenshot({ path: testInfo.outputPath(`search-${width}.png`) });
-            await picker.getByRole('button', { name: '입력', exact: true }).click();
+            await picker.getByRole('button', { name: / 입력$/ }).click();
             await expect.poll(() => JSON.stringify(requests)).toContain('"destGeneralId":2,"destCityId":2');
             await page.reload();
             await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
@@ -3976,8 +3976,20 @@ for (const viewport of [
                     bar: rect(bar),
                     buttons: [...bar.querySelectorAll('button')].map((button) => ({
                         text: button.textContent?.trim(),
+                        background: getComputedStyle(button).backgroundColor,
                         ...button.getBoundingClientRect().toJSON(),
                     })),
+                    submit: (() => {
+                        const submit = element.querySelector<HTMLButtonElement>('.picker-actions > .command-submit');
+                        if (!submit) return null;
+                        return {
+                            text: submit.textContent?.trim(),
+                            disabled: submit.disabled,
+                            background: getComputedStyle(submit).backgroundColor,
+                            fontWeight: getComputedStyle(submit).fontWeight,
+                            ...submit.getBoundingClientRect().toJSON(),
+                        };
+                    })(),
                     title: bar.querySelector('h2')?.textContent?.replace(/\s+/g, ' ').trim(),
                     map: rect(map),
                     fields: rect(fields),
@@ -4003,6 +4015,23 @@ for (const viewport of [
         expect(geometry.bar?.y).toBe(0);
         expect(geometry.buttons.map((button) => button.text)).toEqual(['명령 취소', '명령 다시 선택', '검색 꺼짐']);
         expect(geometry.title).toBe('화계1턴');
+        // 녹색은 Ref 돌아가기와 같은 이동 버튼(명령 취소)에만 쓰고, 제출은 명령명을 붙인 primary(파랑) 버튼이다.
+        expect(geometry.buttons.map((button) => button.background)).toEqual([
+            'rgb(0, 88, 44)',
+            'rgb(68, 68, 68)',
+            'rgb(68, 68, 68)',
+        ]);
+        expect(geometry.submit).toMatchObject({
+            text: '화계 입력',
+            disabled: false,
+            background: 'rgb(55, 90, 127)',
+            fontWeight: '700',
+        });
+        expect(geometry.submit!.width).toBe(Math.min(360, viewport.width - 12));
+        expect(geometry.submit!.x + geometry.submit!.width / 2).toBeCloseTo(viewport.width / 2, 0);
+        expect(geometry.submit!.height).toBeGreaterThanOrEqual(40);
+        expect(geometry.submit!.bottom).toBeLessThanOrEqual(viewport.height);
+        expect(geometry.submit!.bottom).toBeGreaterThan(viewport.height - 12);
         expect(geometry.bodyOverflow).toBe('hidden');
         expect(geometry.scrollWidth).toBe(geometry.clientWidth);
         for (const button of geometry.buttons) {
@@ -4063,7 +4092,7 @@ for (const viewport of [
         await listPicker.getByRole('button', { name: /화계/ }).click();
         overlay = page.getByRole('dialog', { name: '화계 4턴 명령 입력' });
         await overlay.getByTestId('command-argument-form').locator('select').selectOption('2');
-        await overlay.getByRole('button', { name: '입력', exact: true }).click();
+        await overlay.getByRole('button', { name: / 입력$/ }).click();
         await expect(page.getByTestId('command-picker')).toHaveCount(0);
         await expect(editor.locator('.action-column > div').nth(3)).toHaveText('【허창】에 화계실행');
         await expect

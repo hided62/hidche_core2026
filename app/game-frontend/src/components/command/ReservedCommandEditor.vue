@@ -827,7 +827,7 @@ const clickOutsideMenu = (event: Event) => {
                     </button>
                     <button
                         type="button"
-                        class="legacy-button legacy-button--navigation overlay-reselect"
+                        class="legacy-button legacy-button--secondary overlay-reselect"
                         :disabled="Boolean(pendingReservation)"
                         @click="returnToCommandList"
                     >
@@ -896,8 +896,13 @@ const clickOutsideMenu = (event: Event) => {
                             @click="returnToCommandList"
                         >
                             명령 다시 선택</button
-                        ><button :disabled="!commandArgsValid || Boolean(pendingReservation)" @click="submitCommand">
-                            {{ pendingReservation ? '저장 중' : '입력' }}
+                        ><button
+                            type="button"
+                            class="legacy-button legacy-button--primary command-submit"
+                            :disabled="!commandArgsValid || Boolean(pendingReservation)"
+                            @click="submitCommand"
+                        >
+                            {{ pendingReservation ? '저장 중' : `${selectedCommand.name} 입력` }}
                         </button>
                     </div>
                 </template>
@@ -1266,6 +1271,11 @@ small {
 .picker-actions button {
     min-height: 34px;
 }
+/* 녹색은 Ref TopBackBar `돌아가기`와 같은 이동 버튼 색이다. 제출은 Ref 처리 화면의 primary(파랑) 버튼처럼
+   명령명을 붙여 이동 버튼과 구분한다. */
+.picker-actions > .command-submit {
+    font-weight: bold;
+}
 
 .compact .editor-layout {
     display: flex;
@@ -1402,6 +1412,11 @@ small {
     padding: 6px;
     border-top: 1px solid #777;
     background: #302016 var(--sammo-texture-walnut);
+}
+.command-picker.argument-overlay .picker-actions > .command-submit {
+    justify-self: center;
+    width: min(100%, 360px);
+    min-height: 40px;
 }
 
 /* Ref 1000px 문서 폭을 기본으로 두고, 지도 입력만 원본 지도와 목록 열을 함께 담도록 넓힌다. */

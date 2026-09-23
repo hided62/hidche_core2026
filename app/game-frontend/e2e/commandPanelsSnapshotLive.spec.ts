@@ -79,7 +79,7 @@ test('reserves every requested general and chief command through Chromium and re
         if (fill) {
             const form = picker.getByTestId('command-argument-form');
             await fill(form);
-            await picker.getByRole('button', { name: '입력', exact: true }).click();
+            await picker.getByRole('button', { name: / 입력$/ }).click();
         }
         await expect(editor.locator('.action-column > div').nth(turn)).toHaveText(command);
     };

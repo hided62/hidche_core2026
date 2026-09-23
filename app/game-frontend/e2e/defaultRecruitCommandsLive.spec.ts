@@ -90,7 +90,7 @@ const reserveFirstTurn = async (page: Page, commandName: string, targetName: str
     const targetValue = await targetOption.getAttribute('value');
     if (!targetValue) throw new Error(`Missing target value for ${targetName}.`);
     await picker.locator('select').selectOption(targetValue);
-    await picker.getByRole('button', { name: '입력', exact: true }).click();
+    await picker.getByRole('button', { name: / 입력$/ }).click();
     await expect(picker).toBeHidden();
 };
 

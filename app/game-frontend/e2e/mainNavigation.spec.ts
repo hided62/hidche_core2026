@@ -5283,7 +5283,7 @@ for (const viewport of [
         );
         await picker.screenshot({ path: test.info().outputPath(`equipment-order-${viewport.name}.png`) });
         const request = page.waitForRequest((entry) => entry.url().includes('turns.reserved.setGeneral'));
-        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        await picker.getByRole('button', { name: / 입력$/ }).click();
         expect(JSON.stringify((await request).postDataJSON())).toContain('"itemCode":"che_훈련_청주"');
     });
 
@@ -5351,7 +5351,7 @@ for (const viewport of [
         await writeFile(test.info().outputPath(`owned-sale-${viewport.name}.json`), JSON.stringify(geometry, null, 2));
         await picker.screenshot({ path: test.info().outputPath(`owned-sale-${viewport.name}.png`) });
         const request = page.waitForRequest((request) => request.url().includes('turns.reserved.setGeneralBulk'));
-        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        await picker.getByRole('button', { name: / 입력$/ }).click();
         const payload = (await request).postDataJSON();
         expect(JSON.stringify(payload)).toContain('"itemCode":"None"');
         expect(JSON.stringify(payload)).toContain('"itemType":"item"');

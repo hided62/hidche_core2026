@@ -139,7 +139,7 @@ test('persists one chief command and exposes it to a normal nation user and anot
         selectedTargetId = selectableGeneralIds.find((generalId) => generalId !== editor.id);
         if (!selectedTargetId) throw new Error('No reward target is available in the live command table.');
         await argumentForm.locator('select').selectOption(String(selectedTargetId));
-        await picker.getByRole('button', { name: '입력', exact: true }).click();
+        await picker.getByRole('button', { name: / 입력$/ }).click();
         await expect(
             editorPage.getByTestId('chief-command-editor').locator('.editor-turn-row strong').first()
         ).toHaveText('포상');
