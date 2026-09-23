@@ -10,6 +10,7 @@ import MapViewer from './MapViewer.vue';
 import NationColorSelect from './NationColorSelect.vue';
 import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from '../command/commandArgumentPresentation';
 import { commandCityOptions } from '../command/commandArgumentOptions';
+import { COMMAND_CITY_DISTANCE_RANGE, citiesBasedOnDistance } from '../command/commandCityDistance';
 import { sortCommandGeneralOptions } from '../command/commandGeneralOptions';
 import {
     commandArgumentFieldContract,
@@ -308,6 +309,23 @@ const distanceFromMyCity = (destination: number): number | null => {
     }
     return null;
 };
+
+// Ref CitiesBasedOnDistance.vue의 거리별 글자색이다. 도시 이름을 누르면 대상 도시로 고른다.
+const CITY_DISTANCE_COLORS: Readonly<Record<number, string>> = { 1: 'magenta', 2: 'orange', 3: 'yellow' };
+const cityDistanceGroups = computed(() => {
+    const range = COMMAND_CITY_DISTANCE_RANGE[props.commandKey];
+    const start = props.mapData?.myCity;
+    const layout = props.mapLayout;
+    const field = cityTargetField.value;
+    if (!range || !start || !layout || !field) return [];
+    const names = new Map(layout.cityList.map((city) => [city.id, city.name]));
+    const selectable = new Set(optionsFor(field).map((option) => option.value));
+    return citiesBasedOnDistance(start, layout.cityList, range).map((group) => ({
+        distance: group.distance,
+        color: CITY_DISTANCE_COLORS[group.distance],
+        cities: group.cityIds.map((id) => ({ id, name: names.get(id) ?? String(id), selectable: selectable.has(id) })),
+    }));
+});
 
 const mapTargetSummary = computed(() => {
     if (!props.mapData || !props.mapLayout) return '';
@@ -624,6 +642,34 @@ watch(
                     <span>{{ commandTargetDescription(commandKey, selectedOptionFor(field)) }}</span>
                 </div>
                 <div
+                    v-if="field.key === cityTargetField?.key && cityDistanceGroups.length"
+                    class="city-distance-list"
+                    data-testid="city-distance-list"
+                >
+                    <div
+                        v-for="group in cityDistanceGroups"
+                        :key="group.distance"
+                        class="city-distance-row"
+                        :data-distance="group.distance"
+                    >
+                        {{ group.distance }}칸 떨어진 도시:
+                        <template v-for="(city, index) in group.cities" :key="city.id"
+                            ><template v-if="index !== 0"> , </template
+                            ><button
+                                type="button"
+                                class="city-distance-link"
+                                :class="{ selected: city.id === values[field.key] }"
+                                :style="{ color: group.color }"
+                                :disabled="!city.selectable"
+                                :aria-pressed="city.id === values[field.key]"
+                                @click="setSelectValue(field, String(city.id))"
+                            >
+                                {{ city.name }}
+                            </button></template
+                        >
+                    </div>
+                </div>
+                <div
                     v-if="searchEnabled && isSearchable(field)"
                     class="target-search"
                     :data-testid="`target-search-${field.key}`"
@@ -721,6 +767,41 @@ small {
 .target-search small {
     flex-basis: 100%;
 }
+.city-distance-list {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 3px;
+    padding: 6px 8px;
+    border-top: 1px solid rgba(201, 164, 90, 0.2);
+    color: #e8ddc4;
+    font-size: var(--sammo-font-size-normal);
+    line-height: 1.45;
+}
+
+.city-distance-link {
+    display: inline;
+    border: 0;
+    padding: 0;
+    background: none;
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.city-distance-link.selected {
+    font-weight: bold;
+}
+
+.city-distance-link:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 1px;
+}
+
+.city-distance-link:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
 .target-search-empty {
     padding: 8px;
 }

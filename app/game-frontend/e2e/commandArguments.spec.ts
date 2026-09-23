@@ -2032,7 +2032,10 @@ test('enters general and nation command arguments and sends exact values', async
         const rect = area.getBoundingClientRect();
         return { width: rect.width, height: rect.height };
     });
-    await page.getByTestId('command-picker').getByRole('button', { name: / 입력$/ }).click();
+    await page
+        .getByTestId('command-picker')
+        .getByRole('button', { name: / 입력$/ })
+        .click();
     await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
         '【허창】에 화계실행'
     );
@@ -3495,7 +3498,10 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     await chiefArgumentForm.getByRole('button', { name: '쌀' }).click();
     await chiefArgumentForm.locator('input[type=number]').fill('300');
     await chiefArgumentForm.locator('select').selectOption('2');
-    await page.getByTestId('command-picker').getByRole('button', { name: / 입력$/ }).click();
+    await page
+        .getByTestId('command-picker')
+        .getByRole('button', { name: / 입력$/ })
+        .click();
     await expect(page.locator('[data-command-scope="nation"] .action-column > div').first()).toHaveText(
         '【관우】 쌀 300 포상'
     );
@@ -4130,8 +4136,89 @@ test('opens chief argument input as the same full-screen overlay with selected t
     expect(geometry.overlay).toMatchObject({ x: 0, y: 0, width: 1200, height: 900 });
     expect(geometry.scrollWidth).toBe(geometry.clientWidth);
     await expect(overlay.getByTestId('command-argument-map')).toBeVisible();
+    // Ref che_발령.vue는 distanceList를 받지만 표시하지 않는다.
+    await expect(overlay.getByTestId('city-distance-list')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('chief-argument-overlay-1200.png') });
     await page.goBack();
     await expect(page.getByTestId('command-picker')).toHaveCount(0);
     expect(page.url()).toBe(mainUrl);
 });
+
+// Ref ProcessCity + CitiesBasedOnDistance: 화계 계열·강행·첩보는 3칸, 이동·출병은 1칸까지 현재 도시 기준
+// 거리별 도시를 magenta/orange/yellow 밑줄 글자로 보여 주고, 누르면 대상 도시로 고른다.
+for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 390, height: 844 },
+] as const) {
+    test(`lists Ref-style cities by distance for city target commands at ${viewport.width}px`, async ({
+        page,
+    }, testInfo) => {
+        const requests = await install(page);
+        await page.setViewportSize(viewport);
+        await page.goto(gamePath('/'));
+        const editor = page.locator('[data-command-scope="general"]:visible');
+        const openCommand = async (turn: number, category: string, name: string) => {
+            await editor.getByRole('button', { name: `${turn}턴 명령 입력`, exact: true }).click();
+            const listPicker = page.getByTestId('command-picker');
+            await listPicker.getByRole('button', { name: category, exact: true }).click();
+            await listPicker.getByRole('button', { name, exact: true }).click();
+            const overlay = page.getByRole('dialog', { name: `${name} ${turn}턴 명령 입력` });
+            await expect(overlay).toBeVisible();
+            return overlay;
+        };
+
+        let overlay = await openCommand(1, '계략', '화계');
+        const list = overlay.getByTestId('city-distance-list');
+        await expect(list).toBeVisible();
+        await expect(list.locator('.city-distance-row')).toHaveText([
+            '1칸 떨어진 도시: 허창',
+            '2칸 떨어진 도시:',
+            '3칸 떨어진 도시:',
+        ]);
+        const link = list.getByRole('button', { name: '허창', exact: true });
+        const style = await link.evaluate((element) => {
+            const computed = getComputedStyle(element);
+            return {
+                color: computed.color,
+                textDecorationLine: computed.textDecorationLine,
+                fontWeight: computed.fontWeight,
+            };
+        });
+        expect(style).toEqual({ color: 'rgb(255, 0, 255)', textDecorationLine: 'underline', fontWeight: '400' });
+        await expect(link).toHaveAttribute('aria-pressed', 'false');
+
+        await link.click();
+        await expect(link).toHaveAttribute('aria-pressed', 'true');
+        await expect(overlay.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
+        await expect(overlay.getByTestId('command-map-selection-status')).toContainText('허창');
+        const geometry = await overlay.evaluate((element) => {
+            const fields = element.querySelector<HTMLElement>('.argument-fields')!.getBoundingClientRect();
+            const distance = element.querySelector<HTMLElement>('[data-testid="city-distance-list"]')!;
+            const rect = distance.getBoundingClientRect();
+            return {
+                fields: fields.toJSON(),
+                list: rect.toJSON(),
+                fontSize: getComputedStyle(distance).fontSize,
+                scrollWidth: element.scrollWidth,
+                clientWidth: element.clientWidth,
+            };
+        });
+        await writeFile(testInfo.outputPath(`city-distance-${viewport.width}.json`), JSON.stringify(geometry, null, 2));
+        await page.screenshot({ path: testInfo.outputPath(`city-distance-${viewport.width}.png`) });
+        expect(geometry.fontSize).toBe('14px');
+        expect(geometry.list.x).toBeGreaterThanOrEqual(geometry.fields.x);
+        expect(geometry.list.right).toBeLessThanOrEqual(geometry.fields.right);
+        expect(geometry.scrollWidth).toBe(geometry.clientWidth);
+
+        await overlay.getByRole('button', { name: '화계 입력', exact: true }).click();
+        await expect
+            .poll(() => JSON.stringify(requests))
+            .toContain('"turnList":[0],"action":"che_화계","args":{"destCityId":2}');
+
+        overlay = await openCommand(2, '군사', '출병');
+        await expect(overlay.getByTestId('city-distance-list').locator('.city-distance-row')).toHaveText([
+            '1칸 떨어진 도시: 허창',
+        ]);
+        await overlay.getByRole('button', { name: '명령 취소', exact: true }).click();
+    });
+}
