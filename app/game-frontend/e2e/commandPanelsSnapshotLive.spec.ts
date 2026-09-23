@@ -70,7 +70,8 @@ test('reserves every requested general and chief command through Chromium and re
         fill?: (form: Locator) => Promise<void>
     ) => {
         await editor.getByRole('button', { name: `${turn + 1}턴 명령 입력`, exact: true }).click();
-        const picker = editor.getByTestId('command-picker');
+        // 명령 목록은 편집기 안 popup이고, 인자 입력은 body 위 전체화면 overlay로 옮겨진다.
+        const picker = editor.page().getByTestId('command-picker');
         await picker.getByRole('button', { name: new RegExp(`^(?:국가:)?${category}$`) }).click();
         const commandButton = picker.getByRole('button', { name: command }).first();
         await expect(commandButton).toBeEnabled();

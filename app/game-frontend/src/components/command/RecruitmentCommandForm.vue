@@ -452,7 +452,7 @@ small {
     .recruitment-list-front {
         position: sticky;
         z-index: 5;
-        top: 44px;
+        top: var(--argument-overlay-header-height, 44px);
         background: #1d1d1d;
     }
     .recruitment-status {

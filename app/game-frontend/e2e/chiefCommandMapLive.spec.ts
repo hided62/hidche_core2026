@@ -245,10 +245,7 @@ test('shows and operates a city target map through live PostgreSQL, Game API, an
         expect(geometry.display).not.toBe('none');
         await page.screenshot({ path: testInfo.outputPath('chief-command-city-map-live.png'), fullPage: true });
 
-        await page
-            .getByRole('button', { name: '명령 입력 닫기', exact: true })
-            .click({ timeout: 2_000 })
-            .catch(() => undefined);
+        await page.getByRole('button', { name: '명령 취소', exact: true }).click();
         await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
         const nationPicker = page.getByTestId('command-picker');
         await nationPicker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
@@ -264,10 +261,7 @@ test('shows and operates a city target map through live PostgreSQL, Game API, an
         );
         await page.screenshot({ path: testInfo.outputPath('chief-command-nation-map-live.png'), fullPage: true });
 
-        await page
-            .getByRole('button', { name: '명령 입력 닫기', exact: true })
-            .click({ timeout: 2_000 })
-            .catch(() => undefined);
+        await page.getByRole('button', { name: '명령 취소', exact: true }).click();
         await page.getByRole('button', { name: '3턴 명령 입력', exact: true }).click();
         const assignmentPicker = page.getByTestId('command-picker');
         await assignmentPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, watch, type CSSProperties } from 'vue';
 import { commandTargetDescription } from '../../utils/commandTargetDescription';
-import { useStorage } from '@vueuse/core';
+import {
+    isCommandTargetSearchField,
+    useCommandTargetSearchEnabled,
+} from '../../composables/useCommandTargetSearchEnabled';
 import { buildCommandOptionSearchIndex, matchesCommandTargetSearch } from '../../utils/commandTargetSearch';
 import MapViewer from './MapViewer.vue';
 import NationColorSelect from './NationColorSelect.vue';
@@ -70,7 +73,7 @@ const optionsFor = (field: CommandInputField): CommandOption[] => {
     return props.options[field.optionSource];
 };
 
-const searchEnabled = useStorage('sam.core.commandTargetSearch', false);
+const searchEnabled = useCommandTargetSearchEnabled();
 const searchQueries = reactive<Record<string, string>>({});
 const searchDrafts = reactive<Record<string, string>>({});
 const searchTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -107,9 +110,7 @@ const onSearchKeydown = (key: string, event: KeyboardEvent) => {
         (event.target as HTMLInputElement).blur();
     }
 };
-const isSearchable = (field: CommandInputField): boolean =>
-    field.kind === 'select' && ['generals', 'cities', 'nations'].includes(field.optionSource ?? '');
-const hasSearchableFields = computed(() => props.fields.some(isSearchable));
+const isSearchable = isCommandTargetSearchField;
 // 후보나 정렬이 바뀔 때만 인덱스를 갱신하고 키 입력은 기존 인덱스를 검색한다.
 const targetIndexes = computed(
     () =>
@@ -461,6 +462,7 @@ watch(
     <div
         v-if="props.fields.length || showMap || presentation.lines.length"
         class="command-argument-form"
+        :class="{ 'has-map': showMap }"
         data-testid="command-argument-form"
     >
         <div v-if="showMap" class="command-map" data-testid="command-argument-map">
@@ -474,7 +476,7 @@ watch(
                 :show-current-city-marker="true"
                 @select-city="selectMapCity"
             />
-            <small>지도에서 도시를 클릭하거나 아래 목록에서 대상을 선택하세요.</small>
+            <small>지도에서 도시를 클릭하거나 목록에서 대상을 선택하세요.</small>
             <div class="map-selection-status" aria-live="polite" data-testid="command-map-selection-status">
                 <span class="current-city-status">
                     <span class="status-key">현재 도시</span>
@@ -490,211 +492,209 @@ watch(
                 {{ mapTargetSummary }}
             </div>
         </div>
-        <div v-if="presentation.lines.length" class="command-guidance" data-testid="command-argument-guidance">
-            <div v-for="line in presentation.lines" :key="line">{{ line }}</div>
-        </div>
-        <div v-if="resourceSummary.length" class="resource-summary" data-testid="command-resource-summary">
-            <span v-for="entry in resourceSummary" :key="entry">{{ entry }}</span>
-        </div>
-        <button
-            v-if="hasSearchableFields"
-            type="button"
-            class="legacy-button legacy-button--secondary target-search-toggle"
-            :aria-pressed="searchEnabled"
-            @click="searchEnabled = !searchEnabled"
-        >
-            {{ searchEnabled ? '검색 켜짐' : '검색 꺼짐' }}
-        </button>
-        <div v-for="field in visibleFields" :key="field.key" class="argument-row">
-            <label :for="`command-arg-${field.key}`">{{ field.label }}</label>
-            <input
-                v-if="field.kind === 'text'"
-                :id="`command-arg-${field.key}`"
-                :value="String(values[field.key] ?? '')"
-                :minlength="field.min"
-                :maxlength="field.max"
-                :aria-invalid="Boolean(textFieldError(field))"
-                :aria-describedby="textFieldError(field) ? `command-arg-${field.key}-error` : undefined"
-                @input="values[field.key] = ($event.target as HTMLInputElement).value"
-            />
-            <small
-                v-if="field.kind === 'text' && textFieldError(field)"
-                :id="`command-arg-${field.key}-error`"
-                class="argument-error"
-                role="alert"
-            >
-                {{ textFieldError(field) }}
-            </small>
-            <div v-else-if="field.kind === 'number'" class="number-options">
+        <div class="argument-fields">
+            <div v-if="presentation.lines.length" class="command-guidance" data-testid="command-argument-guidance">
+                <div v-for="line in presentation.lines" :key="line">{{ line }}</div>
+            </div>
+            <div v-if="resourceSummary.length" class="resource-summary" data-testid="command-resource-summary">
+                <span v-for="entry in resourceSummary" :key="entry">{{ entry }}</span>
+            </div>
+            <div v-for="field in visibleFields" :key="field.key" class="argument-row">
+                <label :for="`command-arg-${field.key}`">{{ field.label }}</label>
                 <input
+                    v-if="field.kind === 'text'"
                     :id="`command-arg-${field.key}`"
-                    type="number"
-                    :value="Number(values[field.key] ?? 0)"
-                    :min="effectiveMin(field)"
-                    :max="effectiveMax(field)"
-                    :step="effectiveStep(field)"
-                    @input="values[field.key] = Number(($event.target as HTMLInputElement).value)"
+                    :value="String(values[field.key] ?? '')"
+                    :minlength="field.min"
+                    :maxlength="field.max"
+                    :aria-invalid="Boolean(textFieldError(field))"
+                    :aria-describedby="textFieldError(field) ? `command-arg-${field.key}-error` : undefined"
+                    @input="values[field.key] = ($event.target as HTMLInputElement).value"
                 />
-                <select
-                    v-if="amountPreset"
-                    aria-label="금액 프리셋"
-                    class="amount-preset"
-                    value=""
-                    @change="setNumberPreset(field, ($event.target as HTMLSelectElement).value)"
+                <small
+                    v-if="field.kind === 'text' && textFieldError(field)"
+                    :id="`command-arg-${field.key}-error`"
+                    class="argument-error"
+                    role="alert"
                 >
-                    <option value="" disabled>프리셋</option>
-                    <option v-for="preset in amountPreset.values" :key="preset" :value="preset">
-                        {{ preset.toLocaleString() }}
-                    </option>
-                </select>
-            </div>
-            <NationColorSelect
-                v-else-if="field.kind === 'select' && field.optionSource === 'colors'"
-                :id="`command-arg-${field.key}`"
-                :model-value="selectedValueFor(field)"
-                :options="optionsFor(field)"
-                @update:model-value="setSelectValue(field, String($event))"
-            />
-            <select
-                v-else-if="field.kind === 'select'"
-                :id="`command-arg-${field.key}`"
-                :value="String(values[field.key] ?? '')"
-                :style="colorOptionStyle(field, selectedOptionFor(field))"
-                @change="setSelectValue(field, ($event.target as HTMLSelectElement).value)"
-            >
-                <option
-                    v-for="option in optionsFor(field)"
-                    :key="String(option.value)"
-                    :value="String(option.value)"
-                    :style="colorOptionStyle(field, option)"
-                >
-                    {{ option.label }}
-                </option>
-            </select>
-            <div v-else-if="field.kind === 'boolean'" class="boolean-options">
-                <button
-                    type="button"
-                    :class="{ selected: values[field.key] === true }"
-                    @click="values[field.key] = true"
-                >
-                    {{ field.key === 'buyRice' ? '쌀 구매' : field.key === 'isGold' ? '금' : '예' }}
-                </button>
-                <button
-                    type="button"
-                    :class="{ selected: values[field.key] === false }"
-                    @click="values[field.key] = false"
-                >
-                    {{ field.key === 'buyRice' ? '쌀 판매' : field.key === 'isGold' ? '쌀' : '아니오' }}
-                </button>
-            </div>
-            <div v-else-if="field.kind === 'numberTuple'" class="tuple-options">
-                <label v-for="(tupleLabel, index) in field.tupleLabels ?? ['1', '2']" :key="tupleLabel">
-                    <span>{{ tupleLabel }}</span>
+                    {{ textFieldError(field) }}
+                </small>
+                <div v-else-if="field.kind === 'number'" class="number-options">
                     <input
+                        :id="`command-arg-${field.key}`"
                         type="number"
-                        :value="(values[field.key] as number[] | undefined)?.[index] ?? 0"
+                        :value="Number(values[field.key] ?? 0)"
                         :min="effectiveMin(field)"
                         :max="effectiveMax(field)"
                         :step="effectiveStep(field)"
-                        @input="setTupleValue(field, index, ($event.target as HTMLInputElement).value)"
+                        @input="values[field.key] = Number(($event.target as HTMLInputElement).value)"
                     />
                     <select
                         v-if="amountPreset"
-                        :aria-label="`${tupleLabel} 금액 프리셋`"
+                        aria-label="금액 프리셋"
                         class="amount-preset"
                         value=""
-                        @change="setNumberPreset(field, ($event.target as HTMLSelectElement).value, index)"
+                        @change="setNumberPreset(field, ($event.target as HTMLSelectElement).value)"
                     >
                         <option value="" disabled>프리셋</option>
                         <option v-for="preset in amountPreset.values" :key="preset" :value="preset">
                             {{ preset.toLocaleString() }}
                         </option>
                     </select>
-                </label>
-            </div>
-            <div
-                v-if="
-                    field.kind === 'select' &&
-                    (commandTargetDescription(commandKey, selectedOptionFor(field)) || selectedOptionFor(field)?.color)
-                "
-                class="option-detail"
-                :class="{ 'assignment-detail': commandKey === 'che_발령' && field.optionSource === 'generals' }"
-            >
-                <span
-                    v-if="selectedOptionFor(field)?.color"
-                    class="option-color"
-                    :style="{ backgroundColor: selectedOptionFor(field)?.color }"
-                    aria-hidden="true"
+                </div>
+                <NationColorSelect
+                    v-else-if="field.kind === 'select' && field.optionSource === 'colors'"
+                    :id="`command-arg-${field.key}`"
+                    :model-value="selectedValueFor(field)"
+                    :options="optionsFor(field)"
+                    @update:model-value="setSelectValue(field, String($event))"
                 />
-                <span>{{ commandTargetDescription(commandKey, selectedOptionFor(field)) }}</span>
-            </div>
-            <div
-                v-if="searchEnabled && isSearchable(field)"
-                class="target-search"
-                :data-testid="`target-search-${field.key}`"
-            >
-                <label :for="`command-search-${field.key}`">{{ field.label }} 검색</label>
-                <input
-                    :id="`command-search-${field.key}`"
-                    :value="searchDrafts[field.key] ?? ''"
-                    type="search"
-                    inputmode="search"
-                    enterkeyhint="done"
-                    placeholder="이름 또는 초성"
-                    autocomplete="off"
-                    :spellcheck="false"
-                    @input="updateSearchDraft(field.key, $event)"
-                    @compositionend="updateSearchDraft(field.key, $event)"
-                    @blur="flushSearch(field.key)"
-                    @keydown.enter="onSearchKeydown(field.key, $event)"
-                    @keydown.esc.stop="onSearchKeydown(field.key, $event)"
-                />
-                <button
-                    type="button"
-                    class="legacy-button legacy-button--secondary"
-                    @click="clearFieldSearch(field.key)"
+                <select
+                    v-else-if="field.kind === 'select'"
+                    :id="`command-arg-${field.key}`"
+                    :value="String(values[field.key] ?? '')"
+                    :style="colorOptionStyle(field, selectedOptionFor(field))"
+                    @change="setSelectValue(field, ($event.target as HTMLSelectElement).value)"
                 >
-                    지우기
-                </button>
-                <small role="status"
-                    >검색 결과 {{ visibleOptionsFor(field).length }}개 / {{ optionsFor(field).length }}개</small
+                    <option
+                        v-for="option in optionsFor(field)"
+                        :key="String(option.value)"
+                        :value="String(option.value)"
+                        :style="colorOptionStyle(field, option)"
+                    >
+                        {{ option.label }}
+                    </option>
+                </select>
+                <div v-else-if="field.kind === 'boolean'" class="boolean-options">
+                    <button
+                        type="button"
+                        :class="{ selected: values[field.key] === true }"
+                        @click="values[field.key] = true"
+                    >
+                        {{ field.key === 'buyRice' ? '쌀 구매' : field.key === 'isGold' ? '금' : '예' }}
+                    </button>
+                    <button
+                        type="button"
+                        :class="{ selected: values[field.key] === false }"
+                        @click="values[field.key] = false"
+                    >
+                        {{ field.key === 'buyRice' ? '쌀 판매' : field.key === 'isGold' ? '쌀' : '아니오' }}
+                    </button>
+                </div>
+                <div v-else-if="field.kind === 'numberTuple'" class="tuple-options">
+                    <label v-for="(tupleLabel, index) in field.tupleLabels ?? ['1', '2']" :key="tupleLabel">
+                        <span>{{ tupleLabel }}</span>
+                        <input
+                            type="number"
+                            :value="(values[field.key] as number[] | undefined)?.[index] ?? 0"
+                            :min="effectiveMin(field)"
+                            :max="effectiveMax(field)"
+                            :step="effectiveStep(field)"
+                            @input="setTupleValue(field, index, ($event.target as HTMLInputElement).value)"
+                        />
+                        <select
+                            v-if="amountPreset"
+                            :aria-label="`${tupleLabel} 금액 프리셋`"
+                            class="amount-preset"
+                            value=""
+                            @change="setNumberPreset(field, ($event.target as HTMLSelectElement).value, index)"
+                        >
+                            <option value="" disabled>프리셋</option>
+                            <option v-for="preset in amountPreset.values" :key="preset" :value="preset">
+                                {{ preset.toLocaleString() }}
+                            </option>
+                        </select>
+                    </label>
+                </div>
+                <div
+                    v-if="
+                        field.kind === 'select' &&
+                        (commandTargetDescription(commandKey, selectedOptionFor(field)) ||
+                            selectedOptionFor(field)?.color)
+                    "
+                    class="option-detail"
+                    :class="{ 'assignment-detail': commandKey === 'che_발령' && field.optionSource === 'generals' }"
                 >
-            </div>
-            <div
-                v-if="isSearchable(field)"
-                class="target-option-list"
-                :class="{ 'assignment-target-list': commandKey === 'che_발령' && field.optionSource === 'generals' }"
-                :data-testid="
-                    field.optionSource === 'nations'
-                        ? 'nation-target-list'
-                        : field.optionSource === 'cities'
-                          ? 'city-target-list'
-                          : 'general-target-list'
-                "
-            >
-                <span v-if="!visibleOptionsFor(field).length" class="target-search-empty">검색 결과가 없습니다.</span>
-                <button
-                    v-for="option in visibleOptionsFor(field)"
-                    :key="String(option.value)"
-                    type="button"
-                    class="target-option"
+                    <span
+                        v-if="selectedOptionFor(field)?.color"
+                        class="option-color"
+                        :style="{ backgroundColor: selectedOptionFor(field)?.color }"
+                        aria-hidden="true"
+                    />
+                    <span>{{ commandTargetDescription(commandKey, selectedOptionFor(field)) }}</span>
+                </div>
+                <div
+                    v-if="searchEnabled && isSearchable(field)"
+                    class="target-search"
+                    :data-testid="`target-search-${field.key}`"
+                >
+                    <label :for="`command-search-${field.key}`">{{ field.label }} 검색</label>
+                    <input
+                        :id="`command-search-${field.key}`"
+                        :value="searchDrafts[field.key] ?? ''"
+                        type="search"
+                        inputmode="search"
+                        enterkeyhint="done"
+                        placeholder="이름 또는 초성"
+                        autocomplete="off"
+                        :spellcheck="false"
+                        @input="updateSearchDraft(field.key, $event)"
+                        @compositionend="updateSearchDraft(field.key, $event)"
+                        @blur="flushSearch(field.key)"
+                        @keydown.enter="onSearchKeydown(field.key, $event)"
+                        @keydown.esc.stop="onSearchKeydown(field.key, $event)"
+                    />
+                    <button
+                        type="button"
+                        class="legacy-button legacy-button--secondary"
+                        @click="clearFieldSearch(field.key)"
+                    >
+                        지우기
+                    </button>
+                    <small role="status"
+                        >검색 결과 {{ visibleOptionsFor(field).length }}개 / {{ optionsFor(field).length }}개</small
+                    >
+                </div>
+                <div
+                    v-if="isSearchable(field)"
+                    class="target-option-list"
                     :class="{
-                        selected: option.value === values[field.key],
-                        unavailable: option.availableNow === false,
+                        'assignment-target-list': commandKey === 'che_발령' && field.optionSource === 'generals',
                     }"
-                    :aria-pressed="option.value === values[field.key]"
-                    @click="setSelectValue(field, String(option.value))"
+                    :data-testid="
+                        field.optionSource === 'nations'
+                            ? 'nation-target-list'
+                            : field.optionSource === 'cities'
+                              ? 'city-target-list'
+                              : 'general-target-list'
+                    "
                 >
-                    <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
-                    <strong :style="colorOptionStyle(field, option)">{{ option.label }}</strong>
-                    <span class="target-state">{{
-                        option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
-                    }}</span>
-                    <small>{{ commandTargetDescription(commandKey, option) }}</small>
-                </button>
+                    <span v-if="!visibleOptionsFor(field).length" class="target-search-empty"
+                        >검색 결과가 없습니다.</span
+                    >
+                    <button
+                        v-for="option in visibleOptionsFor(field)"
+                        :key="String(option.value)"
+                        type="button"
+                        class="target-option"
+                        :class="{
+                            selected: option.value === values[field.key],
+                            unavailable: option.availableNow === false,
+                        }"
+                        :aria-pressed="option.value === values[field.key]"
+                        @click="setSelectValue(field, String(option.value))"
+                    >
+                        <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
+                        <strong :style="colorOptionStyle(field, option)">{{ option.label }}</strong>
+                        <span class="target-state">{{
+                            option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
+                        }}</span>
+                        <small>{{ commandTargetDescription(commandKey, option) }}</small>
+                    </button>
+                </div>
             </div>
+            <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
         </div>
-        <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
     </div>
 </template>
 
@@ -704,9 +704,6 @@ small {
     font-size: var(--sammo-font-size-small);
 }
 
-.target-search-toggle {
-    margin: 6px 8px;
-}
 .target-search {
     grid-column: 1 / -1;
     display: flex;
@@ -737,6 +734,29 @@ small {
     width: 100%;
     overflow: hidden;
     background: #111;
+}
+
+/*
+ * 전체화면 입력의 넓은 폭에서는 Ref 처리 화면처럼 지도를 계속 보며 목록을 고르도록
+ * 원본 크기(700px) 지도와 입력 열을 나란히 둔다. 지도는 긴 대상 목록을 scroll해도
+ * 상단 바 아래에 남는다. 더 좁은 폭은 기존처럼 지도 아래에 입력을 둔다.
+ */
+@media (min-width: 1120px) {
+    .command-argument-form.has-map {
+        display: grid;
+        grid-template-columns: 700px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .command-argument-form.has-map > .command-map {
+        position: sticky;
+        top: var(--argument-overlay-header-height, 0px);
+    }
+
+    .command-argument-form.has-map > .argument-fields {
+        min-width: 0;
+        border-left: 1px solid rgba(201, 164, 90, 0.35);
+    }
 }
 
 .command-map small {

@@ -4,7 +4,10 @@ const { accelerated, label: clockLabel, toggle: toggleClock, mode: clockDisplayM
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import CommandArgumentForm from '../main/CommandArgumentForm.vue';
 import CommandSelectForm from '../main/CommandSelectForm.vue';
-import { commandArgumentPresentation, resolveCommandArgumentMapTarget } from './commandArgumentPresentation';
+import {
+    isCommandTargetSearchField,
+    useCommandTargetSearchEnabled,
+} from '../../composables/useCommandTargetSearchEnabled';
 import DragSelect from './DragSelect.vue';
 import RecruitmentCommandForm from './RecruitmentCommandForm.vue';
 import {
@@ -136,16 +139,21 @@ const quickPickerTop = ref('38px');
 const isRecruitmentCommand = computed(
     () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
 );
-const isArgumentPickerExpanded = computed(() => {
-    const command = selectedCommand.value;
-    if (!command) return false;
-    const presentation = commandArgumentPresentation(command.key);
-    return Boolean(
-        (command.reqArg && presentation.lines.length) ||
-        resolveCommandArgumentMapTarget(command.key, command.inputFields)
-    );
+// Ref는 인자가 필요한 명령을 고르면 v_processing.php로 화면 전체를 옮긴다. Core는 URL을
+// 유지하되 같은 범위의 인자 입력을 body 위 전체화면 overlay로 연다. 명령 목록은 기존 popup이다.
+const isArgumentOverlay = computed(() => Boolean(selectedCommand.value?.reqArg));
+const isArgumentOverlayOpen = computed(() => pickerOpen.value && isArgumentOverlay.value);
+const targetSearchEnabled = useCommandTargetSearchEnabled();
+const hasSearchableFields = computed(
+    () => selectedCommand.value?.inputFields.some(isCommandTargetSearchField) ?? false
+);
+const MAX_TITLE_TURNS = 8;
+const overlayTurnLabel = computed(() => {
+    if (quickTarget.value !== null) return `${quickTarget.value + 1}턴`;
+    const turns = selectedIndices().map((index) => index + 1);
+    const shown = turns.slice(0, MAX_TITLE_TURNS).join(', ');
+    return turns.length > MAX_TITLE_TURNS ? `${shown} 외 ${turns.length - MAX_TITLE_TURNS}개 턴` : `${shown}턴`;
 });
-const isRecruitmentOverlayOpen = computed(() => pickerOpen.value && isRecruitmentCommand.value);
 const commandBrief = (entry: { action: string; args: unknown; label?: string }): string =>
     formatReservedCommandBrief(props.scope, entry.action, entry.args, props.commandTable) ||
     entry.label ||
@@ -210,21 +218,59 @@ const restoreBodyScroll = () => {
     previousBodyOverflow = null;
 };
 
-watch(isRecruitmentOverlayOpen, async (open) => {
-    if (!open) {
-        restoreBodyScroll();
+// 브라우저·모바일 Back은 페이지를 떠나지 않고 overlay만 닫는다. 같은 URL의 history entry를
+// 하나 넣고, 버튼·Esc·입력 완료로 닫을 때는 그 entry를 직접 소비해 Back 횟수를 늘리지 않는다.
+const OVERLAY_HISTORY_KEY = 'samCommandInputOverlay';
+let overlayHistoryPushed = false;
+let pendingOverlayHistoryBacks = 0;
+const onOverlayPopState = () => {
+    if (pendingOverlayHistoryBacks > 0) {
+        pendingOverlayHistoryBacks -= 1;
         return;
     }
+    if (!overlayHistoryPushed) return;
+    overlayHistoryPushed = false;
+    closePicker();
+};
+const pushOverlayHistory = () => {
+    if (overlayHistoryPushed) return;
+    const state: unknown = window.history.state;
+    const base = state && typeof state === 'object' ? (state as Record<string, unknown>) : {};
+    // vue-router의 position/current 값을 보존해야 popstate를 같은 위치의 이동으로 해석한다.
+    window.history.pushState({ ...base, [OVERLAY_HISTORY_KEY]: true }, '', window.location.href);
+    overlayHistoryPushed = true;
+};
+const consumeOverlayHistory = () => {
+    if (!overlayHistoryPushed) return;
+    overlayHistoryPushed = false;
+    pendingOverlayHistoryBacks += 1;
+    window.history.back();
+};
+
+onMounted(() => window.addEventListener('popstate', onOverlayPopState));
+
+watch(isArgumentOverlayOpen, async (open) => {
+    if (!open) {
+        restoreBodyScroll();
+        consumeOverlayHistory();
+        return;
+    }
+    pushOverlayHistory();
     if (previousBodyOverflow === null) previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     await nextTick();
     pickerElement.value?.querySelector<HTMLElement>('[data-picker-close]')?.focus();
 });
 
-onBeforeUnmount(restoreBodyScroll);
+onBeforeUnmount(() => {
+    restoreBodyScroll();
+    window.removeEventListener('popstate', onOverlayPopState);
+    // route 이동 중 unmount되면 history를 되돌리지 않는다. 남은 entry는 같은 URL이라 무해하다.
+    overlayHistoryPushed = false;
+});
 
-const trapRecruitmentFocus = (event: KeyboardEvent) => {
-    if (!isRecruitmentOverlayOpen.value || event.key !== 'Tab' || !pickerElement.value) return;
+const trapOverlayFocus = (event: KeyboardEvent) => {
+    if (!isArgumentOverlayOpen.value || event.key !== 'Tab' || !pickerElement.value) return;
     const focusable = [
         ...pickerElement.value.querySelectorAll<HTMLElement>(
             'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]'
@@ -369,7 +415,6 @@ const clickOutsideMenu = (event: Event) => {
             mobile: props.mobile,
             'edit-mode': editMode,
             'picker-open': pickerOpen,
-            'argument-expanded': isArgumentPickerExpanded,
         }"
         :data-command-scope="props.scope"
     >
@@ -753,30 +798,56 @@ const clickOutsideMenu = (event: Event) => {
             </div>
         </div>
 
-        <Teleport to="body" :disabled="!isRecruitmentCommand">
+        <Teleport to="body" :disabled="!isArgumentOverlay">
             <div
                 v-if="pickerOpen"
                 ref="pickerElement"
                 class="command-picker"
-                :class="{ 'recruitment-picker': isRecruitmentCommand }"
+                :class="{ 'argument-overlay': isArgumentOverlay, 'recruitment-picker': isRecruitmentCommand }"
                 data-testid="command-picker"
                 :style="
-                    isRecruitmentCommand || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }
+                    isArgumentOverlay || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }
                 "
-                :role="isRecruitmentCommand ? 'dialog' : undefined"
-                :aria-modal="isRecruitmentCommand ? 'true' : undefined"
+                :role="isArgumentOverlay ? 'dialog' : undefined"
+                :aria-modal="isArgumentOverlay ? 'true' : undefined"
                 :aria-label="
-                    isRecruitmentCommand
-                        ? `${selectedCommand?.name ?? ''} ${quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴`} 명령 입력`
-                        : undefined
+                    isArgumentOverlay ? `${selectedCommand?.name ?? ''} ${overlayTurnLabel} 명령 입력` : undefined
                 "
                 @keydown.esc.stop.prevent="closePicker"
-                @keydown="trapRecruitmentFocus"
+                @keydown="trapOverlayFocus"
             >
-                <header>
-                    <strong
-                        ><template v-if="isRecruitmentCommand">{{ selectedCommand?.name }} · </template
-                        >{{ quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴` }} 명령 입력</strong
+                <header v-if="isArgumentOverlay" class="argument-overlay-bar" data-testid="command-input-top-bar">
+                    <button
+                        data-picker-close
+                        type="button"
+                        class="legacy-button legacy-button--navigation overlay-cancel"
+                        @click="closePicker"
+                    >
+                        명령 취소
+                    </button>
+                    <button
+                        type="button"
+                        class="legacy-button legacy-button--navigation overlay-reselect"
+                        :disabled="Boolean(pendingReservation)"
+                        @click="returnToCommandList"
+                    >
+                        명령 다시 선택
+                    </button>
+                    <h2 class="overlay-title">
+                        {{ selectedCommand?.name }}<small>{{ overlayTurnLabel }}</small>
+                    </h2>
+                    <button
+                        v-if="hasSearchableFields"
+                        type="button"
+                        class="legacy-button legacy-button--secondary overlay-search"
+                        :aria-pressed="targetSearchEnabled"
+                        @click="targetSearchEnabled = !targetSearchEnabled"
+                    >
+                        {{ targetSearchEnabled ? '검색 켜짐' : '검색 꺼짐' }}
+                    </button>
+                </header>
+                <header v-else>
+                    <strong>{{ quickTarget === null ? '선택한 턴' : `${quickTarget + 1}턴` }} 명령 입력</strong
                     ><button data-picker-close type="button" aria-label="명령 입력 닫기" @click="closePicker">×</button>
                 </header>
                 <CommandSelectForm
@@ -790,8 +861,8 @@ const clickOutsideMenu = (event: Event) => {
                     @select="selectCommand"
                 />
                 <template v-else>
-                    <div class="selected-command">
-                        <strong>{{ selectedCommand.name }}</strong>
+                    <div v-if="!isArgumentOverlay || selectedCommand.reason" class="selected-command">
+                        <strong v-if="!isArgumentOverlay">{{ selectedCommand.name }}</strong>
                         <small v-if="selectedCommand.reason"
                             >현재 상태: {{ selectedCommand.reason }} · 예약 입력은 가능합니다.</small
                         >
@@ -819,7 +890,11 @@ const clickOutsideMenu = (event: Event) => {
                         @update:valid="commandArgsValid = $event"
                     />
                     <div class="picker-actions">
-                        <button :disabled="Boolean(pendingReservation)" @click="returnToCommandList">
+                        <button
+                            v-if="!isArgumentOverlay"
+                            :disabled="Boolean(pendingReservation)"
+                            @click="returnToCommandList"
+                        >
                             명령 다시 선택</button
                         ><button :disabled="!commandArgsValid || Boolean(pendingReservation)" @click="submitCommand">
                             {{ pendingReservation ? '저장 중' : '입력' }}
@@ -1236,7 +1311,9 @@ small {
     max-height: 344px;
 }
 
-.command-picker.recruitment-picker {
+.command-picker.argument-overlay {
+    --argument-overlay-header-height: 44px;
+    --argument-overlay-content-width: 1000px;
     position: fixed;
     z-index: 1100;
     inset: 0;
@@ -1255,48 +1332,120 @@ small {
     box-shadow: none;
     transform: none;
 }
-.command-picker.recruitment-picker > header {
+/* Ref TopBackBar: 돌아가기 · 명령명 · 검색 켜짐/꺼짐을 1000px 폭의 한 줄에 둔다. */
+.command-picker.argument-overlay > .argument-overlay-bar {
     position: sticky;
     z-index: 30;
     top: 0;
+    display: grid;
+    grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+    gap: 6px;
+    align-items: center;
     box-sizing: border-box;
-    min-height: 44px;
-    padding: 6px 8px;
+    height: var(--argument-overlay-header-height);
+    min-height: 0;
+    padding: 6px max(8px, calc((100% - var(--argument-overlay-content-width)) / 2 + 8px));
     border-bottom: 1px solid #777;
     background: #302016 var(--sammo-texture-walnut);
 }
-.command-picker.recruitment-picker > header button {
-    min-width: 36px;
-    min-height: 32px;
+.command-picker.argument-overlay > .argument-overlay-bar > button {
+    width: auto;
+    min-width: 90px;
+    height: 32px;
+    padding: 0 10px;
+    white-space: nowrap;
     cursor: pointer;
 }
-.command-picker.recruitment-picker .selected-command,
-.command-picker.recruitment-picker :deep(.recruitment-command-form),
-.command-picker.recruitment-picker .picker-actions {
-    width: min(100%, 1000px);
+.command-picker.argument-overlay > .argument-overlay-bar > .overlay-search {
+    grid-column: 4;
+}
+.argument-overlay-bar > .overlay-title {
+    grid-column: 3;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 18pt;
+    font-weight: normal;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.overlay-title small {
+    overflow: hidden;
+    color: #ffe0a0;
+    font-size: var(--sammo-font-size-small);
+    text-overflow: ellipsis;
+}
+.command-picker.argument-overlay .selected-command,
+.command-picker.argument-overlay :deep(.recruitment-command-form),
+.command-picker.argument-overlay :deep(.command-argument-form),
+.command-picker.argument-overlay .picker-actions {
+    box-sizing: border-box;
+    width: min(100%, var(--argument-overlay-content-width));
     margin-right: auto;
     margin-left: auto;
 }
-.command-picker.recruitment-picker :deep(.recruitment-command-form) {
+.command-picker.argument-overlay :deep(.recruitment-command-form),
+.command-picker.argument-overlay :deep(.command-argument-form) {
     flex: 1 0 auto;
 }
-.command-picker.recruitment-picker .picker-actions {
+.command-picker.argument-overlay .picker-actions {
     position: sticky;
     z-index: 30;
     bottom: 0;
-    box-sizing: border-box;
+    grid-template-columns: 1fr;
     margin-top: 0;
     padding: 6px;
     border-top: 1px solid #777;
     background: #302016 var(--sammo-texture-walnut);
 }
 
-@media (min-width: 1025px) {
-    .argument-expanded:not(.compact) .command-picker {
-        right: 0;
-        left: auto;
-        width: 700px;
+/* Ref 1000px 문서 폭을 기본으로 두고, 지도 입력만 원본 지도와 목록 열을 함께 담도록 넓힌다. */
+@media (min-width: 1120px) {
+    .command-picker.argument-overlay:has(.command-argument-form.has-map) {
+        --argument-overlay-content-width: 1120px;
     }
+}
+
+/* 좁은 화면은 제목을 첫 줄에 두고 조작 버튼을 둘째 줄에 같은 폭으로 나눈다. */
+@media (max-width: 620px) {
+    .command-picker.argument-overlay {
+        --argument-overlay-header-height: 76px;
+    }
+    .command-picker.argument-overlay > .argument-overlay-bar {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: 28px 32px;
+        gap: 4px;
+        padding: 4px 6px;
+    }
+    .command-picker.argument-overlay > .argument-overlay-bar > button {
+        min-width: 0;
+        padding: 0 4px;
+    }
+    .command-picker.argument-overlay > .argument-overlay-bar > .overlay-cancel {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .command-picker.argument-overlay > .argument-overlay-bar > .overlay-reselect {
+        grid-column: 2;
+        grid-row: 2;
+    }
+    .command-picker.argument-overlay > .argument-overlay-bar > .overlay-search {
+        grid-column: 3;
+        grid-row: 2;
+    }
+    .argument-overlay-bar > .overlay-title {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        font-size: 14pt;
+    }
+}
+
+@media (min-width: 1025px) {
     .compact:not(.mobile) .command-picker {
         position: fixed;
         z-index: 1000;
@@ -1304,13 +1453,6 @@ small {
         right: auto;
         left: calc(50% - 476px);
         width: 238px;
-    }
-    .compact.argument-expanded:not(.mobile) .command-picker {
-        left: calc(50% - 350px);
-        width: 700px;
-        height: auto;
-        max-height: calc(100vh - 104px);
-        overflow: auto;
     }
 }
 
@@ -1351,16 +1493,6 @@ small {
     left: 130px;
     width: 370px;
     height: 327px;
-}
-.mobile.compact.argument-expanded .command-picker {
-    position: relative;
-    top: auto;
-    left: auto;
-    width: 100%;
-    height: auto;
-    max-height: none;
-    margin-top: -330px;
-    overflow: visible;
 }
 .mobile.compact .advanced-actions {
     position: static;

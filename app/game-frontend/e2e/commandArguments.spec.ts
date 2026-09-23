@@ -2124,7 +2124,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await picker.getByRole('button', { name: '징병', exact: true }).click();
     await expect(picker).toHaveAttribute('role', 'dialog');
     await expect(picker).toHaveAttribute('aria-modal', 'true');
-    await expect(picker.getByRole('button', { name: '명령 입력 닫기', exact: true })).toBeFocused();
+    await expect(picker.getByRole('button', { name: '명령 취소', exact: true })).toBeFocused();
     const form = picker.getByTestId('recruitment-command-form');
     await expect(form).toContainText('현재 기술력 : 1등급');
     await expect(form).toContainText('공격');
@@ -2196,7 +2196,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     picker = page.getByTestId('command-picker');
     await picker.getByRole('button', { name: '내정', exact: true }).click();
     await picker.getByRole('button', { name: '징병', exact: true }).click();
-    await expect(picker.getByRole('button', { name: '명령 입력 닫기', exact: true })).toBeFocused();
+    await expect(picker.getByRole('button', { name: '명령 취소', exact: true })).toBeFocused();
     const referenceWidthGeometry = await picker.evaluate((element) => {
         const formElement = element.querySelector<HTMLElement>('[data-testid="recruitment-command-form"]')!;
         const row = formElement.querySelector<HTMLElement>('.crew-row')!;
@@ -2277,6 +2277,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
         return {
             scrollTop: element.scrollTop,
             headerTop: header.getBoundingClientRect().top,
+            headerBottom: header.getBoundingClientRect().bottom,
             listFrontTop: listFront.getBoundingClientRect().top,
             actionsBottom: actions.getBoundingClientRect().bottom,
             viewportHeight: window.innerHeight,
@@ -2284,7 +2285,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     });
     expect(stickyGeometry.scrollTop).toBeGreaterThan(0);
     expect(stickyGeometry.headerTop).toBe(0);
-    expect(stickyGeometry.listFrontTop).toBeGreaterThanOrEqual(44);
+    expect(stickyGeometry.listFrontTop).toBeGreaterThanOrEqual(stickyGeometry.headerBottom);
     expect(stickyGeometry.actionsBottom).toBe(stickyGeometry.viewportHeight);
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -3299,7 +3300,7 @@ test('uses drag selection, clipboard paste, and a stored template in advanced mo
     await drag(0, 2);
     await expect(editor.locator('.index-column > button.selected')).toHaveCount(3);
     await editor.getByRole('button', { name: '명령 선택 ▾', exact: true }).click();
-    const picker = editor.getByTestId('command-picker');
+    const picker = page.getByTestId('command-picker');
     const blockedFire = picker.getByRole('button', { name: '화계', exact: true });
     await expect(blockedFire).toBeEnabled();
     await blockedFire.click();
@@ -3717,7 +3718,7 @@ for (const width of [1200, 390]) {
             let picker = page.getByTestId('command-picker');
             await picker.getByRole('button', { name: /화계/ }).click();
             let form = picker.getByTestId('command-argument-form');
-            const toggle = form.getByRole('button', { name: '검색 꺼짐', exact: true });
+            const toggle = picker.getByRole('button', { name: '검색 꺼짐', exact: true });
             await expect(form.locator('input[type=search]')).toHaveCount(0);
             await expect(form.getByTestId('city-target-list').locator('button')).toHaveCount(3);
             await form.getByTestId('city-target-list').getByRole('button', { name: /허창/ }).click();
@@ -3743,7 +3744,7 @@ for (const width of [1200, 390]) {
             await input.press('Enter');
             await expect(input).not.toBeFocused();
             await expect(picker).toBeVisible();
-            await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+            await picker.getByRole('button', { name: '검색 켜짐', exact: true }).click();
             await expect(input).toHaveCount(0);
             await expect(results.locator('button')).toHaveCount(3);
             await expect(form.locator('#command-arg-destCityId')).toHaveValue('2');
@@ -3758,7 +3759,7 @@ for (const width of [1200, 390]) {
             form = picker.getByTestId('command-argument-form');
             await expect(form.getByTestId('general-target-list').locator('button')).toHaveCount(3);
             await expect(form.getByTestId('city-target-list').locator('button')).toHaveCount(3);
-            await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+            await picker.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
             const generalSearch = form.locator('#command-search-destGeneralId');
             const citySearch = form.locator('#command-search-destCityId');
             for (const query of ['ㅇㅇ', '없음', '통솔', '1,200']) {
@@ -3801,7 +3802,7 @@ for (const width of [1200, 390]) {
             await picker.getByRole('button', { name: /^(?:국가:)?외교$/, exact: true }).click();
             await picker.getByRole('button', { name: /선전포고/ }).click();
             form = picker.getByTestId('command-argument-form');
-            await expect(form.getByRole('button', { name: '검색 켜짐', exact: true })).toHaveAttribute(
+            await expect(picker.getByRole('button', { name: '검색 켜짐', exact: true })).toHaveAttribute(
                 'aria-pressed',
                 'true'
             );
@@ -3821,7 +3822,7 @@ for (const width of [1200, 390]) {
             await input.press('Escape');
             await expect(input).toHaveValue('');
             await expect(picker).toBeVisible();
-            await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+            await picker.getByRole('button', { name: '검색 켜짐', exact: true }).click();
             await expect(input).toHaveCount(0);
             await expect(results.locator('button')).toHaveCount(3);
         });
@@ -3856,7 +3857,7 @@ test('gift search indexes nullable names without matching the displayed no-troop
     const results = form.getByTestId('general-target-list');
     await expect(results.locator('button')).toHaveCount(3);
     await expect(results.getByRole('button', { name: /관우/ })).toContainText('탑승 부대 없음');
-    await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+    await picker.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
     const search = form.locator('input[type=search]');
     await search.fill('ㅇㅇ');
     await expect(results.locator('button strong')).toHaveText(['원우 (피곤 · 업)', '조조 (피곤 · 업)']);
@@ -3896,7 +3897,7 @@ test('search reflects an active Korean IME composition after debounce without co
     const picker = page.getByTestId('command-picker');
     await picker.getByRole('button', { name: /증여/ }).click();
     const form = picker.getByTestId('command-argument-form');
-    await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+    await picker.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
     const input = form.locator('input[type=search]');
     const results = form.getByTestId('general-target-list');
     await input.focus();
@@ -3928,11 +3929,180 @@ test('search reflects an active Korean IME composition after debounce without co
     await form.getByRole('button', { name: '지우기', exact: true }).click();
     await expect(results.locator('button')).toHaveCount(3);
     await input.fill('ㄱㅇ');
-    await form.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+    await picker.getByRole('button', { name: '검색 켜짐', exact: true }).click();
     await page.waitForTimeout(250); // 예약된 디바운스가 OFF 이후 재적용되지 않는지 확인한다.
     await expect(results.locator('button')).toHaveCount(3);
-    await form.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+    await picker.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
     await expect(input).toHaveValue('');
     await expect(results.locator('button')).toHaveCount(3);
     await cdp.detach();
+});
+
+// Ref v_processing처럼 인자 입력은 화면 전체를 차지하되, Core는 URL을 바꾸지 않고
+// Back·명령 취소·명령 다시 선택·Esc로 같은 문서의 overlay만 닫는다.
+for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 500, height: 900 },
+    { width: 390, height: 844 },
+] as const) {
+    test(`opens every argument input as a full-screen overlay with a top control bar at ${viewport.width}px`, async ({
+        page,
+    }, testInfo) => {
+        const requests = await install(page);
+        await page.setViewportSize(viewport);
+        await page.goto(gamePath('/'));
+        const mainUrl = page.url();
+        const initialHistoryLength = await page.evaluate(() => history.length);
+        const editor = page.locator('[data-command-scope="general"]:visible');
+
+        const openFireAttack = async (turn: number) => {
+            await editor.getByRole('button', { name: `${turn}턴 명령 입력`, exact: true }).click();
+            const listPicker = page.getByTestId('command-picker');
+            await expect(listPicker).not.toHaveAttribute('role', 'dialog');
+            await listPicker.getByRole('button', { name: /화계/ }).click();
+            const overlay = page.getByRole('dialog', { name: `화계 ${turn}턴 명령 입력` });
+            await expect(overlay).toBeVisible();
+            return overlay;
+        };
+        const measure = (overlay: ReturnType<Page['getByRole']>) =>
+            overlay.evaluate((element) => {
+                const bar = element.querySelector<HTMLElement>('[data-testid="command-input-top-bar"]')!;
+                const map = element.querySelector<HTMLElement>('[data-testid="command-argument-map"]');
+                const fields = element.querySelector<HTMLElement>('.argument-fields');
+                const rect = (target: Element | null) => target?.getBoundingClientRect().toJSON() ?? null;
+                return {
+                    parentIsBody: element.parentElement === document.body,
+                    overlay: rect(element),
+                    bar: rect(bar),
+                    buttons: [...bar.querySelectorAll('button')].map((button) => ({
+                        text: button.textContent?.trim(),
+                        ...button.getBoundingClientRect().toJSON(),
+                    })),
+                    title: bar.querySelector('h2')?.textContent?.replace(/\s+/g, ' ').trim(),
+                    map: rect(map),
+                    fields: rect(fields),
+                    bodyOverflow: getComputedStyle(document.body).overflow,
+                    scrollWidth: element.scrollWidth,
+                    clientWidth: element.clientWidth,
+                    documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                };
+            });
+
+        let overlay = await openFireAttack(1);
+        await expect(overlay).toHaveAttribute('aria-modal', 'true');
+        await expect(overlay.getByRole('button', { name: '명령 취소', exact: true })).toBeFocused();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await measure(overlay);
+        await writeFile(
+            testInfo.outputPath(`argument-overlay-${viewport.width}.json`),
+            JSON.stringify(geometry, null, 2)
+        );
+        await page.screenshot({ path: testInfo.outputPath(`argument-overlay-${viewport.width}.png`) });
+        expect(geometry.parentIsBody).toBe(true);
+        expect(geometry.overlay).toMatchObject({ x: 0, y: 0, width: viewport.width, height: viewport.height });
+        expect(geometry.bar?.y).toBe(0);
+        expect(geometry.buttons.map((button) => button.text)).toEqual(['명령 취소', '명령 다시 선택', '검색 꺼짐']);
+        expect(geometry.title).toBe('화계1턴');
+        expect(geometry.bodyOverflow).toBe('hidden');
+        expect(geometry.scrollWidth).toBe(geometry.clientWidth);
+        for (const button of geometry.buttons) {
+            expect(button.x).toBeGreaterThanOrEqual(0);
+            expect(button.right).toBeLessThanOrEqual(viewport.width);
+        }
+        if (viewport.width >= 1120) {
+            // 원본 700px 지도 오른쪽에 대상 목록 열을 두고 1120px 폭(1px 테두리 포함) 안에서 중앙 정렬한다.
+            expect(geometry.map).toMatchObject({ x: (viewport.width - 1120) / 2 + 1, width: 700 });
+            expect(geometry.fields?.x).toBe(geometry.map!.right);
+            expect(geometry.fields?.y).toBe(geometry.map!.y);
+            expect(geometry.fields?.right).toBe((viewport.width + 1120) / 2 - 1);
+        } else {
+            expect(geometry.fields!.y).toBeGreaterThanOrEqual(geometry.map!.bottom);
+            expect(geometry.map!.width).toBeLessThanOrEqual(viewport.width);
+        }
+
+        // 검색 토글은 상단 바에 있고 인자 폼의 검색 입력을 제어한다.
+        await overlay.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+        await expect(overlay.getByRole('button', { name: '검색 켜짐', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        await expect(overlay.locator('input[type=search]')).toHaveCount(1);
+        await overlay.getByRole('button', { name: '검색 켜짐', exact: true }).click();
+        await expect(overlay.locator('input[type=search]')).toHaveCount(0);
+
+        // 명령 취소: overlay와 명령 목록을 함께 닫고 Back entry를 소비한다.
+        await overlay.getByRole('button', { name: '명령 취소', exact: true }).click();
+        await expect(page.getByTestId('command-picker')).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe('hidden');
+        await expect.poll(() => page.evaluate(() => history.length)).toBeLessThanOrEqual(initialHistoryLength + 1);
+        expect(page.url()).toBe(mainUrl);
+
+        // 브라우저 Back: 페이지를 떠나지 않고 overlay만 닫는다.
+        await openFireAttack(2);
+        await page.goBack();
+        await expect(page.getByTestId('command-picker')).toHaveCount(0);
+        expect(page.url()).toBe(mainUrl);
+        await expect(editor).toBeVisible();
+
+        // Esc
+        await openFireAttack(3);
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('command-picker')).toHaveCount(0);
+        expect(page.url()).toBe(mainUrl);
+
+        // 명령 다시 선택: 명령 목록 popup으로 돌아가고 이후 Back은 남은 history를 소비하지 않는다.
+        overlay = await openFireAttack(4);
+        await overlay.getByRole('button', { name: '명령 다시 선택', exact: true }).click();
+        const listPicker = page.getByTestId('command-picker');
+        await expect(listPicker).toBeVisible();
+        await expect(listPicker).not.toHaveAttribute('role', 'dialog');
+        await expect(listPicker.getByRole('button', { name: /화계/ })).toBeVisible();
+        await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe('hidden');
+
+        // 입력 완료 뒤에도 같은 URL과 원래 history 길이를 유지하고 payload·turnList는 그대로다.
+        await listPicker.getByRole('button', { name: /화계/ }).click();
+        overlay = page.getByRole('dialog', { name: '화계 4턴 명령 입력' });
+        await overlay.getByTestId('command-argument-form').locator('select').selectOption('2');
+        await overlay.getByRole('button', { name: '입력', exact: true }).click();
+        await expect(page.getByTestId('command-picker')).toHaveCount(0);
+        await expect(editor.locator('.action-column > div').nth(3)).toHaveText('【허창】에 화계실행');
+        await expect
+            .poll(() => JSON.stringify(requests))
+            .toContain('"turnList":[3],"action":"che_화계","args":{"destCityId":2}');
+        await expect.poll(() => page.evaluate(() => history.length)).toBeLessThanOrEqual(initialHistoryLength + 1);
+        expect(page.url()).toBe(mainUrl);
+        await page.goBack();
+        await expect(page).not.toHaveURL(mainUrl);
+    });
+}
+
+test('opens chief argument input as the same full-screen overlay with selected turns in the title', async ({
+    page,
+}, testInfo) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto(gamePath('/chief-center'));
+    const mainUrl = page.url();
+    const editor = page.locator('[data-command-scope="nation"]');
+    await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    const listPicker = page.getByTestId('command-picker');
+    await listPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+    await listPicker.getByRole('button', { name: /발령/ }).click();
+    const overlay = page.getByRole('dialog', { name: '발령 1턴 명령 입력' });
+    await expect(overlay).toBeVisible();
+    await expect(overlay.getByTestId('command-input-top-bar').locator('h2')).toHaveText('발령1턴');
+    const geometry = await overlay.evaluate((element) => ({
+        parentIsBody: element.parentElement === document.body,
+        overlay: element.getBoundingClientRect().toJSON(),
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+    }));
+    expect(geometry.parentIsBody).toBe(true);
+    expect(geometry.overlay).toMatchObject({ x: 0, y: 0, width: 1200, height: 900 });
+    expect(geometry.scrollWidth).toBe(geometry.clientWidth);
+    await expect(overlay.getByTestId('command-argument-map')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('chief-argument-overlay-1200.png') });
+    await page.goBack();
+    await expect(page.getByTestId('command-picker')).toHaveCount(0);
+    expect(page.url()).toBe(mainUrl);
 });
