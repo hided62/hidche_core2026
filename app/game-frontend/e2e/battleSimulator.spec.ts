@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -63,7 +63,20 @@ const simulatorFormOptions = {
     eventDomesticTraits: [{ key: 'che_event_신산', name: '신산', info: '계략 강화' }],
     warTraits: [{ key: 'che_필살', name: '필살', info: '필살 확률 증가' }],
     personalities: [{ key: 'che_대담', name: '대담', info: '공격적인 성격' }],
-    items: { horse: [], weapon: [], book: [], item: [] },
+    items: {
+        horse: [
+            { key: 'che_명마_01_노기', name: '노기' },
+            { key: 'che_명마_07_백마', name: '백마' },
+            { key: 'che_명마_15_적토마', name: '적토마' },
+        ],
+        weapon: [],
+        book: [],
+        item: [
+            { key: 'che_치료_환약', name: '환약' },
+            { key: 'che_의술_정력견혈산', name: '정력견혈산' },
+            { key: 'che_필살_둔갑천서', name: '둔갑천서' },
+        ],
+    },
     nationLevels: [
         { level: 0, name: '방랑군' },
         { level: 1, name: '소국' },
@@ -371,6 +384,49 @@ test('operates independent/game presets, imports my general, and renders battle 
     await installApi(page, fixture);
     await page.setViewportSize({ width: 1280, height: 900 });
     await gotoSimulator(page);
+
+    expect(
+        await page
+            .getByRole('combobox', { name: '명마' })
+            .first()
+            .locator('option')
+            .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))
+    ).toEqual(['-', 'che_명마_01_노기', 'che_명마_07_백마', 'che_명마_15_적토마']);
+    expect(
+        await page
+            .getByRole('combobox', { name: '도구' })
+            .first()
+            .locator('option')
+            .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))
+    ).toEqual(['-', 'che_치료_환약', 'che_의술_정력견혈산', 'che_필살_둔갑천서']);
+    if (artifactRoot) {
+        const selects = await page.getByRole('combobox', { name: /^(명마|도구)$/ }).evaluateAll((nodes) =>
+            nodes.map((node) => {
+                const element = node as HTMLSelectElement;
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    label: element.labels?.[0]?.textContent?.trim(),
+                    options: Array.from(element.options, (option) => ({ value: option.value, text: option.text })),
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    style: { fontSize: style.fontSize, color: style.color, display: style.display },
+                };
+            })
+        );
+        await writeFile(
+            resolve(artifactRoot, 'scenario-item-order-dom.json'),
+            JSON.stringify(
+                {
+                    url: page.url(),
+                    viewport: page.viewportSize(),
+                    dpr: await page.evaluate(() => devicePixelRatio),
+                    selects,
+                },
+                null,
+                2
+            )
+        );
+    }
 
     const nationTypeSelects = page.locator('[data-parity-id="attacker-nation"] select').first();
     await expect(nationTypeSelects).toHaveValue('che_도적');

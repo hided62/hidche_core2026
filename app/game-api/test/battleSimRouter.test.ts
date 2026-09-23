@@ -353,6 +353,39 @@ describe('battle router orchestration', () => {
         expect(worldStateReads).toBe(1);
     });
 
+    it('offers simulator equipment and consumables in source order for the selected scenario', async () => {
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: '905',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: {
+                const: {
+                    allItems: {
+                        item: { che_필살_둔갑천서: 1, che_의술_정력견혈산: 1, che_치료_환약: 0 },
+                        horse: { che_명마_15_적토마: 1, che_명마_07_백마: 1, che_명마_01_노기: 0 },
+                    },
+                },
+            },
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        const caller = appRouter.createCaller(buildContext({ state, battleSim: new QueuedBattleSimTransport() }));
+
+        const context = await caller.battle.getSimulatorContext();
+        expect(context.items.horse.map(({ key }) => key)).toEqual([
+            'che_명마_01_노기',
+            'che_명마_07_백마',
+            'che_명마_15_적토마',
+        ]);
+        expect(context.items.item.map(({ key }) => key)).toEqual([
+            'che_치료_환약',
+            'che_의술_정력견혈산',
+            'che_필살_둔갑천서',
+        ]);
+    });
+
     it('rejects the neutral storage nation type before preparing or queuing a simulation', async () => {
         const battleSim = new QueuedBattleSimTransport();
         const state: WorldStateRow = {

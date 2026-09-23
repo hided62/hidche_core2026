@@ -3,6 +3,10 @@ import { z } from 'zod';
 
 import { asRecord } from '@sammo-ts/common';
 import { getDexLevel } from '@sammo-ts/logic';
+import {
+    resolveLegacyCompatibleUniqueConfig,
+    resolveLegacyPurchasableItemKeys,
+} from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 
 import {
     accessAuthedInputProcedure,
@@ -25,6 +29,7 @@ import {
     loadBattleSimTraitOptions,
 } from '../../battleSim/simulatorOptions.js';
 import { getMyGeneral } from '../shared/general.js';
+import { loadScenarioItemOrder } from '../../services/scenarioItemOrder.js';
 
 const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -98,7 +103,17 @@ export const battleRouter = router({
         }
 
         const environment = await buildBattleSimEnvironment(worldState, ctx.profile.id);
-        const [traits, items] = await Promise.all([loadBattleSimTraitOptions(), loadBattleSimItemOptions()]);
+        const configConst = asRecord(asRecord(worldState.config).const);
+        const [traits, itemOrder, uniqueConfig] = await Promise.all([
+            loadBattleSimTraitOptions(),
+            loadScenarioItemOrder(worldState.scenarioCode),
+            resolveLegacyCompatibleUniqueConfig(configConst),
+        ]);
+        const allowedItems = new Set([
+            ...resolveLegacyPurchasableItemKeys(configConst),
+            ...Object.values(uniqueConfig.allItems).flatMap((entries) => Object.keys(entries ?? {})),
+        ]);
+        const items = await loadBattleSimItemOptions(allowedItems, itemOrder);
 
         return {
             world: {

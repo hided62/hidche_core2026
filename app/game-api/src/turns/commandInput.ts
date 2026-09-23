@@ -11,7 +11,7 @@ import { asRecord, isRecord } from '@sammo-ts/common';
 import type { ItemModule } from '@sammo-ts/logic/items/types.js';
 import { resolveLegacyPurchasableItemKeys } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { z } from 'zod';
-import { loadScenarioDefinitionById } from '@sammo-ts/game-engine/scenario/scenarioLoader.js';
+import { loadScenarioItemOrder } from '../services/scenarioItemOrder.js';
 
 import { loadScenarioTurnCommandProfile } from '@sammo-ts/game-engine/turn/turnCommandProfile.js';
 
@@ -129,25 +129,7 @@ const plainLegacyInfo = (value: string): string =>
         .replace(/\s+/gu, ' ')
         .trim();
 
-// JSONB는 객체 key 순서를 보존하지 않으므로 표시 순서는 배포된 원본 resource에서 읽는다.
-export const loadEquipmentTradeItemOrder = async (scenarioCode: string): Promise<readonly string[] | undefined> => {
-    const normalized = scenarioCode.replace(/^scenario_/i, '').replace(/\.json$/i, '');
-    if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(Number(normalized))) {
-        return undefined;
-    }
-    try {
-        const scenario = await loadScenarioDefinitionById(Number(normalized));
-        const configConst = scenario.config.const;
-        const keys = Object.values(asRecord(configConst.allItems)).flatMap((entries) => Object.keys(asRecord(entries)));
-        return keys.length > 0 ? keys : [...resolveLegacyPurchasableItemKeys(configConst)];
-    } catch (error) {
-        // 보존된 시즌의 resource가 없는 경우에도 현재 DB의 구매/판매 선택지는 유지한다.
-        if (isRecord(error) && error.code === 'ENOENT') {
-            return undefined;
-        }
-        throw error;
-    }
-};
+export const loadEquipmentTradeItemOrder = loadScenarioItemOrder;
 
 export const buildEquipmentTradeItemOptions = (options: {
     configConst: Record<string, unknown>;

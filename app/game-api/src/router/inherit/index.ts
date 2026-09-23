@@ -23,6 +23,7 @@ import {
 } from '../../services/inheritance.js';
 import type { GameApiContext, WorldStateRow } from '../../context.js';
 import { openAuctionWithDaemon } from '../../auction/open.js';
+import { loadScenarioItemOrder, orderScenarioItemEntries } from '../../services/scenarioItemOrder.js';
 
 const BUFF_KEYS: InheritBuffType[] = [
     'warAvoidRatio',
@@ -65,10 +66,11 @@ const loadAvailableUniqueItems = async (worldState: WorldStateRow) => {
     const configConst = asRecord(asRecord(worldState.config).const);
     const loader = new ItemLoader();
     const { allItems } = await resolveLegacyCompatibleUniqueConfig(configConst, loader);
+    const itemOrder = await loadScenarioItemOrder(worldState.scenarioCode);
     const enabledKeys: Array<Parameters<ItemLoader['load']>[0]> = [];
     for (const slot of UNIQUE_ITEM_SLOT_ORDER) {
         const entries = allItems[slot] ?? {};
-        for (const [key, amount] of Object.entries(asRecord(entries))) {
+        for (const [key, amount] of orderScenarioItemEntries(asRecord(entries), itemOrder)) {
             if (asNumber(amount, 0) !== 0 && isItemKey(key)) {
                 enabledKeys.push(key);
             }

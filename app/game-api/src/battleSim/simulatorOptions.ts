@@ -124,27 +124,25 @@ export const loadBattleSimTraitOptions = async (): Promise<{
     return cachedTraitOptions;
 };
 
-let cachedItemOptions: Promise<BattleSimItemOptions> | null = null;
+let cachedItemModules: Promise<ItemModule[]> | null = null;
 
 const toItemOption = (module: ItemModule): BattleSimItemOption => ({
     key: module.key,
     name: module.name,
 });
 
-export const loadBattleSimItemOptions = async (): Promise<BattleSimItemOptions> => {
-    if (!cachedItemOptions) {
-        cachedItemOptions = loadItemModules([...ITEM_KEYS]).then((modules) => {
-            const items: BattleSimItemOptions = {
-                horse: [],
-                weapon: [],
-                book: [],
-                item: [],
-            };
-            for (const module of modules) {
-                items[module.slot].push(toItemOption(module));
-            }
-            return items;
-        });
+export const loadBattleSimItemOptions = async (
+    allowedKeys: ReadonlySet<string>,
+    itemOrder: readonly string[] | undefined
+): Promise<BattleSimItemOptions> => {
+    cachedItemModules ??= loadItemModules([...ITEM_KEYS]);
+    const modules = await cachedItemModules;
+    const catalog = new Map(modules.map((module) => [module.key, module]));
+    const items: BattleSimItemOptions = { horse: [], weapon: [], book: [], item: [] };
+    for (const key of new Set([...(itemOrder ?? []), ...ITEM_KEYS])) {
+        if (!allowedKeys.has(key)) continue;
+        const module = catalog.get(key);
+        if (module) items[module.slot].push(toItemOption(module));
     }
-    return cachedItemOptions;
+    return items;
 };

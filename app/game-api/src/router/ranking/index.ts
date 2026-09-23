@@ -16,6 +16,7 @@ import {
     findLegacyHallRows,
     isLegacyArchiveProfile,
 } from '../../services/legacyArchiveStore.js';
+import { loadScenarioItemOrder, orderScenarioItemEntries } from '../../services/scenarioItemOrder.js';
 
 const DEFAULT_BG_COLOR = '#330000';
 const DEFAULT_FG_COLOR = '#ffffff';
@@ -98,7 +99,7 @@ export const rankingRouter = router({
             .optional()
     ).query(async ({ ctx, input }) => {
         const worldState = await ctx.db.worldState.findFirst({
-            select: { meta: true, config: true },
+            select: { meta: true, config: true, scenarioCode: true },
         });
         const meta = asRecord(worldState?.meta);
         const isUnited = typeof meta.isUnited === 'number' && meta.isUnited !== 0;
@@ -309,6 +310,7 @@ export const rankingRouter = router({
         if (Object.keys(uniqueConfig.allItems).length === 0) {
             uniqueConfig.allItems = buildLegacyDefaultUniqueItemPool(itemRegistry);
         }
+        const itemOrder = await loadScenarioItemOrder(worldState?.scenarioCode ?? '');
         const activeAuctions = await ctx.db.auction.findMany({
             where: {
                 type: 'UNIQUE_ITEM',
@@ -330,7 +332,7 @@ export const rankingRouter = router({
             item: '도 구',
         } as const;
         const itemEntries = (['horse', 'weapon', 'book', 'item'] as const).map((slot) => {
-            const configuredItems = Object.entries(uniqueConfig.allItems[slot] ?? {}).reverse();
+            const configuredItems = orderScenarioItemEntries(uniqueConfig.allItems[slot] ?? {}, itemOrder).reverse();
             const entries = configuredItems.flatMap(([itemKey, rawCount]) => {
                 const item = itemRegistry.get(itemKey);
                 if (!item || item.buyable) {

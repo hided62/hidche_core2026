@@ -107,6 +107,8 @@ const buildContext = (options?: {
     includeOwnerDisplayName?: boolean;
     profileId?: string;
     generals?: RankingGeneralRow[];
+    scenarioCode?: string;
+    allItems?: Record<string, Record<string, number>>;
     rankRows?: Array<{ generalId: number; type: string; value: number }>;
     gameHistoryFindMany?: (args: unknown) => Promise<Array<{ season: number; scenario: number; scenarioName: string }>>;
 }): GameApiContext => {
@@ -157,10 +159,11 @@ const buildContext = (options?: {
         },
         worldState: {
             findFirst: async () => ({
+                scenarioCode: options?.scenarioCode ?? 'default',
                 meta: { isUnited: options?.isUnited ? 1 : 0 },
                 config: {
                     const: {
-                        allItems: {
+                        allItems: options?.allItems ?? {
                             horse: { che_명마_15_적토마: 2 },
                             weapon: {},
                             book: {},
@@ -285,6 +288,27 @@ describe('ranking.getBestGeneral', () => {
             }),
         ]);
         expect(JSON.stringify(result)).not.toContain('private-user-id');
+    });
+
+    it('uses the source scenario order for unique equipment and item cards after JSONB reorders their keys', async () => {
+        const result = await appRouter
+            .createCaller(
+                buildContext({
+                    scenarioCode: '905',
+                    allItems: {
+                        horse: { che_명마_07_백마: 1, che_명마_15_적토마: 1 },
+                        item: { che_의술_정력견혈산: 1, che_필살_둔갑천서: 1 },
+                    },
+                })
+            )
+            .ranking.getBestGeneral({ view: 'user' });
+
+        expect(
+            result.uniqueItems.find((section) => section.slot === 'horse')?.entries.map((entry) => entry.itemKey)
+        ).toEqual(['che_명마_15_적토마', 'che_명마_07_백마']);
+        expect(
+            result.uniqueItems.find((section) => section.slot === 'item')?.entries.map((entry) => entry.itemKey)
+        ).toEqual(['che_필살_둔갑천서', 'che_의술_정력견혈산']);
     });
 
     it('separates autonomous NPCs from users and possessed generals', async () => {

@@ -110,6 +110,7 @@ const buildContext = (options: {
     rankRows?: Array<{ type: string; value: number }>;
     inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
     configConst?: Record<string, unknown>;
+    scenarioCode?: string;
     configMap?: Record<string, unknown>;
     daemonResult?: TurnDaemonCommandResult;
     requestId?: string;
@@ -141,9 +142,10 @@ const buildContext = (options: {
     const webPushOutboxCreateMany = vi.fn(async () => ({ count: 1 }));
     const activeWorldState =
         options.configConst === undefined && options.configMap === undefined
-            ? worldState
+            ? { ...worldState, scenarioCode: options.scenarioCode ?? worldState.scenarioCode }
             : {
                   ...worldState,
+                  scenarioCode: options.scenarioCode ?? worldState.scenarioCode,
                   config: {
                       ...worldState.config,
                       ...(options.configConst === undefined ? {} : { const: options.configConst }),
@@ -432,6 +434,26 @@ describe('inherit router actor and permission boundaries', () => {
             { key: 'che_무기_12_칠성검', slot: 'weapon' },
             { key: 'che_서적_07_논어', slot: 'book' },
             { key: 'che_보물_도기', slot: 'item' },
+        ]);
+    });
+
+    it('restores source order for unique candidates when a scenario config has JSONB key order', async () => {
+        const fixture = buildContext({
+            scenarioCode: '905',
+            configConst: {
+                allItems: {
+                    item: { che_필살_둔갑천서: 1, che_의술_정력견혈산: 1 },
+                    horse: { che_명마_15_적토마: 1, che_명마_07_백마: 1 },
+                },
+            },
+        });
+
+        const status = await appRouter.createCaller(fixture.context).inherit.getStatus();
+        expect(status.availableUnique.map(({ key }) => key)).toEqual([
+            'che_명마_07_백마',
+            'che_명마_15_적토마',
+            'che_의술_정력견혈산',
+            'che_필살_둔갑천서',
         ]);
     });
 
