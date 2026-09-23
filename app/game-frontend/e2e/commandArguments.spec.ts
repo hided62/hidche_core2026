@@ -1,6 +1,11 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
-import { buildRefGeneralTargetOptions } from '../../game-api/src/turns/commandTargets.js';
+import {
+    buildRefGeneralTargetOptions,
+    buildRefNationTargetOptions,
+    type NationTargetSource,
+} from '../../game-api/src/turns/commandTargets.js';
+import { purifyNationHtml } from '../../game-api/src/security/nationHtml.js';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gamePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -4329,5 +4334,265 @@ for (const width of [1200, 390]) {
 
         await picker.getByRole('button', { name: / 입력$/ }).click();
         await expect.poll(() => JSON.stringify(requests)).toContain('"action":"che_등용","args":{"destGeneralId":5}');
+    });
+}
+
+// 2-3 국가 대상: Ref che_임관·che_장수대상임관 권유문 목록, che_물자원조 작위별 한도표, che_피장파장 전략 재사용 대기.
+const nationTargetSources: NationTargetSource[] = [
+    {
+        id: 1,
+        name: '아국',
+        color: '#008000',
+        capitalName: '업',
+        level: 1,
+        power: 1000,
+        generalCount: 5,
+        cityCount: 2,
+        diplomacyState: 2,
+        diplomacyTerm: 0,
+        adjacent: false,
+        scoutMessage: purifyNationHtml('<p>아국 권유문</p>'),
+    },
+    {
+        id: 2,
+        name: '위',
+        color: '#0000FF',
+        capitalName: '허창',
+        level: 2,
+        power: 800,
+        generalCount: 4,
+        cityCount: 2,
+        diplomacyState: 0,
+        diplomacyTerm: 6,
+        adjacent: true,
+        // 저장·조회 경로와 같은 정제 결과만 화면에 전달한다. script와 on* 속성은 남지 않는다.
+        scoutMessage: purifyNationHtml(
+            '<div style="width: 870px; height: 300px; background-color: #334455"><b>천하를 함께</b>' +
+                '<script>window.__scoutXss = 1</script><span onclick="window.__scoutXss = 2">함께</span></div>'
+        ),
+    },
+    {
+        id: 3,
+        name: '오',
+        color: '#FFFF00',
+        capitalName: '건업',
+        level: 2,
+        power: 900,
+        generalCount: 3,
+        cityCount: 1,
+        diplomacyState: 1,
+        diplomacyTerm: 12,
+        adjacent: false,
+        blockScout: true,
+    },
+];
+
+for (const width of [1200, 390]) {
+    test(`shows Ref scout messages for appointment commands at ${width}px`, async ({ page }, testInfo) => {
+        const nationTargets = buildRefNationTargetOptions({
+            actorNationId: 0,
+            nations: nationTargetSources,
+            join: { actorNpcState: 0, relYear: 5, openingPartYear: 3, initialNationGenLimit: 10 },
+        });
+        const requests = await install(page, false, {
+            ...commandTable,
+            general: [
+                {
+                    category: '인사',
+                    values: [
+                        {
+                            ...buildNationCommand('che_임관', '임관'),
+                        },
+                        buildGeneralCommand('che_장수대상임관', '장수대상임관'),
+                    ],
+                },
+            ],
+            inputOptions: {
+                ...inputOptions,
+                nations: nationTargets.nations,
+                nationTargets: { ...inputOptions.nationTargets, ...nationTargets.nationTargets },
+                nationScoutMessages: nationTargets.nationScoutMessages,
+            },
+        });
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await page.goto(gamePath('/'));
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /^임관/ }).click();
+        const form = picker.getByTestId('command-argument-form');
+        const list = form.getByTestId('nation-scout-list');
+        const rows = list.getByTestId('nation-scout-row');
+        await expect(list.locator('.nation-scout-header > div')).toHaveText(['국가명', '임관권유문']);
+        await expect(rows.locator('.nation-scout-name')).toHaveText(['아국', '위', '오']);
+        await expect(rows.nth(1).locator('.nation-scout-msg b')).toHaveText('천하를 함께');
+        expect(await list.locator('script, [onclick]').count()).toBe(0);
+        expect(await page.evaluate(() => (window as unknown as { __scoutXss?: number }).__scoutXss)).toBeUndefined();
+        // 국가명 칸은 국가색 배경이고 Ref isBrightColor 기준으로 글자색을 고른다.
+        const nameStyles = await rows
+            .locator('.nation-scout-name')
+            .evaluateAll((nodes) =>
+                nodes.map((node) => [getComputedStyle(node).backgroundColor, getComputedStyle(node).color])
+            );
+        expect(nameStyles).toEqual([
+            ['rgb(0, 128, 0)', 'rgb(255, 255, 255)'],
+            ['rgb(0, 0, 255)', 'rgb(255, 255, 255)'],
+            ['rgb(255, 255, 0)', 'rgb(0, 0, 0)'],
+        ]);
+        // 임관 금지 국가는 대상 카드에서 현재 불가로 남는다.
+        await expect(form.getByTestId('nation-target-list').locator('.target-option').nth(2)).toContainText(
+            '임관이 금지되어 있습니다.'
+        );
+
+        const toggle = list.getByRole('button', { name: /보기$/ });
+        const plate = rows.nth(1).locator('.nation-scout-plate');
+        if (width >= 940) {
+            // Ref media-1000px(940px 이상): 130px + 870px 두 열, 크게/작게 보기 버튼 없음.
+            await expect(toggle).toBeHidden();
+            await expect(rows.nth(1)).toHaveCSS('grid-template-columns', '130px 870px');
+        } else {
+            await expect(toggle).toHaveText('작게 보기');
+            await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+            await expect(plate).toHaveCSS('max-height', '200px');
+            await expect(plate).toHaveCSS('overflow-x', 'auto');
+            await toggle.click();
+            await expect(toggle).toHaveText('크게 보기');
+            await expect(rows.nth(1)).toHaveClass(/on-fit/);
+        }
+        await rows.nth(1).click();
+        await expect(form.locator('#command-arg-destNationId')).toHaveValue('2');
+        await expect(rows.nth(1)).toHaveClass(/selected/);
+
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await picker.evaluate((element) => {
+            const row = element.querySelectorAll<HTMLElement>('[data-testid=nation-scout-row]')[1]!;
+            const message = row.querySelector<HTMLElement>('.nation-scout-msg')!;
+            return {
+                url: location.href,
+                viewport: [innerWidth, innerHeight],
+                overlayOverflow: element.scrollWidth - element.clientWidth,
+                list: element.querySelector('[data-testid=nation-scout-list]')?.getBoundingClientRect().toJSON(),
+                row: row.getBoundingClientRect().toJSON(),
+                plate: row.querySelector('.nation-scout-plate')!.getBoundingClientRect().toJSON(),
+                message: message.getBoundingClientRect().toJSON(),
+                transform: getComputedStyle(message).transform,
+            };
+        });
+        expect(geometry.overlayOverflow).toBe(0);
+        if (width < 940) {
+            // on-fit: 870px 권유문을 목록 폭/870으로 줄이고, 높이는 200px × 같은 비율까지만 보인다.
+            const scale = geometry.list!.width / 870;
+            expect(geometry.message.width).toBeCloseTo(870 * scale, 0);
+            expect(geometry.plate.height).toBeLessThanOrEqual(200 * scale + 1);
+            expect(geometry.plate.right).toBeLessThanOrEqual(width);
+        } else {
+            expect(geometry.plate.width).toBeCloseTo(870, 0);
+            expect(geometry.transform).toBe('none');
+        }
+        await writeFile(testInfo.outputPath(`scout-list-${width}.json`), JSON.stringify(geometry, null, 2));
+        await picker.screenshot({ path: testInfo.outputPath(`scout-list-${width}.png`) });
+        await picker.getByRole('button', { name: '임관 입력', exact: true }).click();
+        await expect.poll(() => JSON.stringify(requests)).toContain('"action":"che_임관","args":{"destNationId":2}');
+
+        // 장수대상임관은 재야를 앞에 둔 같은 목록을 보이며 행을 눌러도 국가를 고르지 않는다.
+        await page.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+        await picker.getByRole('button', { name: /장수대상임관/ }).click();
+        await expect(rows.locator('.nation-scout-name')).toHaveText(['재야', '아국', '위', '오']);
+        await expect(rows.first().locator('.nation-scout-name')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+        await expect(rows.first().locator('.nation-scout-name button')).toHaveCount(0);
+    });
+
+    test(`shows Ref aid limits and counter-strategy cooldowns at ${width}px`, async ({ page }, testInfo) => {
+        const nationTargets = buildRefNationTargetOptions({ actorNationId: 1, nations: nationTargetSources });
+        const counterStrategy = {
+            ...buildNationCommand('che_피장파장', '피장파장'),
+            inputFields: [
+                ...buildNationCommand('che_피장파장', '피장파장').inputFields,
+                {
+                    key: 'commandType',
+                    label: '전략',
+                    kind: 'select',
+                    required: true,
+                    options: [
+                        { value: 'che_필사즉생', label: '필사즉생' },
+                        { value: 'che_수몰', label: '수몰' },
+                        { value: 'che_허보', label: '허보' },
+                    ],
+                },
+            ],
+        };
+        const aid = commandTable.nation.flatMap((group) => group.values).find((entry) => entry.key === 'che_물자원조')!;
+        const requests = await install(page, false, {
+            ...commandTable,
+            nation: [{ category: '전략', values: [counterStrategy, aid] }],
+            inputOptions: {
+                ...inputOptions,
+                nations: nationTargets.nations,
+                nationTargets: { ...inputOptions.nationTargets, ...nationTargets.nationTargets },
+                strategyCooldowns: { che_수몰: 12 },
+                context: { ...inputOptions.context, nationLevel: 3 },
+            },
+        });
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await page.goto(gamePath('/chief-center'));
+        const editor = page.locator('[data-command-scope="nation"]');
+        await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /^(?:국가:)?전략$/, exact: true }).click();
+        await picker.getByRole('button', { name: /피장파장/ }).click();
+        const form = picker.getByTestId('command-argument-form');
+        const strategy = form.locator('#command-arg-commandType');
+        await expect(strategy.locator('option')).toHaveText(['필사즉생', '수몰 (불가, 12턴)', '허보']);
+        await expect(strategy.locator('option').nth(1)).toHaveCSS('color', 'rgb(255, 0, 0)');
+        await strategy.selectOption('che_수몰');
+        await expect(strategy).toHaveCSS('color', 'rgb(255, 0, 0)');
+        await strategy.selectOption('che_허보');
+        await expect(strategy).not.toHaveCSS('color', 'rgb(255, 0, 0)');
+        // 선포·전쟁 중인 국가만 가능하고 아국은 불가다.
+        const cards = form.getByTestId('nation-target-list').locator('.target-option');
+        await expect(cards.locator('strong')).toHaveText(['오', '위', '아국']);
+        await expect(cards.nth(2)).toHaveClass(/unavailable/);
+        await expect(form.getByTestId('command-argument-guidance')).toContainText('60턴 동안');
+        await form.locator('#command-arg-destNationId').selectOption('2');
+        await picker.screenshot({ path: testInfo.outputPath(`counter-strategy-${width}.png`) });
+        await picker.getByRole('button', { name: '피장파장 입력', exact: true }).click();
+        await expect
+            .poll(() => JSON.stringify(requests))
+            .toContain('"action":"che_피장파장","args":{"destNationId":2,"commandType":"che_허보"}');
+
+        await editor.getByRole('button', { name: '2턴 명령 입력', exact: true }).click();
+        await picker.getByRole('button', { name: /^(?:국가:)?전략$/, exact: true }).click();
+        await picker.getByRole('button', { name: /원조/ }).click();
+        const table = picker.getByTestId('aid-level-table');
+        await expect(table.locator('li')).toHaveText([
+            '방랑군: 0',
+            '호족: 10,000',
+            '군벌: 20,000',
+            '주자사: 30,000',
+            '주목: 40,000',
+            '공: 50,000',
+            '왕: 60,000',
+            '황제: 70,000',
+        ]);
+        await expect(picker.getByTestId('command-resource-summary')).toContainText('국가 작위 주자사');
+        const current = table.locator('li.current .aid-level-name');
+        await expect(current).toHaveText('주자사');
+        await expect(current).toHaveCSS('font-weight', '700');
+        await expect(current).toHaveCSS('text-decoration-line', 'underline');
+        const geometry = await picker.evaluate((element) => ({
+            url: location.href,
+            viewport: [innerWidth, innerHeight],
+            overlayOverflow: element.scrollWidth - element.clientWidth,
+            table: element.querySelector('[data-testid=aid-level-table]')?.getBoundingClientRect().toJSON(),
+            nameWidths: [...element.querySelectorAll('.aid-level-name')].map(
+                (node) => node.getBoundingClientRect().width
+            ),
+            fontSize: getComputedStyle(element.querySelector('[data-testid=aid-level-table]')!).fontSize,
+        }));
+        expect(geometry.overlayOverflow).toBe(0);
+        expect(geometry.fontSize).toBe('14px');
+        // Ref: width 4em inline-block.
+        expect(new Set(geometry.nameWidths)).toEqual(new Set([56]));
+        await writeFile(testInfo.outputPath(`aid-levels-${width}.json`), JSON.stringify(geometry, null, 2));
+        await picker.screenshot({ path: testInfo.outputPath(`aid-levels-${width}.png`) });
     });
 }

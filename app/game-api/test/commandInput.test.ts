@@ -53,6 +53,24 @@ describe('turn command argument input', () => {
             { key: 'destNationId', kind: 'select', optionSource: 'nations' },
             { key: 'amountList', kind: 'numberTuple' },
         ]);
+        // Ref che_피장파장.vue: '전략 :' select에 자신을 뺀 전략 이름을 보인다.
+        expect(fields.find((entry) => entry.key === 'che_피장파장')?.fields).toMatchObject([
+            { key: 'destNationId', kind: 'select', optionSource: 'nations' },
+            {
+                key: 'commandType',
+                label: '전략',
+                kind: 'select',
+                options: [
+                    { value: 'che_필사즉생', label: '필사즉생' },
+                    { value: 'che_백성동원', label: '백성동원' },
+                    { value: 'che_수몰', label: '수몰' },
+                    { value: 'che_허보', label: '허보' },
+                    { value: 'che_의병모집', label: '의병모집' },
+                    { value: 'che_이호경식', label: '이호경식' },
+                    { value: 'che_급습', label: '급습' },
+                ],
+            },
+        ]);
 
         expect(
             nationFields

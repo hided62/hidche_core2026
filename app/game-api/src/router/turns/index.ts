@@ -11,6 +11,7 @@ import {
     buildRecruitmentCommandInfo,
     buildTurnCommandTable,
     evaluateReservedTurnPermission,
+    resolveCommandJoinEnv,
 } from '../../turns/commandTable.js';
 import { loadMapDefinitionByName } from '../../maps/mapDefinition.js';
 import {
@@ -45,7 +46,10 @@ import {
     buildRefAmountPresets,
     buildRefGeneralTargetOptions,
     buildRefNationTargetOptions,
+    COUNTER_STRATEGY_COMMAND_KEYS,
 } from '../../turns/commandTargets.js';
+import { resolveImpossibleStrategicCommands } from '../../services/mainNationProjection.js';
+import { resolveNationBlockScout, resolveNationScoutMessage } from '../nation/shared.js';
 
 const zPushAmount = z
     .number()
@@ -357,10 +361,20 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
             if (adjacentNationId && adjacentNationId !== general.nationId) adjacentNationIds.add(adjacentNationId);
         }
     }
+    // Ref che_피장파장 availableCommandTypeList: 아국 nation_env next_execute_<전략명> 기준 남은 턴.
+    const strategyCooldowns = Object.fromEntries(
+        resolveImpossibleStrategicCommands(nation?.meta, worldState.currentYear, worldState.currentMonth).map(
+            (entry) => [`che_${entry.name}`, entry.remainingTurns]
+        )
+    );
     const nationTargetOptions = buildRefNationTargetOptions({
         actorNationId: general.nationId,
+        join: { actorNpcState: general.npcState, ...resolveCommandJoinEnv(worldState) },
+        strategyAvailable: COUNTER_STRATEGY_COMMAND_KEYS.some((key) => strategyCooldowns[key] === undefined),
         nations: nations.map((entry) => {
             const relation = diplomacyByNation.get(entry.id);
+            const meta = asRecord(entry.meta);
+            const gennum = readGeneralMetaNumber(meta, 'gennum');
             return {
                 id: entry.id,
                 name: entry.name,
@@ -374,6 +388,9 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
                 diplomacyTerm: relation?.term ?? 0,
                 adjacent: adjacentNationIds.has(entry.id),
                 diplomacyRestricted: (readGeneralMetaNumber(entry.meta, 'surlimit') ?? 0) !== 0,
+                ...(gennum === null ? {} : { gennum }),
+                blockScout: resolveNationBlockScout(meta),
+                scoutMessage: resolveNationScoutMessage(meta),
             };
         }),
     });
@@ -406,6 +423,8 @@ export const getTurnCommandTable = async (ctx: GameApiContext, generalId: number
         })),
         nations: nationTargetOptions.nations,
         nationTargets: nationTargetOptions.nationTargets,
+        nationScoutMessages: nationTargetOptions.nationScoutMessages,
+        strategyCooldowns,
         generals: generalTargetOptions.generals,
         generalTargets: generalTargetOptions.generalTargets,
         crewTypes: (environment.unitSet.crewTypes ?? [])

@@ -99,10 +99,21 @@ export interface TurnCommandInputField {
     tupleLabels?: string[];
 }
 
+/** 임관 권유문. message는 서버에서 purifyNationHtml로 정제한 HTML이다. */
+export interface TurnCommandNationScoutMessage {
+    nationId: number;
+    name: string;
+    color: string;
+    message: string;
+}
+
 export interface TurnCommandInputOptions {
     cities: TurnCommandOption[];
     nations: TurnCommandOption[];
     nationTargets?: Record<string, TurnCommandOption[]>;
+    nationScoutMessages?: TurnCommandNationScoutMessage[];
+    /** 아국 전략 명령별 남은 재사용 대기 턴. 대기 중인 전략만 담는다. */
+    strategyCooldowns?: Record<string, number>;
     generals: TurnCommandOption[];
     generalTargets?: Record<string, TurnCommandOption[]>;
     crewTypes: TurnCommandOption[];
@@ -242,7 +253,8 @@ const FIELD_LABELS: Record<string, string> = {
     optionText: '행동',
     year: '기간(년)',
     month: '기간(월)',
-    commandType: '대응 명령',
+    // 피장파장 전용. Ref che_피장파장.vue의 '전략 :'.
+    commandType: '전략',
     amountList: '지원 물자',
 };
 
@@ -268,10 +280,14 @@ const STATIC_LABELS: Record<string, Record<string, string>> = {
         item: '도구',
     },
     commandType: {
-        che_선전포고: '선전포고',
-        che_불가침제의: '불가침 제의',
-        che_불가침파기제의: '불가침 파기 제의',
-        che_종전제의: '종전 제의',
+        // 피장파장 대상 전략. Ref availableCommandTypeList의 name(getName()).
+        che_필사즉생: '필사즉생',
+        che_백성동원: '백성동원',
+        che_수몰: '수몰',
+        che_허보: '허보',
+        che_의병모집: '의병모집',
+        che_이호경식: '이호경식',
+        che_급습: '급습',
     },
 };
 

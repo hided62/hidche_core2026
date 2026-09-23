@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, watch, type CSSProperties } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch, type CSSProperties } from 'vue';
 import { commandTargetDescription } from '../../utils/commandTargetDescription';
 import {
     isCommandTargetSearchField,
@@ -18,11 +18,18 @@ import {
     type GeneralOptionGroup,
 } from '../command/commandGeneralGroups';
 import {
+    aidLevelTable,
+    counterStrategyOption,
+    scoutMessageRows,
+    type ScoutMessageRow,
+} from '../command/commandNationDetails';
+import {
     commandArgumentFieldContract,
     shouldPreserveCommandArgumentValue,
     type CommandArgumentFieldContract,
 } from '../command/commandArgumentDraft';
 import { legacyNationTextColor } from '../../utils/legacyNationColor';
+import { formatNationLevelText } from '../../utils/nationFormat';
 import { getNpcColor } from '../../utils/npcColor';
 import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 import type {
@@ -249,8 +256,17 @@ const colorOptionStyle = (field: CommandInputField, option?: CommandOption): CSS
     if (field.optionSource === 'generals' && option?.npcState !== undefined) {
         return { color: getNpcColor(option.npcState) };
     }
+    if (isCounterStrategyField(field) && option && strategyOption(option).remainTurn > 0) {
+        return { color: 'red' };
+    }
     return undefined;
 };
+
+const isCounterStrategyField = (field: CommandInputField): boolean =>
+    props.commandKey === 'che_피장파장' && field.key === 'commandType';
+const strategyOption = (option: CommandOption) => counterStrategyOption(option, props.options.strategyCooldowns);
+const optionText = (field: CommandInputField, option: CommandOption): string =>
+    isCounterStrategyField(field) ? strategyOption(option).label : option.label;
 
 const cityTargetField = computed(() =>
     props.fields.find(
@@ -265,6 +281,34 @@ const nationTargetField = computed(() =>
         (field) => field.kind === 'select' && field.optionSource === 'nations' && field.key === 'destNationId'
     )
 );
+// Ref che_물자원조.vue의 작위별 원조 한도표.
+const aidLevels = computed(() =>
+    props.commandKey === 'che_물자원조' ? aidLevelTable(props.options.context?.nationLevel) : []
+);
+
+// Ref che_임관·che_장수대상임관.vue의 권유문 목록. 기본은 Ref toggleZoom=true(작게 보기 버튼 표시).
+const scoutRows = computed(() => scoutMessageRows(props.commandKey, props.options.nationScoutMessages));
+const scoutZoom = ref(true);
+const scoutListElement = ref<HTMLElement | null>(null);
+const scoutListWidth = ref(0);
+let scoutResizeObserver: ResizeObserver | null = null;
+watch(scoutListElement, (element) => {
+    scoutResizeObserver?.disconnect();
+    scoutResizeObserver = null;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    scoutResizeObserver = new ResizeObserver(([entry]) => {
+        scoutListWidth.value = entry?.contentRect.width ?? 0;
+    });
+    scoutResizeObserver.observe(element);
+});
+// Ref는 500px 화면에서 870px 권유문을 500/870로 줄인다. Core는 실제 목록 폭 기준으로 같은 비율을 쓴다.
+const scoutFitScale = computed(() => (scoutListWidth.value > 0 ? Math.min(1, scoutListWidth.value / 870) : 500 / 870));
+const selectScoutNation = (row: ScoutMessageRow) => {
+    if (!row.selectable || !nationTargetField.value) return;
+    setSelectValue(nationTargetField.value, String(row.nationId));
+};
+onBeforeUnmount(() => scoutResizeObserver?.disconnect());
+
 const mapTarget = computed(() => resolveCommandArgumentMapTarget(props.commandKey, props.fields));
 const showMap = computed(() => Boolean(props.mapData && props.mapLayout && mapTarget.value));
 const mapSelectedCityId = computed<number | null>(() => {
@@ -404,7 +448,7 @@ const resourceSummary = computed(() => {
     if (usesNationResources.has(props.commandKey)) {
         if (context.nationGold !== undefined) result.push(`국고 ${context.nationGold.toLocaleString()}`);
         if (context.nationRice !== undefined) result.push(`국가 군량 ${context.nationRice.toLocaleString()}`);
-        if (context.nationLevel !== undefined) result.push(`국가 작위 ${context.nationLevel}`);
+        if (context.nationLevel !== undefined) result.push(`국가 작위 ${formatNationLevelText(context.nationLevel)}`);
     }
     return result;
 });
@@ -497,7 +541,7 @@ watch(
     <div
         v-if="props.fields.length || showMap || presentation.lines.length"
         class="command-argument-form"
-        :class="{ 'has-map': showMap }"
+        :class="{ 'has-map': showMap, 'has-scout-list': scoutRows.length > 0 }"
         data-testid="command-argument-form"
     >
         <div v-if="showMap" class="command-map" data-testid="command-argument-map">
@@ -534,6 +578,12 @@ watch(
             <div v-if="resourceSummary.length" class="resource-summary" data-testid="command-resource-summary">
                 <span v-for="entry in resourceSummary" :key="entry">{{ entry }}</span>
             </div>
+            <ul v-if="aidLevels.length" class="aid-level-table" data-testid="aid-level-table">
+                <li v-for="row in aidLevels" :key="row.level" :class="{ current: row.current }">
+                    <span class="aid-level-name">{{ row.text }}</span
+                    >: {{ row.amount.toLocaleString() }}
+                </li>
+            </ul>
             <div v-for="field in visibleFields" :key="field.key" class="argument-row">
                 <label :for="`command-arg-${field.key}`">{{ field.label }}</label>
                 <input
@@ -614,7 +664,7 @@ watch(
                             :value="String(option.value)"
                             :style="colorOptionStyle(field, option)"
                         >
-                            {{ option.label }}
+                            {{ optionText(field, option) }}
                         </option>
                     </template>
                 </select>
@@ -788,6 +838,59 @@ watch(
             </div>
             <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
         </div>
+        <section
+            v-if="scoutRows.length"
+            ref="scoutListElement"
+            class="nation-scout-list"
+            data-testid="nation-scout-list"
+            aria-label="임관 권유문"
+            :style="{ '--scout-fit-scale': String(scoutFitScale) }"
+        >
+            <div class="nation-scout-header">
+                <div>국가명</div>
+                <div>임관권유문</div>
+                <button
+                    type="button"
+                    class="scout-zoom-toggle legacy-button"
+                    :class="scoutZoom ? 'legacy-button--primary' : 'legacy-button--secondary'"
+                    :aria-pressed="scoutZoom"
+                    @click="scoutZoom = !scoutZoom"
+                >
+                    {{ scoutZoom ? '작게 보기' : '크게 보기' }}
+                </button>
+            </div>
+            <div
+                v-for="row in scoutRows"
+                :key="row.nationId"
+                class="nation-scout-row"
+                :class="[
+                    scoutZoom ? 'on-zoom' : 'on-fit',
+                    {
+                        selectable: row.selectable,
+                        selected: row.selectable && row.nationId === values[nationTargetField?.key ?? ''],
+                    },
+                ]"
+                data-testid="nation-scout-row"
+                @click="selectScoutNation(row)"
+            >
+                <div class="nation-scout-name" :style="{ backgroundColor: row.color, color: row.textColor }">
+                    <button
+                        v-if="row.selectable"
+                        type="button"
+                        :aria-pressed="row.nationId === values[nationTargetField?.key ?? '']"
+                        @click.stop="selectScoutNation(row)"
+                    >
+                        {{ row.name }}
+                    </button>
+                    <span v-else>{{ row.name }}</span>
+                </div>
+                <div class="nation-scout-plate">
+                    <!-- message는 Game API가 purifyNationHtml(sanitize-html allowlist)로 저장·조회 시 모두 정제한다. -->
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <div class="nation-scout-msg" v-html="row.message" />
+                </div>
+            </div>
+        </section>
     </div>
 </template>
 
@@ -853,6 +956,134 @@ small {
     padding: 8px;
 }
 
+.aid-level-table {
+    margin: 0;
+    padding: 4px 8px 6px 28px;
+    color: #e8ddc4;
+    font-size: var(--sammo-font-size-normal);
+    line-height: 1.45;
+}
+
+.aid-level-name {
+    display: inline-block;
+    width: 4em;
+}
+
+.aid-level-table li.current .aid-level-name {
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+/*
+ * Ref che_임관.vue nation-list. 940px 이상은 130px 국가명 + 870px 권유문, 그 아래는 한 열이다.
+ * 지도·입력 2열 아래에 전체 폭으로 둔다.
+ */
+.nation-scout-list {
+    grid-column: 1 / -1;
+    min-width: 0;
+    border-top: 1px solid rgba(201, 164, 90, 0.35);
+    color: #e8ddc4;
+    font-size: var(--sammo-font-size-normal);
+}
+
+.nation-scout-header {
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.08);
+    text-align: center;
+}
+
+.nation-scout-header > .scout-zoom-toggle {
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    margin: 2px;
+}
+
+.nation-scout-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    border-bottom: 1px solid rgba(201, 164, 90, 0.35);
+}
+
+.nation-scout-row.selectable {
+    cursor: pointer;
+}
+
+.nation-scout-row.selected {
+    outline: 2px solid #f1d89a;
+    outline-offset: -2px;
+}
+
+.nation-scout-name {
+    display: grid;
+    place-items: center;
+    min-height: 2em;
+    font-size: 1.3em;
+    text-align: center;
+}
+
+.nation-scout-name button {
+    border: 0;
+    padding: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.nation-scout-plate {
+    min-width: 0;
+    align-self: center;
+}
+
+.nation-scout-row.on-fit .nation-scout-plate {
+    max-height: calc(200px * var(--scout-fit-scale));
+    overflow: hidden;
+}
+
+.nation-scout-row.on-fit .nation-scout-msg {
+    width: 870px;
+    transform-origin: 0 0;
+    transform: scale(var(--scout-fit-scale));
+}
+
+.nation-scout-row.on-zoom .nation-scout-plate {
+    max-height: 200px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.nation-scout-row.on-zoom .nation-scout-msg {
+    max-width: 870px;
+}
+
+@media (min-width: 940px) {
+    .nation-scout-header,
+    .nation-scout-row {
+        grid-template-columns: 130px minmax(0, 870px);
+        grid-template-rows: auto;
+    }
+
+    .nation-scout-header > .scout-zoom-toggle {
+        display: none;
+    }
+
+    .nation-scout-row.on-fit .nation-scout-plate,
+    .nation-scout-row.on-zoom .nation-scout-plate {
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: visible;
+    }
+
+    .nation-scout-row.on-fit .nation-scout-msg {
+        width: auto;
+        max-width: 870px;
+        transform: none;
+    }
+}
+
 .command-argument-form {
     border: 1px solid rgba(201, 164, 90, 0.35);
     font-size: var(--sammo-font-size-small);
@@ -879,6 +1110,11 @@ small {
     .command-argument-form.has-map > .command-map {
         position: sticky;
         top: var(--argument-overlay-header-height, 0px);
+    }
+
+    /* 전체 폭 권유문 목록이 지도 아래에 오므로 지도가 목록을 덮지 않게 고정하지 않는다. */
+    .command-argument-form.has-map.has-scout-list > .command-map {
+        position: static;
     }
 
     .command-argument-form.has-map > .argument-fields {

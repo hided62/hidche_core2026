@@ -5,6 +5,7 @@ import {
     buildRefGeneralTargetOptions,
     buildRefNationTargetOptions,
     type GeneralTargetSource,
+    type NationTargetSource,
 } from '../src/turns/commandTargets.js';
 
 const general = (overrides: Partial<GeneralTargetSource>): GeneralTargetSource => ({
@@ -322,6 +323,88 @@ describe('Ref nation target guidance', () => {
         expect(result.nationTargets.che_물자원조?.at(-1)?.description).toContain('외교제한');
         expect(result.nationTargets.che_불가침파기제의?.[0]?.description).toContain('불가침 12턴');
         expect(result.nationTargets.che_불가침파기제의?.at(-1)).toMatchObject({ value: 4, availableNow: false });
+    });
+
+    it('marks counter-strategy targets like Ref exportJSVars notAvailable', () => {
+        const withDeclaration = [
+            ...nations,
+            { ...nations[3]!, id: 5, name: '선포국', diplomacyState: 1, diplomacyTerm: 12 },
+            { ...nations[3]!, id: 6, name: '신규선포국', diplomacyState: 1, diplomacyTerm: 11 },
+        ];
+        const result = buildRefNationTargetOptions({ actorNationId: 1, nations: withDeclaration });
+        const available = (action: string) =>
+            result.nationTargets[action]?.filter((entry) => entry.availableNow).map((entry) => entry.value);
+        // 피장파장·이호경식: AllowDiplomacyBetweenStatus([0, 1])
+        expect(available('che_피장파장')).toEqual([4, 5, 6]);
+        expect(available('che_이호경식')).toEqual([4, 5, 6]);
+        // 급습: AllowDiplomacyWithTerm(1, 12)
+        expect(available('che_급습')).toEqual([5]);
+        expect(result.nationTargets.che_급습?.find((entry) => entry.value === 6)?.description).toContain(
+            '선포 12개월 이상인 상대국에만 가능합니다.'
+        );
+        expect(result.nationTargets.che_피장파장?.find((entry) => entry.value === 1)).toMatchObject({
+            availableNow: false,
+        });
+
+        const exhausted = buildRefNationTargetOptions({
+            actorNationId: 1,
+            nations: withDeclaration,
+            strategyAvailable: false,
+        });
+        expect(exhausted.nationTargets.che_피장파장?.every((entry) => entry.availableNow === false)).toBe(true);
+        expect(exhausted.nationTargets.che_피장파장?.find((entry) => entry.value === 4)?.description).toContain(
+            '사용할 수 있는 전략이 없습니다.'
+        );
+        expect(exhausted.nationTargets.che_이호경식?.some((entry) => entry.availableNow)).toBe(true);
+    });
+
+    it('keeps the Ref nation order for appointment targets and exports purified scout messages', () => {
+        const joinNations: NationTargetSource[] = [
+            { ...nations[0]!, scoutMessage: '<p>어서 오시오</p>' },
+            { ...nations[1]!, blockScout: true },
+            { ...nations[2]!, name: 'ⓤ태수국' },
+            { ...nations[3]!, name: 'ⓞ이민족' },
+            { ...nations[3]!, id: 5, name: '초반만원국', generalCount: 3, gennum: 10 },
+        ];
+        const join = { actorNpcState: 0, relYear: 1, openingPartYear: 3, initialNationGenLimit: 10 };
+        const result = buildRefNationTargetOptions({ actorNationId: 0, nations: joinNations, join });
+        expect(result.nationTargets.che_임관?.map((entry) => [entry.value, entry.availableNow])).toEqual([
+            [1, true],
+            [2, false],
+            [3, false],
+            [4, false],
+            [5, false],
+        ]);
+        expect(result.nationTargets.che_임관?.map((entry) => entry.description?.split(' · ')[0])).toEqual([
+            '현재 임관 가능',
+            '임관이 금지되어 있습니다.',
+            '유저장은 태수국에 임관할 수 없습니다.',
+            '이민족 국가에 임관할 수 없습니다.',
+            '임관이 제한되고 있습니다.',
+        ]);
+        // 초반 제한이 끝나면 인원 제한은 없고, NPC(9)는 이민족 국가에 임관할 수 있다.
+        const later = buildRefNationTargetOptions({
+            actorNationId: 0,
+            nations: joinNations,
+            join: { ...join, actorNpcState: 9, relYear: 3 },
+        });
+        expect(later.nationTargets.che_임관?.map((entry) => entry.availableNow)).toEqual([
+            true,
+            false,
+            true,
+            true,
+            true,
+        ]);
+        expect(result.nationScoutMessages).toEqual(
+            joinNations.map((entry) => ({
+                nationId: entry.id,
+                name: entry.name,
+                color: entry.color,
+                message: entry.scoutMessage ?? '',
+            }))
+        );
+        // join 정보가 없으면 임관은 기존 공통 국가 목록을 그대로 쓴다.
+        expect(buildRefNationTargetOptions({ actorNationId: 0, nations }).nationTargets.che_임관).toBeUndefined();
     });
 });
 

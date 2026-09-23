@@ -479,6 +479,19 @@ const mapCityRow = (row: CityRow): City => {
     };
 };
 
+/** 명령표의 임관 대상 표시에 쓰는 Ref AllowJoinDestNation 시점 값. */
+export const resolveCommandJoinEnv = (
+    worldState: WorldStateRow
+): { relYear: number; openingPartYear: number; initialNationGenLimit: number } => {
+    const constValues = asRecord(asRecord(worldState.config).const);
+    const env = buildConstraintEnv(worldState);
+    return {
+        relYear: Number(env.relYear),
+        openingPartYear: Number(env.openingPartYear),
+        initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], 0),
+    };
+};
+
 const mapNationRow = (row: NationRow): Nation => ({
     id: row.id,
     name: row.name,

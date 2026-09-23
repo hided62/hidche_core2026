@@ -20,6 +20,14 @@ export type CommandOption = {
     nationId?: number;
 };
 
+/** 임관 권유문. message는 Game API가 purifyNationHtml로 정제한 HTML이다. */
+export type CommandNationScoutMessage = {
+    nationId: number;
+    name: string;
+    color: string;
+    message: string;
+};
+
 export type CommandAmountPreset = {
     values: number[];
     defaultValue: number;
@@ -122,6 +130,9 @@ export type CommandTable = {
         cities: CommandOption[];
         nations: CommandOption[];
         nationTargets?: Record<string, CommandOption[]>;
+        nationScoutMessages?: CommandNationScoutMessage[];
+        /** 아국 전략 명령별 남은 재사용 대기 턴. */
+        strategyCooldowns?: Record<string, number>;
         generals: CommandOption[];
         generalTargets?: Record<string, CommandOption[]>;
         crewTypes: CommandOption[];
