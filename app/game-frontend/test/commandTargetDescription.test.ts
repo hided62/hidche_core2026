@@ -8,6 +8,7 @@ void test('nullable troop names receive display-only fallbacks and preserve lead
     assert.equal(commandTargetDescription('che_발령', base), '탑승 부대 없음\n금 100');
     assert.equal(commandTargetDescription('che_포상', base), '금 100');
     assert.equal(commandTargetDescription('che_몰수', base), '금 100');
+    assert.equal(commandTargetDescription('che_선양', base), '금 100');
     assert.equal(commandTargetDescription('che_증여', { ...base, troopId: 99 }), '금 100 · 탑승 부대 #99');
     assert.equal(
         commandTargetDescription('che_증여', {

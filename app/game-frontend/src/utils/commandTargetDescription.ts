@@ -4,7 +4,13 @@ export const commandTargetDescription = (commandKey: string, option?: CommandOpt
     if (!option) return '';
     const description = option.description ?? '';
     // 이전 API는 완성된 description을 주므로 새 원본 필드가 없으면 그대로 표시한다.
-    if (option.targetNames?.troopName === undefined || commandKey === 'che_포상' || commandKey === 'che_몰수') {
+    // Ref ProcessGeneralAmount·che_선양.vue는 부대를 표시하지 않는다.
+    if (
+        option.targetNames?.troopName === undefined ||
+        commandKey === 'che_포상' ||
+        commandKey === 'che_몰수' ||
+        commandKey === 'che_선양'
+    ) {
         return description;
     }
     const troopName = option.targetNames.troopName ?? (option.troopId ? `#${option.troopId}` : '없음');

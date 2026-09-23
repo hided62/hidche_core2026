@@ -36,6 +36,8 @@ export interface TurnCommandOption {
     crew?: number;
     troopId?: number;
     npcState?: number;
+    /** 등용·장수대상임관처럼 여러 국가 장수를 고르는 목록의 국가별 묶음 기준. */
+    nationId?: number;
 }
 
 export interface TurnCommandAmountPreset {

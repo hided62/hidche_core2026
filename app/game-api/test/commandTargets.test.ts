@@ -49,8 +49,9 @@ describe('Ref command general targets', () => {
     it('indexes genuine names even when named 없음, and excludes missing-name placeholders', () => {
         const options = buildRefGeneralTargetOptions({
             actorId: 1,
-            actorNationId: 0,
-            generals: [general({ name: '없음', nationId: 0, cityId: 0, troopId: 99 })],
+            // 이름·국가·도시·부대 원본이 없는 경우. 재야 actor는 같은 국가 후보가 없으므로 국가 ID만 둔다.
+            actorNationId: 5,
+            generals: [general({ name: '없음', nationId: 5, cityId: 0, troopId: 99 })],
             nationNames: new Map(),
             cityNames: new Map(),
             troopNames: new Map(),
@@ -118,7 +119,10 @@ describe('Ref command general targets', () => {
         );
         expect(detailed.generalTargets.che_발령?.[0]?.description).toBe('병력 1,000\n금 5,000 · 쌀 4,000');
         expect(detailed.generalTargets.che_발령?.[2]?.targetNames?.troopName).toBe('청룡대');
-        expect(detailed.generalTargets.che_증여?.[1]?.description).not.toContain('통솔');
+        // Ref ProcessGeneralAmount.vue처럼 증여 후보도 (통/무/지)를 함께 보인다. 발령의 줄바꿈 형식은 쓰지 않는다.
+        expect(detailed.generalTargets.che_증여?.[1]?.description).toBe(
+            '금 100 · 쌀 200 · 병력 900 · 훈련 80 · 사기 70 · 통솔 100 · 무력 95 · 지력 0'
+        );
         expect(detailed.generalTargets.che_증여?.map((entry) => entry.targetNames)).toEqual([
             { name: '본인', nationName: '아국', cityName: '업', troopName: null },
             { name: '부대원', nationName: '아국', cityName: '업', troopName: '청룡대' },
@@ -131,6 +135,106 @@ describe('Ref command general targets', () => {
         ]);
         expect(detailed.generalTargets.che_포상?.[0]?.description).toBe('금 5,000 · 쌀 4,000 · 병력 1,000');
         expect(detailed.generalTargets.che_몰수?.[1]?.description).not.toContain('탑승 부대');
+    });
+
+    it('limits cross-nation recruitment and joining targets to the fields Ref exports', () => {
+        const foreign = general({
+            id: 7,
+            name: '타국장수',
+            nationId: 2,
+            cityId: 20,
+            officerLevel: 1,
+            gold: 9000,
+            rice: 8000,
+            crew: 7000,
+            train: 90,
+            atmos: 80,
+            troopId: 7,
+            leadership: 75,
+            strength: 60,
+            intel: 45,
+        });
+        const wanderer = general({ id: 8, name: '재야장수', nationId: 0, cityId: 30, gold: 500, rice: 400 });
+        const options = buildRefGeneralTargetOptions({
+            actorId: 1,
+            actorNationId: 1,
+            generals: [general({}), foreign, wanderer],
+            nationNames: new Map([
+                [1, '아국'],
+                [2, '타국'],
+            ]),
+            cityNames: new Map([
+                [10, '업'],
+                [20, '허창'],
+                [30, '단양'],
+            ]),
+            troopNames: new Map([[7, '비밀부대']]),
+        });
+        for (const list of [
+            options.generalTargets.che_등용,
+            options.generalTargets.che_장수대상임관,
+            options.generals,
+        ]) {
+            const target = list?.find((entry) => entry.value === 7);
+            // Ref: no,name,nation,officer_level,npc,leadership,strength,intel
+            expect(target).toEqual({
+                value: 7,
+                label: '타국장수 (타국)',
+                targetNames: { name: '타국장수', nationName: '타국' },
+                description: '통솔 75 · 무력 60 · 지력 45',
+                npcState: 0,
+                nationId: 2,
+            });
+            const serialized = JSON.stringify(list);
+            for (const hidden of ['9,000', '9000', '8000', '7000', '허창', '단양', '비밀부대', '훈련', '사기']) {
+                expect(serialized).not.toContain(hidden);
+            }
+            expect(list?.find((entry) => entry.value === 8)).toMatchObject({
+                label: '재야장수 (재야)',
+                targetNames: { name: '재야장수', nationName: null },
+                nationId: 0,
+            });
+        }
+    });
+
+    it('gives a wandering actor no same-nation general candidates', () => {
+        const options = buildRefGeneralTargetOptions({
+            actorId: 1,
+            actorNationId: 0,
+            generals: [general({ nationId: 0 }), general({ id: 2, name: '다른재야', nationId: 0, gold: 900 })],
+            nationNames: new Map(),
+            cityNames: new Map([[10, '업']]),
+        });
+        for (const action of ['che_증여', 'che_선양', 'che_발령', 'che_포상', 'che_몰수', 'che_부대탈퇴지시']) {
+            expect(options.generalTargets[action]).toEqual([]);
+        }
+        expect(options.generalTargets.che_장수대상임관?.map((entry) => entry.value)).toEqual([2]);
+        expect(JSON.stringify(options.generalTargets.che_장수대상임관)).not.toContain('900');
+    });
+
+    it('shows only city and Ref stats for abdication candidates', () => {
+        const options = buildRefGeneralTargetOptions({
+            actorId: 1,
+            actorNationId: 1,
+            generals: [
+                general({}),
+                general({
+                    id: 2,
+                    name: '후계',
+                    gold: 100,
+                    rice: 200,
+                    crew: 300,
+                    leadership: 80,
+                    strength: 70,
+                    intel: 60,
+                }),
+            ],
+            nationNames: new Map([[1, '아국']]),
+            cityNames: new Map([[10, '업']]),
+        });
+        expect(options.generalTargets.che_선양).toMatchObject([
+            { value: 2, label: '후계 (업)', description: '통솔 80 · 무력 70 · 지력 60' },
+        ]);
     });
 });
 

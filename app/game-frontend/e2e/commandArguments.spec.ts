@@ -4222,3 +4222,112 @@ for (const viewport of [
         await overlay.getByRole('button', { name: '명령 취소', exact: true }).click();
     });
 }
+
+for (const width of [1200, 390]) {
+    test(`groups recruitment targets by nation color without cross-nation resources at ${width}px`, async ({
+        page,
+    }, testInfo) => {
+        const targets = buildRefGeneralTargetOptions({
+            actorId: 1,
+            actorNationId: 1,
+            generals: [
+                { id: 1, name: '장수', nationId: 1, cityId: 1, npcState: 0, officerLevel: 5 },
+                {
+                    id: 4,
+                    name: '적장',
+                    nationId: 2,
+                    cityId: 2,
+                    npcState: 0,
+                    officerLevel: 1,
+                    gold: 9100,
+                    rice: 8200,
+                    crew: 7300,
+                    train: 90,
+                    atmos: 80,
+                    troopId: 4,
+                    leadership: 75,
+                    strength: 60,
+                    intel: 45,
+                },
+                { id: 5, name: '떠돌이', nationId: 0, cityId: 3, npcState: 0, officerLevel: 0, gold: 600 },
+                { id: 6, name: '빙의장', nationId: 2, cityId: 2, npcState: 1, officerLevel: 1 },
+                { id: 7, name: '아군', nationId: 1, cityId: 1, npcState: 0, officerLevel: 1 },
+            ],
+            nationNames: new Map([
+                [1, '아국'],
+                [2, '적국'],
+            ]),
+            cityNames: new Map([
+                [1, '업'],
+                [2, '허창'],
+                [3, '단양'],
+            ]),
+            troopNames: new Map([[4, '비밀부대']]),
+        });
+        const requests = await install(page, false, {
+            ...commandTable,
+            general: [{ category: '인사', values: [buildGeneralCommand('che_등용', '등용')] }],
+            inputOptions: { ...inputOptions, ...targets },
+        });
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await page.goto(gamePath('/'));
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: /등용/ }).click();
+        const form = picker.getByTestId('command-argument-form');
+        const list = form.getByTestId('general-target-list');
+        const headers = list.getByTestId('general-nation-group');
+        // Ref ORDER BY npc,name 순서에서 국가가 처음 나타난 순서로 묶는다.
+        await expect(headers).toHaveText(['적국', '재야', '아국']);
+        // 같은 국가 장수는 한 묶음에 모이므로 빙의장(npc=1)이 적국 묶음 안에 들어간다.
+        await expect(list.locator('.target-option strong')).toHaveText(['적장', '빙의장', '떠돌이', '아군']);
+        await expect(form.locator('#command-arg-destGeneralId optgroup')).toHaveCount(3);
+        await expect(form.locator('#command-arg-destGeneralId optgroup').first()).toHaveAttribute('label', '적국');
+        await expect(form.locator('#command-arg-destGeneralId option').first()).toHaveText('적장 (적국)');
+        const text = await list.innerText();
+        for (const hidden of ['9,100', '8,200', '7,300', '허창', '단양', '비밀부대', '훈련', '사기']) {
+            expect(text).not.toContain(hidden);
+        }
+        await expect(list.locator('.target-option').first()).toContainText('통솔 75 · 무력 60 · 지력 45');
+        const style = await headers.evaluateAll((nodes) =>
+            nodes.map((node) => {
+                const computed = getComputedStyle(node);
+                return [computed.backgroundColor, computed.color, computed.position];
+            })
+        );
+        expect(style).toEqual([
+            ['rgb(128, 0, 0)', 'rgb(255, 255, 255)', 'sticky'],
+            ['rgb(0, 0, 0)', 'rgb(255, 255, 255)', 'sticky'],
+            ['rgb(0, 128, 0)', 'rgb(255, 255, 255)', 'sticky'],
+        ]);
+        // 빙의장(npc=1)은 Ref getNPCColor처럼 skyblue다.
+        await expect(list.locator('.target-option').nth(1).locator('strong')).toHaveCSS('color', 'rgb(135, 206, 235)');
+        await picker.screenshot({ path: testInfo.outputPath(`recruit-groups-all-${width}.png`) });
+
+        await picker.getByRole('button', { name: '검색 꺼짐', exact: true }).click();
+        await form.locator('#command-search-destGeneralId').fill('ㄸㄷ');
+        await expect(headers).toHaveText(['재야']);
+        await expect(list.locator('.target-option')).toHaveCount(1);
+        await list.locator('.target-option').click();
+        await expect(form.locator('#command-arg-destGeneralId')).toHaveValue('5');
+
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await picker.evaluate((element) => ({
+            url: location.href,
+            viewport: [innerWidth, innerHeight],
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            overlayOverflow: element.scrollWidth - element.clientWidth,
+            list: element.querySelector('[data-testid=general-target-list]')?.getBoundingClientRect().toJSON(),
+            headers: [...element.querySelectorAll('[data-testid=general-nation-group]')].map((node) =>
+                node.getBoundingClientRect().toJSON()
+            ),
+        }));
+        // 메인 화면 자체는 Ref처럼 최소 500px 폭이라 390px에서 문서가 넓다. 전체화면 overlay 안만 확인한다.
+        expect(geometry.overlayOverflow).toBe(0);
+        await writeFile(testInfo.outputPath(`recruit-groups-${width}.json`), JSON.stringify(geometry, null, 2));
+        await picker.screenshot({ path: testInfo.outputPath(`recruit-groups-${width}.png`) });
+
+        await picker.getByRole('button', { name: / 입력$/ }).click();
+        await expect.poll(() => JSON.stringify(requests)).toContain('"action":"che_등용","args":{"destGeneralId":5}');
+    });
+}

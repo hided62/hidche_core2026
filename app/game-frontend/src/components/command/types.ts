@@ -17,6 +17,7 @@ export type CommandOption = {
     crew?: number;
     troopId?: number;
     npcState?: number;
+    nationId?: number;
 };
 
 export type CommandAmountPreset = {

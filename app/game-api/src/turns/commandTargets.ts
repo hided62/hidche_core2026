@@ -48,6 +48,15 @@ export interface RefNationTargetOptions {
 const SAME_NATION_GENERAL_COMMANDS = ['che_증여'] as const;
 const SAME_NATION_NATION_COMMANDS = ['che_발령', 'che_포상', 'che_몰수', 'che_부대탈퇴지시'] as const;
 
+const statsText = (entry: GeneralTargetSource): string =>
+    [
+        entry.leadership === undefined ? null : `통솔 ${entry.leadership.toLocaleString()}`,
+        entry.strength === undefined ? null : `무력 ${entry.strength.toLocaleString()}`,
+        entry.intel === undefined ? null : `지력 ${entry.intel.toLocaleString()}`,
+    ]
+        .filter(Boolean)
+        .join(' · ');
+
 /** Ref 각 처리 화면의 SELECT 조건을 공통 command table의 명령별 option으로 투영한다. */
 export const buildRefGeneralTargetOptions = (options: {
     actorId: number;
@@ -64,29 +73,30 @@ export const buildRefGeneralTargetOptions = (options: {
         const isTroopExit = action === 'che_부대탈퇴지시';
         const availableNow = isTroopExit ? isTroopMember && entry.id !== options.actorId : undefined;
         const label = (() => {
-            if (action === 'che_발령') return `${entry.name} (${cityName})`;
-            if (action === 'che_포상' || action === 'che_몰수') return `${entry.name} (${cityName})`;
+            // 같은 국가 후보만 있는 명령은 국명을 반복하지 않는다.
+            if (['che_발령', 'che_포상', 'che_몰수', 'che_선양'].includes(action ?? '')) {
+                return `${entry.name} (${cityName})`;
+            }
             return `${entry.name} (${options.nationNames.get(entry.nationId) ?? '무소속'} · ${cityName})`;
         })();
-        const details = [
-            entry.gold === undefined ? null : `금 ${entry.gold.toLocaleString()}`,
-            entry.rice === undefined ? null : `쌀 ${entry.rice.toLocaleString()}`,
-            entry.crew === undefined ? null : `병력 ${entry.crew.toLocaleString()}`,
-            entry.train === undefined ? null : `훈련 ${entry.train.toLocaleString()}`,
-            entry.atmos === undefined ? null : `사기 ${entry.atmos.toLocaleString()}`,
-        ].filter((value): value is string => Boolean(value));
+        // Ref che_선양.vue는 후보에 (통/무/지)만 보인다.
+        const details = (
+            action === 'che_선양'
+                ? []
+                : [
+                      entry.gold === undefined ? null : `금 ${entry.gold.toLocaleString()}`,
+                      entry.rice === undefined ? null : `쌀 ${entry.rice.toLocaleString()}`,
+                      entry.crew === undefined ? null : `병력 ${entry.crew.toLocaleString()}`,
+                      entry.train === undefined ? null : `훈련 ${entry.train.toLocaleString()}`,
+                      entry.atmos === undefined ? null : `사기 ${entry.atmos.toLocaleString()}`,
+                  ]
+        ).filter((value): value is string => Boolean(value));
         // 발령 후보는 Ref처럼 능력치와 병력 준비 상태를 함께 비교한다.
         // 예약 요약에 쓰는 label은 그대로 두고, 같은 국가 후보의 상세 정보만 보강한다.
         const assignmentDetails =
             action === 'che_발령'
                 ? [
-                      [
-                          entry.leadership === undefined ? null : `통솔 ${entry.leadership.toLocaleString()}`,
-                          entry.strength === undefined ? null : `무력 ${entry.strength.toLocaleString()}`,
-                          entry.intel === undefined ? null : `지력 ${entry.intel.toLocaleString()}`,
-                      ]
-                          .filter(Boolean)
-                          .join(' · '),
+                      statsText(entry),
                       [
                           entry.crew === undefined ? null : `병력 ${entry.crew.toLocaleString()}`,
                           entry.train === undefined ? null : `훈련 ${entry.train.toLocaleString()}`,
@@ -104,6 +114,9 @@ export const buildRefGeneralTargetOptions = (options: {
                       .filter(Boolean)
                       .join('\n')
                 : undefined;
+        // Ref ProcessGeneralAmount·ProcessGeneral은 같은 국가 후보에 (통/무/지)를 함께 보인다.
+        const stats = statsText(entry);
+        if (stats && action !== 'che_발령') details.push(stats);
         if (isTroopExit) {
             details.unshift(availableNow ? '현재 탈퇴 지시 가능' : '현재 탈퇴 지시 불가');
         }
@@ -125,33 +138,48 @@ export const buildRefGeneralTargetOptions = (options: {
             npcState: entry.npcState,
         };
     };
-    const project = (predicate: (entry: GeneralTargetSource) => boolean): TurnCommandOption[] =>
-        options.generals.filter(predicate).map((entry) => toOption(entry));
+    // Ref che_등용·che_장수대상임관 exportJSVars()는 타국·재야 장수의
+    // no,name,nation,officer_level,npc,leadership,strength,intel만 내보낸다.
+    // 명령표는 모든 장수에게 전달되므로 금·쌀·병력·훈련·사기·부대·위치 도시를 싣지 않는다.
+    const toPublicOption = (entry: GeneralTargetSource): TurnCommandOption => {
+        const nationName = options.nationNames.get(entry.nationId) ?? null;
+        return {
+            value: entry.id,
+            label: `${entry.name} (${nationName ?? '재야'})`,
+            targetNames: { name: entry.name, nationName },
+            description: statsText(entry),
+            npcState: entry.npcState,
+            nationId: entry.nationId,
+        };
+    };
+    const projectPublic = (predicate: (entry: GeneralTargetSource) => boolean): TurnCommandOption[] =>
+        options.generals.filter(predicate).map(toPublicOption);
+    // 재야는 국가가 아니므로 같은 국가 명령 후보가 없다. 해당 명령도 NotBeNeutral로 막힌다.
+    const isSameNation = (entry: GeneralTargetSource): boolean =>
+        options.actorNationId !== 0 && entry.nationId === options.actorNationId;
 
     const generalTargets: Record<string, TurnCommandOption[]> = {};
     for (const action of SAME_NATION_GENERAL_COMMANDS) {
-        generalTargets[action] = options.generals
-            .filter((entry) => entry.nationId === options.actorNationId)
-            .map((entry) => toOption(entry, action));
+        generalTargets[action] = options.generals.filter(isSameNation).map((entry) => toOption(entry, action));
     }
     for (const action of SAME_NATION_NATION_COMMANDS) {
         generalTargets[action] = options.generals
-            .filter((entry) => entry.nationId === options.actorNationId)
+            .filter(isSameNation)
             .map((entry) => toOption(entry, action))
             .sort((left, right) => Number(right.availableNow) - Number(left.availableNow));
     }
 
-    generalTargets.che_선양 = project(
-        (entry) => entry.nationId !== 0 && entry.nationId === options.actorNationId && entry.id !== options.actorId
-    );
-    generalTargets.che_등용 = project(
+    generalTargets.che_선양 = options.generals
+        .filter((entry) => isSameNation(entry) && entry.id !== options.actorId)
+        .map((entry) => toOption(entry, 'che_선양'));
+    generalTargets.che_등용 = projectPublic(
         (entry) => entry.npcState < 2 && entry.officerLevel !== 12 && entry.id !== options.actorId
     );
-    generalTargets.che_장수대상임관 = project((entry) => entry.id !== options.actorId);
+    generalTargets.che_장수대상임관 = projectPublic((entry) => entry.id !== options.actorId);
 
     return {
-        // 기존 profile의 공통 fallback은 유저장 목록을 유지한다.
-        generals: project((entry) => entry.npcState < 2),
+        // 기존 profile의 공통 fallback은 유저장 목록을 유지한다. 타국 장수가 섞이므로 공개 필드만 둔다.
+        generals: projectPublic((entry) => entry.npcState < 2),
         generalTargets,
     };
 };

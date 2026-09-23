@@ -13,6 +13,11 @@ import { commandCityOptions } from '../command/commandArgumentOptions';
 import { COMMAND_CITY_DISTANCE_RANGE, citiesBasedOnDistance } from '../command/commandCityDistance';
 import { sortCommandGeneralOptions } from '../command/commandGeneralOptions';
 import {
+    groupGeneralOptionsByNation,
+    NATION_GROUPED_GENERAL_COMMANDS,
+    type GeneralOptionGroup,
+} from '../command/commandGeneralGroups';
+import {
     commandArgumentFieldContract,
     shouldPreserveCommandArgumentValue,
     type CommandArgumentFieldContract,
@@ -141,6 +146,18 @@ const filteredTargets = computed(
 );
 const visibleOptionsFor = (field: CommandInputField): CommandOption[] =>
     filteredTargets.value.get(field.key) ?? optionsFor(field);
+// 등용·장수대상임관은 Ref SelectGeneral groupByNation처럼 국가색 머리로 후보를 묶는다.
+const isNationGroupedField = (field: CommandInputField): boolean =>
+    field.optionSource === 'generals' && NATION_GROUPED_GENERAL_COMMANDS.has(props.commandKey);
+const nationGroupsOf = (field: CommandInputField, options: CommandOption[]): GeneralOptionGroup[] | null =>
+    isNationGroupedField(field) ? groupGeneralOptionsByNation(options, props.options.nations) : null;
+type TargetCardGroup = { key: string; header: GeneralOptionGroup | null; options: CommandOption[] };
+const targetCardGroupsFor = (field: CommandInputField): TargetCardGroup[] => {
+    const options = visibleOptionsFor(field);
+    const groups = nationGroupsOf(field, options);
+    if (!groups) return [{ key: 'all', header: null, options }];
+    return groups.map((group) => ({ key: `nation-${group.nationId}`, header: group, options: group.options }));
+};
 const clearSearchQueries = () => {
     for (const key of searchTimers.keys()) cancelSearchTimer(key);
     for (const key of Object.keys(searchDrafts)) delete searchDrafts[key];
@@ -574,14 +591,32 @@ watch(
                     :style="colorOptionStyle(field, selectedOptionFor(field))"
                     @change="setSelectValue(field, ($event.target as HTMLSelectElement).value)"
                 >
-                    <option
-                        v-for="option in optionsFor(field)"
-                        :key="String(option.value)"
-                        :value="String(option.value)"
-                        :style="colorOptionStyle(field, option)"
-                    >
-                        {{ option.label }}
-                    </option>
+                    <template v-if="isNationGroupedField(field)">
+                        <optgroup
+                            v-for="group in nationGroupsOf(field, optionsFor(field))"
+                            :key="group.nationId"
+                            :label="group.name"
+                        >
+                            <option
+                                v-for="option in group.options"
+                                :key="String(option.value)"
+                                :value="String(option.value)"
+                                :style="colorOptionStyle(field, option)"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </optgroup>
+                    </template>
+                    <template v-else>
+                        <option
+                            v-for="option in optionsFor(field)"
+                            :key="String(option.value)"
+                            :value="String(option.value)"
+                            :style="colorOptionStyle(field, option)"
+                        >
+                            {{ option.label }}
+                        </option>
+                    </template>
                 </select>
                 <div v-else-if="field.kind === 'boolean'" class="boolean-options">
                     <button
@@ -718,25 +753,37 @@ watch(
                     <span v-if="!visibleOptionsFor(field).length" class="target-search-empty"
                         >검색 결과가 없습니다.</span
                     >
-                    <button
-                        v-for="option in visibleOptionsFor(field)"
-                        :key="String(option.value)"
-                        type="button"
-                        class="target-option"
-                        :class="{
-                            selected: option.value === values[field.key],
-                            unavailable: option.availableNow === false,
-                        }"
-                        :aria-pressed="option.value === values[field.key]"
-                        @click="setSelectValue(field, String(option.value))"
-                    >
-                        <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
-                        <strong :style="colorOptionStyle(field, option)">{{ option.label }}</strong>
-                        <span class="target-state">{{
-                            option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
-                        }}</span>
-                        <small>{{ commandTargetDescription(commandKey, option) }}</small>
-                    </button>
+                    <template v-for="group in targetCardGroupsFor(field)" :key="group.key">
+                        <div
+                            v-if="group.header"
+                            class="target-group-header"
+                            data-testid="general-nation-group"
+                            :style="{ backgroundColor: group.header.color, color: group.header.textColor }"
+                        >
+                            {{ group.header.name }}
+                        </div>
+                        <button
+                            v-for="option in group.options"
+                            :key="String(option.value)"
+                            type="button"
+                            class="target-option"
+                            :class="{
+                                selected: option.value === values[field.key],
+                                unavailable: option.availableNow === false,
+                            }"
+                            :aria-pressed="option.value === values[field.key]"
+                            @click="setSelectValue(field, String(option.value))"
+                        >
+                            <span v-if="option.color" class="option-color" :style="{ backgroundColor: option.color }" />
+                            <strong :style="colorOptionStyle(field, option)">{{
+                                group.header ? (option.targetNames?.name ?? option.label) : option.label
+                            }}</strong>
+                            <span class="target-state">{{
+                                option.availableNow === false ? '현재 불가' : option.availableNow ? '우선 대상' : '대상'
+                            }}</span>
+                            <small>{{ commandTargetDescription(commandKey, option) }}</small>
+                        </button>
+                    </template>
                 </div>
             </div>
             <div v-if="!isValid" class="argument-error" role="alert">필수 입력을 확인하세요.</div>
@@ -978,6 +1025,14 @@ small {
 
 .target-option > strong:first-child {
     grid-column: 1 / 3;
+}
+
+.target-group-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 4px 8px;
+    font-weight: bold;
 }
 
 .target-state {
