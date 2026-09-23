@@ -66,7 +66,9 @@ server build는 기존 Turbo cache를 재사용할 수 있지만, 자원 보호�
 - Runtime process는 10초 이전의 불안정 종료에 대해 최대 5회, 2초 간격으로만
   자동 재시작합니다. Readiness는 예상 process 수가 정확하고 모든 restart count가
   0일 때만 성공합니다.
-- Root와 server package의 `tsdown`은 0.22.14 계열로 통일합니다. Docker runtime의
+- Root와 server package의 `tsdown`은 0.23.0 계열로 통일하고 선언 파일 플러그인은
+  `rolldown-plugin-dts` 0.27.13으로 고정합니다. 0.28 계열은 infra 선언 파일 빌드에서
+  `renderStatement` 오류가 재현됐습니다. Docker runtime의
   Node heap/Rayon 상한을 상속한 동일 toolchain으로 초기 Gateway와 profile
   worktree를 빌드하여 구형 Rolldown의 과도한 native thread 생성을 피합니다.
 - Profile, Gateway와 controller self-upgrade의 server package build는 Turbo DAG를

@@ -121,7 +121,7 @@
         "typecheck": "pnpm -w tsc7 -b app/game-engine/tsconfig.json"
     },
     "dependencies": {
-        "@prisma/client": "^7.9.1",
+        "@prisma/client": "^7.10.0",
         "@sammo-ts/common": "workspace:*",
         "@sammo-ts/infra": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
@@ -129,7 +129,7 @@
         "zod": "^4.3.5"
     },
     "devDependencies": {
-        "tsdown": "^0.22.14",
-        "vitest": "^4.1.10"
+        "tsdown": "^0.23.0",
+        "vitest": "^5.0.1"
     }
 }
