@@ -79,6 +79,8 @@ type FixtureState = {
     generalMeFailure?: boolean;
     canChangeIcon?: boolean;
     generalLogQueries?: number;
+    myLogInputs?: Array<Record<string, unknown>>;
+    pagedMyLogs?: boolean;
     ensurePrestartQueries?: number;
     ensurePrestartFailure?: 'TIMEOUT' | 'INTERNAL_SERVER_ERROR';
     nationNoticeInput?: string;
@@ -583,6 +585,24 @@ const install = async (page: Page, state: FixtureState) => {
                 });
             if (operation === 'general.getMyLog') {
                 state.generalLogQueries = (state.generalLogQueries ?? 0) + 1;
+                if (state.pagedMyLogs) {
+                    state.myLogInputs?.push(jsonInput);
+                    const type = jsonInput.type;
+                    if (type === 'generalHistory') {
+                        return response({
+                            type,
+                            logs: Array.from({ length: 25 }, (_, index) => ({ id: 100 - index, text: `열전-${index}` })),
+                        });
+                    }
+                    if (type === 'generalAction') {
+                        const firstPage = Array.from({ length: 24 }, (_, index) => ({ id: 50 - index, text: `행동-${index}` }));
+                        return response({
+                            type,
+                            logs: jsonInput.beforeId ? [{ id: 26, text: '이전 행동' }] : firstPage,
+                        });
+                    }
+                    return response({ type, logs: [] });
+                }
                 return response({
                     type: 'generalAction',
                     logs: [{ id: 1, text: state.hiddenSeedLogText ?? '<Y>기록</>' }],
@@ -1362,6 +1382,39 @@ test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ p
         .locator('#traffic-container')
         .evaluate((element) => element.getBoundingClientRect().width);
     expect(mobileWidth).toBe(1016);
+});
+
+test('내 정보 열전은 전체 표시 후 종료하고 행동 기록만 다음 페이지를 요청한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head', myset: 3, settingMutations: [], accessPages: [], pagedMyLogs: true, myLogInputs: [],
+    };
+    await install(page, state);
+    await page.goto('my-page');
+
+    const history = page.locator('.log-panel').filter({ has: page.getByRole('heading', { name: '장수 열전' }) });
+    const action = page.locator('.log-panel').filter({ has: page.getByRole('heading', { name: '개인 기록' }) });
+    await expect(history.locator('.log-line')).toHaveCount(25);
+    await expect(history.getByRole('button', { name: '이전 로그 불러오기' })).toHaveCount(0);
+    await expect(action.locator('.log-line')).toHaveCount(24);
+    await waitForVisualAssets(page);
+    for (const width of [1000, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        const geometry = await history.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return { width: rect.width, height: rect.height, fontSize: style.fontSize, display: style.display };
+        });
+        expect(geometry.width).toBeGreaterThan(0);
+        expect(geometry.height).toBeGreaterThan(0);
+        await persistParityArtifact(page, `core-my-page-full-history-${width}`, geometry);
+    }
+    await action.getByRole('button', { name: '이전 로그 불러오기' }).click();
+    await expect(action.locator('.log-line')).toHaveCount(25);
+    await expect(action.getByRole('button', { name: '이전 로그 불러오기' })).toHaveCount(0);
+    expect(state.myLogInputs?.filter((input) => input.type === 'generalHistory')).toHaveLength(1);
+    expect(state.myLogInputs?.filter((input) => input.type === 'generalAction')).toEqual([
+        { type: 'generalAction' }, { type: 'generalAction', beforeId: 27 },
+    ]);
 });
 
 test('내 정보&설정 keeps desktop density and becomes a 390px horizontal-identity layout', async ({ page }) => {

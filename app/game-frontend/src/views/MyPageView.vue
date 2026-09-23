@@ -213,7 +213,8 @@ const loadLog = async (type: LogType, beforeId?: number) => {
         const response = await trpc.general.getMyLog.query({ type, beforeId });
         const next = response.logs.map((entry) => ({ id: entry.id, html: formatLog(entry.text) }));
         logs[type] = beforeId ? [...logs[type], ...next] : next;
-        logHasMore[type] = next.length >= 24;
+        // 장수 열전은 첫 요청에 전체를 받으며 서버도 열전의 beforeId를 적용하지 않는다.
+        logHasMore[type] = type !== 'generalHistory' && next.length >= 24;
     } catch (cause) {
         error.value = errorText(cause);
     } finally {
