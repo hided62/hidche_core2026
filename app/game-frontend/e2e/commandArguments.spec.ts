@@ -853,7 +853,8 @@ const install = async (
         clockRecovery: { startsAt: string; endsAt: string } | null;
         turnEngineRunning: boolean;
     },
-    decoratedNpcChiefs = false
+    decoratedNpcChiefs = false,
+    chiefOfficerLevel = 5
 ) => {
     const requests: unknown[] = [];
     const currentGeneralContext = {
@@ -999,7 +1000,19 @@ const install = async (
                                     npcState: [4, 6, 9, 7, 5, 3, 2, 0][index]!,
                                 })),
                             }
-                          : chiefCenter
+                          : chiefOfficerLevel !== chiefCenter.me.officerLevel
+                            ? {
+                                  ...chiefCenter,
+                                  me: { ...chiefCenter.me, officerLevel: chiefOfficerLevel },
+                                  chiefs: chiefCenter.chiefs.map((chief) => ({
+                                      ...chief,
+                                      name:
+                                          chief.officerLevel === chiefOfficerLevel
+                                              ? '장수'
+                                              : `수뇌${chief.officerLevel}`,
+                                  })),
+                              }
+                            : chiefCenter
                 );
             if (name === 'turns.reserved.getGeneral')
                 return response({ turns: generalTurns, revision: generalRevision, autorunLimit: 2403 });
@@ -1589,6 +1602,98 @@ test('shows general command durations from metadata on desktop and mobile', asyn
     }
     expect(JSON.stringify(requests)).toContain('"action":"che_내정특기초기화","args":{}');
 });
+
+for (const { officerLevel, row, column } of [
+    { officerLevel: 12, row: 0, column: 0 },
+    { officerLevel: 6, row: 0, column: 3 },
+    { officerLevel: 9, row: 1, column: 1 },
+    { officerLevel: 5, row: 1, column: 3 },
+]) {
+    test(`anchors the chief command list to officer ${officerLevel} column and clicked turn`, async ({ page }) => {
+        await install(page, false, refChiefCommandTable, 1, undefined, false, officerLevel);
+        await page.setViewportSize({ width: 1200, height: 900 });
+        await page.goto('/che/chief-center');
+
+        const editor = page.locator('[data-command-scope="nation"]');
+        const gridRow = page.locator('.chief-grid-row').nth(row);
+        await expect(gridRow.locator('[data-command-scope="nation"]')).toHaveCount(1);
+        const picker = page.getByTestId('command-picker');
+        const pageBox = (await page.locator('.layout-desktop').boundingBox())!;
+        const artifacts: Record<string, unknown>[] = [];
+        for (const turn of [1, 7, 12]) {
+            await editor.getByRole('button', { name: `${turn}턴 명령 입력`, exact: true }).click();
+            await expect(picker.locator('.category-btn').first()).toBeVisible();
+            const geometry = await page.evaluate((turnIndex) => {
+                const editorElement = document.querySelector<HTMLElement>('[data-command-scope="nation"]')!;
+                const pickerElement = document.querySelector<HTMLElement>('[data-testid="command-picker"]')!;
+                const rowElement = editorElement.querySelector<HTMLElement>(`[data-turn-index="${turnIndex}"]`)!;
+                const rect = (element: Element) => {
+                    const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+                    return { left, top, right, bottom, width, height };
+                };
+                return {
+                    editor: rect(editorElement),
+                    picker: rect(pickerElement),
+                    row: rect(rowElement),
+                    position: getComputedStyle(pickerElement).position,
+                    horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    pickerOverflow: pickerElement.scrollWidth - pickerElement.clientWidth,
+                };
+            }, turn - 1);
+            artifacts.push({ turn, ...geometry });
+            // Ref PageChiefCenter는 24px 턴 번호 열 뒤에 238px 수뇌 열 4개를 둔다.
+            expect(geometry.editor.left - pageBox.x).toBeCloseTo(24 + column * 238, 0);
+            expect(geometry.position).toBe('absolute');
+            expect(geometry.picker.left).toBeCloseTo(geometry.editor.left, 0);
+            expect(geometry.picker.width).toBeCloseTo(geometry.editor.width, 0);
+            expect(geometry.picker.top).toBeCloseTo(geometry.row.bottom, 0);
+            expect(geometry.horizontalOverflow).toBeLessThanOrEqual(0);
+            expect(geometry.pickerOverflow).toBeLessThanOrEqual(0);
+            // 둘째 줄 마지막 턴에서도 목록이 문서 밖으로 잘리지 않고 스크롤로 전부 보여야 한다.
+            await picker.evaluate((element) => element.scrollIntoView({ block: 'nearest' }));
+            const visible = await picker.evaluate((element) => {
+                const { top, bottom } = element.getBoundingClientRect();
+                return { top, bottom, viewportHeight: window.innerHeight };
+            });
+            expect(visible.top).toBeGreaterThanOrEqual(0);
+            expect(visible.bottom).toBeLessThanOrEqual(visible.viewportHeight);
+            if (turn !== 1) {
+                await page.screenshot({
+                    path: test.info().outputPath(`chief-picker-officer-${officerLevel}-turn-${turn}-1200.png`),
+                });
+            }
+            await picker.getByRole('button', { name: '명령 입력 닫기', exact: true }).click();
+            await expect(picker).toHaveCount(0);
+        }
+        // 고급 모드의 `명령 선택 ▾`은 Ref 편집 모드(`bottom: 0`)처럼 자기 열 턴 표 하단에 맞춰 위로 펼친다.
+        await editor.getByRole('button', { name: '고급 모드', exact: true }).click();
+        await editor.getByRole('button', { name: '명령 선택 ▾', exact: true }).click();
+        await expect(picker.locator('.category-btn').first()).toBeVisible();
+        const advanced = await page.evaluate(() => {
+            const rect = (selector: string) => {
+                const { left, top, bottom, width } = document.querySelector(selector)!.getBoundingClientRect();
+                return { left, top, bottom, width };
+            };
+            return {
+                editor: rect('[data-command-scope="nation"]'),
+                picker: rect('[data-testid="command-picker"]'),
+                queue: rect('[data-command-scope="nation"] .queue-area'),
+            };
+        });
+        artifacts.push({ turn: 'advanced', ...advanced });
+        expect(advanced.picker.left).toBeCloseTo(advanced.editor.left, 0);
+        expect(advanced.picker.width).toBeCloseTo(advanced.editor.width, 0);
+        expect(advanced.picker.top).toBeGreaterThanOrEqual(advanced.editor.top + 24);
+        expect(advanced.picker.bottom).toBeCloseTo(advanced.queue.bottom, 0);
+        await page.screenshot({
+            path: test.info().outputPath(`chief-picker-officer-${officerLevel}-advanced-1200.png`),
+        });
+        await writeFile(
+            test.info().outputPath(`chief-picker-officer-${officerLevel}-geometry.json`),
+            JSON.stringify(artifacts, null, 2)
+        );
+    });
+}
 
 test('shows every Ref chief command in the exact category and command order', async ({ page }) => {
     await install(page, false, refChiefCommandTable);
@@ -4620,7 +4725,13 @@ for (const width of [1200, 390]) {
                                         { value: 'weapon', label: '무기' },
                                     ],
                                 },
-                                { key: 'itemCode', label: '장비', kind: 'select', required: true, optionSource: 'items' },
+                                {
+                                    key: 'itemCode',
+                                    label: '장비',
+                                    kind: 'select',
+                                    required: true,
+                                    optionSource: 'items',
+                                },
                             ],
                         },
                         {
@@ -4661,7 +4772,13 @@ for (const width of [1200, 390]) {
                                     required: true,
                                     optionSource: 'nationTypes',
                                 },
-                                { key: 'colorType', label: '국기 색상', kind: 'select', required: true, optionSource: 'colors' },
+                                {
+                                    key: 'colorType',
+                                    label: '국기 색상',
+                                    kind: 'select',
+                                    required: true,
+                                    optionSource: 'colors',
+                                },
                             ],
                         },
                     ],
@@ -4704,7 +4821,11 @@ for (const width of [1200, 390]) {
                         },
                     ],
                 },
-                context: { ...inputOptions.context, citySecurity: 2_000, dexterity: { '1': 1001, '2': 3000, '3': 500_000 } },
+                context: {
+                    ...inputOptions.context,
+                    citySecurity: 2_000,
+                    dexterity: { '1': 1001, '2': 3000, '3': 500_000 },
+                },
             },
         });
         await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
@@ -4787,7 +4908,12 @@ for (const width of [1200, 390]) {
                 columns: getComputedStyle(row).gridTemplateColumns,
                 cells: [...row.children].map((cell) => {
                     const rect = cell.getBoundingClientRect();
-                    return { text: cell.textContent?.trim(), left: rect.left, right: rect.right, scroll: cell.scrollWidth };
+                    return {
+                        text: cell.textContent?.trim(),
+                        left: rect.left,
+                        right: rect.right,
+                        scroll: cell.scrollWidth,
+                    };
                 }),
             })),
         }));

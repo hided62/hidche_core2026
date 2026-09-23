@@ -135,7 +135,7 @@ const labelMap = computed(() => {
 const displayRows = computed(() =>
     props.rows.slice(0, expanded.value || props.compact ? props.rows.length : collapsedRowCount)
 );
-const quickPickerTop = ref('38px');
+const quickPickerStyle = ref<Record<string, string> | undefined>();
 const isRecruitmentCommand = computed(
     () => selectedCommand.value?.key === 'che_징병' || selectedCommand.value?.key === 'che_모병'
 );
@@ -183,20 +183,23 @@ const finishDrag = (next: Set<number>) => {
     dragKind.value = null;
 };
 
-const openPicker = (turnIndex?: number) => {
-    if (!props.compact && editorElement.value) {
-        const editorRect = editorElement.value.getBoundingClientRect();
-        const anchor =
-            turnIndex === undefined
-                ? editorElement.value.querySelector<HTMLElement>('.control-pad')
-                : editorElement.value.querySelector<HTMLElement>(`[data-turn-index="${turnIndex}"]`);
-        if (anchor) {
-            const anchorRect = anchor.getBoundingClientRect();
-            quickPickerTop.value = `${
-                turnIndex === undefined ? anchorRect.bottom - editorRect.top : anchorRect.top - editorRect.top + 30
-            }px`;
-        }
+// 명령 목록 popup은 편집기(사령부에서는 자기 수뇌 열) 안에서 위치를 잡는다. 턴을 누르면 Ref
+// commandQuickReserveFormAnchor처럼 그 행 바로 아래에 붙이고, 사령부 고급 모드의 턴 미지정 목록은 Ref 편집 모드
+// CommandSelectForm(`bottom: 0`)처럼 턴 표 하단에 맞춰 위로 펼친다. 모바일 사령부와 장수 턴 미지정은 CSS 기본 위치다.
+const anchoredPickerStyle = (turnIndex?: number): Record<string, string> | undefined => {
+    const editor = editorElement.value;
+    if (!editor || (props.compact && props.mobile)) return undefined;
+    const editorRect = editor.getBoundingClientRect();
+    if (turnIndex !== undefined) {
+        const row = editor.querySelector<HTMLElement>(`[data-turn-index="${turnIndex}"]`);
+        return row ? { top: `${row.getBoundingClientRect().top - editorRect.top + 30}px` } : undefined;
     }
+    if (!props.compact) return undefined;
+    const queue = editor.querySelector<HTMLElement>('.queue-area');
+    return queue ? { top: 'auto', bottom: `${editorRect.bottom - queue.getBoundingClientRect().bottom}px` } : undefined;
+};
+const openPicker = (turnIndex?: number) => {
+    quickPickerStyle.value = anchoredPickerStyle(turnIndex);
     quickTarget.value = turnIndex ?? null;
     pickerOpen.value = true;
     selectedCommand.value = null;
@@ -805,9 +808,7 @@ const clickOutsideMenu = (event: Event) => {
                 class="command-picker"
                 :class="{ 'argument-overlay': isArgumentOverlay, 'recruitment-picker': isRecruitmentCommand }"
                 data-testid="command-picker"
-                :style="
-                    isArgumentOverlay || quickTarget === null || props.compact ? undefined : { top: quickPickerTop }
-                "
+                :style="isArgumentOverlay ? undefined : quickPickerStyle"
                 :role="isArgumentOverlay ? 'dialog' : undefined"
                 :aria-modal="isArgumentOverlay ? 'true' : undefined"
                 :aria-label="
@@ -1457,17 +1458,6 @@ small {
         grid-column: 1 / -1;
         grid-row: 1;
         font-size: 14pt;
-    }
-}
-
-@media (min-width: 1025px) {
-    .compact:not(.mobile) .command-picker {
-        position: fixed;
-        z-index: 1000;
-        top: 86px;
-        right: auto;
-        left: calc(50% - 476px);
-        width: 238px;
     }
 }
 
