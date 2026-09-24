@@ -11,6 +11,7 @@ import {
     listScenarioPreviews,
     resolveGitBranchCommitSha,
     resolveGitCommitSha,
+    supportsProfileReleaseBuild,
     type ScenarioPreview,
 } from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
@@ -1373,6 +1374,7 @@ export const adminRouter = router({
                     });
                 }
                 let selectedScenario: ScenarioPreview | undefined;
+                let resolvedCommitSha: string;
                 try {
                     const resolved =
                         sourceMode === 'BRANCH'
@@ -1381,6 +1383,7 @@ export const adminRouter = router({
                     if (sourceMode === 'COMMIT') {
                         sourceRef = resolved;
                     }
+                    resolvedCommitSha = resolved;
                     const scenarios = await listScenarioPreviews({ gitRef: resolved });
                     selectedScenario = scenarios.find((scenario) => scenario.id === input.install.scenarioId);
                     if (!selectedScenario) {
@@ -1393,6 +1396,13 @@ export const adminRouter = router({
                             sourceMode === 'BRANCH'
                                 ? 'Branch is invalid or does not contain the scenario.'
                                 : 'Commit is invalid or does not contain the scenario.',
+                    });
+                }
+
+                if (!(await supportsProfileReleaseBuild(resolvedCommitSha))) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '선택한 버전은 현재 서버의 배포 빌드와 호환되지 않습니다. 최신 버전을 선택해 주세요.',
                     });
                 }
 

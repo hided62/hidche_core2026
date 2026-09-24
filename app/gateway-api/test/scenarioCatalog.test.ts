@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { listScenarioPreviews, resolveGitCommitSha } from '../src/scenario/scenarioCatalog.js';
+import {
+    hasProfileReleaseBuildTasks,
+    listScenarioPreviews,
+    resolveGitCommitSha,
+    supportsProfileReleaseBuild,
+} from '../src/scenario/scenarioCatalog.js';
 
 describe('scenarioCatalog git ref support', () => {
+    it('rejects a pinned release whose frontend predates the current build contract', async () => {
+        expect(hasProfileReleaseBuildTasks({ tasks: { build: {} } }, { scripts: { build: 'vite build' } })).toBe(
+            false
+        );
+        expect(await supportsProfileReleaseBuild('HEAD')).toBe(true);
+    });
     it.each([undefined, 'HEAD'])('publishes resolved start years for every scenario (%s)', async (gitRef) => {
         const previews = await listScenarioPreviews({ gitRef });
         expect(previews.every((scenario) => Number.isFinite(scenario.year))).toBe(true);

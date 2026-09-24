@@ -137,6 +137,37 @@ const readGitJson = async (commitSha: string, relativePath: string): Promise<unk
     return JSON.parse(raw) as unknown;
 };
 
+const hasScript = (value: unknown, name: string): boolean => {
+    if (!value || typeof value !== 'object' || !('scripts' in value)) return false;
+    const scripts = value.scripts;
+    return Boolean(scripts && typeof scripts === 'object' && name in scripts && typeof scripts[name as keyof typeof scripts] === 'string');
+};
+
+export const hasProfileReleaseBuildTasks = (turboConfig: unknown, frontendPackage: unknown): boolean => {
+    if (!turboConfig || typeof turboConfig !== 'object' || !('tasks' in turboConfig)) return false;
+    const tasks = turboConfig.tasks;
+    return Boolean(
+        tasks &&
+            typeof tasks === 'object' &&
+            'typecheck:release' in tasks &&
+            'build:release' in tasks &&
+            hasScript(frontendPackage, 'typecheck:release') &&
+            hasScript(frontendPackage, 'build:release')
+    );
+};
+
+export const supportsProfileReleaseBuild = async (commitSha: string): Promise<boolean> => {
+    try {
+        const [turboConfig, frontendPackage] = await Promise.all([
+            readGitJson(commitSha, 'turbo.json'),
+            readGitJson(commitSha, 'app/game-frontend/package.json'),
+        ]);
+        return hasProfileReleaseBuildTasks(turboConfig, frontendPackage);
+    } catch {
+        return false;
+    }
+};
+
 const listScenarioIds = async (): Promise<number[]> => {
     const root = resolveScenarioRoot();
     const entries = await fs.readdir(root, { withFileTypes: true });
