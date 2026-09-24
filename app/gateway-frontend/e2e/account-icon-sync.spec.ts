@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 
 const response = (data: unknown) => ({ result: { data } });
 const errorResponse = (path: string, message: string) => ({
@@ -263,11 +264,34 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
     };
 };
 
-test('chooses a preferred library icon and retires an icon only after confirmation', async ({ page }) => {
+test('chooses a preferred library icon and retires an icon only after confirmation', async ({ page }, testInfo) => {
     const fixture = await installFixture(page);
     await page.goto('account');
     await expect(page.locator('.account-icon-card')).toHaveCount(2);
     await expect(page.getByText('2 / 5개')).toBeVisible();
+    await expect(page.getByText('목록에서 내리기는 24시간에 1개')).toBeVisible();
+    await expect(page.getByText('업로드 횟수 제한 없음')).toHaveCount(0);
+    for (const [name, size] of [
+        ['desktop', { width: 1280, height: 900 }],
+        ['mobile', { width: 390, height: 844 }],
+    ] as const) {
+        await page.setViewportSize(size);
+        const policy = page.locator('.icon-policy');
+        await expect(policy).toBeVisible();
+        const measurement = await policy.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                lineHeight: style.lineHeight,
+                color: style.color,
+            };
+        });
+        await page.screenshot({ path: testInfo.outputPath(`account-icon-policy-${name}.png`) });
+        await writeFile(testInfo.outputPath(`account-icon-policy-${name}.json`), JSON.stringify(measurement, null, 2));
+    }
 
     await page.getByRole('button', { name: '대표로 설정' }).click();
     await expect.poll(fixture.preferredIconCount).toBe(1);

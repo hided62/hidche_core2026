@@ -15,8 +15,7 @@ import { WEB_PUSH_EVENT_TYPES } from '@sammo-ts/common';
 const zSessionToken = z.string().min(1);
 const MAX_ICON_BYTES = 50 * 1024;
 const MAX_ACTIVE_ICONS = 5;
-const ICON_UPLOAD_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-const ICON_RETIRE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const ICON_RETIRE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const ALLOWED_ICON_FORMATS = new Set(['avif', 'webp', 'jpeg', 'png', 'gif']);
 const ICON_CONTENT_TYPES: Record<string, string> = {
     avif: 'image/avif',
@@ -46,16 +45,6 @@ const decodeImage = (input: string): Buffer => {
         throw new TRPCError({ code: 'BAD_REQUEST', message: '아이콘은 50KB 이하여야 합니다.' });
     }
     return buffer;
-};
-
-const assertIconChangeAvailable = (user: UserRecord, now: Date): void => {
-    if (
-        user.picture !== 'default.jpg' &&
-        user.iconUpdatedAt &&
-        new Date(user.iconUpdatedAt).getTime() > now.getTime() - ICON_UPLOAD_COOLDOWN_MS
-    ) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: '아이콘 업로드는 24시간에 한 번만 가능합니다.' });
-    }
 };
 
 const hasActiveSanction = (sanctions: UserSanctions, now: Date): boolean => {
@@ -212,9 +201,7 @@ export const accountRouter = router({
             icons: icons.map((icon) => buildLibraryIcon(ctx, icon)),
             preferredPicture: resolveEffectiveAccountIcon(user).picture,
             maxActiveIcons: MAX_ACTIVE_ICONS,
-            nextUploadAt: user.iconUpdatedAt
-                ? new Date(new Date(user.iconUpdatedAt).getTime() + ICON_UPLOAD_COOLDOWN_MS).toISOString()
-                : null,
+            nextUploadAt: null,
             nextRetireAt: user.iconRetiredAt
                 ? new Date(new Date(user.iconRetiredAt).getTime() + ICON_RETIRE_COOLDOWN_MS).toISOString()
                 : null,
@@ -279,7 +266,6 @@ export const accountRouter = router({
         .mutation(async ({ ctx, input }) => {
             const user = await requireSessionUser(ctx, input.sessionToken);
             const now = new Date();
-            assertIconChangeAvailable(user, now);
             const profiles = await listIconSyncProfiles(ctx, user.id);
             const buffer = decodeImage(input.imageData);
             const metadata = await sharp(buffer, { animated: true }).metadata();
@@ -306,14 +292,7 @@ export const accountRouter = router({
                 contentType: ICON_CONTENT_TYPES[extension]!,
                 body: buffer,
             });
-            const stored = await ctx.users.addIconForWindow(
-                user.id,
-                uploaded.picture,
-                0,
-                now,
-                new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
-                MAX_ACTIVE_ICONS
-            );
+            const stored = await ctx.users.addIconForWindow(user.id, uploaded.picture, 0, now, MAX_ACTIVE_ICONS);
             if (!stored.ok) {
                 if (stored.reason === 'LIMIT') {
                     throw new TRPCError({
@@ -321,10 +300,7 @@ export const accountRouter = router({
                         message: '전용 아이콘은 최대 5개까지 등록할 수 있습니다.',
                     });
                 }
-                throw new TRPCError({
-                    code: 'TOO_MANY_REQUESTS',
-                    message: '아이콘 업로드는 24시간에 한 번만 가능합니다.',
-                });
+                throw new TRPCError({ code: 'NOT_FOUND', message: '계정을 찾을 수 없습니다.' });
             }
             const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
             return {
@@ -364,7 +340,7 @@ export const accountRouter = router({
                 if (result.reason === 'COOLDOWN') {
                     throw new TRPCError({
                         code: 'TOO_MANY_REQUESTS',
-                        message: '전용 아이콘은 7일에 한 번만 목록에서 내릴 수 있습니다.',
+                        message: '전용 아이콘은 24시간에 한 개만 목록에서 내릴 수 있습니다.',
                     });
                 }
                 throw new TRPCError({ code: 'NOT_FOUND', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
@@ -382,21 +358,12 @@ export const accountRouter = router({
     deleteIcon: procedure.input(z.object({ sessionToken: zSessionToken })).mutation(async ({ ctx, input }) => {
         const user = await requireSessionUser(ctx, input.sessionToken);
         const now = new Date();
-        assertIconChangeAvailable(user, now);
         const profiles = await listIconSyncProfiles(ctx, user.id);
-        const revision = await ctx.users.updateIconForDay(
-            user.id,
-            'default.jpg',
-            0,
-            now,
-            new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
-            false,
-            true
-        );
+        const revision = await ctx.users.updateIconForDay(user.id, 'default.jpg', 0, now, now, false, true, false);
         if (!revision) {
             throw new TRPCError({
-                code: 'TOO_MANY_REQUESTS',
-                message: '아이콘 변경은 24시간에 한 번만 가능합니다.',
+                code: 'NOT_FOUND',
+                message: '아이콘을 제거하지 못했습니다.',
             });
         }
         const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-deleted');

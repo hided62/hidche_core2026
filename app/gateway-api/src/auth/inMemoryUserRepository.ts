@@ -434,13 +434,14 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             updatedAt: Date,
             dayStart: Date,
             consumeDailyQuota: boolean,
-            allowCutoffEquality = false
+            allowCutoffEquality = false,
+            enforceCooldown = true
         ): Promise<string | null> {
             for (const user of usersByName.values()) {
                 if (user.id !== userId) {
                     continue;
                 }
-                if (user.picture !== 'default.jpg' && user.iconUpdatedAt) {
+                if (enforceCooldown && user.picture !== 'default.jpg' && user.iconUpdatedAt) {
                     const previousUpdate = new Date(user.iconUpdatedAt);
                     if (allowCutoffEquality ? previousUpdate > dayStart : previousUpdate >= dayStart) {
                         return null;
@@ -468,12 +469,9 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                 .filter((icon) => icon.userId === userId && (includeRetired || !icon.retiredAt))
                 .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
         },
-        async addIconForWindow(userId, picture, imageServer, now, uploadCutoff, maxActive) {
+        async addIconForWindow(userId, picture, imageServer, now, maxActive) {
             const user = [...usersByName.values()].find((candidate) => candidate.id === userId);
             if (!user) return { ok: false, reason: 'NOT_FOUND' };
-            if (user.iconUpdatedAt && new Date(user.iconUpdatedAt) > uploadCutoff) {
-                return { ok: false, reason: 'COOLDOWN' };
-            }
             const active = [...iconsById.values()].filter((icon) => icon.userId === userId && !icon.retiredAt);
             if (active.length >= maxActive) return { ok: false, reason: 'LIMIT' };
             const revision = nextRevision(user, now);

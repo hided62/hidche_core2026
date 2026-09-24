@@ -607,7 +607,8 @@ export const createPostgresUserRepository = (
             updatedAt: Date,
             dayStart: Date,
             consumeDailyQuota: boolean,
-            allowCutoffEquality = false
+            allowCutoffEquality = false,
+            enforceCooldown = true
         ): Promise<string | null> {
             const rows = await prisma.$queryRaw<Array<{ iconRevision: Date }>>(GatewayPrisma.sql`
                 UPDATE "app_user"
@@ -623,7 +624,7 @@ export const createPostgresUserRepository = (
                         COALESCE("icon_revision", "icon_updated_at", "created_at") + INTERVAL '1 millisecond'
                     )
                 WHERE "id" = ${userId}
-                  AND (
+                  AND (NOT ${enforceCooldown} OR
                       "picture" = 'default.jpg'
                       OR "icon_updated_at" IS NULL
                       OR "icon_updated_at" < ${dayStart}
@@ -640,20 +641,16 @@ export const createPostgresUserRepository = (
             });
             return rows.map(mapIcon);
         },
-        async addIconForWindow(userId, picture, imageServer, now, uploadCutoff, maxActive) {
+        async addIconForWindow(userId, picture, imageServer, now, maxActive) {
             return prisma.$transaction(async (tx) => {
                 const users = await tx.$queryRaw<
-                    Array<{ createdAt: Date; iconUpdatedAt: Date | null; iconRevision: Date | null }>
+                    Array<{ createdAt: Date; iconRevision: Date | null }>
                 >(GatewayPrisma.sql`
-                    SELECT "created_at" AS "createdAt", "icon_updated_at" AS "iconUpdatedAt",
-                           "icon_revision" AS "iconRevision"
+                    SELECT "created_at" AS "createdAt", "icon_revision" AS "iconRevision"
                     FROM "app_user" WHERE "id" = ${userId} FOR UPDATE
                 `);
                 const user = users[0];
                 if (!user) return { ok: false as const, reason: 'NOT_FOUND' as const };
-                if (user.iconUpdatedAt && user.iconUpdatedAt > uploadCutoff) {
-                    return { ok: false as const, reason: 'COOLDOWN' as const };
-                }
                 const activeCount = await tx.userIcon.count({ where: { userId, retiredAt: null } });
                 if (activeCount >= maxActive) return { ok: false as const, reason: 'LIMIT' as const };
                 const revision = new Date(

@@ -1434,8 +1434,9 @@ describe('account self service', () => {
             expect(userIconUpload.upload).toHaveBeenCalledWith(
                 expect.objectContaining({ contentType: 'image/png', body: png })
             );
-            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
-                code: 'TOO_MANY_REQUESTS',
+            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).resolves.toMatchObject({
+                ok: true,
+                iconUrl: null,
             });
         } finally {
             await fs.rm(iconDir, { recursive: true, force: true });
@@ -1473,7 +1474,7 @@ describe('account self service', () => {
         }
     });
 
-    it('atomically allows only one icon change per KST day and removes the losing file', async () => {
+    it('accepts concurrent uploads until the five-icon limit is reached', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-race-'));
         try {
             const { caller, users, sessions } = buildCaller({ userIconDir: iconDir });
@@ -1501,11 +1502,61 @@ describe('account self service', () => {
                 )
             );
 
-            expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
-            expect(attempts.filter(({ status }) => status === 'rejected')).toHaveLength(1);
-            expect(await users.listIcons(user.id)).toHaveLength(1);
+            expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(2);
+            expect(await users.listIcons(user.id)).toHaveLength(2);
         } finally {
             await fs.rm(iconDir, { recursive: true, force: true });
+        }
+    });
+
+    it('limits only owned library retirement to one icon per rolling 24 hours', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const now = new Date('2026-08-01T00:00:00.000Z');
+        const png = await sharp({
+            create: { width: 64, height: 64, channels: 4, background: '#556677' },
+        })
+            .png()
+            .toBuffer();
+        const imageData = `data:image/png;base64,${png.toString('base64')}`;
+        try {
+            vi.useFakeTimers();
+            vi.setSystemTime(now);
+            const owner = await users.createUser({ username: 'icon-retirement-owner', password: 'password' });
+            const other = await users.createUser({ username: 'icon-retirement-other', password: 'password' });
+            const ownerSession = await sessions.createSession(owner);
+            const otherSession = await sessions.createSession(other);
+            const first = await caller.account.changeIcon({ sessionToken: ownerSession.sessionToken, imageData });
+            const second = await caller.account.changeIcon({ sessionToken: ownerSession.sessionToken, imageData });
+
+            await expect(
+                caller.account.retireIcon({
+                    sessionToken: otherSession.sessionToken,
+                    iconId: first.icon.id,
+                })
+            ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+            await caller.account.retireIcon({ sessionToken: ownerSession.sessionToken, iconId: first.icon.id });
+            expect(await caller.account.get({ sessionToken: ownerSession.sessionToken })).toMatchObject({
+                nextUploadAt: null,
+                nextRetireAt: new Date(now.getTime() + 86_400_000).toISOString(),
+            });
+
+            vi.setSystemTime(new Date(now.getTime() + 86_400_000 - 1));
+            const nextOwnerSession = await sessions.createSession(owner);
+            await expect(
+                caller.account.retireIcon({
+                    sessionToken: nextOwnerSession.sessionToken,
+                    iconId: second.icon.id,
+                })
+            ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+            vi.setSystemTime(new Date(now.getTime() + 86_400_000));
+            await expect(
+                caller.account.retireIcon({
+                    sessionToken: nextOwnerSession.sessionToken,
+                    iconId: second.icon.id,
+                })
+            ).resolves.toMatchObject({ ok: true });
+        } finally {
+            vi.useRealTimers();
         }
     });
 
@@ -1530,7 +1581,7 @@ describe('account self service', () => {
         expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(user.id, 'account-icon-deleted');
     });
 
-    it('uses a rolling 24-hour upload window and preserves delete-to-upload behavior', async () => {
+    it('allows a default-icon reset and another upload within the same day', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-kst-'));
         const png = await sharp({
             create: {
@@ -1553,22 +1604,11 @@ describe('account self service', () => {
             await users.updateIcon(user.id, 'old.png', 1, new Date('2026-07-31T00:00:00.000Z'));
             const session = await sessions.createSession(user);
 
-            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
-                code: 'TOO_MANY_REQUESTS',
-            });
-
-            vi.setSystemTime(new Date('2026-07-31T15:00:00.000Z'));
-            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
-                code: 'TOO_MANY_REQUESTS',
-            });
-
-            vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
-            const nextSession = await sessions.createSession(user);
-            const deleted = await caller.account.deleteIcon({ sessionToken: nextSession.sessionToken });
-            expect(deleted.revision).toBe('2026-08-01T00:00:00.000Z');
+            const deleted = await caller.account.deleteIcon({ sessionToken: session.sessionToken });
+            expect(deleted.revision).toBe('2026-07-31T14:59:59.001Z');
 
             const changed = await caller.account.changeIcon({
-                sessionToken: nextSession.sessionToken,
+                sessionToken: session.sessionToken,
                 imageData: `data:image/png;base64,${png.toString('base64')}`,
             });
             expect(new Date(changed.revision).getTime()).toBeGreaterThan(new Date(deleted.revision).getTime());

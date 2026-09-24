@@ -63,7 +63,7 @@ export interface SpecialAccountAccessGrantRecord {
 }
 
 export type AddUserIconResult =
-    { ok: true; icon: UserIconRecord; revision: string } | { ok: false; reason: 'COOLDOWN' | 'LIMIT' | 'NOT_FOUND' };
+    { ok: true; icon: UserIconRecord; revision: string } | { ok: false; reason: 'LIMIT' | 'NOT_FOUND' };
 
 export type RetireUserIconResult =
     | { ok: true; icon: UserIconRecord; revision: string; preferredChanged: boolean }
@@ -233,7 +233,8 @@ export interface UserRepository {
         updatedAt: Date,
         dayStart: Date,
         consumeDailyQuota: boolean,
-        allowCutoffEquality?: boolean
+        allowCutoffEquality?: boolean,
+        enforceCooldown?: boolean
     ): Promise<string | null>;
     listIcons(userId: string, includeRetired?: boolean): Promise<UserIconRecord[]>;
     addIconForWindow(
@@ -241,7 +242,6 @@ export interface UserRepository {
         picture: string,
         imageServer: number,
         now: Date,
-        uploadCutoff: Date,
         maxActive: number
     ): Promise<AddUserIconResult>;
     setPreferredIcon(userId: string, iconId: string, now: Date): Promise<string | null>;

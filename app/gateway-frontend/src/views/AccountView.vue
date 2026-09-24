@@ -805,8 +805,8 @@ onBeforeUnmount(() => {
                                 <span v-if="account.icons.length === 0">등록한 전용 아이콘이 없습니다.</span>
                             </div>
                             <p class="icon-policy">
-                                {{ account.icons.length }} / {{ account.maxActiveIcons }}개 · 업로드는 24시간에 1회 ·
-                                목록에서 내리기는 7일에 1회
+                                {{ account.icons.length }} / {{ account.maxActiveIcons }}개 · 목록에서 내리기는 24시간에
+                                1개
                             </p>
                         </td>
                     </tr>
