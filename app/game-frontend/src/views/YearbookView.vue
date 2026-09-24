@@ -12,7 +12,7 @@ import { trpc } from '../utils/trpc';
 const { pageExitLabel, exitPage } = usePageExit();
 
 type YearbookRange = Awaited<ReturnType<typeof trpc.yearbook.getRange.query>>;
-type MapLayout = Awaited<ReturnType<typeof trpc.public.getMapLayout.query>>;
+type MapLayout = YearbookRange['mapLayout'];
 type HistoryData = {
     year: number;
     month: number;
@@ -114,12 +114,11 @@ watch(selectedYearMonth, () => {
 onMounted(async () => {
     loading.value = true;
     try {
-        const [loadedRange, loadedLayout] = await Promise.all([
-            trpc.yearbook.getRange.query(serverID.value ? { serverID: serverID.value } : undefined),
-            trpc.public.getMapLayout.query(),
-        ]);
+        const loadedRange = await trpc.yearbook.getRange.query(
+            serverID.value ? { serverID: serverID.value } : undefined
+        );
         range.value = loadedRange;
-        mapLayout.value = loadedLayout;
+        mapLayout.value = loadedRange.mapLayout;
         selectedYearMonth.value = loadedRange.currentYearMonth;
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '연감 범위를 불러오지 못했습니다.';

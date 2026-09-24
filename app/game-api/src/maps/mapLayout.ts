@@ -66,8 +66,10 @@ const resolveMapName = async (
     }
 };
 
-export const loadMapLayout = async (scenario: string, options: MapLayoutLoaderOptions = {}): Promise<MapLayout> => {
-    const mapName = await resolveMapName(scenario, options.loadScenario ?? loadScenarioDefinitionById);
+export const loadMapLayoutByName = async (
+    mapName: string,
+    options: MapLayoutLoaderOptions = {}
+): Promise<MapLayout> => {
     const useCache = !options.loadScenario && !options.loadMap && !options.loadRegionMap;
     const cached = useCache ? layoutCache.get(mapName) : undefined;
     if (cached) {
@@ -97,4 +99,9 @@ export const loadMapLayout = async (scenario: string, options: MapLayoutLoaderOp
         layoutCache.set(mapName, layout);
     }
     return layout;
+};
+
+export const loadMapLayout = async (scenario: string, options: MapLayoutLoaderOptions = {}): Promise<MapLayout> => {
+    const mapName = await resolveMapName(scenario, options.loadScenario ?? loadScenarioDefinitionById);
+    return loadMapLayoutByName(mapName, options);
 };

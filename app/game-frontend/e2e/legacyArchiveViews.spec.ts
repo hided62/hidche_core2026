@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -156,7 +157,12 @@ const installArchiveViews = async (page: Page) => {
                 });
             }
             if (operation === 'yearbook.getRange') {
-                return response({ firstYearMonth: 22001, lastYearMonth: 22001, currentYearMonth: 22001 });
+                return response({
+                    firstYearMonth: 22001,
+                    lastYearMonth: 22001,
+                    currentYearMonth: 22001,
+                    mapLayout: { mapName: 'miniche', cityList: [], regionMap: {}, levelMap: {} },
+                });
             }
             if (operation === 'public.getMapLayout') {
                 return response({ mapName: 'che', cityList: [], regionMap: {}, levelMap: {} });
@@ -292,4 +298,49 @@ test('연감 국가 라벨은 밝은 배경에 검정, 어두운 배경에 흰 �
     await expect(labels.filter({ hasText: '암국' })).toHaveCSS('color', 'rgb(255, 255, 255)');
     await expect(labels.filter({ hasText: '명국' })).toHaveCSS('color', 'rgb(0, 0, 0)');
     await page.screenshot({ path: testInfo.outputPath('yearbook-nation-contrast-mobile.png'), fullPage: true });
+});
+
+test('왕조의 역사 보기는 해당 기수의 지도 레이아웃으로 연감을 렌더한다', async ({ page }, testInfo) => {
+    await installArchiveViews(page);
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.goto('dynasty');
+    const archivedHistory = page.getByRole('link', { name: '역사 보기' }).last();
+    await expect(archivedHistory).toHaveAttribute('href', /yearbook\?serverID=che-current-1$/);
+    await archivedHistory.click();
+
+    await expect(page.locator('.history-grid')).toBeVisible();
+    await expect(page.locator('.map-area')).toHaveClass(/map-theme-miniche/);
+    await expect(page.locator('.map-bgroad')).toHaveCSS('background-image', /miniche_road\.png/);
+    await expect(page.locator('.nation-position tbody tr')).toHaveCount(2);
+    const mapEvidence = await page.locator('.map-area').evaluate((area) => {
+        const road = area.querySelector<HTMLElement>('.map-bgroad');
+        const background = area.querySelector<HTMLImageElement>('.map-background-image');
+        return {
+            mapClass: area.className,
+            mapRect: area.getBoundingClientRect().toJSON(),
+            backgroundRect: background?.getBoundingClientRect().toJSON(),
+            backgroundNaturalSize: background
+                ? { width: background.naturalWidth, height: background.naturalHeight }
+                : null,
+            backgroundObjectFit: background ? getComputedStyle(background).objectFit : null,
+            roadBackground: road ? getComputedStyle(road).backgroundImage : null,
+        };
+    });
+    expect(mapEvidence.mapRect.width / mapEvidence.mapRect.height).toBeCloseTo(7 / 5, 2);
+    expect(mapEvidence.backgroundNaturalSize?.width).toBeGreaterThan(0);
+    await page.screenshot({ path: testInfo.outputPath('dynasty-history-map-desktop.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 500, height: 800 });
+    await expect(page.locator('.map-area')).toHaveClass(/map-theme-miniche/);
+    const mobileEvidence = await page.locator('.map-area').evaluate((area) => ({
+        mapClass: area.className,
+        mapRect: area.getBoundingClientRect().toJSON(),
+        roadBackground: getComputedStyle(area.querySelector<HTMLElement>('.map-bgroad')!).backgroundImage,
+    }));
+    expect(mobileEvidence.mapRect.width / mobileEvidence.mapRect.height).toBeCloseTo(7 / 5, 2);
+    await writeFile(
+        testInfo.outputPath('dynasty-history-map-geometry.json'),
+        JSON.stringify({ desktop: mapEvidence, mobile: mobileEvidence }, null, 2)
+    );
+    await page.screenshot({ path: testInfo.outputPath('dynasty-history-map-mobile.png'), fullPage: true });
 });

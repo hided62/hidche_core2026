@@ -142,6 +142,10 @@ const buildContext = (
                 meta: options.worldMeta ?? { serverId: currentServerId },
             }),
         },
+        gameHistory: {
+            findUnique: async ({ where }: { where: { serverId: string } }) =>
+                where.serverId === archiveServerId ? { map: 'miniche' } : null,
+        },
         yearbookHistory: {
             findFirst: async (args: {
                 where: { profileName: string; year?: number; month?: number };
@@ -187,11 +191,13 @@ describe('historical yearbook access from dynasty', () => {
         const caller = appRouter.createCaller(buildContext(authFor('owner-a')));
         const result = await caller.yearbook.getRange({ serverID: archiveServerId });
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             firstYearMonth: 200 * 12,
             lastYearMonth: 200 * 12 + 1,
             currentYearMonth: 200 * 12 + 1,
+            mapLayout: { mapName: 'miniche' },
         });
+        expect(result.mapLayout.cityList.length).toBeGreaterThan(0);
     });
 
     it('returns the same archived public history for distinct general owners', async () => {
@@ -249,20 +255,22 @@ describe('historical yearbook access from dynasty', () => {
 
         expect(canonical).toEqual(alias);
         expect(alias).toEqual(omitted);
-        expect(canonical).toEqual({
+        expect(canonical).toMatchObject({
             firstYearMonth: 219 * 12 + 11,
             lastYearMonth: 219 * 12 + 11,
             currentYearMonth: 220 * 12,
+            mapLayout: { mapName: 'che' },
         });
     });
 
     it('reads imported history under the short profile ID when world metadata has no server ID', async () => {
         const caller = appRouter.createCaller(buildContext(authFor('owner-a'), { worldMeta: {} }));
 
-        await expect(caller.yearbook.getRange()).resolves.toEqual({
+        await expect(caller.yearbook.getRange()).resolves.toMatchObject({
             firstYearMonth: 219 * 12 + 10,
             lastYearMonth: 219 * 12 + 10,
             currentYearMonth: 220 * 12,
+            mapLayout: { mapName: 'che' },
         });
     });
 

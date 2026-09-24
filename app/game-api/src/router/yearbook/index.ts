@@ -6,6 +6,7 @@ import { asRecord, isRecord } from '@sammo-ts/common';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import type { GameApiContext } from '../../context.js';
+import { loadMapLayout, loadMapLayoutByName } from '../../maps/mapLayout.js';
 import { loadPublicMap, type BaseMapResult } from '../../maps/worldMap.js';
 import {
     formatGeneralAccessLimitMessage,
@@ -339,11 +340,23 @@ export const yearbookRouter = router({
             const firstYearMonth = firstRow ? joinYearMonth(firstRow.year, firstRow.month) : fallbackYearMonth;
             const lastYearMonth = lastRow ? joinYearMonth(lastRow.year, lastRow.month) : fallbackYearMonth;
             const selectedYearMonth = target.isCurrentProfile ? currentYearMonth : lastYearMonth;
+            // Ref v_history.php resolves an archived generation's map from ng_games.map.
+            const mapLayout = target.isCurrentProfile
+                ? await loadMapLayout(ctx.profile.scenario)
+                : await loadMapLayoutByName(
+                      (
+                          await ctx.db.gameHistory.findUnique({
+                              where: { serverId: target.archiveKey },
+                              select: { map: true },
+                          })
+                      )?.map || 'che'
+                  );
 
             return {
                 firstYearMonth,
                 lastYearMonth,
                 currentYearMonth: selectedYearMonth,
+                mapLayout,
             };
         }),
     getHistory: authedProcedure
