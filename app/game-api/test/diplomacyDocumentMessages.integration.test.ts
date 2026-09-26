@@ -1,3 +1,4 @@
+import { asRecord } from '@sammo-ts/common';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { JosaUtil } from '@sammo-ts/common';
@@ -742,7 +743,7 @@ integration('diplomacy document message persistence', () => {
         }
     );
 
-    it('rolls back the document and notices if the audit insert fails', async () => {
+    it('commits the document and notices with a gap when audit insert fails', async () => {
         await db.$executeRawUnsafe(`CREATE FUNCTION reject_audit_document_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN RAISE EXCEPTION 'injected audit insert failure'; END; $$`);
         await db.$executeRawUnsafe(`CREATE TRIGGER reject_audit_document_fixture BEFORE INSERT ON play_audit_diplomacy_event
@@ -754,15 +755,19 @@ integration('diplomacy document message persistence', () => {
                     brief: '감사 실패',
                     detail: '롤백',
                 })
-            ).rejects.toThrow('injected audit insert failure');
-            expect(await db.diplomacyLetter.count({ where: { textBrief: '감사 실패' } })).toBe(0);
-            expect(await db.message.count({ where: { mailbox: { in: [...fixtureMailboxes] } } })).toBe(0);
+            ).resolves.toBeDefined();
+            expect(await db.diplomacyLetter.count({ where: { textBrief: '감사 실패' } })).toBe(1);
+            expect(await db.message.count({ where: { mailbox: { in: [...fixtureMailboxes] } } })).toBeGreaterThan(0);
             expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: requestPrefix } })).toBe(0);
             expect(
                 await db.inputEvent.findUniqueOrThrow({
                     where: { requestId: `${requestPrefix}:audit-failure:diplomacy.sendLetter` },
                 })
-            ).toMatchObject({ status: 'FAILED', attempts: 1 });
+            ).toMatchObject({ status: 'SUCCEEDED', attempts: 1 });
+            expect(
+                asRecord((await db.worldState.findUniqueOrThrow({ where: { id: fixtureWorldStateId } })).meta)
+                    .playAuditGap
+            ).toMatchObject({ serverId: requestPrefix });
         } finally {
             await db.$executeRawUnsafe('DROP TRIGGER reject_audit_document_fixture ON play_audit_diplomacy_event');
             await db.$executeRawUnsafe('DROP FUNCTION reject_audit_document_fixture()');

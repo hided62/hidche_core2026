@@ -86,7 +86,8 @@ const install = async (
     denied = false,
     baseline: boolean | 'document' | 'created' | 'removed' = false,
     executionStatus?: 'PREPARING' | 'BLOCKED',
-    dashboard = false
+    dashboard = false,
+    historyGap = false
 ) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
@@ -166,7 +167,59 @@ const install = async (
                                 {
                                     ordinal: input.cursor === undefined ? 0 : 1,
                                     steps: [
-                                        ...(input.cursor === undefined ? [{ phase: 'general', generalId: 1, nationId: 2, cityId: 3, npcState: 2, year: 190, month: 6, tick: 100, sequence: 0, kind: 'DECISION_START', reservedAction: '휴식', effectivePolicy: {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5]}} }] : []),
+                                        ...(input.cursor === undefined
+                                            ? [
+                                                  {
+                                                      phase: 'general',
+                                                      generalId: 1,
+                                                      nationId: 2,
+                                                      cityId: 3,
+                                                      npcState: 2,
+                                                      year: 190,
+                                                      month: 6,
+                                                      tick: 100,
+                                                      sequence: 0,
+                                                      kind: 'DECISION_START',
+                                                      reservedAction: '휴식',
+                                                      effectivePolicy: {
+                                                          schemaVersion: 1,
+                                                          general: {
+                                                              priority: ['징병'],
+                                                              flags: { 징병: true, 출병: false },
+                                                          },
+                                                          nation: {
+                                                              priority: ['천도'],
+                                                              flags: { 천도: true },
+                                                              values: {
+                                                                  reqNationGold: 4321,
+                                                                  reqNationRice: 100,
+                                                                  reqHumanWarUrgentGold: 100,
+                                                                  reqHumanWarUrgentRice: 100,
+                                                                  reqHumanWarRecommandGold: 100,
+                                                                  reqHumanWarRecommandRice: 100,
+                                                                  reqHumanDevelGold: 100,
+                                                                  reqHumanDevelRice: 100,
+                                                                  reqNpcWarGold: 100,
+                                                                  reqNpcWarRice: 100,
+                                                                  reqNpcDevelGold: 100,
+                                                                  reqNpcDevelRice: 100,
+                                                                  minimumResourceActionAmount: 100,
+                                                                  maximumResourceActionAmount: 100,
+                                                                  minNpcWarLeadership: 100,
+                                                                  minWarCrew: 100,
+                                                                  minNpcRecruitCityPopulation: 100,
+                                                                  safeRecruitCityPopulationRatio: 100,
+                                                                  properWarTrainAtmos: 100,
+                                                                  cureThreshold: 100,
+                                                              },
+                                                              combatForce: { '1': [2, 3] },
+                                                              supportForce: [4],
+                                                              developForce: [5],
+                                                          },
+                                                      },
+                                                  },
+                                              ]
+                                            : []),
                                         {
                                             phase: 'general',
                                             generalId: 1,
@@ -441,7 +494,13 @@ const install = async (
                         });
                     }
                     case 'playAudit.coverage':
-                        return result({ ...world, status: 'COLLECTED', samples: [], nextCursor: null });
+                        return result({
+                            ...world,
+                            historyGap: historyGap ? { firstYear: 190, firstMonth: 4 } : null,
+                            status: 'COLLECTED',
+                            samples: [],
+                            nextCursor: null,
+                        });
                     case 'playAudit.nations':
                         return result({
                             ...world,
@@ -1519,5 +1578,33 @@ for (const width of [1280, 390]) {
         await page.reload();
         await expect(page.getByLabel('정렬 기준', { exact: true })).toHaveValue('gold');
         await capture(page, `audit-ranked-${width}`);
+    });
+}
+
+for (const width of [390, 1280]) {
+    test(`audit history gap stays visible while browsing at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        await install(page, false, false, undefined, false, true);
+        await page.goto(gamePath('/play-audit'));
+        const notice = page.getByRole('status').filter({ hasText: '감사 이력에 누락된 구간' });
+        await expect(notice).toContainText('190년 4월');
+        await page.getByRole('link', { name: '장수', exact: true }).click();
+        await expect(notice).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await notice.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                x: rect.x,
+                width: rect.width,
+                height: rect.height,
+                fontSize: style.fontSize,
+                viewport: innerWidth,
+            };
+        });
+        expect(geometry.x).toBeGreaterThanOrEqual(0);
+        expect(geometry.x + geometry.width).toBeLessThanOrEqual(width);
+        await writeFile(testInfo.outputPath('audit-gap-geometry.json'), JSON.stringify(geometry));
+        await page.screenshot({ path: testInfo.outputPath('audit-gap.png'), fullPage: true });
     });
 }

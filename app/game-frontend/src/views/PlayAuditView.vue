@@ -475,6 +475,10 @@ onMounted(async () => {
                     현재 {{ coverage.year }}년 {{ coverage.month }}월 · {{ scopeLabel }} · 현재 기수의 수집 자료를
                     조회합니다.
                 </p>
+                <p v-if="coverage.historyGap" role="status">
+                    {{ coverage.historyGap.firstYear }}년 {{ coverage.historyGap.firstMonth }}월 이후 감사 이력에 누락된
+                    구간이 있습니다. 수집된 기록만 표시하며 게임은 계속 진행됩니다.
+                </p>
                 <p v-if="coverage.status === 'IDENTITY_MISSING'">
                     기수 식별자가 없어 과거 자료를 수집하지 못했습니다. 현재 상태만 확인할 수 있습니다.
                 </p>

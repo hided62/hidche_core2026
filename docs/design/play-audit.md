@@ -298,7 +298,9 @@ NPC 결정은 적용한 불변 정책 버전을 참조하고 현재 정책으로
 
 engine은 기존 메모리 상태·mutation 결과에서 수집해 pending 감사 자료를
 `EngineStateManager` rollback과 dirty acknowledgement에 포함한다. gameplay flush와
-감사 insert가 같은 PostgreSQL transaction에서 commit되고 실패 시 둘 다 rollback된다.
+감사 insert는 같은 PostgreSQL transaction의 별도 savepoint에서 수행한다. 2026-09-26 사용자
+결정으로 감사만 실패하면 해당 감사 묶음을 rollback하고 gameplay를 commit한다. 성공한 game
+commit 뒤에는 실패한 pending도 acknowledge하여 무한 재시도·메모리 누적을 막는다.
 행위/월별 snapshot/정책 버전에는 실행 ID와 종류·순번 기반 unique key로 중복을 막는다.
 알림은 commit 뒤 보내며 `ChangeJournal`/Redis를 감사 원장으로 재구성하지 않는다.
 
@@ -306,7 +308,15 @@ API 즉시 mutation도 해당 transaction에서 사건을 기록한다. 인증 �
 rollback된 시도의 진단은 별도 시도/오류 기록으로 남기되 gameplay 성공 사건으로 만들지
 않는다. 외부 transaction rollback 전송 실패까지 '모든 시도가 반드시 기록됨'으로
 주장하지 않는다. 관측하지 못한 구간은 coverage/운영 오류로 표시한다.
-확정 gameplay 감사 저장 실패는 성공으로 숨기지 않고 기존 transaction 실패·복구 경계를 따른다.
+감사 저장·수집 장애와 업데이트에 따른 이력 단절을 허용한다. `world_state.meta.playAuditGap`은
+현재 기수의 최초 누락 연월을 보존하고, `playAudit.coverage` 및 감사 화면에 이를 표시한다.
+정책 head가 저장되지 않은 버전을 가리킬 수 있으며 없는 버전은 복원·조작하지 않는다.
+unique/hash 충돌 검사는 유지하고 기존 이력을 덮어쓰지 않는다. 다음 정상 수집은 재개한다.
+감사 SQL은 1초 statement 제한과 250ms lock 제한(기존 제한이 더 짧으면 유지), 전체 1초
+수집/쓰기 budget을 적용한다. 실행 중인 마지막 SQL 때문에 최대 약 2초가 걸릴 수 있다.
+DB 연결/outer transaction 복구 실패, gameplay 저장, 권한, lease/fencing 및 clock 검증은
+계속 실패를 전파한다. 필수 migration·배포 실패를 우회하거나 RESET하지 않는다.
+이 정책은 플레이 감사에 한정하며 Gateway 운영/인증 감사와 input_event 처리 원장은 제외한다.
 
 ### 6.2 초기 도입·종료·초기화
 

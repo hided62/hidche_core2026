@@ -1,3 +1,4 @@
+import { collectPlayAudit } from './bestEffort.js';
 import { createHash } from 'node:crypto';
 import { asRecord } from '@sammo-ts/common';
 import type { Nation } from '@sammo-ts/logic';
@@ -70,85 +71,97 @@ export const recordAuditPolicyChange = (options: {
     actor?: TurnGeneral;
     permission?: number;
     requestId?: string;
-}): { _playAuditPolicy?: Record<string, PolicyHead> } => {
-    const { world, nation, area } = options;
-    const state = world.getState();
-    const serverId = state.meta.serverId;
-    if (typeof serverId !== 'string' || !serverId.trim()) return {};
-    const rawHeads = asRecord(nation.meta._playAuditPolicy);
-    const heads: Record<string, PolicyHead> = {};
-    for (const key of AUDIT_POLICY_AREAS) {
-        const value = asRecord(rawHeads[key]);
-        if (
-            value.serverId === serverId &&
-            typeof value.id === 'string' &&
-            typeof value.revision === 'number' &&
-            Number.isSafeInteger(value.revision) &&
-            value.revision > 0 &&
-            typeof value.hash === 'string' &&
-            value.id === auditPolicyHash([serverId, nation.id, key, value.revision])
-        ) {
-            heads[key] = { id: value.id, revision: value.revision, hash: value.hash, serverId };
-        }
-    }
-    let head: PolicyHead | null = heads[area] ?? null;
-    const before = projectAuditPolicy(nation.meta, area);
-    const after = projectAuditPolicy(options.nextMeta, area);
-    const append = (source: PendingAuditPolicy['source'], old: PolicyData | null, value: PolicyData) => {
-        const revision = (head?.revision ?? 0) + 1;
-        const id = auditPolicyHash([serverId, nation.id, area, revision]);
-        const actor = options.actor;
-        world.queueAuditPolicy({
-            schemaVersion: 1,
-            id,
-            serverId,
-            nationId: nation.id,
-            area,
-            revision,
-            previousId: head?.id ?? null,
-            source,
-            year: state.currentYear,
-            month: state.currentMonth,
-            tick: world.getGameClockState().tick,
-            requestId: source === 'CHANGE' ? (options.requestId ?? null) : null,
-            ordinal: world.nextAuditOrdinal(),
-            actor:
-                source === 'CHANGE' && actor
-                    ? {
-                          userId: actor.userId ?? null,
-                          generalId: actor.id,
-                          name: actor.name,
-                          nationId: actor.nationId,
-                          officerLevel: actor.officerLevel,
-                          npcState: actor.npcState,
-                          permission: options.permission ?? 0,
-                      }
-                    : null,
-            before: old,
-            after: value,
-        });
-        head = { id, revision, hash: auditPolicyHash(value), serverId };
-    };
-    if (!head) append('BASELINE', null, before);
-    else if (head.hash !== auditPolicyHash(before)) append('OBSERVED_GAP', null, before);
-    if (auditPolicyHash(before) !== auditPolicyHash(after)) append('CHANGE', before, after);
-    if (!head) throw new Error('Play audit policy baseline missing');
-    return { _playAuditPolicy: { ...heads, [area]: head } };
-};
+}): { _playAuditPolicy?: Record<string, PolicyHead> } =>
+    collectPlayAudit(
+        options.world,
+        'recordAuditPolicyChange',
+        () => {
+            const { world, nation, area } = options;
+            const state = world.getState();
+            const serverId = state.meta.serverId;
+            if (typeof serverId !== 'string' || !serverId.trim()) return {};
+            const rawHeads = asRecord(nation.meta._playAuditPolicy);
+            const heads: Record<string, PolicyHead> = {};
+            for (const key of AUDIT_POLICY_AREAS) {
+                const value = asRecord(rawHeads[key]);
+                if (
+                    value.serverId === serverId &&
+                    typeof value.id === 'string' &&
+                    typeof value.revision === 'number' &&
+                    Number.isSafeInteger(value.revision) &&
+                    value.revision > 0 &&
+                    typeof value.hash === 'string' &&
+                    value.id === auditPolicyHash([serverId, nation.id, key, value.revision])
+                ) {
+                    heads[key] = { id: value.id, revision: value.revision, hash: value.hash, serverId };
+                }
+            }
+            let head: PolicyHead | null = heads[area] ?? null;
+            const before = projectAuditPolicy(nation.meta, area);
+            const after = projectAuditPolicy(options.nextMeta, area);
+            const append = (source: PendingAuditPolicy['source'], old: PolicyData | null, value: PolicyData) => {
+                const revision = (head?.revision ?? 0) + 1;
+                const id = auditPolicyHash([serverId, nation.id, area, revision]);
+                const actor = options.actor;
+                world.queueAuditPolicy({
+                    schemaVersion: 1,
+                    id,
+                    serverId,
+                    nationId: nation.id,
+                    area,
+                    revision,
+                    previousId: head?.id ?? null,
+                    source,
+                    year: state.currentYear,
+                    month: state.currentMonth,
+                    tick: world.getGameClockState().tick,
+                    requestId: source === 'CHANGE' ? (options.requestId ?? null) : null,
+                    ordinal: world.nextAuditOrdinal(),
+                    actor:
+                        source === 'CHANGE' && actor
+                            ? {
+                                  userId: actor.userId ?? null,
+                                  generalId: actor.id,
+                                  name: actor.name,
+                                  nationId: actor.nationId,
+                                  officerLevel: actor.officerLevel,
+                                  npcState: actor.npcState,
+                                  permission: options.permission ?? 0,
+                              }
+                            : null,
+                    before: old,
+                    after: value,
+                });
+                head = { id, revision, hash: auditPolicyHash(value), serverId };
+            };
+            if (!head) append('BASELINE', null, before);
+            else if (head.hash !== auditPolicyHash(before)) append('OBSERVED_GAP', null, before);
+            if (auditPolicyHash(before) !== auditPolicyHash(after)) append('CHANGE', before, after);
+            if (!head) throw new Error('Play audit policy baseline missing');
+            return { _playAuditPolicy: { ...heads, [area]: head } };
+        },
+        {}
+    );
 
-export const initializeNationAuditPolicies = (world: InMemoryTurnWorld, nationId: number): void => {
-    let nation = world.getNationById(nationId);
-    if (!nation) return;
-    for (const area of AUDIT_POLICY_AREAS) {
-        const patch = recordAuditPolicyChange({ world, nation, area, nextMeta: nation.meta });
-        if (
-            Object.keys(patch).length &&
-            auditPolicyHash(patch._playAuditPolicy) !== auditPolicyHash(nation.meta._playAuditPolicy ?? {})
-        ) {
-            nation = world.updateNation(nation.id, { meta: { ...nation.meta, ...patch } })!;
-        }
-    }
-};
+export const initializeNationAuditPolicies = (world: InMemoryTurnWorld, nationId: number): void =>
+    collectPlayAudit(
+        world,
+        'initializeNationAuditPolicies',
+        () => {
+            let nation = world.getNationById(nationId);
+            if (!nation) return;
+            for (const area of AUDIT_POLICY_AREAS) {
+                const patch = recordAuditPolicyChange({ world, nation, area, nextMeta: nation.meta });
+                if (
+                    Object.keys(patch).length &&
+                    auditPolicyHash(patch._playAuditPolicy) !== auditPolicyHash(nation.meta._playAuditPolicy ?? {})
+                ) {
+                    nation = world.updateNation(nation.id, { meta: { ...nation.meta, ...patch } })!;
+                }
+            }
+        },
+        undefined
+    );
 
 export const initializeAuditPolicies = (world: InMemoryTurnWorld): void => {
     for (const nation of world.listNations()) initializeNationAuditPolicies(world, nation.id);

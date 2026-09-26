@@ -83,10 +83,10 @@ Gateway의 DB 보존 일괄 업데이트로 같은 고정 commit을 순차 적�
 Gateway의 새 진입/권한 catalog도 사용하려면 같은 commit의 Gateway 구성요소를 업데이트한다.
 
 적용 전 기존 backup/운영 보호 절차를 따르고, migration 후 API/engine/frontend를 같은
-버전으로 전환한다. 엔진은 clock 복구 후 조회 준비를 공개하기 전에 INITIAL·정책·관계·
-보유 문서의 기준을 같은 fenced transaction에 저장한다. 문서 원문은200건씩 읽어 hash만
-사건에 남긴다. 이 단계가 실패하면 정상 준비 상태로 숨기지 않는다. 원인을 해결하고
-재시작하면 전체 transaction 재시도가 가능하다. 기존 migration을 되돌리거나 수정하지 않는다. tick 확장 migration은 기존 감사 행의
+버전으로 전환한다. 엔진은 clock 복구 후 INITIAL·정책·관계·보유 문서의 기준을 수집한다.
+문서 원문은 200건씩 읽어 hash만 사건에 남긴다. 감사 전용 오류는 savepoint만 되돌리고
+게임 준비를 계속한다. 누락된 감사 묶음은 버리며 게임 상태와 누락 표시를 저장한다.
+이전 구간의 자동 재구성이나 완전한 이력 연결을 보장하지 않는다. 기존 migration을 되돌리거나 수정하지 않는다. tick 확장 migration은 기존 감사 행의
 값과 hash를 보존하지만 열 형식 변경의 테이블 잠금/재작성 비용이 있다. 첫 감사 도입에서는
 앞 migration이 만든 빈 테이블에 적용되며, 시험판 감사 기록이 이미 많다면 기존 업데이트
 유지보수 구간에서 적용 시간을 확인한다. API의 tick은 정밀도 손실을 막기 위해 문자열로 반환한다. 월별 결정 인덱스 교체도 기존 결정 기록이 많으면 인덱스 생성 시간과 잠금을 업데이트 구간에 고려한다.
@@ -130,6 +130,19 @@ writer와 rollback·정리 경계를 함께 추가하는 정식 migration으로 
 실제 replay payload 충돌 검사는 계속 적용한다.
 
 `/healthz`는 clock reconciliation뿐 아니라 해당 profile의 만료되지 않은
-`clock_ready=true` 데몬 lease까지 확인한다. 감사 startup 실패 중인 API는 503을
-반환하므로 profile 배포 readiness가 이를 성공으로 처리하지 않는다. PREOPEN과 PAUSED도
+`clock_ready=true` 데몬 lease까지 확인한다. 게임 clock·lease 초기화 실패는 503이지만
+감사만 실패한 경우 게임 준비 완료를 허용한다. 감사 누락은 `playAuditGap`과 감사 화면,
+`[play-audit]` 운영 로그로 구분한다. PREOPEN과 PAUSED도
 데몬 초기화가 완료되면 준비 완료이며, 턴 진행 여부와 준비 상태는 별개다.
+
+## 감사 장애 시 게임 지속 (2026-09-26)
+
+현재 정책은 [실패·내구성 계약](./design/play-audit.md#_6-1-공통-식별자와-내구성)을 따른다.
+정책·외교·NPC 결정·월말/최종 표본과 startup 수집이 대상이다. 같은 flush의 감사 묶음은
+하나라도 실패하면 모두 취소하지만, 연감·통일 처리·게임 상태·입력 처리 원장은 그대로
+검증하고 저장한다. API 외교 문서/관계도 감사만 취소하고 문서·알림을 정상 처리한다.
+
+누락 표시는 기수별 sticky 상태이며 이후 성공해도 지우지 않는다. 감사 writer가 복구되면
+다음 수집부터 다시 기록한다. 배포로 로직이 바뀐 과거 구간을 수정하거나 hash를 맞추지 않는다.
+missing table/SQL 오류/충돌/수집 형식 오류를 게임 오류로 승격하지 않지만, DB 연결 단절이나
+필수 core 행 저장 실패처럼 game commit 자체를 보장할 수 없는 상황은 기존 보호 동작을 유지한다.

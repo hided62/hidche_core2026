@@ -1,5 +1,10 @@
 import { TRPCError } from '@trpc/server';
-import { persistAuditDiplomacyEvents, type AuditDiplomacyEventDraft, type GamePrisma } from '@sammo-ts/infra';
+import {
+    withPlayAuditSavepoint,
+    persistAuditDiplomacyEvents,
+    type AuditDiplomacyEventDraft,
+    type GamePrisma,
+} from '@sammo-ts/infra';
 import type { ApiInputExecutionContext } from '../inputEventBoundary.js';
 
 import { asRecord, JosaUtil } from '@sammo-ts/common';
@@ -104,6 +109,7 @@ const persistEffects = async (
     }
 ): Promise<void> => {
     const changes: AuditDiplomacyEventDraft[] = [];
+    let collectionFailed = false;
     const states = new Map(audit?.before.map((row) => [`${row.srcNationId}:${row.destNationId}`, row]));
     const project = (row: GamePrisma.DiplomacyGetPayload<Record<string, never>>) => ({
         state: row.stateCode,
@@ -129,22 +135,26 @@ const persistEffects = async (
                 },
             });
             if (audit) {
-                const key = `${effect.srcNationId}:${effect.destNationId}`;
-                const previous = states.get(key);
-                if (!previous) throw new Error('Missing locked diplomacy audit state');
-                const before = project(previous);
-                const after = project(updated);
-                if (JSON.stringify(before) !== JSON.stringify(after)) {
-                    changes.push({
-                        ...audit.base,
-                        srcNationId: effect.srcNationId,
-                        destNationId: effect.destNationId,
-                        ordinal: changes.length + 1,
-                        before,
-                        after,
-                    });
+                try {
+                    const key = `${effect.srcNationId}:${effect.destNationId}`;
+                    const previous = states.get(key);
+                    if (!previous) throw new Error('Missing locked diplomacy audit state');
+                    const before = project(previous);
+                    const after = project(updated);
+                    if (JSON.stringify(before) !== JSON.stringify(after)) {
+                        changes.push({
+                            ...audit.base,
+                            srcNationId: effect.srcNationId,
+                            destNationId: effect.destNationId,
+                            ordinal: changes.length + 1,
+                            before,
+                            after,
+                        });
+                    }
+                    states.set(key, updated);
+                } catch {
+                    collectionFailed = true;
                 }
-                states.set(key, updated);
             }
         } else if (effect.type === 'nation:patch' && effect.targetId !== undefined) {
             const patch = effect.patch;
@@ -159,7 +169,11 @@ const persistEffects = async (
         }
     }
     await persistLogs(db, orderLegacyActionLoggerFlush(logs), year, month, at, serverId);
-    await persistAuditDiplomacyEvents(db, changes);
+    if (changes.length || collectionFailed)
+        await withPlayAuditSavepoint(db, async (auditDb) => {
+            if (collectionFailed) throw new Error('Audit relation collection failed');
+            await persistAuditDiplomacyEvents(auditDb, changes);
+        });
 };
 
 const refreshFrontStates = async (db: DatabaseClient, mapName: string, nationIds: number[]): Promise<number[]> => {

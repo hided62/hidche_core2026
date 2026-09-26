@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { asRecord, GAME_TICKS_PER_TURN } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
+    withPlayAuditSavepoint,
     hashAuditDiplomacyDocument,
     type GamePrismaClient,
     type GamePrisma,
@@ -92,7 +93,7 @@ integration('initial audit durability before runtime readiness', () => {
         await closeDb?.();
     });
 
-    it('rolls initial policies, sample and collection marker back before readiness on persistence failure', async () => {
+    it('keeps readiness and gameplay when initial audit persistence fails', async () => {
         const before = await clock();
         await db.$executeRawUnsafe(
             "CREATE OR REPLACE FUNCTION audit_initial_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture initial audit failure'; END $$"
@@ -101,27 +102,33 @@ integration('initial audit durability before runtime readiness', () => {
             "CREATE TRIGGER audit_initial_fail BEFORE INSERT ON play_audit_month FOR EACH ROW WHEN (NEW.kind = 'INITIAL') EXECUTE FUNCTION audit_initial_fail()"
         );
         try {
-            let error: unknown;
-            try {
-                runtime = await start();
-            } catch (cause) {
-                error = cause;
-            }
-            expect(String(error)).toContain('fixture initial audit failure');
+            runtime = await start();
             expect(await db.playAuditMonth.count()).toBe(0);
             expect(await db.playAuditPolicy.count()).toBe(0);
-            expect(await db.playAuditDiplomacyEvent.count()).toBe(0);
-            expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDiplomacy).toBeUndefined();
-            expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments).toBeUndefined();
-            expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditCollection).toBeUndefined();
-            expect(
-                (await db.nation.findMany()).every((nation) => asRecord(nation.meta)._playAuditPolicy === undefined)
-            ).toBe(true);
-            expect((await db.turnDaemonLease.findMany()).every((lease) => !lease.clockReady)).toBe(true);
+            expect(runtime.world.hasPendingAuditRecords()).toBe(false);
+            expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditGap).toMatchObject({
+                serverId,
+                stage: 'persistence',
+            });
+            expect((await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).clockReady).toBe(true);
             expect(await clock()).toEqual(before);
+            await runtime.close();
+            runtime = undefined;
+            // Restart under the same broken audit table must not pause or accumulate retries.
+            runtime = await start();
+            expect(runtime.world.hasPendingAuditRecords()).toBe(false);
+            expect((await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).clockReady).toBe(true);
         } finally {
+            await runtime?.close();
+            runtime = undefined;
             await db.$executeRawUnsafe('DROP TRIGGER IF EXISTS audit_initial_fail ON play_audit_month');
             await db.$executeRawUnsafe('DROP FUNCTION IF EXISTS audit_initial_fail()');
+            // Independent baseline fixture for the following normal-start tests.
+            await db.playAuditDiplomacyEvent.deleteMany();
+            await db.$executeRawUnsafe(
+                "UPDATE world_state SET meta = meta - 'playAuditCollection' - 'playAuditDocuments' - 'playAuditDiplomacy' - 'playAuditGap'"
+            );
+            await db.$executeRawUnsafe("UPDATE nation SET meta = meta - '_playAuditPolicy'");
         }
     });
 
@@ -337,4 +344,34 @@ integration('initial audit durability before runtime readiness', () => {
         runtime = await start();
         expect(asRecord((await db.worldState.findFirstOrThrow()).meta).playAuditDocuments).toEqual(marker);
     }, 30_000);
+    it('isolates missing audit tables and bounded SQL waits but propagates core write failures', async () => {
+        await runtime?.close();
+        runtime = undefined;
+        const nation = await db.nation.findUniqueOrThrow({ where: { id: 91990 } });
+        await db.$transaction(async (tx) => {
+            await tx.nation.update({ where: { id: nation.id }, data: { gold: nation.gold + 1 } });
+            const missing = await withPlayAuditSavepoint(tx, () =>
+                tx.$queryRawUnsafe('SELECT * FROM nonexistent_audit_fixture_table')
+            );
+            expect(missing.ok).toBe(false);
+            const [settings] = await tx.$queryRaw<
+                Array<{ timeout: string }>
+            >`SELECT current_setting('statement_timeout') AS timeout`;
+            const slow = await withPlayAuditSavepoint(tx, () => tx.$queryRawUnsafe('SELECT pg_sleep(2)::text'));
+            expect(slow.ok).toBe(false);
+            const [restored] = await tx.$queryRaw<
+                Array<{ timeout: string }>
+            >`SELECT current_setting('statement_timeout') AS timeout`;
+            expect(restored).toEqual(settings);
+        });
+        expect((await db.nation.findUniqueOrThrow({ where: { id: nation.id } })).gold).toBe(nation.gold + 1);
+        await expect(
+            db.$transaction(async (tx) => {
+                await tx.nation.update({ where: { id: nation.id }, data: { gold: nation.gold + 2 } });
+                expect((await withPlayAuditSavepoint(tx, async () => 'audit-ok')).ok).toBe(true);
+                throw new Error('core game write failed');
+            })
+        ).rejects.toThrow('core game write failed');
+        expect((await db.nation.findUniqueOrThrow({ where: { id: nation.id } })).gold).toBe(nation.gold + 1);
+    });
 });

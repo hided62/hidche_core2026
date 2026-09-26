@@ -1,3 +1,4 @@
+import { collectPlayAudit } from '../playAudit/bestEffort.js';
 import { auditDecisionIdentity, normalizeAuditCodeVersion, type PendingAuditDecision } from '../playAudit/decision.js';
 import { auditPolicyHash, AUDIT_POLICY_AREAS } from '../playAudit/policy.js';
 import type { AiDecisionTraceEvent, AiExecutionAttempt, AiExecutionCheck } from './ai/generalAi/trace.js';
@@ -1085,46 +1086,61 @@ export const createReservedTurnHandler = async (options: {
             const onDecisionTrace: AiDecisionTraceObserver | undefined =
                 collectDecisions || options.onDecisionTrace
                     ? (event) => {
-                          if (collectDecisions) {
-                              if (event.kind === 'DECISION_START') {
-                                  decisionSteps.set(event.phase, []);
-                                  const heads = asRecord(currentNation?.meta._playAuditPolicy);
-                                  decisionPolicyRefs.set(
-                                      event.phase,
-                                      Object.fromEntries(
-                                          AUDIT_POLICY_AREAS.flatMap((area) => {
-                                              const head = asRecord(heads[area]);
-                                              return head.serverId === auditServerId && typeof head.id === 'string'
-                                                  ? [[area, head.id]]
-                                                  : [];
-                                          })
-                                      )
-                                  );
-                              }
-                              decisionSteps
-                                  .get(event.phase)
-                                  ?.push({ ...structuredClone(event), sequence: storedDecisionSequence++ });
-                          }
+                          if (collectDecisions && worldRef)
+                              collectPlayAudit(
+                                  worldRef,
+                                  'decision-trace',
+                                  () => {
+                                      if (event.kind === 'DECISION_START') {
+                                          decisionSteps.set(event.phase, []);
+                                          const heads = asRecord(currentNation?.meta._playAuditPolicy);
+                                          decisionPolicyRefs.set(
+                                              event.phase,
+                                              Object.fromEntries(
+                                                  AUDIT_POLICY_AREAS.flatMap((area) => {
+                                                      const head = asRecord(heads[area]);
+                                                      return head.serverId === auditServerId &&
+                                                          typeof head.id === 'string'
+                                                          ? [[area, head.id]]
+                                                          : [];
+                                                  })
+                                              )
+                                          );
+                                      }
+                                      decisionSteps
+                                          .get(event.phase)
+                                          ?.push({ ...structuredClone(event), sequence: storedDecisionSequence++ });
+                                  },
+                                  undefined
+                              );
                           options.onDecisionTrace?.(event);
                       }
                     : undefined;
             const recordExecution = (phase: 'general' | 'nation', attempt: AiExecutionAttempt): void => {
-                const steps = decisionSteps.get(phase);
-                const first = steps?.[0];
-                if (!collectDecisions || !first || !steps) return;
-                const { generalId, nationId, cityId, npcState, year, month, tick } = first;
-                steps.push({
-                    ...attempt,
-                    sequence: storedDecisionSequence++,
-                    phase,
-                    generalId,
-                    nationId,
-                    cityId,
-                    npcState,
-                    year,
-                    month,
-                    tick,
-                });
+                if (!worldRef) return;
+                collectPlayAudit(
+                    worldRef,
+                    'decision-summary',
+                    () => {
+                        const steps = decisionSteps.get(phase);
+                        const first = steps?.[0];
+                        if (!collectDecisions || !first || !steps) return;
+                        const { generalId, nationId, cityId, npcState, year, month, tick } = first;
+                        steps.push({
+                            ...attempt,
+                            sequence: storedDecisionSequence++,
+                            phase,
+                            generalId,
+                            nationId,
+                            cityId,
+                            npcState,
+                            year,
+                            month,
+                            tick,
+                        });
+                    },
+                    undefined
+                );
             };
             const finishDecision = (
                 phase: 'general' | 'nation',
@@ -1135,64 +1151,72 @@ export const createReservedTurnHandler = async (options: {
                     blockedReason?: string;
                 }
             ): void => {
-                const steps = decisionSteps.get(phase);
-                const first = steps?.[0];
-                const last = steps?.find((step) => step.kind === 'DECISION_END');
-                if (
-                    !collectDecisions ||
-                    !auditServerId ||
-                    !worldRef ||
-                    !steps ||
-                    first?.kind !== 'DECISION_START' ||
-                    last?.kind !== 'DECISION_END'
-                )
-                    return;
-                const tick = context.general.turnTick ?? worldRef.dateToGameTick(context.general.turnTime);
-                const revision = worldRef.getGameClockState().revision;
-                const executionId = auditDecisionIdentity(auditServerId, context.general.id, tick, revision);
-                const execution = steps.at(-1);
-                auditDecisions.push({
-                    id: auditPolicyHash([executionId, phase]),
-                    serverId: auditServerId,
-                    executionId,
-                    phase,
-                    generalId: first.generalId,
-                    nationId: first.nationId,
-                    cityId: first.cityId,
-                    npcState: first.npcState,
-                    year: first.year,
-                    month: first.month,
-                    tick,
-                    summary: {
-                        schemaVersion: 1,
-                        coverage: 'PROCEDURES',
-                        executionCoverage: 'ATTEMPTS',
-                        executionStatus:
-                            execution?.kind === 'EXECUTION_ATTEMPT' && execution.preparation
-                                ? 'PREPARING'
-                                : execution?.kind === 'EXECUTION_ATTEMPT' &&
-                                    execution.checks.some((check) => check.stage === 'BLOCK')
-                                  ? 'BLOCKED'
-                                  : 'RESOLVED',
-                        clockRevision: revision,
-                        codeVersion: auditCodeVersion ?? null,
-                        policyRefs: decisionPolicyRefs.get(phase) ?? {},
-                        requestedAction: first.reservedAction,
-                        selectedAction: last.action,
-                        selectedReason: last.reason,
-                        executedAction: outcome.actionKey,
-                        completed: outcome.completed ?? null,
-                        usedFallback:
-                            outcome.usedFallback ||
-                            steps.some(
-                                (step) =>
-                                    step.kind === 'EXECUTION_ATTEMPT' &&
-                                    (step.usedFallback || step.alternativeAction !== null)
-                            ),
-                        blockedReason: outcome.blockedReason ?? null,
+                if (!worldRef) return;
+                collectPlayAudit(
+                    worldRef,
+                    'decision-summary',
+                    () => {
+                        const steps = decisionSteps.get(phase);
+                        const first = steps?.[0];
+                        const last = steps?.find((step) => step.kind === 'DECISION_END');
+                        if (
+                            !collectDecisions ||
+                            !auditServerId ||
+                            !worldRef ||
+                            !steps ||
+                            first?.kind !== 'DECISION_START' ||
+                            last?.kind !== 'DECISION_END'
+                        )
+                            return;
+                        const tick = context.general.turnTick ?? worldRef.dateToGameTick(context.general.turnTime);
+                        const revision = worldRef.getGameClockState().revision;
+                        const executionId = auditDecisionIdentity(auditServerId, context.general.id, tick, revision);
+                        const execution = steps.at(-1);
+                        auditDecisions.push({
+                            id: auditPolicyHash([executionId, phase]),
+                            serverId: auditServerId,
+                            executionId,
+                            phase,
+                            generalId: first.generalId,
+                            nationId: first.nationId,
+                            cityId: first.cityId,
+                            npcState: first.npcState,
+                            year: first.year,
+                            month: first.month,
+                            tick,
+                            summary: {
+                                schemaVersion: 1,
+                                coverage: 'PROCEDURES',
+                                executionCoverage: 'ATTEMPTS',
+                                executionStatus:
+                                    execution?.kind === 'EXECUTION_ATTEMPT' && execution.preparation
+                                        ? 'PREPARING'
+                                        : execution?.kind === 'EXECUTION_ATTEMPT' &&
+                                            execution.checks.some((check) => check.stage === 'BLOCK')
+                                          ? 'BLOCKED'
+                                          : 'RESOLVED',
+                                clockRevision: revision,
+                                codeVersion: auditCodeVersion ?? null,
+                                policyRefs: decisionPolicyRefs.get(phase) ?? {},
+                                requestedAction: first.reservedAction,
+                                selectedAction: last.action,
+                                selectedReason: last.reason,
+                                executedAction: outcome.actionKey,
+                                completed: outcome.completed ?? null,
+                                usedFallback:
+                                    outcome.usedFallback ||
+                                    steps.some(
+                                        (step) =>
+                                            step.kind === 'EXECUTION_ATTEMPT' &&
+                                            (step.usedFallback || step.alternativeAction !== null)
+                                    ),
+                                blockedReason: outcome.blockedReason ?? null,
+                            },
+                            steps,
+                        });
                     },
-                    steps,
-                });
+                    undefined
+                );
             };
 
             // Ref는 장수와 첫 커맨드를 만들 때 getNationStaticInfo 캐시를 채운다.

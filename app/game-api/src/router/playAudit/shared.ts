@@ -117,6 +117,12 @@ export const readAuditWorld = async (tx: GamePrisma.TransactionClient) => {
         startYear,
         startMonth,
         collectionStart,
+        historyGap: (() => {
+            const gap = asRecord(meta.playAuditGap);
+            return gap.serverId === serverId && Number.isInteger(gap.firstYear) && Number.isInteger(gap.firstMonth)
+                ? { firstYear: Number(gap.firstYear), firstMonth: Number(gap.firstMonth) }
+                : null;
+        })(),
         tick: world.lastTurnTick?.toString() ?? null,
         asOf: new Date().toISOString(),
     };

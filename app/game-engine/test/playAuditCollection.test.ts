@@ -1,6 +1,6 @@
 import { buildAuditDecisionFixture } from './fixtures/playAuditDecision.js';
 import { initializeAuditDiplomacy } from '../src/playAudit/diplomacy.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
 import { InMemoryTurnWorld, type GeneralTurnHandler } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -130,6 +130,29 @@ const buildWorld = (generalTurnHandler?: GeneralTurnHandler) => {
     return world;
 };
 describe('play audit collection durability state', () => {
+    it('discards collector failures without changing gameplay state and can collect again', () => {
+        const world = buildWorld();
+        const nations = structuredClone(world.listNations());
+        const broken = vi.spyOn(world, 'listGenerals').mockImplementationOnce(() => {
+            throw new Error('audit projection');
+        });
+        expect(() => queueAuditMonth(world)).not.toThrow();
+        expect(world.peekDirtyState().pendingAuditMonths).toHaveLength(0);
+        expect(world.listNations()).toEqual(nations);
+        expect(world.getState().meta.playAuditGap).toMatchObject({
+            stage: 'queueAuditMonth',
+            firstYear: 200,
+            firstMonth: 1,
+        });
+        broken.mockRestore();
+        queueAuditMonth(world);
+        expect(world.peekDirtyState().pendingAuditMonths).toHaveLength(1);
+        expect(world.getState().meta.playAuditGap).toBeDefined();
+        world.updateWorldMeta({ playAuditCollection: { serverId: 'yearbook-projection-test', schemaVersion: 999 } });
+        expect(initializeAuditCollection(world)).toBe(false);
+        expect(world.getState().meta.playAuditGap).toMatchObject({ stage: 'initializeAuditCollection' });
+    });
+
     it('restores decision buffers and acknowledges only the committed prefix', () => {
         const world = buildWorld();
         const first = buildAuditDecisionFixture('first');
@@ -207,7 +230,8 @@ describe('play audit collection durability state', () => {
         world.removeNation(1);
         world.removeNation(2);
         world.updateWorldMeta({ serverId: 'yearbook-projection-test' });
-        expect(() => initializeAuditDiplomacy(world, new Date('invalid'))).toThrow(RangeError);
+        expect(initializeAuditDiplomacy(world, new Date('invalid'))).toBe(false);
+        expect(world.getState().meta.playAuditGap).toMatchObject({ stage: 'initializeAuditDiplomacy' });
         expect(world.getState().meta.playAuditDiplomacy).toBeUndefined();
         expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
         expect(initializeAuditDiplomacy(world)).toBe(true);

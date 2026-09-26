@@ -1,5 +1,6 @@
 import { persistAuditDecisions } from '../playAudit/decisionPersistence.js';
-import { persistAuditDiplomacyEvents } from '@sammo-ts/infra';
+import { collectPlayAudit, markAuditGap } from '../playAudit/bestEffort.js';
+import { persistAuditDiplomacyEvents, withPlayAuditSavepoint } from '@sammo-ts/infra';
 import { hasAuditDocumentBaseline, persistAuditDocumentBaseline } from '../playAudit/documentBaseline.js';
 import { persistAuditPolicies, restoreMissingAuditPolicyHeads } from '../playAudit/policyPersistence.js';
 import { prunePreviousAuditBatch, type AuditRetentionResult } from '../playAudit/retention.js';
@@ -1236,6 +1237,7 @@ export const createDatabaseTurnHooks = async (
             }
             const persistedClock = await prisma.$queryRaw<
                 Array<{
+                    audit_gap: unknown;
                     clock_phase: string;
                     clock_revision: bigint;
                     deadline_generation: bigint;
@@ -1243,7 +1245,7 @@ export const createDatabaseTurnHooks = async (
                     opening_reached: boolean;
                 }>
             >(GamePrisma.sql`
-                SELECT clock_phase,
+                SELECT meta->'playAuditGap' AS audit_gap, clock_phase,
                        clock_revision,
                        deadline_generation,
                        clock_base_time IS NOT NULL
@@ -1258,6 +1260,21 @@ export const createDatabaseTurnHooks = async (
             const durableClock = persistedClock[0];
             if (!durableClock) {
                 throw new Error(`world_state ${state.id} is missing during a fenced turn flush.`);
+            }
+            const durableGap = asRecord(durableClock.audit_gap);
+            if (durableGap.serverId && durableGap.serverId === state.meta.serverId) {
+                const localGap = asRecord(world.getState().meta.playAuditGap);
+                const gap =
+                    localGap.serverId === durableGap.serverId
+                        ? {
+                              ...durableGap,
+                              ...localGap,
+                              firstYear: durableGap.firstYear,
+                              firstMonth: durableGap.firstMonth,
+                          }
+                        : durableGap;
+                world.updateWorldMeta({ playAuditGap: gap });
+                worldStateUpdate.meta = asJson(world.getState().meta);
             }
             const expectedPhase = state.clockPhase ?? (state.clockMode === 'realtime' ? 'RUNNING' : 'MANUAL');
             const expectedRevision = BigInt(state.clockRevision ?? 1);
@@ -1895,11 +1912,25 @@ export const createDatabaseTurnHooks = async (
                     data: pendingLogRows,
                 });
             }
-            await persistAuditPolicies(prisma, pendingAuditPolicies, auditCommand);
-            await persistAuditDiplomacyEvents(prisma, pendingAuditDiplomacy);
-            await persistAuditDecisions(prisma, pendingAuditDecisions);
-            for (const snapshot of pendingAuditMonths) {
-                await persistAuditMonth(prisma, snapshot);
+            if (
+                pendingAuditPolicies.length ||
+                pendingAuditDiplomacy.length ||
+                pendingAuditDecisions.length ||
+                pendingAuditMonths.length
+            ) {
+                const audit = await withPlayAuditSavepoint(prisma, async (auditDb) => {
+                    await persistAuditPolicies(auditDb, pendingAuditPolicies, auditCommand);
+                    await persistAuditDiplomacyEvents(auditDb, pendingAuditDiplomacy);
+                    await persistAuditDecisions(auditDb, pendingAuditDecisions);
+                    for (const snapshot of pendingAuditMonths) await persistAuditMonth(auditDb, snapshot);
+                });
+                if (!audit.ok) {
+                    markAuditGap(world, 'persistence');
+                    await prisma.worldState.update({
+                        where: { id: state.id },
+                        data: { meta: world.getState().meta as GamePrisma.InputJsonValue },
+                    });
+                }
             }
             for (const snapshot of pendingYearbookSnapshots) {
                 await persistYearbookSnapshot(prisma, snapshot);
@@ -2094,8 +2125,8 @@ export const createDatabaseTurnHooks = async (
         enqueueCommittedReceipt(committed.readModelChanges, committed.journalWrite);
     };
     const flushInitialAudit = async (observedAt: Date, force = false): Promise<void> => {
-        if (hasAuditDocumentBaseline(world)) {
-            if (force || world.hasPendingAuditRecords()) await flushChanges();
+        if (collectPlayAudit(world, 'document-boundary', () => hasAuditDocumentBaseline(world), false)) {
+            if (force || world.hasPendingAuditRecords() || world.getState().meta.playAuditGap) await flushChanges();
             return;
         }
         const checkpoint = world.captureState();
@@ -2108,7 +2139,10 @@ export const createDatabaseTurnHooks = async (
                 await acquireGameSchemaAdvisoryXactLock(transaction, CLOCK_OPERATION_PERSISTENCE_LOCK);
                 await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
                 await synchronizeRuntimeClockAuthorityUnderHeldLock(transaction, world);
-                await persistAuditDocumentBaseline(transaction, world, observedAt);
+                const audit = await withPlayAuditSavepoint(transaction, (auditDb) =>
+                    persistAuditDocumentBaseline(auditDb, world, observedAt)
+                );
+                if (!audit.ok) markAuditGap(world, 'document-baseline');
                 return persistChanges(transaction);
             }, transactionOptions);
         } catch (error) {
@@ -2165,7 +2199,17 @@ export const createDatabaseTurnHooks = async (
         hooks,
         flushChanges,
         flushInitialAudit,
-        restoreMissingAuditPolicyHeads: () => restoreMissingAuditPolicyHeads(prisma, world),
+        restoreMissingAuditPolicyHeads: async () => {
+            const result = await prisma.$transaction(
+                (tx) => withPlayAuditSavepoint(tx, (auditDb) => restoreMissingAuditPolicyHeads(auditDb, world)),
+                transactionOptions
+            );
+            if (!result.ok) {
+                markAuditGap(world, 'policy-head-recovery');
+                return false;
+            }
+            return result.value;
+        },
         takeCommittedReadModelChanges: () => {
             return takeCommittedReceipt()?.changes ?? null;
         },

@@ -3,6 +3,7 @@ import {
     GamePrisma,
     hashAuditDiplomacyDocument,
     persistAuditDiplomacyEvents,
+    withPlayAuditSavepoint,
     projectAuditDocumentState,
     readTurnRuntimeReady,
     type AuditDiplomacyEventDraft,
@@ -83,6 +84,7 @@ const readCoordinate = async (ctx: GameApiContext) => {
 };
 
 export const createDiplomacyDocumentAudit = (ctx: GameApiContext, actor: GeneralRow, permission: number) => {
+    let collectionFailed = false;
     const changes: {
         letter: Letter;
         before: Record<string, unknown> | null;
@@ -92,48 +94,55 @@ export const createDiplomacyDocumentAudit = (ctx: GameApiContext, actor: General
     return {
         record: (letter: Letter, before: Record<string, unknown> | null, eventType: DocumentAction) => {
             if (!ctx.auditInput) return;
-            changes.push({ letter, before, after: projectAuditDocumentState(letter), eventType });
+            try {
+                changes.push({ letter, before, after: projectAuditDocumentState(letter), eventType });
+            } catch {
+                collectionFailed = true;
+            }
         },
         flush: async (): Promise<void> => {
             // 무transaction legacy unit fixture에는 입력 원장 identity를 꾸며 넣지 않는다.
             const input = ctx.auditInput;
-            if (!input || !changes.length) return;
+            if (!input || (!changes.length && !collectionFailed)) return;
             if (input.actorUserId !== actor.userId || input.actorUserId !== ctx.auth?.user.id)
                 throw new Error('Play audit diplomacy actor mismatch');
-            const coordinate = await readCoordinate(ctx);
-            if (!coordinate) return;
-            const events: AuditDiplomacyEventDraft[] = changes.map((change, index) => ({
-                schemaVersion: 1,
-                serverId: coordinate.serverId,
-                srcNationId: change.letter.srcNationId,
-                destNationId: change.letter.destNationId,
-                category: 'DOCUMENT',
-                source: 'API',
-                eventType: change.eventType,
-                documentId: change.letter.id,
-                documentHash: hashAuditDiplomacyDocument(change.letter),
-                previousDocumentId: change.letter.prevId,
-                year: coordinate.year,
-                month: coordinate.month,
-                tick: coordinate.tick,
-                clockRevision: coordinate.clockRevision,
-                executionId: `api:${input.requestId}`,
-                ordinal: index + 1,
-                requestId: input.requestId,
-                inputSequence: input.sequence,
-                actor: {
-                    userId: actor.userId,
-                    generalId: actor.id,
-                    name: actor.name,
-                    nationId: actor.nationId,
-                    officerLevel: actor.officerLevel,
-                    npcState: actor.npcState,
-                    permission,
-                },
-                before: change.before,
-                after: change.after,
-            }));
-            await persistAuditDiplomacyEvents(ctx.db, events);
+            await withPlayAuditSavepoint(ctx.db, async (auditDb) => {
+                if (collectionFailed) throw new Error('Audit document collection failed');
+                const coordinate = await readCoordinate({ ...ctx, db: auditDb });
+                if (!coordinate) return;
+                const events: AuditDiplomacyEventDraft[] = changes.map((change, index) => ({
+                    schemaVersion: 1,
+                    serverId: coordinate.serverId,
+                    srcNationId: change.letter.srcNationId,
+                    destNationId: change.letter.destNationId,
+                    category: 'DOCUMENT',
+                    source: 'API',
+                    eventType: change.eventType,
+                    documentId: change.letter.id,
+                    documentHash: hashAuditDiplomacyDocument(change.letter),
+                    previousDocumentId: change.letter.prevId,
+                    year: coordinate.year,
+                    month: coordinate.month,
+                    tick: coordinate.tick,
+                    clockRevision: coordinate.clockRevision,
+                    executionId: `api:${input.requestId}`,
+                    ordinal: index + 1,
+                    requestId: input.requestId,
+                    inputSequence: input.sequence,
+                    actor: {
+                        userId: actor.userId,
+                        generalId: actor.id,
+                        name: actor.name,
+                        nationId: actor.nationId,
+                        officerLevel: actor.officerLevel,
+                        npcState: actor.npcState,
+                        permission,
+                    },
+                    before: change.before,
+                    after: change.after,
+                }));
+                await persistAuditDiplomacyEvents(auditDb, events);
+            });
         },
     };
 };

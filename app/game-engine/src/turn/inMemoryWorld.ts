@@ -1,3 +1,4 @@
+import { collectPlayAudit } from '../playAudit/bestEffort.js';
 import type { PendingAuditDecision } from '../playAudit/decision.js';
 import {
     recordTurnAuditDiplomacy,
@@ -1393,15 +1394,36 @@ export class InMemoryTurnWorld {
     }
 
     queueAuditDiplomacy(event: AuditDiplomacyEventDraft): void {
-        this.pendingAuditDiplomacy.push(structuredClone(event));
+        collectPlayAudit(
+            this,
+            'queueDiplomacy',
+            () => {
+                this.pendingAuditDiplomacy.push(structuredClone(event));
+            },
+            undefined
+        );
     }
 
     queueAuditDecision(decision: PendingAuditDecision): void {
-        this.pendingAuditDecisions.push(structuredClone(decision));
+        collectPlayAudit(
+            this,
+            'queueDecision',
+            () => {
+                this.pendingAuditDecisions.push(structuredClone(decision));
+            },
+            undefined
+        );
     }
 
     queueAuditPolicy(policy: PendingAuditPolicy): void {
-        this.pendingAuditPolicies.push(structuredClone(policy));
+        collectPlayAudit(
+            this,
+            'queuePolicy',
+            () => {
+                this.pendingAuditPolicies.push(structuredClone(policy));
+            },
+            undefined
+        );
     }
 
     hasPendingAuditRecords(): boolean {
@@ -1414,7 +1436,14 @@ export class InMemoryTurnWorld {
     }
 
     queueAuditMonth(snapshot: PendingAuditMonth): void {
-        this.pendingAuditMonths.push(structuredClone(snapshot));
+        collectPlayAudit(
+            this,
+            'queueMonth',
+            () => {
+                this.pendingAuditMonths.push(structuredClone(snapshot));
+            },
+            undefined
+        );
     }
 
     queueYearbookSnapshot(snapshot: PendingYearbookSnapshot): void {

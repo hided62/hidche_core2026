@@ -157,6 +157,23 @@ integration('monthly diplomacy persistence', () => {
         });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
         try {
+            // An API writer may have recorded a gap since this daemon loaded its world.
+            await db.worldState.update({
+                where: { id: worldRow.id },
+                data: {
+                    meta: {
+                        ...world.getState().meta,
+                        playAuditGap: {
+                            serverId: scenarioCode,
+                            firstYear: 192,
+                            firstMonth: 12,
+                            lastYear: 192,
+                            lastMonth: 12,
+                            stage: 'persistence',
+                        },
+                    },
+                },
+            });
             const checkpoint = world.captureState();
             await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
             const queued = world.peekDirtyState().pendingAuditDiplomacy;
@@ -170,11 +187,11 @@ integration('monthly diplomacy persistence', () => {
             await db.$executeRawUnsafe(`CREATE TRIGGER reject_monthly_audit_fixture BEFORE INSERT ON play_audit_diplomacy_event
                 FOR EACH ROW EXECUTE FUNCTION reject_monthly_audit_fixture()`);
             try {
-                await expect(hooks.flushChanges()).rejects.toThrow('monthly audit fixture failure');
-                expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(queued);
+                await expect(hooks.flushChanges()).resolves.toBeUndefined();
+                expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
                 expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: scenarioCode } })).toBe(0);
                 expect(await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } })).toMatchObject({
-                    currentMonth: 1,
+                    currentMonth: 2,
                 });
                 expect(
                     await db.diplomacy.findUniqueOrThrow({
@@ -185,7 +202,7 @@ integration('monthly diplomacy persistence', () => {
                             },
                         },
                     })
-                ).toMatchObject({ stateCode: 1, term: 1 });
+                ).toMatchObject({ stateCode: 0, term: 6 });
             } finally {
                 await db.$executeRawUnsafe('DROP TRIGGER reject_monthly_audit_fixture ON play_audit_diplomacy_event');
                 await db.$executeRawUnsafe('DROP FUNCTION reject_monthly_audit_fixture()');
@@ -193,18 +210,25 @@ integration('monthly diplomacy persistence', () => {
 
             const decision = buildAuditDecisionFixture('monthly-decision', scenarioCode);
             world.queueAuditDecision(decision);
-            await db.$executeRawUnsafe(`CREATE FUNCTION reject_decision_flush_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'decision flush rollback'; END; $$`);
-            await db.$executeRawUnsafe(`CREATE TRIGGER reject_decision_flush_fixture BEFORE INSERT ON play_audit_decision_chunk FOR EACH ROW EXECUTE FUNCTION reject_decision_flush_fixture()`);
+            await db.$executeRawUnsafe(
+                `CREATE FUNCTION reject_decision_flush_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'decision flush rollback'; END; $$`
+            );
+            await db.$executeRawUnsafe(
+                `CREATE TRIGGER reject_decision_flush_fixture BEFORE INSERT ON play_audit_decision_chunk FOR EACH ROW EXECUTE FUNCTION reject_decision_flush_fixture()`
+            );
             try {
-                await expect(hooks.flushChanges()).rejects.toThrow('decision flush rollback');
-                expect(world.peekDirtyState().pendingAuditDecisions).toEqual([decision]);
+                await expect(hooks.flushChanges()).resolves.toBeUndefined();
+                expect(world.peekDirtyState().pendingAuditDecisions).toEqual([]);
                 expect(await db.playAuditDecision.count({ where: { serverId: scenarioCode } })).toBe(0);
                 expect(await db.playAuditDiplomacyEvent.count({ where: { serverId: scenarioCode } })).toBe(0);
-                expect((await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } })).currentMonth).toBe(1);
+                expect((await db.worldState.findUniqueOrThrow({ where: { id: worldRow.id } })).currentMonth).toBe(2);
             } finally {
                 await db.$executeRawUnsafe('DROP TRIGGER reject_decision_flush_fixture ON play_audit_decision_chunk');
                 await db.$executeRawUnsafe('DROP FUNCTION reject_decision_flush_fixture()');
             }
+            // New observations after recovery can be stored; discarded batches do not retry themselves.
+            for (const event of queued) world.queueAuditDiplomacy(event);
+            world.queueAuditDecision(decision);
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: '0193-02-01T00:00:00.000Z',
                 processedGenerals: 0,
@@ -313,9 +337,9 @@ integration('monthly diplomacy persistence', () => {
             await db.$executeRawUnsafe(`CREATE TRIGGER reject_lifecycle_audit_fixture BEFORE INSERT ON play_audit_diplomacy_event
                 FOR EACH ROW EXECUTE FUNCTION reject_lifecycle_audit_fixture()`);
             try {
-                await expect(hooks.flushChanges()).rejects.toThrow('lifecycle audit fixture failure');
-                expect(await db.nation.count({ where: { id: endingNation } })).toBe(1);
-                expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual(removals);
+                await expect(hooks.flushChanges()).resolves.toBeUndefined();
+                expect(await db.nation.count({ where: { id: endingNation } })).toBe(0);
+                expect(world.peekDirtyState().pendingAuditDiplomacy).toEqual([]);
             } finally {
                 await db.$executeRawUnsafe('DROP TRIGGER reject_lifecycle_audit_fixture ON play_audit_diplomacy_event');
                 await db.$executeRawUnsafe('DROP FUNCTION reject_lifecycle_audit_fixture()');
@@ -331,7 +355,7 @@ integration('monthly diplomacy persistence', () => {
                 await db.playAuditDiplomacyEvent.count({
                     where: { serverId: scenarioCode, eventType: 'NATION_RELATION_REMOVED' },
                 })
-            ).toBe(6);
+            ).toBe(0);
             expect(world.addNation(buildNation(endingNation, '재건국', 1))).toBe(true);
             await hooks.flushChanges();
             expect(await db.nation.count({ where: { id: endingNation } })).toBe(1);
@@ -349,6 +373,18 @@ integration('monthly diplomacy persistence', () => {
                     where: { serverId: scenarioCode, eventType: 'NATION_RELATION_CREATED' },
                 })
             ).toBe(6);
+            const savedDecision = await db.playAuditDecision.findUniqueOrThrow({ where: { id: decision.id } });
+            const nation = world.getNationById(nationIds[0]!)!;
+            world.updateNation(nation.id, { gold: nation.gold + 1 });
+            world.queueAuditDecision({
+                ...decision,
+                summary: { ...decision.summary, selectedReason: 'changed after update' },
+            });
+            await hooks.flushChanges();
+            expect(await db.playAuditDecision.findUniqueOrThrow({ where: { id: decision.id } })).toEqual(savedDecision);
+            expect((await db.nation.findUniqueOrThrow({ where: { id: nation.id } })).gold).toBe(nation.gold + 1);
+            expect(world.hasPendingAuditRecords()).toBe(false);
+            expect(world.getState().meta.playAuditGap).toMatchObject({ firstYear: 192, firstMonth: 12 });
         } finally {
             await hooks.close();
         }
