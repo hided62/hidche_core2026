@@ -2852,6 +2852,132 @@ integration('game API security over HTTP transport', () => {
             expect((await get('capabilities', admin)).body).toMatchObject({
                 result: { data: { read: true, accounts: false } },
             });
+            // 현재/과거 정렬은 전체 조건 안에서 수행하고 동점은 ID로 안정적으로 넘긴다.
+            const originalSortRows = await db.general.findMany({
+                where: { id: { in: [generalId, sameNationGeneralId] } },
+                select: { id: true, gold: true },
+            });
+            await db.general.updateMany({
+                where: { id: { in: [generalId, sameNationGeneralId] } },
+                data: { gold: 54321 },
+            });
+            const sortedInput = { nationId: ownerNationId, sort: 'gold', order: 'desc', limit: 1 };
+            expect((await get('generals', admin, sortedInput)).body).toMatchObject({
+                result: {
+                    data: {
+                        items: [{ id: generalId, gold: 54321 }],
+                        nextCursor: { id: generalId, value: 54321 },
+                    },
+                },
+            });
+            expect(
+                (await get('generals', admin, { ...sortedInput, cursor: { id: generalId, value: 54321 } })).body
+            ).toMatchObject({ result: { data: { items: [{ id: sameNationGeneralId }] } } });
+            for (const row of originalSortRows)
+                await db.general.update({ where: { id: row.id }, data: { gold: row.gold } });
+            for (const sort of [
+                'gold',
+                'rice',
+                'crew',
+                'train',
+                'atmos',
+                'leadership',
+                'strength',
+                'intelligence',
+                'experience',
+                'dedication',
+                'dex1',
+                'dex2',
+                'dex3',
+                'dex4',
+                'dex5',
+            ]) {
+                for (const at of [undefined, { year: 190, month: 1 }]) {
+                    expect((await get('generals', admin, { sort, at })).status).toBe(200);
+                }
+            }
+            const oldGeneral = await db.playAuditGeneral.findUniqueOrThrow({
+                where: { sampleId_generalId: { sampleId, generalId } },
+            });
+            await db.playAuditGeneral.create({
+                data: {
+                    sampleId,
+                    generalId: sameNationGeneralId,
+                    nationId: oldGeneral.nationId,
+                    cityId: oldGeneral.cityId,
+                    npcState: oldGeneral.npcState,
+                    data: { ...asRecord(oldGeneral.data), id: sameNationGeneralId, name: '동점과거장수' },
+                },
+            });
+            const historicalValue = past.gold;
+            expect(
+                (await get('generals', admin, { sort: 'gold', order: 'desc', at: { year: 190, month: 1 }, limit: 1 }))
+                    .body
+            ).toMatchObject({
+                result: { data: { items: [{ id: generalId }], nextCursor: { id: generalId, value: historicalValue } } },
+            });
+            expect(
+                (
+                    await get('generals', admin, {
+                        sort: 'gold',
+                        order: 'desc',
+                        at: { year: 190, month: 1 },
+                        limit: 1,
+                        cursor: { id: generalId, value: historicalValue },
+                    })
+                ).body
+            ).toMatchObject({ result: { data: { items: [{ id: sameNationGeneralId }], nextCursor: null } } });
+            await db.playAuditGeneral.delete({
+                where: { sampleId_generalId: { sampleId, generalId: sameNationGeneralId } },
+            });
+            expect((await get('generals', admin, { sort: 'gold', cursor: 1 })).status).toBe(400);
+            expect((await get('generals', admin, { sort: 'gold; DROP TABLE general' })).status).toBe(400);
+            expect(
+                (await get('generals', admin, { sort: 'gold', at: { year: 190, month: 1 }, name: '%' })).body
+            ).toMatchObject({ result: { data: { items: [] } } });
+            for (const accessToken of [
+                undefined,
+                await token(['admin']),
+                await token(['admin.playAudit.read:other:default']),
+            ]) {
+                expect((await get('cityMap', accessToken, {})).status).toBe(accessToken ? 403 : 401);
+                expect((await get('generals', accessToken, { sort: 'crew' })).status).toBe(accessToken ? 403 : 401);
+            }
+            const citySource = await db.playAuditCity.findFirstOrThrow({ where: { sampleId }, select: { data: true } });
+            await db.playAuditCity.create({
+                data: {
+                    sampleId,
+                    cityId: 1,
+                    nationId: ownerNationId,
+                    data: { ...asRecord(citySource.data), id: 1, name: '지도과거도시' },
+                },
+            });
+            const map = await get('cityMap', admin, { at: { year: 190, month: 1 } });
+            expect(map.status).toBe(200);
+            expect(map.body).toMatchObject({
+                result: {
+                    data: {
+                        collected: true,
+                        map: {
+                            year: 190,
+                            month: 1,
+                            cityList: expect.arrayContaining([[1, 4, 0, ownerNationId, expect.any(Number), 1]]),
+                        },
+                        layout: {
+                            cityList: expect.arrayContaining([
+                                expect.objectContaining({ id: 1, name: '지도과거도시' }),
+                            ]),
+                        },
+                    },
+                },
+            });
+            expect(JSON.stringify(map.body)).not.toContain('must-not-expose');
+            await db.playAuditCity.delete({ where: { sampleId_cityId: { sampleId, cityId: 1 } } });
+            expect((await get('cityMap', admin, { at: { year: 190, month: 2 } })).body).toMatchObject({
+                result: { data: { collected: false, map: null } },
+            });
+            expect((await get('cityMap', admin, {})).status).toBe(200);
+            expect((await get('cityMap', admin, { at: { year: 9999, month: 1 } })).status).toBe(400);
             const first = await get('generals', admin, { limit: 1 });
             expect(first.status).toBe(200);
             expect(first.body).toMatchObject({

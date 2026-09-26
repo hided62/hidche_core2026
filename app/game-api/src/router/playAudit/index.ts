@@ -1,3 +1,6 @@
+import { cityMap } from './cityMap.js';
+import { TRPCError } from '@trpc/server';
+import { readSortedGenerals, zGeneralSort, zGeneralCursor } from './generalSort.js';
 import { requestState } from './requests.js';
 import { decisionHistory, decisionDetail } from './decisions.js';
 import { diplomacyHistory, diplomacyEvent } from './diplomacy.js';
@@ -27,6 +30,7 @@ import {
 } from './projection.js';
 
 export const playAuditRouter = router({
+    cityMap,
     requestState,
     decisionHistory,
     decisionDetail,
@@ -161,11 +165,20 @@ export const playAuditRouter = router({
                 population: z.enum(['human', 'npc', 'troopNpc']).optional(),
                 name: z.string().trim().max(64).optional(),
                 order: z.enum(['asc', 'desc']).default('asc'),
+                sort: zGeneralSort.default('id'),
+                cursor: z.union([z.number().int().nonnegative(), zGeneralCursor]).optional(),
             })
         )
         .query(({ ctx, input }) =>
             readAudit(ctx, async (tx) => {
                 const world = await readAuditWorld(tx);
+                if (input.sort !== 'id') {
+                    const sample = input.at ? await findAuditMonth(tx, world, input.at) : null;
+                    if (input.at && !sample) return { ...world, sample, collected: false, items: [], nextCursor: null };
+                    return { ...world, sample, collected: true, ...(await readSortedGenerals(tx, input, sample?.id)) };
+                }
+                if (typeof input.cursor === 'object')
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '장수 번호 정렬의 다음 페이지가 아닙니다.' });
                 const npcState =
                     input.population === 'human'
                         ? { lt: 2 }

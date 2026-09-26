@@ -546,7 +546,11 @@ const install = async (
                             ...world,
                             collected: !input.at || (input.at as { month: number }).month !== 7,
                             sample: input.at ?? null,
-                            nextCursor: input.cursor ? null : 1,
+                            nextCursor: input.cursor
+                                ? null
+                                : input.sort && input.sort !== 'id'
+                                  ? { id: 1, value: 1200 }
+                                  : 1,
                             items:
                                 input.at && (input.at as { month: number }).month === 7
                                     ? []
@@ -566,6 +570,27 @@ const install = async (
                             general: { ...general, name: input.at ? '과거감사장수' : general.name },
                             nation: { id: 2, name: '촉' },
                             city: { id: 3, name: '성도' },
+                        });
+                    case 'playAudit.cityMap':
+                        return result({
+                            ...world,
+                            collected: true,
+                            sample: input.at ?? null,
+                            nextCursor: null,
+                            unmappedCityIds: [],
+                            layout: {
+                                mapName: 'che',
+                                cityList: [{ id: 3, name: '성도', level: 4, region: 1, x: 200, y: 180, path: [] }],
+                                regionMap: { 1: '익주' },
+                                levelMap: { 4: '이' },
+                            },
+                            map: {
+                                year: 190,
+                                month: (input.at as { month: number } | undefined)?.month ?? 7,
+                                startYear: 190,
+                                cityList: [[3, 4, 0, 2, 1, 1]],
+                                nationList: [[2, '촉', '#ff0000', 0]],
+                            },
                         });
                     case 'playAudit.cityDetail':
                         return result({
@@ -1453,5 +1478,46 @@ for (const width of [1440, 390]) {
         await expect(detail).toContainText('병력 5,000');
         await expect(detail).toBeFocused();
         if (width < 1200) await expect(detail).toBeInViewport();
+    });
+}
+
+for (const width of [1280, 390]) {
+    test(`audit historical map and ranked generals at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.route('https://sam-image.hided.net/**', (route) =>
+            route.fulfill({
+                contentType: 'image/svg+xml',
+                body: '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="500"><rect width="700" height="500" fill="#203c2d"/></svg>',
+            })
+        );
+        const requests = await install(page);
+        await page.goto(gamePath('/play-audit?tab=cities&at=month&year=190&month=6'));
+        expect(requests.some((request) => request.operation === 'playAudit.cityMap')).toBe(false);
+        await page.getByRole('link', { name: '도시 지도', exact: true }).click();
+        await expect(page.getByRole('button', { name: '성도', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: '성도', exact: true }).click();
+        await expect(page).toHaveURL(/cityRecord=3/);
+        await expect(page.getByRole('heading', { name: '성도 (#3) · 촉' })).toBeVisible();
+        await capture(page, `audit-map-${width}`);
+        await page.reload();
+        await expect(page.getByRole('button', { name: '성도', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: '이 시점의 모든 국가 주둔 장수', exact: true }).click();
+        await expect(page).toHaveURL(/city=3/);
+        await page.getByLabel('정렬 기준', { exact: true }).selectOption('gold');
+        await page.getByLabel('정렬 방향', { exact: true }).selectOption('desc');
+        await page.getByRole('button', { name: '조회', exact: true }).click();
+        await expect(page).toHaveURL(/sort=gold/);
+        await page.getByRole('button', { name: '다음 50개 불러오기' }).click();
+        await expect(page.getByRole('rowheader', { name: /다음장수/ })).toBeVisible();
+        expect(requests.filter((request) => request.operation === 'playAudit.generals').at(-1)?.input).toMatchObject({
+            sort: 'gold',
+            order: 'desc',
+            cityId: 3,
+            at: { year: 190, month: 6, kind: 'MONTH_END' },
+            cursor: { id: 1, value: 1200 },
+        });
+        await page.reload();
+        await expect(page.getByLabel('정렬 기준', { exact: true })).toHaveValue('gold');
+        await capture(page, `audit-ranked-${width}`);
     });
 }

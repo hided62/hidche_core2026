@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
+import MapViewer from '../components/main/MapViewer.vue';
 import PanelCard from '../components/ui/PanelCard.vue';
 import AuditNationSeries from '../components/playAudit/AuditNationSeries.vue';
 import AuditNationSnapshot from '../components/playAudit/AuditNationSnapshot.vue';
@@ -24,6 +25,27 @@ const coverage = ref<Coverage | null>(null);
 const nations = ref<Nations | null>(null);
 const generals = ref<Generals | null>(null);
 const cities = ref<Cities | null>(null);
+const cityMap = ref<Awaited<ReturnType<typeof trpc.playAudit.cityMap.query>> | null>(null);
+const cityView = computed(() => (route.query.view === 'map' ? 'map' : 'list'));
+const sortOptions = [
+    ['id', '장수 번호'],
+    ['gold', '금'],
+    ['rice', '쌀'],
+    ['crew', '병력'],
+    ['train', '훈련'],
+    ['atmos', '사기'],
+    ['leadership', '통솔'],
+    ['strength', '무력'],
+    ['intelligence', '지력'],
+    ['experience', '경험'],
+    ['dedication', '공헌'],
+    ['dex1', '보병 숙련'],
+    ['dex2', '궁병 숙련'],
+    ['dex3', '기병 숙련'],
+    ['dex4', '귀병 숙련'],
+    ['dex5', '차병 숙련'],
+] as const;
+const generalSort = ref<(typeof sortOptions)[number][0]>('id');
 const series = ref<Series | null>(null);
 const nationSnapshot = ref<NationSnapshot | null>(null);
 const authorized = ref(false);
@@ -151,7 +173,9 @@ const result = computed(() =>
     tab.value === 'generals'
         ? generals.value
         : tab.value === 'cities'
-          ? cities.value
+          ? cityView.value === 'map'
+              ? cityMap.value
+              : cities.value
           : nationSnapshot.value
             ? { ...nationSnapshot.value, nextCursor: null }
             : series.value
@@ -231,6 +255,7 @@ const readQuery = () => {
     cityId.value = route.query.city ? String(numeric(route.query.city, 0)) : '';
     generalName.value = typeof route.query.name === 'string' ? route.query.name : '';
     generalOrder.value = route.query.order === 'desc' ? 'desc' : 'asc';
+    generalSort.value = sortOptions.find(([key]) => key === route.query.sort)?.[0] ?? 'id';
     population.value = ['human', 'npc', 'troopNpc'].includes(String(route.query.population))
         ? String(route.query.population)
         : '';
@@ -254,6 +279,7 @@ const load = async (append = false) => {
     if (!append) {
         generals.value = null;
         cities.value = null;
+        cityMap.value = null;
         series.value = null;
         nationSnapshot.value = null;
     }
@@ -265,6 +291,7 @@ const load = async (append = false) => {
                 cityId: cityId.value === '' ? undefined : Number(cityId.value),
                 name: generalName.value.trim() || undefined,
                 order: generalOrder.value,
+                sort: generalSort.value,
                 population:
                     population.value === 'human' || population.value === 'npc' || population.value === 'troopNpc'
                         ? population.value
@@ -276,6 +303,9 @@ const load = async (append = false) => {
                     ...response,
                     items: append ? [...(generals.value?.items ?? []), ...response.items] : response.items,
                 };
+        } else if (tab.value === 'cities' && cityView.value === 'map') {
+            const response = await trpc.playAudit.cityMap.query({ at: at.value });
+            if (request === generation) cityMap.value = response;
         } else if (tab.value === 'cities') {
             const response = await trpc.playAudit.cities.query({
                 ...filter,
@@ -337,6 +367,8 @@ const apply = async () => {
         population: population.value || undefined,
         name: tab.value === 'generals' ? generalName.value.trim() || undefined : undefined,
         order: tab.value === 'generals' ? generalOrder.value : undefined,
+        sort: tab.value === 'generals' && generalSort.value !== 'id' ? generalSort.value : undefined,
+        view: tab.value === 'cities' ? cityView.value : undefined,
         at: moment.value,
         year: String(year.value),
         month: String(month.value),
@@ -603,13 +635,25 @@ onMounted(async () => {
                         >
                         <template v-if="tab === 'generals'">
                             <label
+                                >정렬 기준<select
+                                    v-model="generalSort"
+                                    class="legacy-sort-select"
+                                    aria-label="정렬 기준"
+                                >
+                                    <option v-for="[key, label] in sortOptions" :key="key" :value="key">
+                                        {{ label }}
+                                    </option>
+                                </select></label
+                            >
+                            <label
                                 >장수 이름<input v-model="generalName" maxlength="64" placeholder="이름 부분 검색"
                             /></label>
                             <label
-                                >장수 번호 정렬<select
+                                >{{ generalSort === 'id' ? '장수 번호 정렬' : '정렬 방향'
+                                }}<select
                                     class="legacy-sort-select"
                                     v-model="generalOrder"
-                                    aria-label="장수 번호 정렬"
+                                    :aria-label="generalSort === 'id' ? '장수 번호 정렬' : '정렬 방향'"
                                 >
                                     <option value="asc">오름차순</option>
                                     <option value="desc">내림차순</option>
@@ -736,6 +780,41 @@ onMounted(async () => {
                                 </tbody>
                             </table>
                         </div>
+                    </template>
+                    <nav v-if="tab === 'cities'" class="menu-row" aria-label="도시 표시 방식">
+                        <RouterLink
+                            class="legacy-button"
+                            :aria-current="cityView === 'list' ? 'page' : undefined"
+                            :to="{ query: { ...route.query, view: 'list' } }"
+                            >도시 목록</RouterLink
+                        >
+                        <RouterLink
+                            class="legacy-button"
+                            :aria-current="cityView === 'map' ? 'page' : undefined"
+                            :to="{ query: { ...route.query, view: 'map' } }"
+                            >도시 지도</RouterLink
+                        >
+                    </nav>
+                    <template v-if="cityMap && tab === 'cities' && cityView === 'map'">
+                        <p>
+                            지도는 선택 시점의 모든 국가 도시를 표시합니다. 도시를 눌러 상세와 주둔 장수를 확인하세요.
+                        </p>
+                        <p v-if="!cityMap.collected">선택한 시점의 표본이 없습니다.</p>
+                        <p v-else-if="cityMap.unmappedCityIds.length">
+                            지도 위치가 없는 도시: {{ cityMap.unmappedCityIds.join(', ') }}. 도시 목록에서 조회할 수
+                            있습니다.
+                        </p>
+                        <MapViewer
+                            v-if="cityMap.map"
+                            :map-data="cityMap.map"
+                            :map-layout="cityMap.layout"
+                            :loading="loading"
+                            :selected-city-id="selectedCity"
+                            :detail-mode="false"
+                            fit-container
+                            :show-current-city-marker="false"
+                            @select-city="selectCity"
+                        />
                     </template>
                     <template v-if="cities && tab === 'cities'">
                         <p v-if="!cities.collected">선택한 시점의 표본이 없습니다.</p>
