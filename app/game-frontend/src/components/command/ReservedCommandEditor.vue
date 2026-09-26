@@ -1402,7 +1402,7 @@ small {
 }
 .command-picker.argument-overlay :deep(.recruitment-command-form),
 .command-picker.argument-overlay :deep(.command-argument-form) {
-    flex: 1 0 auto;
+    flex: 0 0 auto;
 }
 .command-picker.argument-overlay .picker-actions {
     position: sticky;

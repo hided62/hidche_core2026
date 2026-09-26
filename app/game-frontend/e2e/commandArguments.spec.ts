@@ -2239,6 +2239,7 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
     await expect(picker).toHaveAttribute('aria-modal', 'true');
     await expect(picker.getByRole('button', { name: '명령 취소', exact: true })).toBeFocused();
     const form = picker.getByTestId('recruitment-command-form');
+    await verifyArgumentActionPlacement(page, picker);
     await expect(form).toContainText('현재 기술력 : 1등급');
     await expect(form).toContainText('공격');
     await expect(form).toContainText('방어');
@@ -2356,7 +2357,9 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
             infoWidth: info?.getBoundingClientRect().width ?? 0,
             selectedWidth: selectedPanel?.getBoundingClientRect().width ?? 0,
             selectedDisplay: selectedPanel ? getComputedStyle(selectedPanel).display : '',
-            actionsBottom: element.querySelector<HTMLElement>('.picker-actions')?.getBoundingClientRect().bottom ?? 0,
+            formBottom: formElement.getBoundingClientRect().bottom,
+            actionsHeight: element.querySelector<HTMLElement>('.picker-actions')!.getBoundingClientRect().height,
+            actionsBottom: element.querySelector<HTMLElement>('.picker-actions')!.getBoundingClientRect().bottom,
             viewportHeight: window.innerHeight,
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
@@ -2373,10 +2376,13 @@ test('uses a Ref-style full recruitment page without horizontal overflow on desk
         imageWidth: 64,
         selectedWidth: 390,
         selectedDisplay: 'grid',
-        actionsBottom: 844,
         viewportHeight: 844,
         bodyOverflow: 'hidden',
     });
+    expect(mobileGeometry.actionsBottom).toBeCloseTo(
+        Math.min(mobileGeometry.formBottom + mobileGeometry.actionsHeight, 844),
+        0
+    );
     expect(mobileGeometry.rowHeight).toBeGreaterThanOrEqual(64);
     expect(mobileGeometry.infoWidth).toBeGreaterThanOrEqual(150);
     expect(mobileGeometry.scrollWidth).toBe(mobileGeometry.clientWidth);
@@ -4054,6 +4060,39 @@ test('search reflects an active Korean IME composition after debounce without co
     await cdp.detach();
 });
 
+// 짧은 폼은 바로 뒤에 확인 영역을 두고, 긴 폼은 스크롤 중에도 하단에서 확인할 수 있다.
+const verifyArgumentActionPlacement = async (page: Page, overlay: ReturnType<Page['getByRole']>) => {
+    const viewport = page.viewportSize()!;
+    for (const height of [1600, 320]) {
+        await page.setViewportSize({ width: viewport.width, height });
+        await overlay.evaluate((element) => (element.scrollTop = 0));
+        const measure = () =>
+            overlay.evaluate((element) => {
+                const form = element.querySelector<HTMLElement>('.command-argument-form, .recruitment-command-form')!;
+                const actions = element.querySelector<HTMLElement>('.picker-actions')!;
+                return {
+                    formBottom: form.getBoundingClientRect().bottom,
+                    actionsTop: actions.getBoundingClientRect().top,
+                    actionsBottom: actions.getBoundingClientRect().bottom,
+                    scrollTop: element.scrollTop,
+                };
+            });
+        if (height === 1600) {
+            const geometry = await measure();
+            expect(geometry.actionsTop).toBeCloseTo(geometry.formBottom, 0);
+            expect(geometry.actionsBottom).toBeLessThan(height - 100);
+        } else {
+            expect(Math.abs((await measure()).actionsBottom - height)).toBeLessThanOrEqual(1);
+            await overlay.evaluate((element) => (element.scrollTop = 120));
+            const geometry = await measure();
+            expect(geometry.scrollTop).toBeGreaterThan(0);
+            expect(Math.abs(geometry.actionsBottom - height)).toBeLessThanOrEqual(1);
+        }
+    }
+    await page.setViewportSize(viewport);
+    await overlay.evaluate((element) => (element.scrollTop = 0));
+};
+
 // Ref v_processing처럼 인자 입력은 화면 전체를 차지하되, Core는 URL을 바꾸지 않고
 // Back·명령 취소·명령 다시 선택·Esc로 같은 문서의 overlay만 닫는다.
 for (const viewport of [
@@ -4109,6 +4148,8 @@ for (const viewport of [
                     title: bar.querySelector('h2')?.textContent?.replace(/\s+/g, ' ').trim(),
                     map: rect(map),
                     fields: rect(fields),
+                    form: rect(element.querySelector('.command-argument-form')),
+                    actions: rect(element.querySelector('.picker-actions')),
                     bodyOverflow: getComputedStyle(document.body).overflow,
                     scrollWidth: element.scrollWidth,
                     clientWidth: element.clientWidth,
@@ -4147,7 +4188,11 @@ for (const viewport of [
         expect(geometry.submit!.x + geometry.submit!.width / 2).toBeCloseTo(viewport.width / 2, 0);
         expect(geometry.submit!.height).toBeGreaterThanOrEqual(40);
         expect(geometry.submit!.bottom).toBeLessThanOrEqual(viewport.height);
-        expect(geometry.submit!.bottom).toBeGreaterThan(viewport.height - 12);
+        expect(geometry.actions!.top).toBeCloseTo(
+            Math.min(geometry.form!.bottom, viewport.height - geometry.actions!.height),
+            0
+        );
+        await verifyArgumentActionPlacement(page, overlay);
         expect(geometry.bodyOverflow).toBe('hidden');
         expect(geometry.scrollWidth).toBe(geometry.clientWidth);
         for (const button of geometry.buttons) {
@@ -4221,38 +4266,44 @@ for (const viewport of [
     });
 }
 
-test('opens chief argument input as the same full-screen overlay with selected turns in the title', async ({
-    page,
-}, testInfo) => {
-    await install(page);
-    await page.setViewportSize({ width: 1200, height: 900 });
-    await page.goto(gamePath('/chief-center'));
-    const mainUrl = page.url();
-    const editor = page.locator('[data-command-scope="nation"]');
-    await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
-    const listPicker = page.getByTestId('command-picker');
-    await listPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
-    await listPicker.getByRole('button', { name: /발령/ }).click();
-    const overlay = page.getByRole('dialog', { name: '발령 1턴 명령 입력' });
-    await expect(overlay).toBeVisible();
-    await expect(overlay.getByTestId('command-input-top-bar').locator('h2')).toHaveText('발령1턴');
-    const geometry = await overlay.evaluate((element) => ({
-        parentIsBody: element.parentElement === document.body,
-        overlay: element.getBoundingClientRect().toJSON(),
-        scrollWidth: element.scrollWidth,
-        clientWidth: element.clientWidth,
-    }));
-    expect(geometry.parentIsBody).toBe(true);
-    expect(geometry.overlay).toMatchObject({ x: 0, y: 0, width: 1200, height: 900 });
-    expect(geometry.scrollWidth).toBe(geometry.clientWidth);
-    await expect(overlay.getByTestId('command-argument-map')).toBeVisible();
-    // Ref che_발령.vue는 distanceList를 받지만 표시하지 않는다.
-    await expect(overlay.getByTestId('city-distance-list')).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('chief-argument-overlay-1200.png') });
-    await page.goBack();
-    await expect(page.getByTestId('command-picker')).toHaveCount(0);
-    expect(page.url()).toBe(mainUrl);
-});
+for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 390, height: 844 },
+]) {
+    test(`opens chief argument input as the same full-screen overlay with selected turns at ${viewport.width}px`, async ({
+        page,
+    }, testInfo) => {
+        await install(page);
+        await page.setViewportSize(viewport);
+        await page.goto(gamePath('/chief-center'));
+        const mainUrl = page.url();
+        const editor = page.locator('[data-command-scope="nation"]');
+        await editor.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const listPicker = page.getByTestId('command-picker');
+        await listPicker.getByRole('button', { name: /^(?:국가:)?인사$/, exact: true }).click();
+        await listPicker.getByRole('button', { name: /발령/ }).click();
+        const overlay = page.getByRole('dialog', { name: '발령 1턴 명령 입력' });
+        await expect(overlay).toBeVisible();
+        await expect(overlay.getByTestId('command-input-top-bar').locator('h2')).toHaveText('발령1턴');
+        const geometry = await overlay.evaluate((element) => ({
+            parentIsBody: element.parentElement === document.body,
+            overlay: element.getBoundingClientRect().toJSON(),
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+        }));
+        expect(geometry.parentIsBody).toBe(true);
+        expect(geometry.overlay).toMatchObject({ x: 0, y: 0, ...viewport });
+        expect(geometry.scrollWidth).toBe(geometry.clientWidth);
+        await expect(overlay.getByTestId('command-argument-map')).toBeVisible();
+        await verifyArgumentActionPlacement(page, overlay);
+        // Ref che_발령.vue는 distanceList를 받지만 표시하지 않는다.
+        await expect(overlay.getByTestId('city-distance-list')).toHaveCount(0);
+        await page.screenshot({ path: testInfo.outputPath(`chief-argument-overlay-${viewport.width}.png`) });
+        await page.goBack();
+        await expect(page.getByTestId('command-picker')).toHaveCount(0);
+        expect(page.url()).toBe(mainUrl);
+    });
+}
 
 // Ref ProcessCity + CitiesBasedOnDistance: 화계 계열·강행·첩보는 3칸, 이동·출병은 1칸까지 현재 도시 기준
 // 거리별 도시를 magenta/orange/yellow 밑줄 글자로 보여 주고, 누르면 대상 도시로 고른다.
