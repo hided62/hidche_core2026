@@ -36,7 +36,6 @@ assert하며 SQL/params 원문은 저장하지 않는다. 관측60,702단계마�
 저장·hash 조회를 확인한 범위다. WAL·retained heap, 실제 scenario 계측 전후와 전체
 COST gate는 여전히 남는다.
 
-
 ### 정책·외교 사건의 요청 처리 상태
 
 `playAudit.requestState`는 현재 기수의 정책 버전 또는 외교 사건 ID만 받는다.
@@ -172,15 +171,19 @@ migration head를 가리킨다. 실제 PG의55→56/빈56/no-op·기존 값/null
 국가 목록은 현재 또는 한 월의 이름/ID/color만 반환한다. 현재 목록은 해당 세 필드만
 SELECT하며 과거 목록은 한 표본의 국가 JSON을 51행까지 읽고 allowlist projection한다.
 기본 50·최대 200과 ID cursor를 사용하고 기수 전체의 국가를 DISTINCT 스캔하지 않는다.
-멸망국은 해당 월 기준 목록으로 선택한다. 국가 시계열의 기본 범위는 최근 6개월이며
+멸망국은 해당 월 기준 목록으로 선택한다. 국가 시계열 API의 기본 범위는 최근 6개월, 화면의 기본 범위는 최근 12개월·월별이며
 지표·집단 전환은 이미 받은 집계에서 계산해 추가 요청을 하지 않는다.
 
-PanelCard, legacy-button, legacy-sort-select를 재사용한다. 새 차트 라이브러리 없이
-표의 막대와 수치를 함께 표시한다. stock 마지막 표본 월, 월별 수집 여부·국가 존재·정산
+PanelCard, legacy-button, legacy-sort-select를 재사용한다. Chart.js로 국고 금·쌀,
+총 병사수, 실제 수입, 집단별 5병종 평균 숙련도의 큰 그래프를 표시하고 수치 표를 함께 제공한다.
+결측값은 선을 끊고 표시하며 최근 6/12/24개월 바로가기와 월/반기 조회를 제공한다. stock 마지막 표본 월, 월별 수집 여부·국가 존재·정산
 완전성을 펼쳐볼 수 있고 null은 `자료 없음`이다. 국가 보유 금쌀/기술/세율,
 수입·지급, 집단 인원·보유 총량/평균·5병종 평균 숙련 지표를 제공한다.
 
-이 화면은 Core 신규 UX다. 최대 폭 1200px, 390px 모바일에서 문서 가로 넘침 없음,
+이 화면은 Core 신규 UX다. 최대 폭 1920px, 1200px 이상에서 탐색/분석/대상 상세의
+3열 구조다. 701~1199px에서는 상세가 분석 아래에, 700px 이하는 한 열에 표시된다.
+국가는 검색 가능한 목록에서 즉시 선택하며 장수·도시 클릭은 상세 영역에 focus를 옮긴다.
+390px 모바일에서 문서 가로 넘침 없음,
 넓은 표만 내부 수평 스크롤, 공통 14px 기본 typography와 명시적 focus/disabled가 계약이다.
 월말/FINAL 장수·도시 projection을 보여주지만 지도,
 전투 통계, 자원·능력별 정렬은 후속 구현으로 남는다. 로그와 현재 예약 조회는 아래 구현을 따른다.
@@ -619,7 +622,8 @@ no-general 허용, 무인증·일반 admin·다른 profile·제재 거부, 200 �
 `nationSeries`는 국가 1개의 월별 집계만 조회한다. 월/반기 해상도, 기간, 페이지 크기
 50 기본/200 최대를 받고 긴 기수는 다음 기간 cursor로 이어 읽는다. 한 번에 읽는
 월 header는 최대 1200개(200반기), 국가 집계도 그 범위의 해당 국가만 읽으며
-장수·도시 원본이나 전체 trace를 읽지 않는다. 기본 기간은 최근 6개월이고 반기는
+병사수 집계가 없는 기존 표본만 해당 국가의 장수 원본을 DB에서 집계한다. 도시 원본이나
+전체 trace는 읽지 않는다. API 기본 기간은 최근 6개월이고 반기는
 1~~6월/7~~12월 경계로 묶는다. 보유·기술·집단 평균은 마지막 수집 표본과 그 시점을
 반환하고 수입/급여만 기간 합산한다. 누락·국가 없음·불완전 정산의 흐름은 null,
 관측한 정산 없음은 0이다. 기간 일부 요청은 from/to와 complete=false로 표시한다.
@@ -640,7 +644,7 @@ SQL/bytes는 아직 실측하지 않았으며 아래는 현재 소스에서 확�
 | 월별 내구성         | `turn/inMemoryWorld.ts`의 capture/restore, peek/acknowledge와 pending yearbook; `turn/databaseHooks.ts`의 `persistChanges` | 별도 audit pending을 같은 transaction과 savepoint에 포함. 기존 연감의 장기보존 테이블에 상세 감사를 넣지 않음                              | 실패·중복·재시작, bounded 삭제                                |
 | 기수 identity       | `scenario/scenarioSeeder.ts`의 `install.serverId`, `GameHistory` 충돌 검사                                                 | profile명으로 대체하지 않음. 외부 install 입력을 만드는 지점과 RESET 전체 경로를 추가 추적한 뒤 수집 활성화                                | 신규 identity 생성, 재시도, 기존 설치에 identity 누락 시 처리 |
 | 외교                | game-api `router/diplomacy/index.ts`, engine 월간 외교 처리                                                                | 불변 문서는 참조, 갱신되는 내용만 당시 버전 저장. 현재 상태 월복사만으로 사건을 대신하지 않음                                              | 모든 API/engine mutation별 inventory                          |
-| NPC 정책            | `turn/worldCommandHandler.ts` → `turn/npcPolicyMutation.ts`                                                                | CAS 성공하고 실제 값이 달라진 경우에만 불변 버전. 무변경/거부는 적용 버전에서 제외                                                         | NPC 결정의 버전 참조, 거부/무변경 시도 원장                |
+| NPC 정책            | `turn/worldCommandHandler.ts` → `turn/npcPolicyMutation.ts`                                                                | CAS 성공하고 실제 값이 달라진 경우에만 불변 버전. 무변경/거부는 적용 버전에서 제외                                                         | NPC 결정의 버전 참조, 거부/무변경 시도 원장                   |
 | 권한                | Gateway `adminCapabilities.ts`, `adminAuth.ts`; game-api `trpc.ts` 인증·제재 middleware                                    | scoped 감사 권한과 공통 계정 추가 권한 분리. `getMyGeneral` 요구 없이 서버에서 검사                                                        | catalog/token/flush/HTTP matrix 전체 연결                     |
 
 월간 실행은 이전 월 snapshot → 달 변경 → 새달 `onMonthChanged` 순서다.
@@ -662,3 +666,22 @@ SQL/bytes는 아직 실측하지 않았으며 아래는 현재 소스에서 확�
 월 저장 검증: `playAuditCollection.test.ts`, `playAuditPersistence.integration.test.ts`와
 확장한 `monthlyBoundaryPrePersistence.integration.test.ts`. 정확한 명령·결과는
 상위 보고서 `2026-09-16-플레이-감사-월별-저장.md`에 기록한다.
+
+## 2026-09-26 국가 그래프와 당월 정산
+
+`nationSeries.currentSettlement`는 현재 월을 포함한 페이지에서만 같은 RepeatableRead
+transaction의 `world_state.meta.playAuditFlows`를 읽는다. 국가·자원·연월과 유한 숫자를
+확인하여 commit된 수입/지급을 반환한다. 1월 금, 7월 쌀 정산이 월말 표본을 기다리지 않고
+노출되며, 당월 관측 없음·부분 관측·관측됨을 구별한다. 월말/반기 흐름 합계와 완전성은
+기존 계약을 유지한다. gameplay 정산, RNG, flush 순서는 변경하지 않는다.
+
+새 국가 표본은 집단별 `crew` 합계를 저장한다. 기존 JSON의 crew 누락은 null로 읽고,
+시계열 조회 때 그 국가와 해당 표본 ID에 한정하여 PostgreSQL이 장수 표본을 한 번 집계한다.
+저장된 집단 인원수와 원본 행 수가 일치할 때만 합계를 사용한다. 원본 누락은 null,
+관측된 빈 집단은 0이며 live 장수로 과거를 채우지 않는다. 최대 1200개 표본에 한정된
+추가 GROUP BY 조회이며, 새 집계가 있는 표본은 원본 재집계에서 제외한다.
+
+차트는 [Chart.js line](https://www.chartjs.org/docs/latest/charts/line.html)과
+[responsive](https://www.chartjs.org/docs/latest/configuration/responsive.html) 계약을 사용한다.
+필요한 line 구성요소만 등록하고 resize·unmount를 처리하며 null 구간을 연결하지 않는다.
+차트와 수치 표는 같은 응답을 사용하고 집단/지표 전환은 추가 API를 호출하지 않는다.

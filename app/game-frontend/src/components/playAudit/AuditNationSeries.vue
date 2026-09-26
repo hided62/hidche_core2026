@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import AuditLineChart from './AuditLineChart.vue';
 import type { trpc } from '../../utils/trpc';
 
 type Series = Awaited<ReturnType<typeof trpc.playAudit.nationSeries.query>>;
@@ -10,6 +11,7 @@ const metric = ref('gold');
 const metrics = [
     ['gold', '국고 금'],
     ['rice', '국고 쌀'],
+    ['crew', '총 병사수'],
     ['tech', '기술력'],
     ['appliedRate', '적용 세율'],
     ['incomeGold', '실제 금 수입'],
@@ -31,6 +33,8 @@ const label = computed(() => metrics.find(([key]) => key === metric.value)?.[1] 
 const value = (point: Point): number | null => {
     const stock = point.stock;
     switch (metric.value) {
+        case 'crew':
+            return totalCrew(point);
         case 'totalGold':
             return stock?.populations[population.value].gold ?? null;
         case 'totalRice':
@@ -59,6 +63,28 @@ const value = (point: Point): number | null => {
             return null;
     }
 };
+const totalCrew = (point: Point): number | null => {
+    if (!point.stock) return null;
+    const groups = Object.values(point.stock.populations);
+    return groups.some((group) => group.crew == null) ? null : groups.reduce((sum, group) => sum + group.crew!, 0);
+};
+const chartLabels = computed(() => props.data.items.map((point) => `${point.year}년 ${point.month}월`));
+const resourceLines = computed(() => [
+    { label: '국고 금', color: '#f5cc64', values: props.data.items.map((point) => point.stock?.gold ?? null) },
+    { label: '국고 쌀', color: '#91d9a0', values: props.data.items.map((point) => point.stock?.rice ?? null) },
+]);
+const crewLines = computed(() => [{ label: '총 병사수', color: '#83cafa', values: props.data.items.map(totalCrew) }]);
+const dexLines = computed(() =>
+    (['dex1', 'dex2', 'dex3', 'dex4', 'dex5'] as const).map((key, index) => ({
+        label: ['보병', '궁병', '기병', '귀병', '차병'][index]!,
+        color: ['#f5cc64', '#91d9a0', '#83cafa', '#e2a3f3', '#ff9c88'][index]!,
+        values: props.data.items.map((point) => point.stock?.populations[population.value].averageDex[key] ?? null),
+    }))
+);
+const incomeLines = computed(() => [
+    { label: '실제 금 수입', color: '#f5cc64', values: props.data.items.map((point) => point.flows.incomeGold) },
+    { label: '실제 쌀 수입', color: '#91d9a0', values: props.data.items.map((point) => point.flows.incomeRice) },
+]);
 const format = (number: number | null) =>
     number === null ? '자료 없음' : number.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 const maximum = computed(() => Math.max(1, ...props.data.items.map((row) => Math.abs(value(row) ?? 0))));
@@ -67,6 +93,42 @@ const date = (point: { year: number; month: number } | null) =>
 </script>
 
 <template>
+    <section v-if="data.currentSettlement" class="settlement-now" aria-label="당월 정산">
+        <h3>{{ data.currentSettlement.year }}년 {{ data.currentSettlement.month }}월 정산</h3>
+        <p>금은 1월, 쌀은 7월에 정산됩니다. 저장된 실제 수입·지급액은 월말 전에 확인할 수 있습니다.</p>
+        <div class="settlement-values">
+            <p v-for="resource in ['gold', 'rice'] as const" :key="resource">
+                <strong>{{ resource === 'gold' ? '금' : '쌀' }}</strong>
+                <template v-if="data.currentSettlement[resource]">
+                    수입 {{ format(data.currentSettlement[resource]!.income) }} · 지급
+                    {{ format(data.currentSettlement[resource]!.paid) }}
+                    <span>{{ data.currentSettlement.complete ? '정산 관측됨' : '부분 관측' }}</span>
+                </template>
+                <span v-else>당월 관측된 정산 없음</span>
+            </p>
+        </div>
+    </section>
+    <div class="chart-grid">
+        <AuditLineChart title="국가 금·쌀 변화" :labels="chartLabels" :lines="resourceLines" />
+        <AuditLineChart title="총 병사수 변화" :labels="chartLabels" :lines="crewLines" />
+        <AuditLineChart title="실제 금·쌀 수입" :labels="chartLabels" :lines="incomeLines" />
+    </div>
+    <div class="population-buttons" aria-label="숙련도 장수 집단">
+        <button
+            v-for="[key, text] in [
+                ['human', '유저'],
+                ['npc', 'NPC'],
+                ['troopNpc', '부대장 NPC'],
+            ] as const"
+            :key="key"
+            class="legacy-button"
+            :aria-pressed="population === key"
+            @click="population = key"
+        >
+            {{ text }}
+        </button>
+    </div>
+    <AuditLineChart title="병종별 평균 숙련도 변화" :labels="chartLabels" :lines="dexLines" />
     <div class="series-controls">
         <label
             >지표
@@ -142,6 +204,41 @@ const date = (point: { year: number; month: number } | null) =>
 </template>
 
 <style scoped>
+.chart-grid {
+    display: grid;
+    gap: 16px;
+    margin: 16px 0;
+}
+.population-buttons {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0 8px;
+    flex-wrap: wrap;
+}
+.population-buttons [aria-pressed='true'] {
+    background: #254e3c;
+    border-color: #b6d6c2;
+}
+.settlement-now {
+    padding: 12px;
+    border: 1px solid #8aa986;
+    background: #203428;
+}
+.settlement-now h3 {
+    margin-top: 0;
+}
+.settlement-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+}
+.settlement-values span {
+    margin-left: 8px;
+}
+.series-controls {
+    margin-top: 20px;
+}
+
 .series-controls {
     display: flex;
     flex-wrap: wrap;

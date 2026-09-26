@@ -3119,6 +3119,39 @@ integration('game API security over HTTP transport', () => {
                     },
                 },
             });
+            await db.playAuditNation.update({
+                where: { sampleId_nationId: { sampleId: `${seasonId}:190:6`, nationId: ownerNationId } },
+                data: {
+                    data: {
+                        ...asRecord(finalNation.data),
+                        populations: {
+                            human: { ...population, count: 2 },
+                            npc: { ...population, count: 1 },
+                            troopNpc: population,
+                        },
+                    },
+                },
+            });
+            await db.playAuditGeneral.createMany({
+                data: [1, 2].map((id) => ({
+                    sampleId: `${seasonId}:190:6`,
+                    generalId: id,
+                    nationId: ownerNationId,
+                    cityId: 0,
+                    npcState: 0,
+                    data: { crew: id * 1200 },
+                })),
+            });
+            await db.playAuditGeneral.create({
+                data: {
+                    sampleId: `${seasonId}:190:6`,
+                    generalId: 3,
+                    nationId: ownerNationId,
+                    cityId: 0,
+                    npcState: 2,
+                    data: { crew: 'invalid' },
+                },
+            });
             const series = await get('nationSeries', admin, {
                 nationId: ownerNationId,
                 from: { year: 190, month: 1 },
@@ -3134,7 +3167,10 @@ integration('game API security over HTTP transport', () => {
                                 year: 190,
                                 month: 1,
                                 complete: true,
-                                stock: { gold: 600 },
+                                stock: {
+                                    gold: 600,
+                                    populations: { human: { crew: 3600 }, npc: { crew: null }, troopNpc: { crew: 0 } },
+                                },
                                 flows: { incomeGold: 21, incomeRice: 0 },
                             },
                         ],
@@ -3165,6 +3201,59 @@ integration('game API security over HTTP transport', () => {
             ).toMatchObject({
                 result: { data: { items: [{ complete: false, stock: null, flows: { incomeGold: null } }] } },
             });
+
+            // 정산 commit 직후, 아직 월말 표본이 없는 상태를 HTTP로 확인한다.
+            for (const [settlementMonth, resource] of [
+                [1, 'gold'],
+                [7, 'rice'],
+            ] as const) {
+                await db.worldState.update({
+                    where: { id: fixtureWorldId },
+                    data: {
+                        currentYear: 191,
+                        currentMonth: settlementMonth,
+                        meta: {
+                            serverId: seasonId,
+                            scenarioMeta: { startYear: 190 },
+                            playAuditFlows: {
+                                year: 191,
+                                month: settlementMonth,
+                                complete: true,
+                                entries: {
+                                    [`${ownerNationId}:${resource}`]: {
+                                        nationId: ownerNationId,
+                                        resource,
+                                        income: 8765.5,
+                                        paid: 4321,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                });
+                const input = {
+                    nationId: ownerNationId,
+                    from: { year: 191, month: settlementMonth },
+                    to: { year: 191, month: settlementMonth },
+                };
+                expect((await get('nationSeries', admin, input)).body).toMatchObject({
+                    result: {
+                        data: {
+                            currentSettlement: {
+                                year: 191,
+                                month: settlementMonth,
+                                [resource]: { income: 8765.5, paid: 4321 },
+                            },
+                            items: [{ stock: null, complete: false }],
+                        },
+                    },
+                });
+                expect((await get('nationSeries', undefined, input)).status).toBe(401);
+                expect((await get('nationSeries', await token(['admin']), input)).status).toBe(403);
+                expect(
+                    (await get('nationSeries', await token(['admin.playAudit.read:other:default']), input)).status
+                ).toBe(403);
+            }
 
             // A synchronized opening may start before the scenario's gameplay year.
             await db.worldState.update({

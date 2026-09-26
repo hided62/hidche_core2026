@@ -1,3 +1,5 @@
+import { GamePrisma } from '@sammo-ts/infra';
+import { asRecord } from '@sammo-ts/common';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { auditProcedure, monthOrdinal, readAudit, readAuditWorld, zAuditMonth } from './shared.js';
@@ -5,6 +7,7 @@ import { auditProcedure, monthOrdinal, readAudit, readAuditWorld, zAuditMonth } 
 const zDex = z.object({ dex1: z.number(), dex2: z.number(), dex3: z.number(), dex4: z.number(), dex5: z.number() });
 const zPopulation = z.object({
     count: z.number().int().nonnegative(),
+    crew: z.number().nonnegative().nullable().default(null),
     gold: z.number(),
     rice: z.number(),
     dex: zDex,
@@ -92,6 +95,34 @@ export const summarizeNationPeriod = (start: number, width: number, months: Nati
     };
 };
 
+/** 같은 transaction에서 commit된 당월 정산만 반환한다. 미관측을 0으로 만들지 않는다. */
+export const projectCurrentSettlement = (meta: unknown, year: number, month: number, nationId: number) => {
+    const flows = asRecord(asRecord(meta).playAuditFlows);
+    const matches = flows.year === year && flows.month === month;
+    const entries = asRecord(flows.entries);
+    const resource = (key: 'gold' | 'rice') => {
+        const row = asRecord(entries[`${nationId}:${key}`]);
+        if (
+            !matches ||
+            row.nationId !== nationId ||
+            row.resource !== key ||
+            typeof row.income !== 'number' ||
+            !Number.isFinite(row.income) ||
+            typeof row.paid !== 'number' ||
+            !Number.isFinite(row.paid)
+        )
+            return null;
+        return { income: row.income, paid: row.paid };
+    };
+    return {
+        year,
+        month,
+        gold: resource('gold'),
+        rice: resource('rice'),
+        complete: matches && flows.complete === true,
+    };
+};
+
 const zCalendarMonth = zAuditMonth.omit({ kind: true });
 export const nationSeries = auditProcedure
     .input(
@@ -151,6 +182,35 @@ export const nationSeries = auditProcedure
                   })
                 : [];
             const dataBySample = new Map(nations.map((row) => [row.sampleId, zAuditNation.parse(row.data)]));
+            // 기존 집계는 같은 월의 장수 표본을 DB에서 합산한다. 원문은 전송하지 않는다.
+            const legacySamples = [...dataBySample]
+                .filter(([, nation]) => Object.values(nation.populations).some((group) => group.crew === null))
+                .map(([id]) => id);
+            if (legacySamples.length) {
+                const troops = await tx.$queryRaw<
+                    { sampleId: string; population: 'human' | 'npc' | 'troopNpc'; count: number; crew: number | null }[]
+                >(GamePrisma.sql`
+                    SELECT sample_id AS "sampleId",
+                        CASE WHEN npc_state = 5 THEN 'troopNpc' WHEN npc_state < 2 THEN 'human' ELSE 'npc' END AS population,
+                        count(*)::int AS count,
+                        CASE WHEN bool_and(jsonb_typeof(data->'crew') = 'number' AND data->'crew' IS NOT NULL)
+                            THEN sum(CASE WHEN jsonb_typeof(data->'crew') = 'number' THEN (data->>'crew')::double precision END) ELSE NULL END AS crew
+                    FROM play_audit_general
+                    WHERE nation_id = ${input.nationId} AND sample_id IN (${GamePrisma.join(legacySamples)})
+                    GROUP BY sample_id, population
+                `);
+                for (const sampleId of legacySamples) {
+                    const nation = dataBySample.get(sampleId)!;
+                    for (const key of ['human', 'npc', 'troopNpc'] as const) {
+                        const group = nation.populations[key];
+                        if (group.crew !== null) continue;
+                        const row = troops.find((item) => item.sampleId === sampleId && item.population === key);
+                        // 저장 인원수와 원본 표본 수가 같을 때만 확정한다.
+                        if (group.count === 0 && !row) group.crew = 0;
+                        else if (row?.count === group.count) group.crew = row.crew;
+                    }
+                }
+            }
             const sampleByMonth = new Map(samples.map((sample) => [monthOrdinal(sample.year, sample.month), sample]));
             const items: ReturnType<typeof summarizeNationPeriod>[] = [];
             for (let period = start; period <= end; period += width) {
@@ -166,6 +226,17 @@ export const nationSeries = auditProcedure
                 }
                 items.push(summarizeNationPeriod(period, width, months));
             }
-            return { ...world, items, nextCursor: end < to ? dateOf(start + input.limit * width) : null };
+            const currentState =
+                world.serverId && end === current
+                    ? await tx.worldState.findFirst({ orderBy: { id: 'asc' }, select: { meta: true } })
+                    : null;
+            return {
+                ...world,
+                items,
+                currentSettlement: currentState
+                    ? projectCurrentSettlement(currentState.meta, world.year, world.month, input.nationId)
+                    : null,
+                nextCursor: end < to ? dateOf(start + input.limit * width) : null,
+            };
         })
     );

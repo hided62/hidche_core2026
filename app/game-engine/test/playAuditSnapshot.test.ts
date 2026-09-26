@@ -76,13 +76,15 @@ describe('play audit monthly projection', () => {
     it('separates humans, NPCs and troop NPCs and retains empty nations and neutral generals', () => {
         const humans = [buildGeneral(1, 1), { ...buildGeneral(2, 1), npcState: 1, gold: 0 }];
         humans[0]!.meta.dex1 = 10;
+        humans[0]!.crew = 3210;
+        humans[1]!.crew = 790;
         const result = buildAuditSnapshot({
             nations: [buildNation(0, 0, {}), buildNation(1, 0, {}), buildNation(2, 0, {})],
             cities: [buildCity(1, 2)],
             generals: [
                 ...humans,
-                { ...buildGeneral(3, 1), npcState: 2 },
-                { ...buildGeneral(4, 1), npcState: 5 },
+                { ...buildGeneral(3, 1), npcState: 2, crew: 1200 },
+                { ...buildGeneral(4, 1), npcState: 5, crew: 800 },
                 buildGeneral(5, 0),
             ],
             settlements: [],
@@ -91,12 +93,13 @@ describe('play audit monthly projection', () => {
         const nation = result.nations.find((row) => row.id === 1)!;
         expect(nation.populations.human).toMatchObject({
             count: 2,
+            crew: 4000,
             gold: 2000,
             averageGold: 1000,
             averageDex: { dex1: 5 },
         });
-        expect(nation.populations.npc.count).toBe(1);
-        expect(nation.populations.troopNpc.count).toBe(1);
+        expect(nation.populations.npc).toMatchObject({ count: 1, crew: 1200 });
+        expect(nation.populations.troopNpc).toMatchObject({ count: 1, crew: 800 });
         expect(result.nations.find((row) => row.id === 2)!.populations.human.averageGold).toBeNull();
         expect(result.nations.find((row) => row.id === 0)!.populations.npc.count).toBe(1);
         expect(result.cities[0]!.nationId).toBe(2);

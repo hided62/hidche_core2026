@@ -10,6 +10,7 @@ export type AuditPopulation = 'human' | 'npc' | 'troopNpc';
 
 export interface AuditPopulationSummary {
     count: number;
+    crew: number;
     gold: number;
     rice: number;
     dex: AuditDex;
@@ -44,6 +45,7 @@ export interface AuditNationSnapshot {
 const emptyDex = (): AuditDex => ({ dex1: 0, dex2: 0, dex3: 0, dex4: 0, dex5: 0 });
 const emptyPopulation = (): AuditPopulationSummary => ({
     count: 0,
+    crew: 0,
     gold: 0,
     rice: 0,
     dex: emptyDex(),
@@ -173,6 +175,7 @@ export const buildAuditSnapshot = (input: {
         const population = nations.get(general.nationId)?.populations[projected.population];
         if (!population) continue;
         population.count++;
+        population.crew += projected.crew;
         population.gold += projected.gold;
         population.rice += projected.rice;
         for (const key of AUDIT_DEX_KEYS) population.dex[key] += projected.dex[key];

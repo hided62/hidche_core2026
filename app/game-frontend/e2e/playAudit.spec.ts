@@ -14,7 +14,16 @@ const world = {
     collectionStart: { year: 190, month: 1, tick: '0', observedAt: '2026-09-16T00:00:00.000Z' },
 };
 const dex = { dex1: 100, dex2: 200, dex3: 300, dex4: 400, dex5: 500 };
-const population = { count: 2, gold: 200, rice: 400, dex, averageGold: 100, averageRice: 200, averageDex: dex };
+const population = {
+    crew: 5000,
+    count: 2,
+    gold: 200,
+    rice: 400,
+    dex,
+    averageGold: 100,
+    averageRice: 200,
+    averageDex: dex,
+};
 const general = {
     id: 1,
     name: '감사장수',
@@ -76,7 +85,8 @@ const install = async (
     page: Page,
     denied = false,
     baseline: boolean | 'document' | 'created' | 'removed' = false,
-    executionStatus?: 'PREPARING' | 'BLOCKED'
+    executionStatus?: 'PREPARING' | 'BLOCKED',
+    dashboard = false
 ) => {
     const requests: { operation: string; input: Record<string, unknown> }[] = [];
     await page.addInitScript((profile) => {
@@ -442,6 +452,13 @@ const install = async (
                     case 'playAudit.nationSeries':
                         return result({
                             ...world,
+                            currentSettlement: {
+                                year: 190,
+                                month: 7,
+                                complete: true,
+                                gold: null,
+                                rice: { income: 4321, paid: 1234 },
+                            },
                             nextCursor: null,
                             items: [
                                 {
@@ -471,7 +488,33 @@ const install = async (
                                         settlementsComplete: true,
                                     })),
                                 },
-                            ],
+                            ].flatMap((point) =>
+                                dashboard
+                                    ? Array.from({ length: 6 }, (_, index) => ({
+                                          ...point,
+                                          month: index + 1,
+                                          periodMonths: 1,
+                                          from: { year: 190, month: index + 1 },
+                                          to: { year: 190, month: index + 1 },
+                                          stockAsOf: { year: 190, month: index + 1 },
+                                          stock:
+                                              index === 2
+                                                  ? null
+                                                  : {
+                                                        ...point.stock,
+                                                        gold: 600 + index * 150,
+                                                        rice: 1200 - index * 90,
+                                                        populations: {
+                                                            human: { ...population, crew: 5000 + index * 1000 },
+                                                            npc: population,
+                                                            troopNpc: population,
+                                                        },
+                                                    },
+                                          flows: { ...point.flows, incomeGold: index === 0 ? 2100 : 0 },
+                                          complete: index !== 2,
+                                      }))
+                                    : [point]
+                            ),
                         });
                     case 'playAudit.nationSnapshot':
                         return result({
@@ -952,7 +995,9 @@ test('policy filter drafts do not read until applied, including default dates', 
     await page.goto(gamePath('/play-audit?tab=policies&nation=2'));
     await expect(page.getByRole('button', { name: '버전 2', exact: true })).toBeVisible();
     await page.getByRole('link', { name: '국방 설정', exact: true }).click();
-    await expect.poll(() => requests.filter(({ operation }) => operation === 'playAudit.policyHistory').at(-1)?.input.area).toBe('DEFENCE');
+    await expect
+        .poll(() => requests.filter(({ operation }) => operation === 'playAudit.policyHistory').at(-1)?.input.area)
+        .toBe('DEFENCE');
     const count = requests.filter(({ operation }) => operation === 'playAudit.policyHistory').length;
     await page.getByLabel('시작 월', { exact: true }).fill('3');
     await page.getByRole('button', { name: '조회', exact: true }).focus();
@@ -1337,7 +1382,10 @@ for (const width of [1280, 390]) {
         await menu.getByRole('link', { name: '국방 설정', exact: true }).click();
         await expect(page).toHaveURL(/policyArea=DEFENCE/);
         await page.goBack();
-        await expect(menu.getByRole('link', { name: 'NPC 국가 정책', exact: true })).toHaveAttribute('aria-current', 'page');
+        await expect(menu.getByRole('link', { name: 'NPC 국가 정책', exact: true })).toHaveAttribute(
+            'aria-current',
+            'page'
+        );
         await page.goBack();
         await expect(menu.getByRole('link', { name: 'NPC', exact: true })).toHaveAttribute('aria-current', 'page');
         await menu.getByRole('link', { name: '도시', exact: true }).hover();
@@ -1355,5 +1403,55 @@ for (const width of [1280, 390]) {
         await writeFile(`/tmp/play-audit-menu/${width}.json`, JSON.stringify(bounds));
         await writeFile(`/tmp/play-audit-menu/${width}.html`, await page.content());
         await page.screenshot({ path: `/tmp/play-audit-menu/${width}.png`, fullPage: true });
+    });
+}
+
+for (const width of [1440, 390]) {
+    test(`audit dashboard charts, nation navigation and inspector at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 960 });
+        const requests = await install(page, false, false, undefined, true);
+        await page.goto(gamePath('/play-audit'));
+        await page.getByRole('button', { name: '촉 #2', exact: true }).click();
+        await expect(page).toHaveURL(/nation=2/);
+        await expect(page.getByRole('region', { name: '당월 정산', exact: true })).toContainText('4,321');
+        const charts = page.locator('.audit-chart canvas');
+        await expect(charts).toHaveCount(4);
+        const sizes = await charts.evaluateAll((nodes) =>
+            nodes.map((node) => ({
+                width: node.getBoundingClientRect().width,
+                height: node.getBoundingClientRect().height,
+            }))
+        );
+        for (const size of sizes) {
+            expect(size.width).toBeGreaterThan(width === 390 ? 260 : 600);
+            expect(size.height).toBeGreaterThanOrEqual(260);
+        }
+        await page.getByLabel('지표', { exact: true }).selectOption('crew');
+        await expect(page.getByRole('cell', { name: '15,000', exact: true })).toBeVisible();
+        const query = requests.findLast((request) => request.operation === 'playAudit.nationSeries')?.input;
+        expect(query).toMatchObject({ nationId: 2, resolution: 'month' });
+        await capture(page, `dashboard-${width}`);
+        await page.getByRole('button', { name: '최근 6개월', exact: true }).click();
+        await expect(page).toHaveURL(/fromMonth=2/);
+
+        await page
+            .getByRole('navigation', { name: '플레이 감사 메뉴' })
+            .getByRole('link', { name: '장수', exact: true })
+            .click();
+        await page.getByRole('button', { name: '감사장수 (#1)', exact: true }).click();
+        const detail = page.getByRole('complementary', { name: '선택한 대상 상세' });
+        await expect(detail).toContainText('병력 5,000');
+        await expect(detail).toBeFocused();
+        if (width >= 1200) {
+            const left = await page.getByRole('region', { name: '감사 분석', exact: true }).boundingBox();
+            const right = await detail.boundingBox();
+            expect(right!.x).toBeGreaterThanOrEqual(left!.x + left!.width);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        await capture(page, `inspector-${width}`);
+        await page.reload();
+        await expect(detail).toContainText('병력 5,000');
+        await expect(detail).toBeFocused();
+        if (width < 1200) await expect(detail).toBeInViewport();
     });
 }

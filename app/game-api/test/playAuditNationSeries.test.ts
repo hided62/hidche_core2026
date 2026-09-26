@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
     summarizeNationPeriod,
+    projectCurrentSettlement,
+    zAuditNation,
     type AuditNationData,
     type NationMonthPoint,
 } from '../src/router/playAudit/nationSeries.js';
 
 const population = {
     count: 0,
+    crew: null,
     gold: 0,
     rice: 0,
     dex: { dex1: 0, dex2: 0, dex3: 0, dex4: 0, dex5: 0 },
@@ -87,5 +90,46 @@ describe('play audit half-year summary', () => {
             stock: null,
             flows: { incomeGold: null },
         });
+    });
+});
+
+describe('current committed settlement', () => {
+    it.each([
+        [1, 'gold'],
+        [7, 'rice'],
+    ] as const)('exposes month %s settlement before month-end', (month, resource) => {
+        const meta = {
+            playAuditFlows: {
+                year: 200,
+                month,
+                complete: true,
+                entries: { [`2:${resource}`]: { nationId: 2, resource, income: 1234.5, paid: 234 } },
+            },
+        };
+        expect(projectCurrentSettlement(meta, 200, month, 2)[resource]).toEqual({ income: 1234.5, paid: 234 });
+        expect(projectCurrentSettlement(meta, 200, month + 1, 2)[resource]).toBeNull();
+        expect(projectCurrentSettlement(meta, 200, month, 3)[resource]).toBeNull();
+    });
+    it('keeps absent and malformed observations unknown, preserves actual zero', () => {
+        expect(projectCurrentSettlement({}, 200, 1, 2).gold).toBeNull();
+        const meta = {
+            playAuditFlows: {
+                year: 200,
+                month: 1,
+                complete: false,
+                entries: { '2:gold': { nationId: 2, resource: 'gold', income: 0, paid: 0 } },
+            },
+        };
+        expect(projectCurrentSettlement(meta, 200, 1, 2)).toMatchObject({
+            gold: { income: 0, paid: 0 },
+            complete: false,
+        });
+        meta.playAuditFlows.entries['2:gold'].income = NaN;
+        expect(projectCurrentSettlement(meta, 200, 1, 2).gold).toBeNull();
+    });
+    it('reads old snapshots without inventing troop counts', () => {
+        const old = JSON.parse(JSON.stringify(nation(1)));
+        delete old.populations.human.crew;
+        expect(zAuditNation.parse(old).populations.human.crew).toBeNull();
     });
 });

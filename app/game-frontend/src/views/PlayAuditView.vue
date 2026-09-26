@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import AuditNationSeries from '../components/playAudit/AuditNationSeries.vue';
@@ -70,7 +70,23 @@ const year = ref(0);
 const month = ref(1);
 const fromYear = ref(0);
 const fromMonth = ref(1);
-const resolution = ref<'month' | 'halfYear'>('halfYear');
+const resolution = ref<'month' | 'halfYear'>('month');
+const inspector = ref<HTMLElement | null>(null);
+const nationSearch = ref('');
+const visibleNations = computed(
+    () => nations.value?.items.filter((item) => item.name.includes(nationSearch.value)) ?? []
+);
+const chooseNation = (id: string) =>
+    router.push({
+        query: {
+            ...route.query,
+            nation: id || undefined,
+            general: undefined,
+            cityRecord: undefined,
+            decision: undefined,
+        },
+    });
+
 let generation = 0;
 const numeric = (value: unknown, fallback: number) =>
     typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : fallback;
@@ -96,6 +112,13 @@ const selectedCity = computed(() =>
         ? Number(route.query.cityRecord)
         : null
 );
+const focusInspector = async () => {
+    if (!authorized.value || !coverage.value || (selectedGeneral.value === null && selectedCity.value === null)) return;
+    await nextTick();
+    inspector.value?.focus({ preventScroll: true });
+    if (window.innerWidth < 1200) inspector.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+watch([selectedGeneral, selectedCity], focusInspector);
 const selectGeneral = (id: number) =>
     router.push({ query: { ...route.query, general: String(id), cityRecord: undefined, decision: undefined } });
 const closeGeneral = () => router.push({ query: { ...route.query, general: undefined, decision: undefined } });
@@ -216,11 +239,11 @@ const readQuery = () => {
     month.value = numeric(route.query.month, coverage.value?.month ?? 1);
     const defaultStart = Math.max(
         (coverage.value?.startYear ?? year.value) * 12 + (coverage.value?.startMonth ?? 1) - 1,
-        year.value * 12 + month.value - 6
+        year.value * 12 + month.value - (tab.value === 'nations' ? 12 : 6)
     );
     fromYear.value = numeric(route.query.fromYear, Math.floor(defaultStart / 12));
     fromMonth.value = numeric(route.query.fromMonth, (defaultStart % 12) + 1);
-    resolution.value = route.query.resolution === 'month' ? 'month' : 'halfYear';
+    resolution.value = route.query.resolution === 'halfYear' ? 'halfYear' : 'month';
 };
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : '자료를 조회하지 못했습니다.');
 const load = async (append = false) => {
@@ -329,12 +352,26 @@ const apply = async () => {
         if (before === route.fullPath) await refresh();
     }
 };
+const recentPeriod = async (months: number) => {
+    if (!coverage.value) return;
+    year.value = coverage.value.year;
+    month.value = coverage.value.month;
+    const first = Math.max(
+        coverage.value.startYear * 12 + coverage.value.startMonth - 1,
+        year.value * 12 + month.value - months
+    );
+    fromYear.value = Math.floor(first / 12);
+    fromMonth.value = (first % 12) + 1;
+    moment.value = 'current';
+    await apply();
+};
 const refresh = async () => {
     const dataRequest = load();
     const request = generation;
     const results = await Promise.allSettled([dataRequest, loadNations()]);
     if (request !== generation) return;
     for (const response of results) if (response.status === 'rejected') error.value = message(response.reason);
+    await focusInspector();
 };
 const showCityGenerals = async (id: number) => {
     readQuery();
@@ -416,6 +453,10 @@ onMounted(async () => {
                     상태·정책 수집 시작: {{ coverage.collectionStart.year }}년 {{ coverage.collectionStart.month }}월 ·
                     {{ coverage.collectionStart.observedAt }}
                 </p>
+            </template>
+        </PanelCard>
+        <div v-if="authorized && coverage" class="audit-workspace">
+            <aside class="audit-sidebar" aria-label="감사 탐색">
                 <nav class="audit-navigation" aria-label="플레이 감사 메뉴">
                     <div class="menu-row" aria-label="감사 분류">
                         <RouterLink
@@ -440,336 +481,475 @@ onMounted(async () => {
                         >
                     </div>
                 </nav>
-                <form class="filters" @submit.prevent="apply">
-                    <label
-                        >국가<select class="legacy-sort-select" v-model="nationId">
-                            <option value="">
-                                {{
-                                    tab === 'nations' || tab === 'policies' || tab === 'diplomacy'
-                                        ? '국가 선택'
-                                        : '모든 국가'
-                                }}
-                            </option>
-                            <option v-if="tab !== 'diplomacy'" value="0">무소속</option>
-                            <option
-                                v-for="nation in nations?.items.filter((item) => item.id !== 0)"
-                                :key="nation.id"
-                                :value="String(nation.id)"
-                            >
-                                {{ nation.name }} (#{{ nation.id }})
-                            </option>
-                            <option
-                                v-if="
-                                    nationId &&
-                                    nationId !== '0' &&
-                                    !nations?.items.some((item) => String(item.id) === nationId)
-                                "
-                                :value="nationId"
-                            >
-                                국가 #{{ nationId }}
-                            </option>
-                        </select></label
-                    >
+                <section class="nation-browser" aria-label="국가 탐색">
+                    <h2>국가</h2>
+                    <input v-model="nationSearch" aria-label="국가 이름 검색" placeholder="국가 이름 검색" />
+                    <button class="legacy-button" :aria-pressed="!route.query.nation" @click="chooseNation('')">
+                        전체 국가
+                    </button>
                     <button
+                        v-for="nation in visibleNations"
+                        :key="nation.id"
+                        class="legacy-button nation-choice"
+                        :aria-pressed="String(route.query.nation) === String(nation.id)"
+                        @click="chooseNation(String(nation.id))"
+                    >
+                        {{ nation.name }} <small>#{{ nation.id }}</small>
+                    </button>
+                    <p v-if="!visibleNations.length">조건에 맞는 국가가 없습니다.</p>
+                    <button
+                        v-if="nations?.nextCursor != null"
                         class="legacy-button"
-                        v-if="nations?.nextCursor !== null && nations?.nextCursor !== undefined"
-                        type="button"
                         :disabled="loading"
                         @click="moreNations"
                     >
                         국가 더 불러오기
                     </button>
-                    <label
-                        >국가 목록·상태 기준<select class="legacy-sort-select" v-model="moment">
-                            <option value="current">현재</option>
-                            <option value="month">월말</option>
-                            <option value="final">최종 표본</option>
-                            <option value="initial">수집 시작 기준</option>
-                        </select></label
-                    >
-                    <label
-                        >{{ tab === 'nations' || tab === 'policies' || tab === 'diplomacy' ? '종료 연도' : '표본 연도'
-                        }}<input
-                            v-model.number="year"
-                            type="number"
-                            :min="coverage.startYear"
-                            :max="coverage.year"
-                            required
-                    /></label>
-                    <label
-                        >월<input
-                            v-model.number="month"
-                            type="number"
-                            :min="year === coverage.startYear ? coverage.startMonth : 1"
-                            :max="year === coverage.year ? coverage.month : 12"
-                            required
-                    /></label>
-                    <template
-                        v-if="
-                            (tab === 'nations' && moment !== 'final' && moment !== 'initial') ||
-                            tab === 'policies' ||
-                            tab === 'diplomacy'
-                        "
-                    >
+                </section>
+            </aside>
+            <section class="audit-content" aria-label="감사 분석">
+                <PanelCard title="조회 조건">
+                    <div v-if="tab === 'nations'" class="period-shortcuts" aria-label="빠른 조회 기간">
+                        <button
+                            v-for="months in [6, 12, 24]"
+                            :key="months"
+                            class="legacy-button"
+                            :disabled="loading"
+                            @click="recentPeriod(months)"
+                        >
+                            최근 {{ months }}개월
+                        </button>
+                    </div>
+                    <form class="filters" @submit.prevent="apply">
+                        <p class="selected-nation">{{ nationId ? nationName(Number(nationId)) : '전체 국가' }}</p>
                         <label
-                            >시작 연도<input
-                                v-model.number="fromYear"
+                            >국가 목록·상태 기준<select class="legacy-sort-select" v-model="moment">
+                                <option value="current">현재</option>
+                                <option value="month">월말</option>
+                                <option value="final">최종 표본</option>
+                                <option value="initial">수집 시작 기준</option>
+                            </select></label
+                        >
+                        <label
+                            >{{
+                                tab === 'nations' || tab === 'policies' || tab === 'diplomacy'
+                                    ? '종료 연도'
+                                    : '표본 연도'
+                            }}<input
+                                v-model.number="year"
                                 type="number"
                                 :min="coverage.startYear"
                                 :max="coverage.year"
                                 required
                         /></label>
                         <label
-                            >시작 월<input
-                                v-model.number="fromMonth"
+                            >월<input
+                                v-model.number="month"
                                 type="number"
-                                :min="fromYear === coverage.startYear ? coverage.startMonth : 1"
-                                :max="fromYear === coverage.year ? coverage.month : 12"
+                                :min="year === coverage.startYear ? coverage.startMonth : 1"
+                                :max="year === coverage.year ? coverage.month : 12"
                                 required
                         /></label>
-                        <label v-if="tab === 'nations'"
-                            >간격<select class="legacy-sort-select" v-model="resolution">
-                                <option value="halfYear">반기 (1~6월 / 7~12월)</option>
-                                <option value="month">매월</option>
+                        <template
+                            v-if="
+                                (tab === 'nations' && moment !== 'final' && moment !== 'initial') ||
+                                tab === 'policies' ||
+                                tab === 'diplomacy'
+                            "
+                        >
+                            <label
+                                >시작 연도<input
+                                    v-model.number="fromYear"
+                                    type="number"
+                                    :min="coverage.startYear"
+                                    :max="coverage.year"
+                                    required
+                            /></label>
+                            <label
+                                >시작 월<input
+                                    v-model.number="fromMonth"
+                                    type="number"
+                                    :min="fromYear === coverage.startYear ? coverage.startMonth : 1"
+                                    :max="fromYear === coverage.year ? coverage.month : 12"
+                                    required
+                            /></label>
+                            <label v-if="tab === 'nations'"
+                                >간격<select class="legacy-sort-select" v-model="resolution">
+                                    <option value="halfYear">반기 (1~6월 / 7~12월)</option>
+                                    <option value="month">매월</option>
+                                </select></label
+                            >
+                        </template>
+                        <label v-if="tab === 'diplomacy'"
+                            >상대 국가<select class="legacy-sort-select" v-model="otherNationId">
+                                <option value="">국가 선택</option>
+                                <option
+                                    v-for="nation in nations?.items.filter((item) => item.id > 0)"
+                                    :key="nation.id"
+                                    :value="String(nation.id)"
+                                >
+                                    {{ nation.name }} (#{{ nation.id }})
+                                </option>
+                                <option
+                                    v-if="
+                                        otherNationId &&
+                                        !nations?.items.some((item) => String(item.id) === otherNationId)
+                                    "
+                                    :value="otherNationId"
+                                >
+                                    국가 #{{ otherNationId }}
+                                </option>
                             </select></label
                         >
-                    </template>
-                    <label v-if="tab === 'diplomacy'"
-                        >상대 국가<select class="legacy-sort-select" v-model="otherNationId">
-                            <option value="">국가 선택</option>
-                            <option
-                                v-for="nation in nations?.items.filter((item) => item.id > 0)"
-                                :key="nation.id"
-                                :value="String(nation.id)"
+                        <template v-if="tab === 'generals'">
+                            <label
+                                >장수 이름<input v-model="generalName" maxlength="64" placeholder="이름 부분 검색"
+                            /></label>
+                            <label
+                                >장수 번호 정렬<select
+                                    class="legacy-sort-select"
+                                    v-model="generalOrder"
+                                    aria-label="장수 번호 정렬"
+                                >
+                                    <option value="asc">오름차순</option>
+                                    <option value="desc">내림차순</option>
+                                </select></label
                             >
-                                {{ nation.name }} (#{{ nation.id }})
-                            </option>
-                            <option
-                                v-if="
-                                    otherNationId && !nations?.items.some((item) => String(item.id) === otherNationId)
-                                "
-                                :value="otherNationId"
-                            >
-                                국가 #{{ otherNationId }}
-                            </option>
-                        </select></label
-                    >
-                    <template v-if="tab === 'generals'">
-                        <label
-                            >장수 이름<input v-model="generalName" maxlength="64" placeholder="이름 부분 검색"
-                        /></label>
-                        <label
-                            >장수 번호 정렬<select
-                                class="legacy-sort-select"
-                                v-model="generalOrder"
-                                aria-label="장수 번호 정렬"
-                            >
-                                <option value="asc">오름차순</option>
-                                <option value="desc">내림차순</option>
-                            </select></label
-                        >
-                        <label>도시 번호<input v-model="cityId" type="number" min="0" placeholder="모든 도시" /></label>
-                    </template>
-                    <button class="legacy-button" type="submit" :disabled="loading">조회</button>
-                </form>
-            </template>
-        </PanelCard>
-        <PanelCard
-            v-if="authorized && coverage"
-            :title="
-                tab === 'nations'
-                    ? '국가 시계열'
-                    : tab === 'generals'
-                      ? '전체 장수'
-                      : tab === 'policies'
-                        ? '정책 변경 이력'
-                        : tab === 'diplomacy'
-                          ? '외교 이력'
-                          : '도시 상태'
-            "
-        >
-            <p v-if="result">조회 시각 {{ result.asOf }} · tick {{ result.tick ?? '없음' }}</p>
-            <p v-if="(tab === 'nations' || tab === 'policies' || tab === 'diplomacy') && !nationId">
-                국가를 선택하고 조회해 주세요. 멸망한 국가는 해당 월말 기준의 국가 목록에서 선택할 수 있습니다.
-            </p>
-            <p v-if="tab === 'diplomacy' && !otherNationId">상대 국가를 선택하고 조회해 주세요.</p>
-            <AuditDiplomacyHistory
-                v-if="
-                    tab === 'diplomacy' &&
-                    route.query.tab === 'diplomacy' &&
-                    route.query.nation &&
-                    route.query.otherNation
-                "
-                v-bind="appliedDiplomacy"
-            />
-            <AuditPolicyHistory
-                v-if="tab === 'policies' && route.query.tab === 'policies' && route.query.nation"
-                v-bind="appliedPolicy"
-            />
-            <AuditNationSeries v-if="series && tab === 'nations'" :data="series" />
-            <AuditNationSnapshot v-if="nationSnapshot && tab === 'nations'" :data="nationSnapshot" />
-            <template v-if="generals && tab === 'generals'">
-                <p v-if="!generals.collected">선택한 시점의 표본이 없습니다.</p>
-                <p v-else-if="!generals.items.length">조건에 맞는 장수가 없습니다.</p>
-                <div v-else class="table-scroll" tabindex="0" aria-label="장수 목록">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>장수</th>
-                                <th>국가·위치</th>
-                                <th>금 / 쌀</th>
-                                <th>병력 / 훈련 / 사기</th>
-                                <th>능력·숙련</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="general in generals.items" :key="general.id">
-                                <th scope="row">
-                                    <button class="legacy-button" @click="selectGeneral(general.id)">
-                                        {{ general.name }} (#{{ general.id }})</button
-                                    ><br />{{
-                                        general.npcState < 2 ? '유저' : general.npcState === 5 ? '부대장 NPC' : 'NPC'
-                                    }}
-                                </th>
-                                <td>
-                                    {{ nationName(general.nationId) }}<br />도시 #{{ general.cityId }} · 부대 #{{
-                                        general.troopId
-                                    }}
-                                </td>
-                                <td>{{ format(general.gold) }} / {{ format(general.rice) }}</td>
-                                <td>
-                                    {{ format(general.crew) }} / {{ format(general.train) }} / {{ format(general.atmos)
-                                    }}<br />병종 #{{ general.crewTypeId }}
-                                </td>
-                                <td>
-                                    <details>
-                                        <summary>상세 보기</summary>
-                                        <p>
-                                            통솔 {{ general.stats.leadership }} · 무력 {{ general.stats.strength }} ·
-                                            지력 {{ general.stats.intelligence }}
-                                        </p>
-                                        <p>
-                                            경험 {{ format(general.experience) }} · 공헌
-                                            {{ format(general.dedication) }} · 관직 {{ general.officerLevel }}
-                                        </p>
-                                        <p>나이 {{ general.age }} · 부상 {{ general.injury }}</p>
-                                        <p>
-                                            숙련 (보 / 궁 / 기 / 귀 / 차):
-                                            {{ Object.values(general.dex).map(format).join(' / ') }}
-                                        </p>
-                                        <p>
-                                            성격 {{ general.role.personality ?? '없음' }} · 내정 특기
-                                            {{ general.role.specialDomestic ?? '없음' }} · 전투 특기
-                                            {{ general.role.specialWar ?? '없음' }}
-                                        </p>
-                                        <p>
-                                            장비 (말 / 무기 / 책 / 도구):
-                                            {{
-                                                Object.values(general.role.items)
-                                                    .map((item) => item ?? '없음')
-                                                    .join(' / ')
-                                            }}
-                                        </p>
-                                    </details>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </template>
-            <template v-if="cities && tab === 'cities'">
-                <p v-if="!cities.collected">선택한 시점의 표본이 없습니다.</p>
-                <p v-else-if="!cities.items.length">조건에 맞는 도시가 없습니다.</p>
-                <div v-else class="table-scroll" tabindex="0" aria-label="도시 목록">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>도시</th>
-                                <th>국가</th>
-                                <th>인구</th>
-                                <th>내정 (현재 / 최대)</th>
-                                <th>주둔 장수</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="city in cities.items" :key="city.id">
-                                <th scope="row">
-                                    <button class="legacy-button" @click="selectCity(city.id)">
-                                        {{ city.name }} (#{{ city.id }})
-                                    </button>
-                                </th>
-                                <td>{{ nationName(city.nationId) }}</td>
-                                <td>{{ format(city.population) }} / {{ format(city.populationMax) }}</td>
-                                <td>
-                                    <details>
-                                        <summary>내정 보기</summary>
-                                        <p>
-                                            농업 {{ city.agriculture }} / {{ city.agricultureMax }} · 상업
-                                            {{ city.commerce }} / {{ city.commerceMax }}
-                                        </p>
-                                        <p>
-                                            치안 {{ city.security }} / {{ city.securityMax }} · 성벽 {{ city.wall }} /
-                                            {{ city.wallMax }} · 수비 {{ city.defence }} / {{ city.defenceMax }}
-                                        </p>
-                                        <p>
-                                            민심 {{ city.trust }} · 보급 {{ city.supplyState }} · 전방
-                                            {{ city.frontState }} · 상태 {{ city.state }} · 규모 {{ city.level }}
-                                        </p>
-                                    </details>
-                                </td>
-                                <td>
-                                    <button
-                                        class="legacy-button"
-                                        type="button"
-                                        :disabled="loading"
-                                        @click="showCityGenerals(city.id)"
+                            <label
+                                >도시 번호<input v-model="cityId" type="number" min="0" placeholder="모든 도시"
+                            /></label>
+                        </template>
+                        <button class="legacy-button" type="submit" :disabled="loading">조회</button>
+                    </form>
+                </PanelCard>
+                <PanelCard
+                    v-if="authorized && coverage"
+                    :title="
+                        tab === 'nations'
+                            ? '국가 시계열'
+                            : tab === 'generals'
+                              ? '전체 장수'
+                              : tab === 'policies'
+                                ? '정책 변경 이력'
+                                : tab === 'diplomacy'
+                                  ? '외교 이력'
+                                  : '도시 상태'
+                    "
+                >
+                    <p v-if="result">조회 시각 {{ result.asOf }} · tick {{ result.tick ?? '없음' }}</p>
+                    <p v-if="(tab === 'nations' || tab === 'policies' || tab === 'diplomacy') && !nationId">
+                        왼쪽 국가 목록에서 국가를 선택해 주세요. 멸망한 국가는 해당 월말 기준의 국가 목록에서 선택할 수
+                        있습니다.
+                    </p>
+                    <p v-if="tab === 'diplomacy' && !otherNationId">상대 왼쪽 국가 목록에서 국가를 선택해 주세요.</p>
+                    <AuditDiplomacyHistory
+                        v-if="
+                            tab === 'diplomacy' &&
+                            route.query.tab === 'diplomacy' &&
+                            route.query.nation &&
+                            route.query.otherNation
+                        "
+                        v-bind="appliedDiplomacy"
+                    />
+                    <AuditPolicyHistory
+                        v-if="tab === 'policies' && route.query.tab === 'policies' && route.query.nation"
+                        v-bind="appliedPolicy"
+                    />
+                    <AuditNationSeries v-if="series && tab === 'nations'" :data="series" />
+                    <AuditNationSnapshot v-if="nationSnapshot && tab === 'nations'" :data="nationSnapshot" />
+                    <template v-if="generals && tab === 'generals'">
+                        <p v-if="!generals.collected">선택한 시점의 표본이 없습니다.</p>
+                        <p v-else-if="!generals.items.length">조건에 맞는 장수가 없습니다.</p>
+                        <div v-else class="table-scroll" tabindex="0" aria-label="장수 목록">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>장수</th>
+                                        <th>국가·위치</th>
+                                        <th>금 / 쌀</th>
+                                        <th>병력 / 훈련 / 사기</th>
+                                        <th>능력·숙련</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="general in generals.items"
+                                        :key="general.id"
+                                        :class="{ 'selected-row': selectedGeneral === general.id }"
                                     >
-                                        모든 국가의 주둔 장수
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </template>
-            <button
-                class="legacy-button"
-                v-if="result?.nextCursor != null"
-                type="button"
-                :disabled="loading"
-                @click="load(true)"
-            >
-                다음 50개 불러오기
-            </button>
-            <button class="legacy-button" v-if="error && authorized" type="button" :disabled="loading" @click="refresh">
-                다시 조회
-            </button>
-        </PanelCard>
-        <AuditGeneralDetail
-            v-if="authorized && selectedGeneral !== null"
-            :general-id="selectedGeneral"
-            :at="selectedAt"
-            @close="closeGeneral"
-        />
-        <AuditCityDetail
-            v-if="authorized && selectedCity !== null"
-            :city-id="selectedCity"
-            :at="selectedAt"
-            @close="closeCity"
-            @generals="showCityGenerals"
-        />
+                                        <th scope="row">
+                                            <button
+                                                class="legacy-button"
+                                                :aria-pressed="selectedGeneral === general.id"
+                                                @click="selectGeneral(general.id)"
+                                            >
+                                                {{ general.name }} (#{{ general.id }})</button
+                                            ><br />{{
+                                                general.npcState < 2
+                                                    ? '유저'
+                                                    : general.npcState === 5
+                                                      ? '부대장 NPC'
+                                                      : 'NPC'
+                                            }}
+                                        </th>
+                                        <td>
+                                            {{ nationName(general.nationId) }}<br />도시 #{{ general.cityId }} · 부대
+                                            #{{ general.troopId }}
+                                        </td>
+                                        <td>{{ format(general.gold) }} / {{ format(general.rice) }}</td>
+                                        <td>
+                                            {{ format(general.crew) }} / {{ format(general.train) }} /
+                                            {{ format(general.atmos) }}<br />병종 #{{ general.crewTypeId }}
+                                        </td>
+                                        <td>
+                                            <details>
+                                                <summary>상세 보기</summary>
+                                                <p>
+                                                    통솔 {{ general.stats.leadership }} · 무력
+                                                    {{ general.stats.strength }} · 지력 {{ general.stats.intelligence }}
+                                                </p>
+                                                <p>
+                                                    경험 {{ format(general.experience) }} · 공헌
+                                                    {{ format(general.dedication) }} · 관직 {{ general.officerLevel }}
+                                                </p>
+                                                <p>나이 {{ general.age }} · 부상 {{ general.injury }}</p>
+                                                <p>
+                                                    숙련 (보 / 궁 / 기 / 귀 / 차):
+                                                    {{ Object.values(general.dex).map(format).join(' / ') }}
+                                                </p>
+                                                <p>
+                                                    성격 {{ general.role.personality ?? '없음' }} · 내정 특기
+                                                    {{ general.role.specialDomestic ?? '없음' }} · 전투 특기
+                                                    {{ general.role.specialWar ?? '없음' }}
+                                                </p>
+                                                <p>
+                                                    장비 (말 / 무기 / 책 / 도구):
+                                                    {{
+                                                        Object.values(general.role.items)
+                                                            .map((item) => item ?? '없음')
+                                                            .join(' / ')
+                                                    }}
+                                                </p>
+                                            </details>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+                    <template v-if="cities && tab === 'cities'">
+                        <p v-if="!cities.collected">선택한 시점의 표본이 없습니다.</p>
+                        <p v-else-if="!cities.items.length">조건에 맞는 도시가 없습니다.</p>
+                        <div v-else class="table-scroll" tabindex="0" aria-label="도시 목록">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>도시</th>
+                                        <th>국가</th>
+                                        <th>인구</th>
+                                        <th>내정 (현재 / 최대)</th>
+                                        <th>주둔 장수</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="city in cities.items" :key="city.id">
+                                        <th scope="row">
+                                            <button class="legacy-button" @click="selectCity(city.id)">
+                                                {{ city.name }} (#{{ city.id }})
+                                            </button>
+                                        </th>
+                                        <td>{{ nationName(city.nationId) }}</td>
+                                        <td>{{ format(city.population) }} / {{ format(city.populationMax) }}</td>
+                                        <td>
+                                            <details>
+                                                <summary>내정 보기</summary>
+                                                <p>
+                                                    농업 {{ city.agriculture }} / {{ city.agricultureMax }} · 상업
+                                                    {{ city.commerce }} / {{ city.commerceMax }}
+                                                </p>
+                                                <p>
+                                                    치안 {{ city.security }} / {{ city.securityMax }} · 성벽
+                                                    {{ city.wall }} / {{ city.wallMax }} · 수비 {{ city.defence }} /
+                                                    {{ city.defenceMax }}
+                                                </p>
+                                                <p>
+                                                    민심 {{ city.trust }} · 보급 {{ city.supplyState }} · 전방
+                                                    {{ city.frontState }} · 상태 {{ city.state }} · 규모
+                                                    {{ city.level }}
+                                                </p>
+                                            </details>
+                                        </td>
+                                        <td>
+                                            <button
+                                                class="legacy-button"
+                                                type="button"
+                                                :disabled="loading"
+                                                @click="showCityGenerals(city.id)"
+                                            >
+                                                모든 국가의 주둔 장수
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+                    <button
+                        class="legacy-button"
+                        v-if="result?.nextCursor != null"
+                        type="button"
+                        :disabled="loading"
+                        @click="load(true)"
+                    >
+                        다음 50개 불러오기
+                    </button>
+                    <button
+                        class="legacy-button"
+                        v-if="error && authorized"
+                        type="button"
+                        :disabled="loading"
+                        @click="refresh"
+                    >
+                        다시 조회
+                    </button>
+                </PanelCard>
+            </section>
+            <aside ref="inspector" class="audit-inspector" tabindex="-1" aria-label="선택한 대상 상세">
+                <PanelCard v-if="selectedGeneral === null && selectedCity === null" title="대상 상세">
+                    <p>장수나 도시 이름을 누르면 이곳에 상세 정보가 표시됩니다.</p>
+                    <p v-if="nationId">선택 국가: {{ nationName(Number(nationId)) }}</p>
+                    <RouterLink class="legacy-button" :to="menuTarget('generals')">선택 국가 장수 보기</RouterLink>
+                </PanelCard>
+                <AuditGeneralDetail
+                    v-if="authorized && selectedGeneral !== null"
+                    :general-id="selectedGeneral"
+                    :at="selectedAt"
+                    @close="closeGeneral"
+                />
+                <AuditCityDetail
+                    v-if="authorized && selectedCity !== null"
+                    :city-id="selectedCity"
+                    :at="selectedAt"
+                    @close="closeCity"
+                    @generals="showCityGenerals"
+                />
+            </aside>
+        </div>
     </main>
 </template>
 
 <style scoped>
+.audit-workspace {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr) 340px;
+    gap: 16px;
+    align-items: start;
+}
+.audit-sidebar,
+.audit-content,
+.audit-inspector {
+    min-width: 0;
+}
+.audit-content {
+    display: grid;
+    gap: 12px;
+}
+.audit-sidebar,
+.audit-inspector {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+}
+.audit-sidebar {
+    padding: 10px;
+    border: 1px solid #536b60;
+    border-radius: 6px;
+    background: #14231c;
+}
+.audit-inspector:focus-visible {
+    outline: 2px solid #d1e6a1;
+    outline-offset: 2px;
+}
+.nation-browser {
+    display: grid;
+    gap: 6px;
+}
+.nation-browser h2 {
+    margin: 8px 0;
+    font-size: var(--sammo-font-size-emphasis);
+}
+.nation-browser input {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #000;
+    color: #fff;
+    border: 1px solid #91a39a;
+}
+.nation-choice {
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+.nation-browser [aria-pressed='true'],
+.selected-row {
+    background: #254e3c;
+    border-color: #b6d6c2;
+}
+.period-shortcuts {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.selected-nation {
+    flex-basis: 100%;
+    margin: 0;
+    font-weight: bold;
+}
+@media (min-width: 1200px) {
+    .audit-sidebar .menu-row {
+        flex-direction: column;
+    }
+}
+@media (max-width: 1199px) {
+    .audit-workspace {
+        grid-template-columns: 180px minmax(0, 1fr);
+    }
+    .audit-inspector {
+        grid-column: 2;
+        position: static;
+        max-height: none;
+    }
+}
+@media (max-width: 700px) {
+    .audit-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .audit-sidebar,
+    .audit-inspector {
+        position: static;
+        max-height: none;
+        grid-column: 1;
+    }
+    .nation-browser {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .nation-browser h2,
+    .nation-browser input {
+        grid-column: 1 / -1;
+    }
+}
+
 .audit-page {
-    max-width: 1200px;
+    max-width: 1920px;
     margin: 0 auto;
     padding: 8px;
     display: grid;
     gap: 12px;
 }
-.audit-page > :deep(.panel-card) {
+.audit-page :deep(.panel-card) {
     min-width: 0;
 }
 .audit-navigation {
