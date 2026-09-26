@@ -73,7 +73,12 @@ API는 허용 필드로 투영하고 UI는 기존 정책 한글 label을 재사�
 ### NPC 결정 조회 API와 화면
 
 `playAudit.decisionHistory/decisionDetail`은 같은 프로필 감사 권한·현재 기수 경계를 따른다.
-장수별 조회는 선택 월(미지정은 현재 월), 선택 phase와 `(tick,id)` 내림차순 cursor를 사용한다.
+장수별 조회는 선택 월과 phase, `(tick,id)` 내림차순 cursor를 사용한다. 월을 지정하지
+않으면 현재 기수·장수·phase의 가장 최근 결정이 있는 월을 인덱스로 1건 찾는다.
+명시한 과거 월은 비어 있어도 다른 월로 바꾸지 않는다. API는 실제 조회 `month`,
+현재 게임 `currentMonth`, `selection`을 구분하며 더보기는 최초 조회 월에 고정한다.
+화면에는 턴 실행 후 저장되는 시점, 최근 기록 월/현재 월, 이전·다음 월과 최근 결정
+조회 버튼을 제공한다. 월말 표본과 달리 NPC 결정은 매 턴의 game flush에 저장된다.
 목록은50건 기본/200건 상한으로 요약만 읽고, 상세는 명시 선택 시128 event chunk를
 기본1개/최대4개 읽는다. header의 stepCount로 다음 chunk를 판단해 추가 본문이나 COUNT를
 읽지 않는다. summary/step은 허용 필드만 투영하며 seed/raw metadata를 반환하지 않는다.
@@ -689,7 +694,6 @@ transaction의 `world_state.meta.playAuditFlows`를 읽는다. 국가·자원·�
 [responsive](https://www.chartjs.org/docs/latest/configuration/responsive.html) 계약을 사용한다.
 필요한 line 구성요소만 등록하고 resize·unmount를 처리하며 null 구간을 연결하지 않는다.
 차트와 수치 표는 같은 응답을 사용하고 집단/지표 전환은 추가 API를 호출하지 않는다.
-
 
 ## 2026-09-26 원래 목표 재점검 보완
 

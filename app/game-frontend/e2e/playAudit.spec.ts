@@ -147,7 +147,9 @@ const install = async (
                     case 'playAudit.decisionHistory':
                         return result({
                             ...world,
-                            month: input.month ?? { year: 190, month: 7 },
+                            month: input.month ?? { year: 190, month: 6 },
+                            currentMonth: { year: 190, month: 7 },
+                            selection: input.month ? 'MONTH' : 'LATEST',
                             coverage: 'PROCEDURES_ONLY',
                             items: [
                                 {
@@ -1608,3 +1610,42 @@ for (const width of [390, 1280]) {
         await page.screenshot({ path: testInfo.outputPath('audit-gap.png'), fullPage: true });
     });
 }
+
+for (const width of [390, 1280]) {
+    test(`NPC decision month navigation shows latest recorded month at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const requests = await install(page);
+        await page.goto(gamePath('/play-audit?tab=generals&general=1'));
+        await page.getByRole('button', { name: 'NPC 결정 기록 조회', exact: true }).click();
+        await expect(page.getByText('가장 최근 결정이 수집된 월입니다.', { exact: false })).toContainText('190년 7월');
+        const panel = page.getByRole('region', { name: 'NPC 결정 기록', exact: true });
+        await expect(panel).toContainText('190년 6월');
+        await panel.getByRole('button', { name: '다음 월', exact: true }).click();
+        await expect
+            .poll(() => requests.filter((r) => r.operation === 'playAudit.decisionHistory').at(-1)?.input)
+            .toMatchObject({ month: { year: 190, month: 7 } });
+        await expect(panel.getByRole('button', { name: '다음 월', exact: true })).toBeDisabled();
+        await panel.getByRole('button', { name: '이전 월', exact: true }).click();
+        await expect
+            .poll(() => requests.filter((r) => r.operation === 'playAudit.decisionHistory').at(-1)?.input)
+            .toMatchObject({ month: { year: 190, month: 6 } });
+        await panel.getByRole('button', { name: '최근 결정 조회', exact: true }).click();
+        await expect(page.getByText('가장 최근 결정이 수집된 월입니다.', { exact: false })).toBeVisible();
+        expect(requests.filter((r) => r.operation === 'playAudit.decisionHistory').at(-1)?.input).not.toHaveProperty(
+            'month'
+        );
+        await capture(page, `npc-decision-latest-${width}`);
+    });
+}
+
+test('direct decision URL keeps the history panel open when changing month', async ({ page }) => {
+    await install(page);
+    await page.goto(gamePath(`/play-audit?tab=generals&general=1&decision=${decision.id}`));
+    const panel = page.getByRole('region', { name: 'NPC 결정 기록', exact: true });
+    await expect(panel.getByRole('list', { name: '판단 절차' })).toBeVisible();
+    await panel.getByRole('button', { name: '이전 월', exact: true }).click();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('region', { name: '선택 결정 상세' })).toHaveCount(0);
+    await panel.getByRole('button', { name: '최근 결정 조회', exact: true }).click();
+    await expect(panel).toContainText('가장 최근 결정이 수집된 월입니다.');
+});

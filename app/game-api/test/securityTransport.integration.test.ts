@@ -2352,6 +2352,33 @@ integration('game API security over HTTP transport', () => {
                 ],
             });
             const decisionInput = { generalId: decisionGeneral, month: { year: 190, month: 1 }, limit: 1 };
+            // 월 경계 뒤 장수의 첫 턴 전에도 직전 결정에 도달할 수 있어야 한다.
+            expect((await get('decisionHistory', admin, { generalId: decisionGeneral })).body).toMatchObject({
+                result: {
+                    data: {
+                        selection: 'LATEST',
+                        month: { year: 190, month: 1 },
+                        currentMonth: { year: 190, month: 2 },
+                        items: expect.arrayContaining([expect.objectContaining({ id: decisionIds[0] })]),
+                    },
+                },
+            });
+            expect(
+                (await get('decisionHistory', admin, { generalId: decisionGeneral, month: { year: 190, month: 2 } }))
+                    .body
+            ).toMatchObject({
+                result: { data: { selection: 'MONTH', month: { year: 190, month: 2 }, items: [] } },
+            });
+            expect(
+                (await get('decisionHistory', admin, { generalId: decisionGeneral, phase: 'nation' })).body
+            ).toMatchObject({
+                result: {
+                    data: { selection: 'LATEST', month: { year: 190, month: 1 }, items: [{ id: decisionIds[1] }] },
+                },
+            });
+            expect((await get('decisionHistory', admin, { generalId: 2147483647 })).body).toMatchObject({
+                result: { data: { selection: 'LATEST', month: { year: 190, month: 2 }, items: [] } },
+            });
             expect((await get('decisionHistory', undefined, decisionInput)).status).toBe(401);
             expect((await get('decisionHistory', await token(['admin']), decisionInput)).status).toBe(403);
             const decisionList = await get('decisionHistory', admin, decisionInput);

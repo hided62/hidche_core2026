@@ -15,6 +15,12 @@ const detail = ref<Detail | null>(null);
 const error = ref('');
 const detailError = ref('');
 const loading = ref(false);
+const selectedMonth = ref<{ year: number; month: number }>();
+const ordinal = (value: { year: number; month: number }) => value.year * 12 + value.month - 1;
+const canPrevious = computed(
+    () => history.value && ordinal(history.value.month) > history.value.startYear * 12 + history.value.startMonth - 1
+);
+const canNext = computed(() => history.value && ordinal(history.value.month) < ordinal(history.value.currentMonth));
 const detailLoading = ref(false);
 let generation = 0;
 let detailGeneration = 0;
@@ -41,13 +47,14 @@ const load = async (more = false) => {
     try {
         const response = await trpc.playAudit.decisionHistory.query({
             generalId: props.generalId,
-            month: more ? (history.value?.month ?? props.month) : props.month,
+            month: more ? (history.value?.month ?? selectedMonth.value) : selectedMonth.value,
             limit: 50,
             cursor: more ? (history.value?.nextCursor ?? undefined) : undefined,
         });
         if (request === generation)
             history.value = {
                 ...response,
+                selection: more ? (history.value?.selection ?? response.selection) : response.selection,
                 items: more ? [...(history.value?.items ?? []), ...response.items] : response.items,
             };
     } catch (cause) {
@@ -55,6 +62,18 @@ const load = async (more = false) => {
     } finally {
         if (request === generation) loading.value = false;
     }
+};
+const changeMonth = (offset: number) => {
+    if (!history.value || loading.value) return;
+    const value = ordinal(history.value.month) + offset;
+    selectedMonth.value = { year: Math.floor(value / 12), month: (value % 12) + 1 };
+    void select(null);
+    void load();
+};
+const latest = () => {
+    selectedMonth.value = undefined;
+    void select(null);
+    void load();
 };
 const loadDetail = async (more = false) => {
     if (!selected.value || detailLoading.value) return;
@@ -130,6 +149,7 @@ watch(
     [() => props.generalId, () => props.month?.year, () => props.month?.month],
     () => {
         generation++;
+        selectedMonth.value = props.month;
         history.value = null;
         error.value = '';
         loading.value = false;
@@ -156,6 +176,16 @@ watch(
             {{ history ? `${history.month.year}년 ${history.month.month}월` : '선택 월' }} · NPC·유저 자동턴의 개인/수뇌
             판단
         </p>
+        <p v-if="history?.selection === 'LATEST' && history.items.length">
+            가장 최근 결정이 수집된 월입니다. 현재 게임은 {{ history.currentMonth.year }}년
+            {{ history.currentMonth.month }}월입니다.
+        </p>
+        <p>각 장수의 턴 실행 후 저장됩니다. 월이 바뀌어도 해당 장수의 다음 턴 전까지는 이전 월 기록이 최신입니다.</p>
+        <nav aria-label="결정 조회 월">
+            <button class="legacy-button" :disabled="loading || !canPrevious" @click="changeMonth(-1)">이전 월</button>
+            <button class="legacy-button" :disabled="loading || !canNext" @click="changeMonth(1)">다음 월</button>
+            <button class="legacy-button" :disabled="loading" @click="latest">최근 결정 조회</button>
+        </nav>
         <p>
             절차와 선택 결과를 수집한 기록입니다. 후보 내부 조건 전체는 아직 포함되지 않으며, 기록이 없다고 판단 시도가
             없었다는 뜻은 아닙니다.
@@ -164,7 +194,13 @@ watch(
         <p v-if="error" role="alert">
             {{ error }} <button class="legacy-button" @click="load()">결정 목록 다시 조회</button>
         </p>
-        <p v-if="history && !history.items.length">이 월에 수집된 결정 기록이 없습니다.</p>
+        <p v-if="history && !history.items.length">
+            {{
+                history.selection === 'LATEST'
+                    ? '이 장수의 현재 기수에 수집된 결정 기록이 없습니다.'
+                    : '선택한 월에 수집된 결정 기록이 없습니다. 최근 결정 조회로 마지막 기록을 확인할 수 있습니다.'
+            }}
+        </p>
         <div v-if="history?.items.length" class="table-scroll">
             <table>
                 <thead>

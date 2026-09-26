@@ -22,6 +22,15 @@ const showLogs = ref(false);
 const route = useRoute();
 const router = useRouter();
 const showDecisions = ref(false);
+// 상세 URL로 들어온 경우에도 목록의 열림 상태를 유지한다. 월 이동으로
+// decision query만 지웠을 때 전체 결정 패널이 닫히면 안 된다.
+watch(
+    () => route.query.decision,
+    (decision) => {
+        if (typeof decision === 'string') showDecisions.value = true;
+    },
+    { immediate: true }
+);
 const decisionsOpen = computed(() => showDecisions.value || typeof route.query.decision === 'string');
 const toggleDecisions = async () => {
     if (decisionsOpen.value) {

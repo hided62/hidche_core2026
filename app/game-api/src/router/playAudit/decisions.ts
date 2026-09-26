@@ -173,7 +173,35 @@ export const decisionHistory = auditProcedure
     .query(({ ctx, input }) =>
         readAudit(ctx, async (tx) => {
             const world = await readAuditWorld(tx);
-            const month = input.month ?? { year: world.year, month: world.month };
+            // 장수 턴은 월 경계와 동시에 실행되지 않는다. 현재 상태에서는 마지막으로
+            // 실제 결정이 저장된 월을 열고, 명시한 과거 월은 빈 월이어도 그대로 보존한다.
+            const latest =
+                !input.month && world.serverId
+                    ? await tx.playAuditDecision.findFirst({
+                          where: {
+                              serverId: world.serverId,
+                              generalId: input.generalId,
+                              phase: input.phase,
+                              AND: [
+                                  {
+                                      OR: [
+                                          { year: { gt: world.startYear } },
+                                          { year: world.startYear, month: { gte: world.startMonth } },
+                                      ],
+                                  },
+                                  {
+                                      OR: [
+                                          { year: { lt: world.year } },
+                                          { year: world.year, month: { lte: world.month } },
+                                      ],
+                                  },
+                              ],
+                          },
+                          orderBy: [{ year: 'desc' }, { month: 'desc' }, { tick: 'desc' }, { id: 'desc' }],
+                          select: { year: true, month: true },
+                      })
+                    : null;
+            const month = input.month ?? latest ?? { year: world.year, month: world.month };
             const ordinal = monthOrdinal(month.year, month.month);
             if (
                 ordinal < monthOrdinal(world.startYear, world.startMonth) ||
@@ -206,6 +234,8 @@ export const decisionHistory = auditProcedure
             return {
                 ...world,
                 month,
+                currentMonth: { year: world.year, month: world.month },
+                selection: input.month ? ('MONTH' as const) : ('LATEST' as const),
                 coverage: world.serverId ? ('PROCEDURES_ONLY' as const) : ('IDENTITY_MISSING' as const),
                 items: rows.slice(0, input.limit).map(project),
                 nextCursor: rows.length > input.limit && last ? { tick: last.tick.toString(), id: last.id } : null,

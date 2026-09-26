@@ -96,6 +96,40 @@ Gateway의 새 진입/권한 catalog도 사용하려면 같은 commit의 Gateway
 화면의 0/null/미수집·부분 표시에 따라 해석한다. 감사 migration을 적용했다고 과거 NPC
 결정이나 자원 이동이 자동으로 채워지는 것은 아니다.
 
+## NPC 결정 시점과 실제 시나리오 검증
+
+NPC 결정은 해당 장수의 개인·수뇌 AI 실행을 관측하고 게임 상태 flush와 함께 저장한다.
+월말 표본을 기다리지 않는다. 월 경계와 장수별 턴 시각은 다르므로 새 월에 해당 장수의
+턴이 아직 오지 않았다면 이전 월 기록이 최신이다. 현재 장수에서 **NPC 결정 기록 조회**를
+열면 가장 최근 기록 월을 표시한다. 명시적으로 선택한 과거 월과 **이전 월/다음 월**은
+그 월만 조회하고, **최근 결정 조회**는 다시 최신 기록 월을 찾는다. 빈 목록은 선택 월에
+행이 없다는 뜻이며, 수집 장애 여부는 감사 화면의 이력 누락 표시와 함께 확인한다.
+일반 장수의 개인 판단과 수뇌 직책 NPC의 수뇌 판단을 구분하며 AI를 실행하지 않은
+수동 명령에는 AI 결정 기록을 만들지 않는다.
+
+재현 도구는 `tools/integration-tests/scripts/play-audit-npc-lifecycle.ts`다. 격리된 개발
+DB/Redis와 새 `_npc_audit_lifecycle` suffix schema를 준비하고 정식 migration을 적용한다.
+`DATABASE_URL`은 환경에서 전달하며 command line이나 artifact에 출력하지 않는다.
+기존 world가 있으면 기본 실행을 거부한다. 완료한 전용 fixture는 같은 명령에 `--verify`를
+붙여 게임을 변경하지 않고 저장 결과만 다시 검증할 수 있다. 초기화나 기존 시즌 삭제
+도구로 사용하지 않는다.
+
+```sh
+pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+pnpm exec tsx tools/integration-tests/scripts/play-audit-npc-lifecycle.ts
+pnpm exec playwright test --config tools/frontend-legacy-parity/play-audit-npc.playwright.config.mjs
+```
+
+시나리오 2601을 180년부터 실제 production handler·fenced DB flush로 실행하며,
+183년 이후 공백지 점령 완료와 n/m NPC 개인·수뇌 결정/chunk를 검증한다. 시간만 manual
+clock으로 가속하고 결정·도시 소유를 직접 생성하지 않는다. `maxGenerals:20`의 작은
+flush batch로 감사의 시간 제한을 보존한다. 브라우저는 같은 DB의 실제 API를 사용하며
+결정 응답을 mock하지 않는다. 기본 port는 frontend15301/API15302이며 각각
+`NPC_AUDIT_FRONTEND_PORT`, `NPC_AUDIT_API_PORT`로 격리한다. API 실행에는 개발용
+`REDIS_URL`, `GAME_TOKEN_SECRET`, `GAME_IMAGE_UPLOAD_SECRET_FILE`도 필요하다.
+결과 JSON은 `test-results/npc-audit-lifecycle/`, 화면·geometry는
+`test-results/npc-audit-browser/`에 보존한다. 세션 token은 artifact에 남기지 않는다.
+
 ## 보존과 미완성 범위
 
 - 현재 기수 자료만 제공한다. RESET이 새 serverId를 활성화하면 이전 기수 조회를
