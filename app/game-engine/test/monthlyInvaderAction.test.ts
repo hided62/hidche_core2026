@@ -1,3 +1,4 @@
+import { initializeAuditPolicies } from '../src/playAudit/policy.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
 
@@ -184,6 +185,31 @@ describe('invader monthly actions', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('preserves new nation audit heads through ruler initialization and restart', async () => {
+        const harness = buildHarness();
+        const { world, environment } = harness;
+        world.updateWorldMeta({ serverId: 'new-nation-audit' });
+        initializeAuditPolicies(world);
+        const handler = createRaiseInvaderHandler({
+            getWorld: () => world,
+            reservedTurns: harness.reservedTurns,
+            env: buildCommandEnv(scenarioConfig),
+        });
+        await handler([10, 150, 100, 20], environment, event);
+        const created = world.peekDirtyState().createdNations;
+        expect(created.length).toBeGreaterThan(0);
+        for (const nation of created) {
+            expect(Object.keys(nation.meta._playAuditPolicy ?? {})).toHaveLength(4);
+        }
+        world.consumeDirtyState();
+        initializeAuditPolicies(world);
+        expect(
+            world
+                .peekDirtyState()
+                .pendingAuditPolicies.filter((policy) => created.some((nation) => nation.id === policy.nationId))
+        ).toEqual([]);
     });
 
     it('creates the invader nation, generals, diplomacy, follow-up events, and city state', async () => {

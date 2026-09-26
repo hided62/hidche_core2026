@@ -1,9 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient } from '../src/context.js';
-import { loadClockAdminStatus, loadClockReadiness } from '../src/services/clockReadiness.js';
+import { loadClockAdminStatus, loadClockReadiness, loadProfileReadiness } from '../src/services/clockReadiness.js';
 
 describe('clock reconciliation readiness', () => {
+    it.each([false, true])('requires the profile daemon lease to be ready: %s', async (ready) => {
+        const db = {
+            worldState: {
+                findFirst: vi.fn(async () => ({ clockPhase: 'PREOPEN', clockRevision: 1n, deadlineGeneration: 0n })),
+            },
+            clockProjectionOutbox: { count: vi.fn(async () => 0) },
+            $queryRaw: vi.fn(async () => [{ ready }]),
+        } as unknown as DatabaseClient;
+        await expect(loadProfileReadiness(db, 'che:default')).resolves.toMatchObject({
+            ok: ready,
+            daemonReady: ready,
+            clock: { reconciliationComplete: true, gameplayEnabled: false },
+        });
+    });
+
     it('fails closed when the reconciliation schema is not available', async () => {
         const db = {} as DatabaseClient;
         await expect(loadClockReadiness(db)).resolves.toEqual({

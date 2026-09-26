@@ -1,3 +1,4 @@
+import { initializeAuditPolicies } from '../src/playAudit/policy.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     parseScenarioGeneralPoolCandidate,
@@ -228,6 +229,21 @@ describe('RaiseNPCNation monthly action', () => {
         vi.restoreAllMocks();
     });
 
+    it('preserves new nation audit heads through ruler initialization and restart', async () => {
+        const { world, handler, environment } = buildHarness();
+        world.updateWorldMeta({ serverId: 'new-nation-audit' });
+        initializeAuditPolicies(world);
+        await handler([], environment, event);
+        const created = world.peekDirtyState().createdNations;
+        expect(created.length).toBeGreaterThan(0);
+        for (const nation of created) {
+            expect(Object.keys(nation.meta._playAuditPolicy ?? {})).toHaveLength(4);
+        }
+        world.consumeDirtyState();
+        initializeAuditPolicies(world);
+        expect(world.peekDirtyState().pendingAuditPolicies).toEqual([]);
+    });
+
     it('uses a U30 subordinate name/dex/special while preserving RaiseNPCNation random stats', async () => {
         const info = {
             generalName: '부장후보',
@@ -337,6 +353,32 @@ describe('RaiseNPCNation monthly action', () => {
             "id": 2,
             "level": 2,
             "meta": {
+              "_playAuditPolicy": {
+                "DEFENCE": {
+                  "hash": "ffb1e0b6bbf1680af65800cfc1b166afbd68149217e2b039c95b4ce4db0d20aa",
+                  "id": "6329bea23c4db57a8c6bfb7d4c81e9f5a3e59171c883e9d22c5ba97dfb7d486c",
+                  "revision": 1,
+                  "serverId": "fixture-server",
+                },
+                "NPC_GENERAL_PRIORITY": {
+                  "hash": "0a6202f188859cb41dee0f08388e9da21babf6f4b569f7b18abf0453caaa1062",
+                  "id": "28bc6ff38cc5b1b250f6a738a6745b5d581badf34bbcaf191e5e8710c17263ec",
+                  "revision": 1,
+                  "serverId": "fixture-server",
+                },
+                "NPC_NATION_PRIORITY": {
+                  "hash": "0a6202f188859cb41dee0f08388e9da21babf6f4b569f7b18abf0453caaa1062",
+                  "id": "feefa645ba10e0fb8c2c78e0c189f9effe8a1c3d2adf4c0d866300d4123f3748",
+                  "revision": 1,
+                  "serverId": "fixture-server",
+                },
+                "NPC_VALUES": {
+                  "hash": "1906fb445a401a46f1279dbba3f3d572e9b213daf6c0f0d31cf8beeee3c77104",
+                  "id": "c6fe336ffe5870cc90e2abab797d050810400404f7ad51b3ceea987b21eb3baa",
+                  "revision": 1,
+                  "serverId": "fixture-server",
+                },
+              },
               "bill": 100,
               "can_국기변경": 1,
               "gennum": 1,

@@ -396,7 +396,8 @@ export const createRaiseInvaderHandler = (options: {
             }
             world.updateNation(nationId, {
                 chiefGeneralId: ruler.id,
-                meta: { ...nation.meta, gennum: npcEachCount },
+                // addNation이 붙인 감사 이력 head를 오래된 생성 객체로 덮어쓰지 않는다.
+                meta: { ...world.getNationById(nationId)!.meta, gennum: npcEachCount },
             });
             for (const officerLevel of [12, 11, 10, 9]) {
                 options.reservedTurns.ensureNationTurns(nationId, officerLevel);

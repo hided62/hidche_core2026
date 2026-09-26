@@ -1,4 +1,5 @@
 import { parseGameClockPhase } from '@sammo-ts/common';
+import { GamePrisma } from '@sammo-ts/infra';
 
 import type { DatabaseClient } from '../context.js';
 
@@ -89,4 +90,21 @@ export const loadClockAdminStatus = async (db: DatabaseClient) => {
             })),
         },
     };
+};
+
+/** API 기동과 별개로 데몬의 초기 감사 저장 및 clock 복구가 끝나야 배포 준비 완료다. */
+export const loadProfileReadiness = async (db: DatabaseClient, profileName: string) => {
+    const [clock, leases] = await Promise.all([
+        loadClockReadiness(db),
+        db.$queryRaw<Array<{ ready: boolean }>>(GamePrisma.sql`
+            SELECT EXISTS (
+                SELECT 1 FROM turn_daemon_lease
+                WHERE profile = ${profileName}
+                  AND clock_ready = TRUE
+                  AND lease_until > (clock_timestamp() AT TIME ZONE 'UTC')
+            ) AS ready
+        `),
+    ]);
+    const daemonReady = leases[0]?.ready === true;
+    return { ok: clock.reconciliationComplete && daemonReady, clock, daemonReady };
 };

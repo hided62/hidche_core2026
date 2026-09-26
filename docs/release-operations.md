@@ -193,7 +193,9 @@ Gateway process 전환이 진행 중인 profile migration·seed 실행자를 중
 3. profile game schema에 `prisma migrate deploy`를 실행합니다.
 4. Scenario seed를 실행하지 않고 API, daemon과 worker를 시작하고 새 정적 frontend
    artifact를 원자적으로 활성화합니다.
-5. HTTP와 모든 PM2 role의 readiness가 확인된 뒤 build commit을 게시합니다.
+5. HTTP와 모든 PM2 role의 readiness가 확인된 뒤 build commit을 게시합니다. Game API
+   `/healthz`는 clock reconciliation과 profile의 유효한 `clock_ready=true` 데몬 lease를
+   함께 검사하므로 감사 초기화가 실패한 API 기동만으로 배포 성공을 게시하지 않습니다.
 
 이 모드는 현재 scenario, status와 인게임 DB를 유지합니다. Migration이
 데이터를 변환할 수 있으므로 대상 migration의 운영 데이터 영향은 배포 전에

@@ -235,6 +235,64 @@ integration('initial audit durability before runtime readiness', () => {
         ).rejects.toMatchObject({ code: 'P2002' });
     }, 30_000);
 
+    it('restores missing policy heads from immutable history before restart without rewriting history', async () => {
+        await runtime?.close();
+        runtime = undefined;
+        const policies = await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } });
+        const nation = await db.nation.findUniqueOrThrow({ where: { id: 91990 } });
+        const { _playAuditPolicy: heads, ...meta } = asRecord(nation.meta);
+        await db.nation.update({ where: { id: nation.id }, data: { meta: meta as GamePrisma.InputJsonObject } });
+        runtime = await start();
+        expect(
+            asRecord((await db.nation.findUniqueOrThrow({ where: { id: nation.id } })).meta)._playAuditPolicy
+        ).toEqual(heads);
+        expect(await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } })).toEqual(policies);
+        expect((await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).clockReady).toBe(true);
+        await runtime.close();
+        runtime = undefined;
+        runtime = await start();
+        expect(await db.playAuditPolicy.findMany({ where: { serverId }, orderBy: { id: 'asc' } })).toEqual(policies);
+    }, 30_000);
+
+    it('links an observed policy gap to the recovered head and keeps it idempotent', async () => {
+        await runtime?.close();
+        runtime = undefined;
+        const nation = await db.nation.findUniqueOrThrow({ where: { id: 91990 } });
+        const meta = asRecord(nation.meta);
+        const heads = asRecord(meta._playAuditPolicy);
+        const previous = asRecord(heads.DEFENCE);
+        const { DEFENCE: _lost, ...remainingHeads } = heads;
+        await db.nation.update({
+            where: { id: nation.id },
+            data: {
+                meta: { ...meta, scout: 1, _playAuditPolicy: remainingHeads } as GamePrisma.InputJsonObject,
+            },
+        });
+        runtime = await start();
+        const rows = await db.playAuditPolicy.findMany({
+            where: { serverId, nationId: nation.id, area: 'DEFENCE' },
+            orderBy: { revision: 'asc' },
+        });
+        expect(rows.at(-1)).toMatchObject({
+            source: 'OBSERVED_GAP',
+            previousId: previous.id,
+            revision: Number(previous.revision) + 1,
+            actor: null,
+            before: null,
+            after: { scout: 1 },
+        });
+        expect(asRecord((await db.nation.findUniqueOrThrow({ where: { id: nation.id } })).meta).scout).toBe(1);
+        await runtime.close();
+        runtime = undefined;
+        runtime = await start();
+        expect(
+            await db.playAuditPolicy.findMany({
+                where: { serverId, nationId: nation.id, area: 'DEFENCE' },
+                orderBy: { revision: 'asc' },
+            })
+        ).toEqual(rows);
+    }, 30_000);
+
     it('captures newly observed policies after durable clock recovery without replacing the initial sample', async () => {
         await runtime?.close();
         runtime = undefined;

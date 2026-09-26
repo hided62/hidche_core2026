@@ -1,7 +1,7 @@
 import { persistAuditDecisions } from '../playAudit/decisionPersistence.js';
 import { persistAuditDiplomacyEvents } from '@sammo-ts/infra';
 import { hasAuditDocumentBaseline, persistAuditDocumentBaseline } from '../playAudit/documentBaseline.js';
-import { persistAuditPolicies } from '../playAudit/policyPersistence.js';
+import { persistAuditPolicies, restoreMissingAuditPolicyHeads } from '../playAudit/policyPersistence.js';
 import { prunePreviousAuditBatch, type AuditRetentionResult } from '../playAudit/retention.js';
 import { persistAuditMonth } from '../playAudit/persistence.js';
 import { persistGeneralAccessScores, persistGeneralUpdates } from './generalBatchPersistence.js';
@@ -78,6 +78,7 @@ import { prepareRealtimeRecovery } from './prepareRealtimeRecovery.js';
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
     flushChanges(): Promise<void>;
+    restoreMissingAuditPolicyHeads(): Promise<boolean>;
     flushInitialAudit(observedAt: Date, force?: boolean): Promise<void>;
     takeCommittedReadModelChanges(): RealtimeReadModelChanges | null;
     takeCommittedReadModelChangeReceipt(): CommittedReadModelChangeReceipt | null;
@@ -2164,6 +2165,7 @@ export const createDatabaseTurnHooks = async (
         hooks,
         flushChanges,
         flushInitialAudit,
+        restoreMissingAuditPolicyHeads: () => restoreMissingAuditPolicyHeads(prisma, world),
         takeCommittedReadModelChanges: () => {
             return takeCommittedReceipt()?.changes ?? null;
         },

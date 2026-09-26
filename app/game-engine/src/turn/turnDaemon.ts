@@ -937,10 +937,11 @@ const createTurnDaemonRuntimeWithLease = async (
             await dbHooks.prepareRealtimeRecovery({ paused: await gatewayGate?.shouldPause() });
             // 복구된 clock에서 기준을 고정하고 readiness 공개 전에 원자적으로 저장한다.
             // 명령 없는 PREOPEN도 기록하며 input_event나 게임 RNG를 만들지 않는다.
+            const policyHeadsRestored = await dbHooks.restoreMissingAuditPolicyHeads();
             initializeAuditPolicies(world);
             const diplomacyInitialized = initializeAuditDiplomacy(world, new Date(clock.nowMs()));
             initializeAuditCollection(world, new Date(clock.nowMs()));
-            await dbHooks.flushInitialAudit(new Date(clock.nowMs()), diplomacyInitialized);
+            await dbHooks.flushInitialAudit(new Date(clock.nowMs()), diplomacyInitialized || policyHeadsRestored);
             dbHooks.takeCommittedReadModelChangeReceipt();
         } catch (error) {
             await Promise.allSettled([

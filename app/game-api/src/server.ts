@@ -51,7 +51,7 @@ import { ReadModelOutboxWorker } from './realtime/outboxWorker.js';
 import { DeferredGeneralAccessWorker } from './services/deferredGeneralAccess.js';
 import { WebPushOutboxWorker } from './services/webPushOutboxWorker.js';
 import { scopeHttpIdempotencyKey } from './requestId.js';
-import { loadClockReadiness } from './services/clockReadiness.js';
+import { loadProfileReadiness } from './services/clockReadiness.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -436,14 +436,13 @@ export const createGameApiServer = async () => {
     });
 
     app.get('/healthz', async (_request, reply) => {
-        const clock = await loadClockReadiness(postgres.prisma);
-        if (!clock.reconciliationComplete) reply.code(503);
+        const readiness = await loadProfileReadiness(postgres.prisma, config.profileName);
+        if (!readiness.ok) reply.code(503);
         return {
-            ok: clock.reconciliationComplete,
+            ...readiness,
             profile: config.profileName,
             postgresPool: postgres.getPoolStats(),
             accountIconReconciliation: accountIconResetReconciler.getHealth(),
-            clock,
         };
     });
 

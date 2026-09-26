@@ -395,7 +395,8 @@ export const createRaiseNpcNationHandler = (options: {
             }
             world.updateNation(nationId, {
                 chiefGeneralId: ruler.id,
-                meta: { ...nation.meta, gennum: 1 + subordinateCandidates.length },
+                // addNation이 붙인 감사 이력 head를 오래된 생성 객체로 덮어쓰지 않는다.
+                meta: { ...world.getNationById(nationId)!.meta, gennum: 1 + subordinateCandidates.length },
             });
             options.reservedTurns.ensureNationTurns(nationId, 12);
             options.reservedTurns.ensureNationTurns(nationId, 11);
