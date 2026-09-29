@@ -2,10 +2,10 @@
 
 ## 문서 상태와 사용법
 
-**설계 기준: 2026-09-16. 제품 기능은 부분 구현 상태다.** 이 문서는 관리자 플레이
-감사의 구현 goal과 완료 판정 기준이다. 문서 작성 완료는 기능 구현 완료가 아니다.
-후속 작업은 아래 요구사항 ID, 단계와 증거 표를 유지하며 진행 상태를 갱신한다.
-현재 구현 진행과 수집 지점은 [구현 inventory](play-audit-implementation.md)에 기록한다.
+이 문서는 플레이 감사의 구조·현재 구현 경계·남은 요구사항을 관리하는 기준 문서다.
+사용 방법과 DB 적용은 [운영 안내](../play-audit-operations.md)를 따른다.
+날짜별 구현·측정 기록은 Git 이력과 상위 작업공간의 `report/`에서 확인한다.
+아래 요구사항은 전체 목표이며 일부 구현만으로 완료를 의미하지 않는다.
 
 사용자 결정으로 고정한 범위:
 
@@ -27,34 +27,76 @@
 
 ## 1. 현재 기반과 추가 작업
 
-다음은 Core `f4aabec1fa13a0ae136b8ba96e8aa5dfa9a8e79e`의 정적 조사 결과다.
-Ref 조사 checkout은 `ng_compare@2239ff667b3e841c9fed69b53539437a79203806`,
-제품 기준선은 `devel@6c7f774fa1d49774a5924780516c88b8888cc1d7`이다.
-후속 구현 시작 시 현재 소스와 다시 대조한다. 이 표는 live DB/runtime 검증이 아니다.
+현재 소스의 책임은 다음과 같다. 경로는 Core root 기준이며 운영 적용 여부와는 별개다.
 
-| 기반        | 확인한 source와 의미                                                               | 감사 구현에서 보완할 점                                                                          |
-| ----------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 관리자 조치 | `app/gateway-api/src/adminAudit.ts`, `AdminAuditEvent`                             | 기존 관리자 조치 원장은 유지하고 게임 플레이 기록과 구분                                         |
-| 입력 원장   | `app/game-api/src/inputEventBoundary.ts`, `InputEvent`                             | API 요청 payload는 식별용 digest인 경로가 있음. 이를 실제 입력 내용으로 간주하지 않음            |
-| 변경 알림   | `packages/common/src/realtime/changeJournal.ts`                                    | entity/domain revision용이며 필드별 전후 값이나 원인 기록이 아님                                 |
-| 턴 저장     | `app/game-engine/src/turn/inMemoryWorld.ts`, `databaseHooks.ts`                    | dirty state와 같은 transaction을 재사용하되 최종 dirty 상태만으로 개별 사건 순서를 복원하지 않음 |
-| 월별 연감   | `yearbookHandler.ts`, `YearbookHistory`                                            | 기존 지도·국가·로그와 겹치는 값은 재사용. 상세 장수·세율 적용 실제 수입은 별도 필요              |
-| 국가 재정   | `incomeHandler.ts`, `monthlyNationStatsHandler.ts`                                 | 이미 계산한 수입·지급·통계에서 수집. 감사용 재계산·추가 난수 소비 금지                           |
-| 장수·도시   | `nation/endpoints/getBattleCenter.ts`, `getSecretGeneralList.ts`, `world/index.ts` | 현재 조회를 활용하되 장수 없는 관리자와 과거 snapshot용 읽기 경계 추가                           |
-| 외교        | `Diplomacy`, `DiplomacyLetter`, `router/diplomacy/index.ts`                        | 현재 국가쌍 상태와 문서 체인만으로 변경 당시 상태가 모두 보존되지는 않음                         |
-| NPC 선택    | `ai/generalAi/core.ts`, `reservedTurnHandler.ts`                                   | 일부 환경변수 stdout trace·action hook이 있으며 전체 과정의 내구성 기록은 없음                   |
-| NPC 정책    | `npcPolicyMutation.ts`, `router/npc/index.ts`                                      | 현재 정책·마지막 변경 정보를 버전 이력과 연결                                                    |
-| 접속        | `GeneralAccessLog`, `TrafficPeriodGeneral`                                         | 최신 활동·누적 통계이며 모든 가입·로그인·장수 생성 시도의 사건 원장이 아님                       |
+| 책임                | 구현 위치                                                           | 경계                                                   |
+| ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
+| 월말 상태·정산·집계 | `app/game-engine/src/playAudit/snapshot.ts`, `collection.ts`        | 현재 정산과 확정 월말을 구분하며 미수집은 null         |
+| 외교·정책 사건      | 같은 디렉터리의 `diplomacy.ts`, `policy.ts`, `policyPersistence.ts` | 사건 순서와 당시 불변 정책 참조 보존                   |
+| NPC 결정 수집·저장  | `decision.ts`, `decisionPersistence.ts`                             | 실제 실행 경로만 관측하며 RNG를 추가 소비하지 않음     |
+| 감사 실패 격리·보존 | `bestEffort.ts`, `retention.ts`, `retentionWorker.ts`               | 6절의 savepoint·누락 표시·기수 분리 계약               |
+| 읽기 API            | `app/game-api/src/router/playAudit/`                                | profile 권한, 현재/과거 projection, 제한된 목록과 상세 |
+| 화면                | `app/game-frontend/src/components/playAudit/`                       | 운영 안내의 현재 사용 범위                             |
+| DB 모델             | `packages/infra/prisma/game.prisma`, `gateway.prisma`               | 정식 migration으로 추가하며 기존 원장과 구분           |
 
-위 engine source의 생략한 prefix는 `app/game-engine/src/turn/`, game router는
-`app/game-api/src/router/`다. Prisma 모델은 `packages/infra/prisma/game.prisma`와
-`gateway.prisma`에 있다.
+현재 장수 수치 정렬, 현재/과거 도시 지도, 요청 처리 조회까지 제공한다.
+후보 내부 조건 전체, 상세 자원 이동 원장, 계정/IP HMAC 조사, 월중 전체 행동 이력,
+취소 후 감사 전용 runtime과 전체 비용 gate는 미완성이다. R7-A~F는 이 후속 범위를
+정의하므로 완료된 과거 계획으로 취급하지 않는다.
+
+### 현재 읽기·수집의 세부 경계
+
+- 국가 `currentSettlement`는 같은 RepeatableRead에서 읽은 현재 월의 확정 정산이다.
+  월말 snapshot과 합치지 않는다. 이전 월은 `beforeMonthChanged`에서 닫고 새해 금·7월 쌀
+  지급은 진입한 월의 flow에 누적한다. 과거 crew 집계가 없으면 일치하는 snapshot 표본만
+  제한적으로 집계하며 현재 장수 값으로 대체하지 않는다.
+- 장수 목록은 현재/월말/FINAL의 금·쌀·병력·훈련·사기·능력·경험·공헌·숙련 정렬을
+  지원한다. SQL 정렬 필드는 허용 목록을 사용하며 동률은 ID 오름차순, null은 마지막이다.
+- 도시 지도는 당시 소유·이름을 현재 지도 좌표·배경에 표시한다. 과거 지형 복원이 아니며
+  snapshot 누락을 중립 도시로 채우지 않는다. 1,024개 초과 도시는 명시적으로 거부한다.
+- 결정 목록은 월을 생략하면 가장 최근 기록 월을 선택한다. 명시한 과거 월은 비어 있어도
+  유지하며 다음 페이지도 같은 월을 사용한다. 기본50건/최대200건이고 목록에서 전체 trace나
+  COUNT를 읽지 않는다. 상세는128항목 chunk를 기본1개/최대4개씩 읽는다.
+- 결정 ID는 server/general/tick/revision/phase로 결정한다. header hash와 unique key로
+  중복·충돌을 구분하고128항목씩 chunk로 나눠200행 단위로 저장한다. pending 기록은
+  capture/restore/peek/ack 경계를 따른다. 감사 저장 실패 처리의 기준은 6.1절이다.
+- `DECISION_START`의 schema1 `effectivePolicy`는 서버→국가·자동화·NPC 규칙을 합친
+  명시적 값이다. 우선순위·허용 여부·국가 정책20개 값·부대 편성을 저장하며 raw meta나
+  seed를 노출하지 않는다. 동적 후보 조건·지급 상한·별도 자동화 권한 판정은 포함하지 않는다.
+- 실행 시도는 입력·조건·대기·문맥 검사와 대체 시도를 실제 순서대로 기록한다. 검사를
+  재실행하지 않으며 ATTEMPTS coverage로 이전 PROCEDURES 기록과 구분한다.
+  상세 중첩은 최대5단계, 검사 항목은 최대4개다. 수동 명령이 AI를 거치지 않으면 AI 결정은 없다.
+- 실행 버전은 profile의 `buildCommitSha` 또는 `TURN_BUILD_COMMIT_SHA`의 전체40/64자리
+  SHA를 사용한다. 미지정·잘못된 값과 과거 기록은 null이며 현재 버전으로 채우지 않는다.
+- `requestState`는 같은 기수의 정책 버전/외교 사건에서 참조한 `InputEvent`의 requestId와
+  inputSequence를 함께 확인한다. world·사건·요청 최대3회 읽기로 현재 상태·시도 횟수·처리
+  좌표·결과/오류 존재 여부를 반환한다. 원문 payload/error나 시도별 전체 이력은 제공하지 않는다.
 
 Ref `hwe/_admin5.php`의 국가·평금쌀·병종 숙련 통계, `_admin7.php`의 전체
 장수 로그, `_admin8.php`의 외교정보는 **계승할 정보·조사 목적**의 근거다.
 월별 상세 보존, 결정 과정, 조사 연결과 profile별 관리자 UX는 **의도적 제품 차이**다.
 공통 계정 상관 조사와 알려진 버그 검색 프리셋은 **비교 불가인 Core 신규 기능**이다.
 감사 기능을 추가하면서 Ref 계산이나 기존 일반 유저 권한을 변경하지 않는다.
+
+### 최초 관측·기수·정리 경계
+
+- 조회 달력의 하한은 유효한 `world.meta.initYear/initMonth`를 우선한다. 없으면 시나리오
+  시작 연도와 현재 연도 중 이른 연도의1월을 사용한다. 달력 하한은 수집 시작의 증거가
+  아니며 실제 자료 존재는 월 header로 확인한다. tick은 DB bigint 정밀도를 보존한다.
+- 초기 정책·관계는 복구된 clock과 이미 로드된 상태를 관측하고 readiness 전에 저장한다.
+  재야 관계는 제외하며 원인·actor·과거 변경 시점을 추정하지 않는다. 정책 포인터는 기수와
+  국가 identity를 확인하고 CAS·권한 검사를 통과한 실제 변경만 버전으로 남긴다.
+  `OBSERVED_GAP`은 불일치의 재관측이지 과거 변경 이력의 복원이 아니다.
+- `documentBaseline.ts`는 도입 표식이 없는 기수의 보유 문서를 ID cursor200건씩 읽는다.
+  원문은 불변 ID/hash로 참조하고 당시 상태·서명·이전 문서 번호만 보존한다. 빈 결과에도
+  도입 표식을 저장하며 정상 재시작은 다시 전체 문서를 읽지 않는다. 문서의 상태·서명과
+  달리 본문·작성자·작성 시각·국가쌍·prevId 변경은 DB trigger가 거부한다.
+- 초기 저장은 schema→lease→CLOCK→GENERAL_ACCESS 잠금 순서와 기수·clock authority를
+  지킨다. commit 후 ack하며 감사 실패의 현재 처리 규칙은 6.1절을 따른다.
+- RESET 직후 조회는 identity 필터로 차단한다. retention은 별도 transaction에서 schema
+  advisory lock과 현재 identity를 확인하고 부모 row를 잠근 뒤 자식 PK 최대200개씩 삭제한다.
+  FK RESTRICT와 빈 header 삭제로 대량 cascade·새 기수 삭제를 막는다. worker는 남은 key부터
+  재시작하며 이전 runtime·identity 누락에는 정리하지 않는다.
 
 ## 2. 화면·소유권·조회 계약
 
@@ -81,8 +123,8 @@ base prefix를 사용하며 `/image/*`나 API URL을 root 배포 기준으로 �
 
 ### 2.2 API·권한
 
-game-api가 `playAudit` 읽기 영역을 소유한다. 다음은 추가할 capability/API의 설계명이며
-현재 존재하는 endpoint가 아니다. 입력은 공통으로 대상·기간·cursor를 받고 상세는 별도 조회한다.
+game-api가 `playAudit` 읽기 영역을 소유한다. 아래 표는 요구사항 영역의 설계명이다. 실제 endpoint 이름과 제공 범위는
+`app/game-api/src/router/playAudit/index.ts` 및 1절을 기준으로 한다. 입력은 공통으로 대상·기간·cursor를 받고 상세는 별도 조회한다.
 
 | 조회 영역                           | 최소 계약                                                                           |
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
@@ -424,38 +466,40 @@ NPC trace의 정책 참조와 사건 연결 외에 매 턴 전체 world를 seria
 비용 표에 남긴다. 비용이 크면 중복·반복 query·직렬화·batch/index를 먼저 개선한다.
 자료 샘플링·생략·보존기간 축소는 성능 최적화로 몰래 처리하지 않고 명시적 설계 변경으로 다룬다.
 
-## 8. 단계·검증·goal 인계
+### 7.4 NPC 결정 비용 probe
 
-### 8.1 순차 구현 체크리스트
+`app/game-engine/test/playAuditDecisionCost.integration.test.ts`는
+`PLAY_AUDIT_COST_DATABASE_URL`이 가리키는 격리 PostgreSQL을 사용한다.
+정식 migration을 적용한 `play_audit_cost_decision_fixture` schema가 필요하며
+fixture 테이블을 비우므로 공유 DB에는 실행하지 않는다.
 
-각 단계는 코드·mapping·fixture·보고서·관련 commit을 포함한다. 병렬 branch나
-별도 goal을 자동 생성하지 않는다. 완료한 단계가 전체 구현 완료를 대신하지 않는다.
+```bash
+pnpm --filter @sammo-ts/game-engine test playAuditDecisionCost.integration.test.ts --no-file-parallelism
+```
 
-- [ ] P1. source/쓰기 inventory, 비용 표, 기수 identity와 수집 시작, 권한·API 계약,
-      migration·rollback·보존 정리 경계를 구현한다.
-- [ ] P2. 월별 상태·국가 집계와 R1~R3 profile 화면을 구현한다.
-- [ ] P3. R4/R6 외교·정책 버전과 조회, 수뇌 공개용 projection 경계를 구현한다.
-- [ ] P4. R5 모든 NPC 경로 계측, 행위·자원 변화와 요청/실행 연결을 구현한다.
-- [ ] P5. 조사 A~F, 공통 계정 adapter·30일 정리, 권한별 UI를 구현한다.
-- [ ] P6. 아래 검증을 수행하고 비용·coverage·미검증 범위를 보고해 전체 완료를 판정한다.
+201개 결정×302항목으로200행 batch 경계를 넘겨201개 header·603개 chunk·60,702항목을
+검사한다. `/tmp/play-audit-decision-cost.json`에 JSON 크기, `pg_column_size`,
+table/TOAST/index 크기, transaction 시간, warm30회 목록 p50/p95와 EXPLAIN을 남긴다.
+URL·secret·원문 payload는 출력하지 않는다. 반복 RNG를 포함한 합성 자료라 압축률을
+운영 평균으로 사용할 수 없고, WAL·heap 및 전체 COST gate를 대체하지 않는다.
 
-### 8.2 요구사항별 증거
+## 8. 요구사항별 검증
 
-각 요구사항의 일부 구현과 검증은 구현 inventory/report에 기록한다. 아래 전체 합격 기준을
+각 요구사항의 일부 구현과 검증은 이 문서의 1절과 날짜별 report에 기록한다. 아래 전체 합격 기준을
 충족하기 전에는 요구사항 전체를 완료로 체크하지 않는다.
 
-| ID      | 합격 기준                                                     | 필요한 증거                                                                |
-| ------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| R1      | 월/반기, 실제 정산, 집단 분모·0/null·부분 기간 정확           | 정산 fixture, PostgreSQL reload, 그래프와 표 값 비교                       |
-| R2      | 모든 국가·재야 장수 현재/과거 상세, 허용 로그의 독립 표시     | 권한 HTTP matrix, 사망/개명 fixture, Chromium                              |
-| R3      | 당시 소유·내정·국가별 주둔과 병력/훈련/사기                   | 월중 이동·점령·월말 fixture와 DB, 지도/장수 drill-down                     |
-| R4      | 같은 달 복수 외교 전이와 당시 유효 문서                       | API 즉시 처리·engine 만료/개전·취소/복구 DB fixture                        |
-| R5      | 전체 개인/수뇌 AI 경로의 판정·선택·실행 연결                  | handler inventory, 정책 차단·조기 반환·fallback·실패 trace, fixed seed A/B |
-| R6      | 실제 적용 버전·actor·전후, CAS 거부 분리                      | 충돌/무변경/직책 변경 fixture, 과거 결정의 정책 참조                       |
-| R7-A~F  | 5절 각 질문을 정상·해당·근거 부족 사례로 조사 가능            | 도구별 API/DB fixture와 Chromium 탐색 artifact                             |
-| AUTH    | no-general 관리자 허용, 다른 profile/일반 유저/수뇌 비밀 차단 | 실제 HTTP token·scope·권한 revoke·cache matrix                             |
-| DURABLE | gameplay/audit 원자성, 중복 방지·rollback·재시작·RESET 분리   | 실제 PostgreSQL migration 전체/증분/no-op, 실패·복구·정리 fixture          |
-| COST    | 7절 필수 gate와 계측 전후 비용 검토 완료                      | SQL count·실행계획·WAL/bytes·p95·heap 측정 보고                            |
+| ID      | 합격 기준                                                        | 필요한 증거                                                                |
+| ------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| R1      | 월/반기, 실제 정산, 집단 분모·0/null·부분 기간 정확              | 정산 fixture, PostgreSQL reload, 그래프와 표 값 비교                       |
+| R2      | 모든 국가·재야 장수 현재/과거 상세, 허용 로그의 독립 표시        | 권한 HTTP matrix, 사망/개명 fixture, Chromium                              |
+| R3      | 당시 소유·내정·국가별 주둔과 병력/훈련/사기                      | 월중 이동·점령·월말 fixture와 DB, 지도/장수 drill-down                     |
+| R4      | 같은 달 복수 외교 전이와 당시 유효 문서                          | API 즉시 처리·engine 만료/개전·취소/복구 DB fixture                        |
+| R5      | 전체 개인/수뇌 AI 경로의 판정·선택·실행 연결                     | handler inventory, 정책 차단·조기 반환·fallback·실패 trace, fixed seed A/B |
+| R6      | 실제 적용 버전·actor·전후, CAS 거부 분리                         | 충돌/무변경/직책 변경 fixture, 과거 결정의 정책 참조                       |
+| R7-A~F  | 5절 각 질문을 정상·해당·근거 부족 사례로 조사 가능               | 도구별 API/DB fixture와 Chromium 탐색 artifact                             |
+| AUTH    | no-general 관리자 허용, 다른 profile/일반 유저/수뇌 비밀 차단    | 실제 HTTP token·scope·권한 revoke·cache matrix                             |
+| DURABLE | 감사 실패 격리·누락 표시, gameplay 실패 보존·중복 방지·기수 분리 | 실제 PostgreSQL migration 전체/증분/no-op, 실패·복구·정리 fixture          |
+| COST    | 7절 필수 gate와 계측 전후 비용 검토 완료                         | SQL count·실행계획·WAL/bytes·p95·heap 측정 보고                            |
 
 계측 전후 fixed seed 비교는 명령뿐 아니라 RNG 소비 순서, state, 기존 로그와
 side effect까지 포함한다. 계승 계약에 영향을 준 경로는 Ref 차등을 추가하고 감사 UI 자체는
@@ -465,27 +509,3 @@ GUI는 같은 Chromium·viewport·DPR·zoom·font·fixture 조건에서 실제 `
 `/hwe/play-audit`의 direct URL·refresh·asset/API·필터·기간 이동·뒤로가기·상세 열기와
 desktop/mobile geometry를 확인한다. screenshot·DOM·computed style·측정 artifact를 남긴다.
 실제 공개 HTTPS 검증은 배포가 별도 승인·수행된 경우에만 보고하며 fixture 결과와 구분한다.
-
-### 8.3 후속 goal에 사용할 지시문
-
-> `core2026/docs/design/play-audit.md`의 확정 계약을 기준으로 프로필별 플레이 감사를
-> 구현한다. R1~~R7-A~~F와 AUTH/DURABLE/COST 전체를 완료하며 P1~P6를 순서대로 진행한다.
-> 사용자 수정사항이 문서보다 우선한다. 현재 Git/source를 재확인하고 기존 dirty 작업을
-> 보존한다. 기능마다 조사 근거, 수집 coverage, DB 비용 재검토와 실제 검증 artifact를
-> 남긴다. 문서·일부 UI·unit test만으로 전체 goal을 완료하지 않는다. 관련 변경은 저장소별로
-> commit하고 push·배포는 별도 요청 범위로 둔다. 자동 탐지/제재, 수뇌 화면, 지난 기수
-> 장기보존이나 다른 frontend 신규 개발로 범위를 확대하지 않는다.
-
-문서 수정은 결정 이유와 영향을 받는 요구사항·비용·검증을 함께 변경한다.
-실행 일자·결과·미검증·commit은 상위 `report/`에 기록한다. 이 문서의 체크박스는
-단순 계획·시도·의도로 완료 처리하지 않는다.
-
-### 8.4 사용량을 고려한 중간 전달
-
-2026-09-16 사용자는 주간 잔여 약42%에서 약20%를 남기고 현재 작업물을 마무리하여
-사용 가능한 기능부터 이용할 수 있게 하며 DB 스키마도 미리 준비하도록 지시했다.
-이에 따라 큰 미완성 기능을 추가로 벌이기보다 현재 수집·조회·권한의 회귀 검증,
-정식 migration·운영 안내, 현재 main 통합과 push를 우선한다. 운영 적용은 대상 프로필을
-확인한 범위에서 수행한다. 구현되지 않은 NPC trace/조사 도구나 미검증 COST gate를
-완료로 표시하지 않는다. 후속 설계 범위는 삭제하지 않고 [운영 안내](../play-audit-operations.md)의
-사용 가능/미완성 경계와 구현 inventory에 남긴다.

@@ -1,5 +1,8 @@
 # Legacy MariaDB long-lived data migration
 
+이 문서는 이관 범위·설정·CLI 실행·데이터 대응·전환 검증의 단일 기준입니다.
+도구 위치는 `tools/legacy-db-migration`이며 명령은 Core 저장소 root에서 실행합니다.
+
 ## Scope and safety boundary
 
 `tools/legacy-db-migration` is the only supported importer. It has no HTTP
@@ -20,7 +23,96 @@ the imported rows. A repeat import updates archive-owned rows but does not
 replace a live Gateway account's password, reset status, login/display identity,
 OAuth connection, roles, sanctions, consent, icon or login timestamps.
 
-### Full and incremental execution
+## Source restore
+
+Restore each compressed table dump into a private MariaDB database before
+running this tool. Do not expose that database on a public interface. The dump
+directory is intentionally Git-ignored.
+
+```sh
+gzip -cd /path/to/db_dumps/root/member.sql.gz | mariadb root_dump
+gzip -cd /path/to/db_dumps/che/ng_games.sql.gz | mariadb che_dump
+```
+
+Restore all tables defined by ref even though the CLI intentionally projects
+only long-lived tables. This lets the dry-run verify the source inventory and
+keeps the original dump as the recovery source.
+
+Database URLs belong in a Git-ignored environment file or injected process
+environment. They are deliberately not accepted as command-line flags.
+
+## Ordered migration plan
+
+Copy `tools/legacy-db-migration/migration-plan.example.json` to the Git-ignored
+`tools/legacy-db-migration/migration-plan.json`.
+Set its mode to 0600, then enter the MariaDB host, port, database and user for
+Gateway and each game profile. A password can come from a separate mode-0600
+file (recommended), an environment variable, or directly from the mode-0600
+plan. Target PostgreSQL URLs remain in the named environment variables.
+
+When the Gateway source contains a non-default member icon, `gateway.userIcons`
+is mandatory. Mount Ref's `d_pic` directory read-only as `sourceDirectory`, and
+mount the Core2026 sam-image upload secret as a mode-0600 `uploadSecretFile`.
+The two URL fields normally point to `https://sam-image.hided.net` and its
+`/icons` path. The importer never adds account images to the image Git tree.
+An invalid historical file blocks the plan by default. After byte-level review,
+its member number may be listed in `excludedMemberNumbers`; the exclusion is
+accepted only while that exact member still has invalid image geometry/format.
+A valid file or stale/missing member exclusion fails closed. An unchanged
+invalid Ref selection is reset to the default icon instead of publishing bad
+bytes; a newer Core selection is preserved.
+
+```sh
+mkdir -p tools/legacy-db-migration/secrets
+chmod 700 tools/legacy-db-migration/secrets
+cp tools/legacy-db-migration/migration-plan.example.json \
+  tools/legacy-db-migration/migration-plan.json
+chmod 600 tools/legacy-db-migration/migration-plan.json
+chmod 600 tools/legacy-db-migration/secrets/*
+
+pnpm migrate:legacy -- check-plan \
+  --config tools/legacy-db-migration/migration-plan.json
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode full
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode full --apply
+```
+
+For profiles whose old file archive is available, add a `battleResults` block.
+`directory` may be a local absolute/plan-relative path, or `sshHost` may select
+the host from which the directory is read. The SSH target must be a configured
+host alias; do not put credentials in the plan.
+
+```json
+"battleResults": {
+  "sshHost": "serv",
+  "directory": "/home/letrhee/web_symlinks/sam_hided_net/sam/che/logs/preserved"
+}
+```
+
+`check-plan` opens every source and target without writing. Its stage JSON lists
+every included item as `inventory`, including source, target, strategy and the
+information transferred. Gateway preflight validates every local or already
+uploaded custom icon and reports the source split without issuing a PUT. A
+configured battle-result source also reports its
+season/file/byte counts. `run-plan` also
+preflights every stage before the first import, is a dry-run without `--apply`,
+and stops at the first failed stage. Completed earlier stages remain committed;
+rerunning is safe because the Gateway and each profile have independent locks,
+transactions and run records. The JSON output never includes a connection URL
+or password.
+
+For a later delta, keep the same `sourceSet`, connection identity and source
+databases, restore or expose the newer snapshot, then run:
+
+```sh
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode incremental
+pnpm migrate:legacy -- run-plan \
+  --config tools/legacy-db-migration/migration-plan.json --mode incremental --apply
+```
+
+## Full and incremental execution
 
 `run-plan` first connects to every configured MariaDB and PostgreSQL target and
 checks that the checkpoint migrations exist. Only after all stages pass does it
@@ -50,6 +142,8 @@ full re-import and count/hash investigation.
 The source of truth for eligibility is the checked ref schema, not every table
 that happens to exist in a dump. Tables outside that schema remain only in the
 recovery dump.
+
+## Data mapping
 
 ### Gateway
 
@@ -198,6 +292,29 @@ excluded. In particular, `general`, `city`, `nation`, their turn queues,
 `ng_betting`, `reserved_open`, `select_pool`, `select_npc_token` and `plock`
 must not be used to reconstruct a running season.
 
+## Commands
+
+```sh
+LEGACY_ROOT_DATABASE_URL=... pnpm --filter @sammo-ts/legacy-db-migration migrate gateway
+LEGACY_GAME_DATABASE_URL=... pnpm --filter @sammo-ts/legacy-db-migration migrate game --profile che
+```
+
+After reviewing the JSON counts and excluded-table reasons, add
+`GATEWAY_DATABASE_URL` or `GAME_DATABASE_URL` and repeat with `--apply`.
+
+For game archives, `GAME_DATABASE_URL` points at that profile's Core schema.
+The importer writes completed-history data to the shared
+`legacy_archive` PostgreSQL schema and writes only inheritance projections to
+the selected current profile schema. Accepted profiles are
+`che,kwe,pwe,twe,nya,pya,hwe`; run them separately against the same PostgreSQL
+database.
+
+The individual commands also accept `--mode incremental` and `--source-key`.
+Use the ordered plan for production so every configured connection is checked
+before the Gateway stage starts. The direct `gateway` command intentionally
+fails closed when its source contains custom icons because it has no secure
+structured icon-upload configuration; use `run-plan` for that source.
+
 ### Current-season comparison fixture
 
 The archive exclusion above remains the production migration contract. The
@@ -221,6 +338,25 @@ unsupported category. Owner binding for a browser-capture account is explicit
 through `CURRENT_SEASON_CAPTURE_USER_ID` and
 `CURRENT_SEASON_CAPTURE_SOURCE_OWNER`. This mode must not be used for a live
 season or as a substitute for the long-lived archive cutover procedure.
+
+Start from a cloned Core database whose scenario, year and month already match
+the Ref source. Dry-run verifies that contract and reports the planned counts:
+
+```sh
+LEGACY_GAME_DATABASE_URL=... GAME_DATABASE_URL=... \
+  pnpm --filter @sammo-ts/legacy-db-migration migrate current-season-fixture \
+  --profile hwe --expected-scenario 2601 --expected-year 186 --expected-month 1
+```
+
+Applying requires both destructive flags so an ordinary archive command cannot
+replace a running season accidentally:
+
+```sh
+LEGACY_GAME_DATABASE_URL=... GAME_DATABASE_URL=... \
+  pnpm --filter @sammo-ts/legacy-db-migration migrate current-season-fixture \
+  --profile hwe --expected-scenario 2601 --expected-year 186 --expected-month 1 \
+  --replace-current-season --apply
+```
 
 ## Archived play read model
 

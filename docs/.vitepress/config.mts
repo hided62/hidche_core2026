@@ -40,7 +40,6 @@ export default defineConfig({
                         { text: '독자별 읽기 순서', link: '/developer/' },
                         { text: '기초 구조 안내', link: '/developer/first-steps' },
                         { text: '경험자를 위한 시스템 읽기', link: '/developer/system-walkthrough' },
-                        { text: '구조 문서 찾아보기', link: '/developer/reference-map' },
                         { text: '아키텍처 개요', link: '/architecture/overview' },
                         { text: '런타임 아키텍처', link: '/architecture/runtime' },
                         { text: '관리자 콘솔', link: '/admin-console' },
