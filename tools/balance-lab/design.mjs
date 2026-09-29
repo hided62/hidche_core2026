@@ -1,5 +1,5 @@
 // Internal experiment design. No router, database, server seed or gameplay mutation.
-export const DESIGN_VERSION = 'balance-lab-v2';
+export const DESIGN_VERSION = 'balance-lab-v3.2';
 export const BUILDS = {
     martial: { leadership: 90, strength: 90, intel: 30 },
     scholar: { leadership: 90, strength: 30, intel: 90 },
@@ -109,7 +109,14 @@ export function makePayload(unitSet, cell, seed, treatment = true) {
               : Math.min(7000, BUILDS[buildKey].leadership * 100);
     const subject = general(role === 'attack' ? 1 : 2, unit, build, count(unit, build));
     const other = general(role === 'attack' ? 2 : 1, opponent, opponentBuild, count(opponent, opponentBuild));
-    if (treatment) Object.assign(subject, cell.generalPatch ?? {});
+    Object.assign(subject, cell.commonPatch ?? {}, treatment ? (cell.generalPatch ?? {}) : (cell.controlPatch ?? {}));
+    Object.assign(other, cell.opponentPatch ?? {});
+    for (const participant of [subject, other]) {
+        if (cell.readiness !== undefined) participant.train = participant.atmos = cell.readiness;
+        if (cell.dex !== undefined) for (let family = 1; family <= 5; family++) participant[`dex${family}`] = cell.dex;
+        if (cell.statScale !== undefined)
+            for (const stat of ['leadership', 'strength', 'intel']) participant[stat] *= cell.statScale;
+    }
     if (cell.condition === 'depleted') {
         subject.crew = Math.floor(subject.crew * 0.5);
         subject.train = 70;
@@ -153,6 +160,8 @@ export function makePayload(unitSet, cell, seed, treatment = true) {
     if (treatment && cell.nationTrait) {
         payload[role === 'attack' ? 'attackerNation' : 'defenderNation'].type = cell.nationTrait;
     }
+    payload.year = payload.time.year = cell.year ?? 200;
+    payload.attackerNation.tech = payload.defenderNation.tech = cell.tech ?? 3000;
     if (mode === 'siege' && role !== 'attack') throw new Error('Siege subject must attack');
     return payload;
 }

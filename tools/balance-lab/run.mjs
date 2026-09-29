@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { DESIGN_VERSION, BUILDS, buildPlan, makePayload, observe, summarize } from './design.mjs';
+import { FOLLOWUP_SUITES, buildFollowupPlan } from './followup.mjs';
+import { economicTools, nationPlans, lifecycleProfiles, strategyPlans } from './economy.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const { values } = parseArgs({
@@ -19,7 +21,11 @@ const { values } = parseArgs({
 });
 const samples = Number(values.samples);
 if (!Number.isSafeInteger(samples) || samples < 2 || samples > 10000) throw new Error('--samples must be 2..10000');
-if (!['units', 'items', 'traits', 'nations', 'families', 'tiers', 'interactions'].includes(values.suite))
+if (
+    !['units', 'items', 'traits', 'nations', 'families', 'tiers', 'interactions', ...FOLLOWUP_SUITES].includes(
+        values.suite
+    )
+)
     throw new Error('Unknown suite');
 const out = path.resolve(root, values.out ?? `test-results/balance-lab/${values.suite}`);
 // Build before importing; a previous branch's dist must never become measurement evidence.
@@ -27,12 +33,17 @@ for (const pkg of ['common', 'logic']) {
     execFileSync('pnpm', ['--filter', `@sammo-ts/${pkg}`, 'build'], { cwd: root, stdio: ['ignore', 'ignore', 'pipe'] });
 }
 const logic = await import('../../packages/logic/dist/index.js');
+const common = await import('../../packages/common/dist/index.js');
 const unitSet = logic.parseUnitSetDefinition(
     JSON.parse(await readFile(path.join(root, 'resources/unitset/unitset_che.json'), 'utf8'))
 );
 const allItems = await logic.loadItemModules([...logic.ITEM_KEYS]);
 const war = await logic.loadWarTraitModules([...logic.WAR_TRAIT_KEYS]);
 const nations = await logic.loadNationTraitModules([...logic.NATION_TRAIT_KEYS]);
+const { CommandResolver } = await import('../../packages/logic/dist/src/actions/turn/general/che_징병.js');
+const { CommandResolver: VolunteerResolver } =
+    await import('../../packages/logic/dist/src/actions/turn/nation/che_의병모집.js');
+const economics = economicTools(logic, CommandResolver, allItems, war, nations);
 const spec = (entry) => ({
     key: entry.key,
     name: entry.name,
@@ -53,7 +64,9 @@ const catalog = {
     war: war.map(spec),
     nations: nations.map(spec),
 };
-let cells = buildPlan(catalog, values.suite);
+let cells = FOLLOWUP_SUITES.includes(values.suite)
+    ? buildFollowupPlan(catalog, values.suite)
+    : buildPlan(catalog, values.suite);
 if (values.match)
     cells = cells.filter((cell) =>
         `${cell.key}/${cell.build}/${cell.mode}/${cell.role}/${cell.budget ?? ''}`.includes(values.match)
@@ -95,9 +108,11 @@ const manifest = {
         seedPairing: 'same seed within cell and treatment/control; RNG consumption may diverge',
         inference:
             'per-cell descriptive normal CI; correlated cells and multiple tests prevent global significance claims',
-        economics: 'equal-gold uses base crew cost only, capped by leadership; not total lifetime cost',
+        economics:
+            'equal-gold uses base crew cost; recruited uses production CommandResolver costs/population/train/capacity; neither is lifetime cost',
         outcome: 'fraction enemy troops lost minus fraction own troops lost; siege uses wall damage separately',
-        environment: 'synthetic CHE, tech 3000, year 200, no scenario effect; no production data or mutation',
+        environment:
+            'synthetic CHE defaults tech 3000/year 200; cell overrides are recorded in plan; no production data or mutation',
     },
     completed: false,
 };
@@ -157,6 +172,34 @@ const nationProfiles = nations.map((module) => {
     };
 });
 await writeFile(path.join(out, 'nation-profiles.json'), JSON.stringify(nationProfiles, null, 2));
+await writeFile(path.join(out, 'nation-plans.json'), JSON.stringify(nationPlans(nationProfiles), null, 2));
+const probePayload = makePayload(
+    unitSet,
+    { unit: 1100, opponent: 1100, build: 'martial', role: 'attack', mode: 'field' },
+    'economic-probe'
+);
+const economicProfiles = [...allItems.filter((item) => item.unique), ...war].map((module) =>
+    economics.profile(probePayload.attackerGeneral, probePayload.attackerNation, probePayload.time, module)
+);
+await writeFile(path.join(out, 'economic-profiles.json'), JSON.stringify(economicProfiles, null, 2));
+await writeFile(
+    path.join(out, 'lifecycle-profiles.json'),
+    JSON.stringify(
+        lifecycleProfiles(
+            logic,
+            common,
+            probePayload,
+            [...allItems.filter((item) => item.unique), ...war],
+            values.seed
+        ),
+        null,
+        2
+    )
+);
+await writeFile(
+    path.join(out, 'strategy-plans.json'),
+    JSON.stringify(strategyPlans(VolunteerResolver, probePayload, nations, allItems), null, 2)
+);
 
 const raw = await open(path.join(out, 'samples.jsonl'), 'wx');
 const summary = [];
@@ -177,6 +220,7 @@ try {
             ]);
             const run = (treatment, patch) => {
                 const payload = makePayload(unitSet, patch ? { ...cell, generalPatch: patch } : cell, seed, treatment);
+                const recruited = cell.budget === 'recruited' ? economics.recruit(payload, cell) : null;
                 let result;
                 logic.processBattleSimJob(payload, {
                     onBattleResolved: (battle) => {
@@ -184,6 +228,7 @@ try {
                     },
                 });
                 if (!result) throw new Error('Battle did not execute');
+                if (recruited) for (const [key, value] of Object.entries(recruited)) result[`recruit_${key}`] = value;
                 return result;
             };
             const treatment = run(true);
@@ -239,6 +284,26 @@ const finalHash = await hashTree([
 ]);
 if (finalHash !== sourceHash) throw new Error('Source changed during run; result is not complete');
 await writeFile(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2));
+const coverage = [...catalog.items, ...catalog.war].map((entry) => {
+    const evaluated = summary.filter((row) => row.key === entry.key);
+    const changed = evaluated.some(
+        (row) => row.delta && Object.values(row.delta).some((metric) => metric && Math.abs(metric.mean) > 1e-10)
+    );
+    return {
+        key: entry.key,
+        cells: evaluated.length,
+        hooks: entry.hooks,
+        events: entry.events,
+        battleObservation: !evaluated.length
+            ? 'not-scheduled'
+            : changed
+              ? 'difference-observed'
+              : 'no-difference-in-tested-conditions',
+        economicProfile: true,
+        limitation: 'No observed difference is not a balance pass or proof of worthlessness',
+    };
+});
+await writeFile(path.join(out, 'coverage.json'), JSON.stringify(coverage, null, 2));
 manifest.completed = true;
 manifest.elapsedSeconds = (Date.now() - started) / 1000;
 await writeFile(path.join(out, 'manifest.json'), JSON.stringify(manifest, null, 2));

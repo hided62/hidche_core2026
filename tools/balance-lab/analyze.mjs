@@ -28,7 +28,16 @@ const lines = [
 ];
 const groups = new Map();
 for (const row of rows.filter((entry) => entry.mode === 'field')) {
-    const key = JSON.stringify([row.key, row.build, row.budget ?? 'equal-crew']);
+    const key = JSON.stringify([
+        row.key,
+        row.build,
+        row.unit,
+        row.budget ?? 'equal-crew',
+        row.baseline,
+        row.condition,
+        row.wallet,
+        row.quality,
+    ]);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
 }
@@ -39,8 +48,13 @@ const ranking = [...groups.values()]
         return {
             key: group[0].key,
             build: group[0].build,
+            unit: group[0].unit,
+            baseline: group[0].baseline ?? 'empty',
+            condition: group[0].condition ?? 'ready',
+            wallet: group[0].wallet ?? null,
+            quality: group[0].quality ?? null,
             budget: group[0].budget ?? 'equal-crew',
-            effect: paired ? 'vs-empty-control' : 'absolute-exchange',
+            effect: paired ? 'vs-specified-control' : 'absolute-exchange',
             cells: group.length,
             mean: mean(scores),
             worstCell: Math.min(...scores),
@@ -58,7 +72,7 @@ lines.push(
 );
 for (const row of ranking)
     lines.push(
-        `| ${name(row.key)} | ${row.build} | ${row.budget} | ${percent(row.mean)} | ${percent(row.worstCell)} | ${percent(row.bestCell)} | ${percent(row.aboveScreen)}% |`
+        `| ${name(row.key)} | ${row.build}/${name(String(row.unit))} | ${row.budget}/${row.baseline}/${row.condition}${row.wallet ? '/' + row.wallet + '/' + row.quality : ''} | ${percent(row.mean)} | ${percent(row.worstCell)} | ${percent(row.bestCell)} | ${percent(row.aboveScreen)}% |`
     );
 if (['units', 'families', 'tiers'].includes(manifest.suite)) {
     lines.push('', '## Matchup matrices (attack/defence mean)', '');
@@ -94,7 +108,7 @@ for (const row of rows
         `| ${name(row.key)} | ${row.build}${row.condition ? '/' + row.condition : ''} | ${row.budget ?? 'equal-crew'}/${row.wall ?? 1000} | ${row.treatment.wallDamage.mean.toFixed(0)} | ${row.delta ? row.delta.wallDamage.mean.toFixed(0) : 'n/a'} | ${row.treatment.rice.mean.toFixed(0)} | ${row.treatment.dead.mean.toFixed(0)} |`
     );
 }
-if (manifest.suite === 'interactions') {
+if (rows.some((row) => row.synergy)) {
     lines.push(
         '',
         '## Factorial interactions',
@@ -104,10 +118,25 @@ if (manifest.suite === 'interactions') {
         '| Pair | Mode | Condition | Exchange delta | Exchange synergy | Wall delta | Wall synergy |',
         '| --- | --- | --- | ---: | ---: | ---: | ---: |'
     );
-    for (const row of rows)
+    for (const row of rows.filter((row) => row.synergy))
         lines.push(
             `| ${row.key} | ${row.mode} | ${row.condition}/city-${row.wall ?? 1000} | ${row.delta.exchange ? percent(row.delta.exchange.mean) : 'n/a'} | ${row.synergy.exchange ? percent(row.synergy.exchange.mean) : 'n/a'} | ${row.delta.wallDamage.mean.toFixed(0)} | ${row.synergy.wallDamage.mean.toFixed(0)} |`
         );
+}
+if (['recruit', 'attrition'].includes(manifest.suite)) {
+    lines.push(
+        '',
+        '## Recruitment (actual production resolver)',
+        '',
+        '| Candidate | Unit | Wallet / quality | Subject troops | Control troops | Gold spent | Population drawn | Initial train | Exchange delta |',
+        '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const group of groups.values()) {
+        const row = group[0];
+        lines.push(
+            `| ${name(row.key)} | ${name(String(row.unit))} | ${row.wallet}/${row.quality}/${row.condition ?? 'ready'} | ${row.treatment.recruit_crew.mean} | ${row.control.recruit_crew.mean} | ${row.treatment.recruit_gold.mean} | ${row.treatment.recruit_population.mean} | ${row.treatment.recruit_train.mean} | ${percent(mean(group.map((row) => row.delta.exchange.mean)))} |`
+        );
+    }
 }
 await writeFile(path.join(directory, 'screen.json'), JSON.stringify(ranking, null, 2));
 await writeFile(path.join(directory, 'screen.md'), lines.join('\n') + '\n');

@@ -72,9 +72,9 @@ Node, 설계 버전, seed, cell/전투 수와 완료 여부를 기록한다. 실
 있으면 완료하지 않는다. `completed: false`인 디렉터리는 완성 결과가 아니다.
 raw sample/빌드 산출물은 Git에 넣지 않고 상위 보고서에 경로·해시와 집계를 남긴다.
 
-현재 v2는 단일/연속 상대 전투와 성향 hook의 비교 기반이다. 획득 pool·경제 수명주기·스노우볼,
-능력치 증가로 늘어난 실제 징병 상한, 실제 시즌 메타 비중은 아직 측정하지 않는다.
-위 판정 절차의 후속 검증을 끝내기 전에는 전체 밸런스 평가 완료로 보고하지 않는다.
+v2의 전투 탐색에 v3의 실제 모집·조건부 발동·비전투 효과와 v3.1의 잔존 병력 대조를
+추가했다. 최초 비교 연구의 범위는 아래 suite와 관측에 한정한다. 획득 pool의 희소성,
+다년 경제 스노우볼, 실제 시즌 메타 비중과 최적 전략은 이 도구만으로 확정하지 않는다.
 
 ## 추가 비교와 해석 출력
 
@@ -105,3 +105,74 @@ node tools/balance-lab/analyze.mjs test-results/balance-lab/families-256
 최솟값/최댓값은 확률 분포의 분위수나 신뢰구간이 아니다. 원 표본의 분위수와
 구간은 `summary.json`에 따로 있다. 손실률 평균만으로 전쟁 승리나 국가 생존을
 예측하지 않는다. 도구 수정 후에는 새 출력 경로에 재실행한다.
+
+## v3 조건부 효과·모집·운영 가치
+
+```sh
+node tools/balance-lab/run.mjs --suite conditional --samples 128 --seed balance-confirm-v3 --out test-results/balance-lab/conditional-v3
+node tools/balance-lab/run.mjs --suite premium --samples 256 --seed balance-confirm-v3 --out test-results/balance-lab/premium-v3
+node tools/balance-lab/run.mjs --suite sensitivity --samples 256 --seed balance-confirm-v3 --out test-results/balance-lab/sensitivity-v3
+node tools/balance-lab/run.mjs --suite recruit --samples 128 --seed balance-confirm-v3 --out test-results/balance-lab/recruit-v3
+```
+
+- `conditional`: 모든 특기20/유니크100을 근위병·천귀병에 추가 대조하고, 척사와
+  오악진형도는 기본/지역/도시 병종 대진의 factorial 효과도 확인한다. 척사는 NPC
+  여부가 아니라 상대 병종의 지역/도시 조건으로 발동한다.
+- `premium`: 탐색 상위5종을 독립 seed로 재검사한다. 말은 일반 +6 흑색마,
+  도구는 빈 슬롯/매번 소비하는 청주를 각각 대조군으로 둔다. 청주 가격1000은
+  매 전투 반복 비용이고, 흑색마의 상점가격은 21000/치안6000 요구다. 전투당
+  소모품 대조를 영구 아이템의 구매가격으로 오인하지 않는다.
+- `sensitivity`: 183/200/220년, 기술1000/3000/6000, 숙련0/10000/50000,
+  훈사80/100/110, 초기 대비 능력치0.8/1/1.4배의 조합에서 기본5종을 재비교한다.
+  각각은 묶음 stress condition이다. 어느 한 변수의 인과효과를 분리한 실험은 아니다.
+- `recruit`: 실제 `che_징병.CommandResolver`로 금1500/5000, 쌀5000,
+  모집 가능 인구20000 내에서 가능한 병력·통솔 상한·훈련·사기·지출을 계산한다.
+  quote만 재사용하고 DB나 실제 명령 mutation은 실행하지 않는다. 기본 병종/충차의
+  기술 조건은 충족한다. 도시 이동·모병 명령·복합 성향/관직/유산은 이 fixture 범위 밖이다.
+  충원 직후와 훈사100까지 훈련한 상태를 나누고 후자의 추가 훈련 턴을 공짜라고
+  평가하지 않는다. 그 두 상태는 서로 다른 조건이다.
+
+모든 v3 실행에 아래 비전투 관측도 저장한다.
+
+- `economic-profiles.json`: 모든 unique/전투특기의 실제 일반 action pipeline에서
+  능력치·명성·공헌·숙련, 내정 비용/성과/성공, 계략 방어, 전략 지연을 probe한다.
+  기본값과 변화값을 같이 저장하며 병종별 모집 할인은 `recruit`로 따로 측정한다.
+- `lifecycle-profiles.json`: 실제 판매 event와 턴 전 치료 trigger를 512 seed로
+  실행한다. 도기의 연차별 개인/국가 보상, 의술 아이템/특기의 자신·아군·적군
+  치료를 분리한다. 새로운 미지원 event가 등록되면 오류로 중단한다.
+- `nation-plans.json`: 실제 국가 hook 계수에 12턴 상한과 600/1200/2400 자원을
+  적용한 고정 업무 계획 모델이다. 개발/수성/회복의 자원 병목과 턴 병목을 분리한다.
+  월간 국가 경제나 NPC·외교·국가 생존을 모사한 출력이 아니다.
+- `strategy-plans.json`: 실제 의병모집 resolver의 국가별/장수수별 쿨다운을
+  평만지장도 유무로 비교한다. 240 cooldown 단위 안에서 같은 전략을 반복하는
+  자원 무제한 상한이며 의병 수·실제 달력·다른 전략 교차 사용을 포함하지 않는다.
+
+v3 화면용 Markdown/JSON 집계는 병종·대조군·예산·준비 상태를 다른 그룹으로 유지한다.
+초기 v2 화면 집계와 그룹 수가 달라질 수 있지만 원 cell/seed 자료는 보존된다.
+조건을 확인하지 못한 효과는 0점이나 밸런스 통과로 자동 변환하지 않는다.
+
+## v3.1 잔존 병력 대조
+
+```sh
+node tools/balance-lab/run.mjs --suite attrition --samples 256 --seed balance-attrition-v3.1 --out test-results/balance-lab/attrition-v3.1
+node tools/balance-lab/analyze.mjs test-results/balance-lab/attrition-v3.1
+```
+
+옥란/흑색마와 상편/빈슬롯을 실제 모집 상한까지 채운 뒤, 평가 대상의 잔존 병력만
+100%/50%/25%로 줄이고 상대는 만충원을 유지한다. 상대 보병·궁병·기병·천귀병,
+공수 양 역할과 대상 기본4종/충차를 구분한다.
+금100000·쌀5000·인구20000으로 이 대상의 모집 상한을 충족한다. 전체 모집 대금은
+이미 지불한 상태이고 `recruit_crew`는 모집 인원, `recruit_remainingBeforeBattle`은
+전투 직전 인원이다. 훈사100을 유지하며 이전 손실을 만든 전투·부상·군량 소모는
+재현하지 않는 상태 통제 실험이다. 따라서 실제 연전 전체 효율로 부르지 않는다.
+
+## v3.2 상대 특기 대응
+
+```sh
+node tools/balance-lab/run.mjs --suite counter --samples 256 --seed balance-counter-v3.2 --out test-results/balance-lab/counter-v3.2
+node tools/balance-lab/analyze.mjs test-results/balance-lab/counter-v3.2
+```
+
+박혁론/빈슬롯을 상대 무특기·반계·격노로 분리한다. 기본4종/충차로 보병·기병·
+귀병·천귀병과 양 공수에서 싸운다. 상대 특기만 양 대조군에 똑같이 적용하며,
+상대가 억제할 능력이 없을 때 효과0이라는 음성 대조도 포함한다.
