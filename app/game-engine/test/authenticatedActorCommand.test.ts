@@ -45,6 +45,14 @@ const buildActorBoundCommands = (userId = 'old-owner'): TurnDaemonCommand[] => [
         destCityId: 1,
         officerLevel: 4,
     },
+    {
+        type: 'cityOfficeRequest',
+        requestId: 'cityOfficeRequest',
+        userId,
+        generalId: 7,
+        action: 'request',
+        officerLevel: 4,
+    },
     { type: 'voteReward', requestId: 'voteReward', userId, generalId: 7, voteId: 1, selection: [0] },
     {
         type: 'syncDiplomaticResponse',

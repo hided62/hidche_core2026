@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getBillByLevel, LogCategory, LogScope } from '@sammo-ts/logic';
-import { asRecord, type RankDataType } from '@sammo-ts/common';
+import { asRecord, readOfficeRequest, type RankDataType } from '@sammo-ts/common';
 
 import type { GameApiContext } from '../../context.js';
 import {
@@ -989,7 +989,7 @@ export const generalRouter = router({
 
         const now = new Date();
         const { scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, worldState.meta);
-        const [onlineAccess, ownNation, openPolls, gameTime] = await Promise.all([
+        const [onlineAccess, ownNation, openPolls, gameTime, officeRequestRows] = await Promise.all([
             ctx.db.generalAccessLog.findMany({
                 where: {
                     lastActionAt: {
@@ -1020,6 +1020,15 @@ export const generalRouter = router({
                 },
             }),
             loadCurrentGameTime(ctx.db, now),
+            me.nationId > 0 && me.officerLevel >= 5 && !asRecord(me.penalty).noChief
+                ? ctx.db.general.findMany({
+                      where: {
+                          nationId: me.nationId,
+                          meta: { path: ['cityOfficeRequest', 'status'], equals: 'pending' },
+                      },
+                      select: { id: true, userId: true, meta: true },
+                  })
+                : Promise.resolve([]),
         ]);
         // vote_poll timestamps are logical game-wall values. During PREOPEN the
         // logical clock advances through negative ticks before the opening anchor,
@@ -1088,6 +1097,19 @@ export const generalRouter = router({
 
         return {
             serverId,
+            cityOfficeRequests: {
+                generalId: me.id,
+                nationId: me.nationId,
+                ids: officeRequestRows.flatMap((row) => {
+                    const request = readOfficeRequest(row.meta);
+                    return request?.status === 'pending' &&
+                        request.generalId === row.id &&
+                        request.nationId === me.nationId &&
+                        request.userId === row.userId
+                        ? [request.id]
+                        : [];
+                }),
+            },
             onlineUserCount: onlineGenerals.length,
             onlineNations,
             onlineGenerals: myOnlineGenerals,

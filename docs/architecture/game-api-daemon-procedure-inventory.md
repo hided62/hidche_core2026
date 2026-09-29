@@ -135,3 +135,10 @@ fence를 가진 채 ENGINE 결과를 기다리던 교착을 제거했다. 투표
   `adjustAccountIconForUser`, `requestImmediateAction`, `requestJoinCreateCommand`,
   `requestNpcPossessionCommand` caller 검색을 함께 실행해 helper 경유 route를 놓치지
   않는다.
+
+### 도시 관직 자원 (2026-09-29)
+
+`nation.cityOfficeRequest`는 `engineAuthedProcedure`로 session actor를 전달한다.
+`cityOfficeRequests.ts`의 ENGINE handler가 현재 소유자·소속·수뇌 권한·대상과
+기한을 다시 검사하고 요청/임명/결과 로그를 같은 durable transaction으로 저장한다.
+세부 기본값과 clock 정책은 [도시 관직 자원](../design/city-office-requests.md)을 따른다.

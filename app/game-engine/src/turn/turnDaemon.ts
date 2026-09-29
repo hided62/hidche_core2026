@@ -1,3 +1,4 @@
+import { createCityOfficeRequestCalendarHandler } from './cityOfficeRequests.js';
 import { initializeAuditDiplomacy } from '../playAudit/diplomacy.js';
 import { initializeAuditPolicies } from '../playAudit/policy.js';
 import { startAuditRetentionWorker } from '../playAudit/retentionWorker.js';
@@ -488,6 +489,7 @@ const createMonthlyCalendarRuntime = async (options: {
     const calendarHandler = composeCalendarHandlers(
         createDynastyStatisticsHandler({ getWorld: options.getWorld }).handler,
         options.monthlyEventHandler,
+        createCityOfficeRequestCalendarHandler(options.getWorld),
         options.hasEventAction('ProcessIncome') ? null : options.incomeHandler,
         createYearbookHandler({ profileName: options.profileName, getWorld: options.getWorld }).handler,
         createPlayAuditHandler(options.getWorld),

@@ -504,11 +504,11 @@ describe('summarizeRealtimeReadModelChanges', () => {
             mapGeneralIds: [],
             mapCityIds: [1],
             mapNationIds: [],
-            frontStatusGeneralIds: [],
+            frontStatusGeneralIds: [7],
             frontStatusNationIds: [1],
             lobbyGeneralIds: [],
             contactsChanged: true,
-            frontStatusChanged: false,
+            frontStatusChanged: true,
             lobbyChanged: false,
         });
     });

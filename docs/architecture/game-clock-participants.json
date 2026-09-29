@@ -289,6 +289,21 @@
             ],
             "projectionFields": [],
             "owner": "game-engine/clock-operation"
+        },
+        {
+            "key": "city-office-request-occurrence",
+            "policy": "KEEP",
+            "authorityFields": ["general.meta.cityOfficeRequest.createdTick"],
+            "projectionFields": [],
+            "owner": "game-engine/city-office-requests"
+        },
+        {
+            "key": "city-office-request-deadline",
+            "policy": "SHIFT",
+            "authorityFields": ["general.meta.cityOfficeRequest.dueTick"],
+            "projectionFields": [],
+            "rowScope": "pending requests at or after the reconciliation cut",
+            "owner": "game-engine/city-office-requests"
         }
     ],
     "redis": [

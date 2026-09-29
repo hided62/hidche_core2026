@@ -1,3 +1,4 @@
+import { cityOfficeRequest, getCityOfficeRequests } from './endpoints/cityOfficeRequests.js';
 import { router } from '../../trpc.js';
 import { appoint } from './endpoints/appoint.js';
 import { changePermission } from './endpoints/changePermission.js';
@@ -25,6 +26,8 @@ export const nationRouter = router({
     getSecretGeneralList,
     getCityOverview,
     getPersonnelInfo,
+    getCityOfficeRequests,
+    cityOfficeRequest,
     getStratFinan,
     setNotice,
     setScoutMsg,

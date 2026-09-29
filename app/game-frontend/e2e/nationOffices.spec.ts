@@ -10,6 +10,8 @@ import { acceptAppConfirmation } from './appConfirmation.js';
 type Role = 'leader' | 'head' | 'member';
 type FixtureState = {
     role: Role;
+    officeRequests?: Record<string, unknown>;
+    officeMutation?: Record<string, unknown>;
     failNextRate?: boolean;
     failPersonnelLoad?: boolean;
     testIcons?: boolean;
@@ -238,6 +240,24 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '조조' } });
             if (operation === 'join.getConfig') return response({});
+            if (operation === 'nation.getCityOfficeRequests')
+                return response(
+                    state.officeRequests ?? {
+                        canManage: state.role !== 'member',
+                        generalId: 6,
+                        nationId: 1,
+                        serverId: 'office-season',
+                        city: { id: 1, name: '허창' },
+                        options: [],
+                        requests: [],
+                        running: true,
+                        tickSeconds: 600,
+                    }
+                );
+            if (operation === 'nation.cityOfficeRequest') {
+                state.officeMutation = jsonInput;
+                return response({ ok: true });
+            }
             if (operation === 'nation.getPersonnelInfo') {
                 return state.failPersonnelLoad
                     ? errorResponse(operation, '권한이 부족합니다.', 'FORBIDDEN')
@@ -1097,5 +1117,121 @@ for (const width of [500, 1000]) {
         await page.setViewportSize({ width, height: 900 });
         await gotoOffice(page, 'nation/finance');
         await verifyVerticalAlignment(page, testInfo, ['.diplomacy-row > div', '.budget-row > span', '.blue-heading']);
+    });
+}
+
+for (const width of [1000, 390]) {
+    test(`city office requests show defaults and both decisions at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        const state: FixtureState = {
+            role: 'head',
+            rate: 20,
+            officeRequests: {
+                canManage: true,
+                generalId: 2,
+                nationId: 1,
+                serverId: 'office-season',
+                city: { id: 1, name: '허창' },
+                options: [],
+                running: true,
+                tickSeconds: 600,
+                requests: ['approve', 'reject'].map((defaultDecision, index) => ({
+                    id: `3:${index}`,
+                    generalId: 3 + index,
+                    generalName: index ? '장료' : '허저',
+                    cityId: 1,
+                    cityName: '허창',
+                    officerLevel: index ? 3 : 4,
+                    status: 'pending',
+                    defaultDecision,
+                    defaultReason: index ? 'secret' : 'vacant',
+                    dueYear: 190,
+                    dueMonth: 2,
+                    remainingSeconds: 540,
+                    invalidReason: null,
+                })),
+            },
+        };
+        await installFixture(page, state);
+        await page.goto('nation/personnel');
+        const panel = page.getByRole('region', { name: '도시 관직 자원' });
+        await expect(panel.getByText('미처리 시 자동 승인', { exact: true })).toBeVisible();
+        await expect(panel.getByText('미처리 시 자동 거부', { exact: true })).toBeVisible();
+        await expect(panel.getByRole('button', { name: '승인', exact: true })).toHaveCount(2);
+        await expect(panel.getByRole('button', { name: '거부', exact: true })).toHaveCount(2);
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await panel.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            font: getComputedStyle(element).fontSize,
+        }));
+        expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+        await page.screenshot({ path: testInfo.outputPath(`office-requests-${width}.png`), fullPage: true });
+        await writeFile(testInfo.outputPath(`office-requests-${width}.json`), JSON.stringify(geometry));
+        await writeFile(
+            testInfo.outputPath(`office-requests-${width}.html`),
+            await panel.evaluate((element) => element.outerHTML)
+        );
+        const approval = panel.getByRole('button', { name: '승인', exact: true }).first();
+        await approval.hover();
+        await approval.focus();
+        await expect(approval).toBeFocused();
+        await writeFile(
+            testInfo.outputPath(`office-requests-button-${width}.json`),
+            JSON.stringify(
+                await approval.evaluate((element) => ({
+                    color: getComputedStyle(element).color,
+                    background: getComputedStyle(element).backgroundColor,
+                    lineHeight: getComputedStyle(element).lineHeight,
+                    pointer: getComputedStyle(element).cursor,
+                    focused: document.activeElement === element,
+                }))
+            )
+        );
+        await panel.getByRole('button', { name: '승인', exact: true }).nth(1).click();
+        await expect(page.getByTestId('game-notice-dialog')).toContainText('승인 시 기밀 열람 가능');
+        await page.getByTestId('game-notice-dialog').getByRole('button', { name: '승인', exact: true }).click();
+        await expect.poll(() => state.officeMutation?.action).toBe('approve');
+        expect(state.officeMutation).toMatchObject({ targetGeneralId: 4, officeRequestId: '3:1' });
+        await panel.getByRole('button', { name: '거부', exact: true }).first().click();
+        await page.getByTestId('game-notice-dialog').getByRole('button', { name: '거부', exact: true }).click();
+        await expect.poll(() => state.officeMutation?.action).toBe('reject');
+    });
+    test(`city office volunteer confirms the default at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const state: FixtureState = {
+            role: 'member',
+            rate: 20,
+            officeRequests: {
+                canManage: false,
+                generalId: 6,
+                nationId: 1,
+                serverId: 'office-season',
+                city: { id: 1, name: '허창' },
+                requests: [],
+                running: true,
+                tickSeconds: 600,
+                options: [
+                    { level: 4, allowed: true, reason: null, defaultDecision: 'approve', defaultReason: 'vacant' },
+                    {
+                        level: 3,
+                        allowed: false,
+                        reason: '지력 부족',
+                        defaultDecision: 'approve',
+                        defaultReason: 'vacant',
+                    },
+                ],
+            },
+        };
+        await installFixture(page, state);
+        await page.goto('nation/personnel');
+        const panel = page.getByRole('region', { name: '도시 관직 자원' });
+        await expect(panel.getByRole('button', { name: '자원', exact: true }).nth(1)).toBeDisabled();
+        await panel.getByRole('button', { name: '자원', exact: true }).first().click();
+        await expect(page.getByTestId('game-notice-dialog')).toContainText('미처리 시 자동 승인');
+        await page.getByTestId('game-notice-dialog').getByRole('button', { name: '자원', exact: true }).click();
+        await expect.poll(() => state.officeMutation?.action).toBe('request');
+        expect(state.officeMutation).toEqual({ action: 'request', officerLevel: 4 });
     });
 }

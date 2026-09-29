@@ -33,6 +33,7 @@ const operationNames = (route: Route) =>
 
 type NavigationFixture = {
     pageExitAudit?: boolean;
+    cityOfficeRequestIds?: string[];
     decoratedNpcChiefs?: boolean;
     officerLevel: number;
     permission: number;
@@ -646,6 +647,7 @@ const installFixture = async (page: Page | BrowserContext, state: NavigationFixt
                 return response({
                     myGeneral: { id: 7, name: '메뉴검증장수' },
                     serverId: state.serverId ?? 'che_fixture_season',
+                    cityOfficeRequests: { generalId: 1, nationId: 1, ids: state.cityOfficeRequestIds ?? [] },
                     profile: state.profile ?? 'che',
                     gameIdx: state.gameIdx ?? 101,
                     year: state.currentYear ?? 185,
@@ -815,6 +817,7 @@ const installFixture = async (page: Page | BrowserContext, state: NavigationFixt
             if (operation === 'general.getFrontStatus') {
                 return response({
                     serverId: state.serverId ?? 'che_fixture_season',
+                    cityOfficeRequests: { generalId: 1, nationId: 1, ids: state.cityOfficeRequestIds ?? [] },
                     onlineUserCount: 1,
                     onlineNations: '위(1)',
                     onlineGenerals: '메뉴검증장수',
@@ -7135,3 +7138,53 @@ test.describe('page exit navigation', () => {
         expect(context.pages()).toHaveLength(1);
     });
 });
+
+for (const width of [1000, 390]) {
+    test(`city office request toast announces new IDs without repeat at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        const state: NavigationFixture = {
+            officerLevel: 5,
+            permission: 2,
+            nationLevel: 3,
+            stage: 0,
+            npcMode: 1,
+            generalMeCalls: 0,
+            operations: [],
+            cityOfficeRequestIds: [],
+            latestVote: null,
+        };
+        await installRealtimeHarness(page);
+        await installFixture(page, state);
+        await waitForMain(page);
+        await waitForMainRealtime(page);
+        await expect(page.locator('.office-request-notice')).toHaveCount(0);
+        state.cityOfficeRequestIds = ['30:760'];
+        await emitReadModelInvalidation(page, readModelInvalidation({ frontStatus: true }));
+        const toast = page.locator('.office-request-notice');
+        await expect(toast).toContainText('새 관직 요청');
+        const rect = await toast.boundingBox();
+        expect(rect).not.toBeNull();
+        expect(rect!.x).toBeGreaterThanOrEqual(0);
+        expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
+        await page.screenshot({ path: testInfo.outputPath(`office-request-toast-${width}.png`), fullPage: true });
+        await writeFile(testInfo.outputPath(`office-request-toast-${width}.json`), JSON.stringify(rect));
+        await emitReadModelInvalidation(page, readModelInvalidation({ frontStatus: true }));
+        await expect(toast).toBeVisible();
+        await toast.getByRole('button', { name: '관직 요청 알림 닫기' }).click();
+        await emitReadModelInvalidation(page, readModelInvalidation({ frontStatus: true }));
+        await expect(toast).toHaveCount(0);
+        await expect(page.locator('.office-request-link')).toContainText('관직 요청 1건');
+        await page.reload();
+        await waitForMainRealtime(page);
+        await expect(toast).toHaveCount(0);
+        state.cityOfficeRequestIds = ['30:760', '31:760'];
+        await emitReadModelInvalidation(page, readModelInvalidation({ frontStatus: true }));
+        await expect(toast).toContainText('대기 2건');
+        await writeFile(
+            testInfo.outputPath(`office-request-toast-${width}.html`),
+            await toast.evaluate((element) => element.outerHTML)
+        );
+        await toast.getByRole('link').click();
+        await expect(page).toHaveURL(/\/nation\/personnel#city-office-requests$/);
+    });
+}

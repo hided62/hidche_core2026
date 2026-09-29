@@ -21,7 +21,13 @@ const auth: GameSessionTokenPayload = {
 };
 
 const buildContext = (
-    options: { auth?: GameSessionTokenPayload | null; hasVoted?: boolean; preopenClock?: boolean } = {}
+    options: {
+        auth?: GameSessionTokenPayload | null;
+        hasVoted?: boolean;
+        preopenClock?: boolean;
+        officerLevel?: number;
+        officeRows?: Array<{ id: number; userId: string; meta: Record<string, unknown> }>;
+    } = {}
 ) =>
     ({
         auth: options.auth === undefined ? auth : options.auth,
@@ -30,14 +36,19 @@ const buildContext = (
                 findFirst: vi.fn(async () => ({
                     id: 7,
                     userId: 'owner',
+                    officerLevel: options.officerLevel ?? 1,
                     nationId: 2,
                 })),
-                findMany: vi.fn(async () => [
-                    { id: 7, name: '유비', nationId: 2 },
-                    { id: 8, name: '관우', nationId: 2 },
-                    { id: 9, name: '조조', nationId: 3 },
-                    { id: 10, name: '재야장수', nationId: 0 },
-                ]),
+                findMany: vi.fn(async (input: { where?: { meta?: unknown } }) =>
+                    input.where?.meta
+                        ? (options.officeRows ?? [])
+                        : [
+                              { id: 7, name: '유비', nationId: 2 },
+                              { id: 8, name: '관우', nationId: 2 },
+                              { id: 9, name: '조조', nationId: 3 },
+                              { id: 10, name: '재야장수', nationId: 0 },
+                          ]
+                ),
             },
             worldState: {
                 findFirst: vi.fn(async () => ({
@@ -109,6 +120,7 @@ describe('general.getFrontStatus', () => {
 
         expect(result).toEqual({
             serverId: 'che_260819_front',
+            cityOfficeRequests: { generalId: 7, nationId: 2, ids: [] },
             onlineUserCount: 4,
             onlineNations: '【촉】, 【위】',
             onlineGenerals: '유비, 관우',
@@ -172,4 +184,32 @@ describe('general.getFrontStatus', () => {
 
         await expect(caller.general.getFrontStatus()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     });
+});
+
+it('only notifies chiefs about pending requests belonging to current members and owners', async () => {
+    const pending = {
+        id: '8:760',
+        generalId: 8,
+        userId: 'user-8',
+        nationId: 2,
+        cityId: 1,
+        officerLevel: 4,
+        incumbentId: 0,
+        quarter: 760,
+        createdTick: 0,
+        dueTick: 3600000,
+        defaultDecision: 'approve',
+        defaultReason: 'vacant',
+        status: 'pending',
+    };
+    const officeRows = [
+        { id: 8, userId: 'user-8', meta: { cityOfficeRequest: pending } },
+        { id: 9, userId: 'changed-owner', meta: { cityOfficeRequest: { ...pending, id: '9:760' } } },
+        { id: 10, userId: 'user-8', meta: { cityOfficeRequest: { ...pending, id: '10:760', nationId: 3 } } },
+        { id: 11, userId: 'user-8', meta: { cityOfficeRequest: { ...pending, id: '11:760', status: 'rejected' } } },
+    ];
+    const chief = appRouter.createCaller(buildContext({ officerLevel: 5, officeRows }));
+    expect((await chief.general.getFrontStatus()).cityOfficeRequests.ids).toEqual(['8:760']);
+    const member = appRouter.createCaller(buildContext({ officerLevel: 1, officeRows }));
+    expect((await member.general.getFrontStatus()).cityOfficeRequests.ids).toEqual([]);
 });

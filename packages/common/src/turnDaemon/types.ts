@@ -223,6 +223,16 @@ export type TurnDaemonCommand =
       }
     | { type: 'kick'; requestId?: string; userId: string; generalId: number; destGeneralId: number }
     | {
+          type: 'cityOfficeRequest';
+          requestId?: string;
+          userId: string;
+          generalId: number;
+          action: 'request' | 'approve' | 'reject' | 'withdraw';
+          officerLevel?: 2 | 3 | 4;
+          targetGeneralId?: number;
+          officeRequestId?: string;
+      }
+    | {
           type: 'appoint';
           requestId?: string;
           userId: string;
@@ -599,6 +609,7 @@ export type TurnDaemonCommandResult =
     | { type: 'dropItem'; ok: boolean; generalId: number; reason?: string }
     | { type: 'changePermission'; ok: boolean; generalId: number; reason?: string }
     | { type: 'kick'; ok: boolean; generalId: number; reason?: string }
+    | { type: 'cityOfficeRequest'; ok: boolean; generalId: number; reason?: string }
     | { type: 'appoint'; ok: boolean; generalId: number; reason?: string }
     | {
           type: 'tournamentRefund';

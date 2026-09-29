@@ -22,6 +22,7 @@ import type {
 import { getNextTurnAt, readScenarioGeneralPoolClaim, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import {
     GAME_TICKS_PER_TURN,
+    shiftOfficeRequestDeadline,
     GameClock,
     assertGameplayCommitAllowed,
     inferClockPhase,
@@ -819,6 +820,7 @@ export class InMemoryTurnWorld {
             const turnTick = clock.addTicks(general.turnTick ?? clock.dateToTick(general.turnTime), input.shiftTicks);
             this.generals.set(generalId, {
                 ...general,
+                meta: shiftOfficeRequestDeadline(general.meta, input.shiftTicks, clock.tick),
                 turnTick,
                 turnTime: clock.tickToDate(turnTick),
             });
@@ -1044,6 +1046,7 @@ export class InMemoryTurnWorld {
             const turnTick = clock.addTicks(general.turnTick ?? clock.dateToTick(general.turnTime), shiftedTicks);
             this.generals.set(generalId, {
                 ...general,
+                meta: shiftOfficeRequestDeadline(general.meta, shiftedTicks),
                 turnTick,
                 turnTime: clock.tickToDate(turnTick),
             });

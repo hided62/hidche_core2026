@@ -185,6 +185,16 @@ const zKick = z.object({
     destGeneralId: zFiniteNumber,
 });
 
+const zCityOfficeRequest = z.object({
+    type: z.literal('cityOfficeRequest'),
+    userId: z.string().min(1),
+    generalId: z.number().int().positive(),
+    action: z.enum(['request', 'approve', 'reject', 'withdraw']),
+    officerLevel: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+    targetGeneralId: z.number().int().positive().optional(),
+    officeRequestId: z.string().min(1).optional(),
+});
+
 const zAppoint = z.object({
     type: z.literal('appoint'),
     userId: z.string().min(1),
@@ -666,6 +676,11 @@ const normalizeKick: CommandNormalizer<'kick'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeCityOfficeRequest: CommandNormalizer<'cityOfficeRequest'> = (envelope) => {
+    const command = parseWith(zCityOfficeRequest, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
+
 const normalizeAppoint: CommandNormalizer<'appoint'> = (envelope) => {
     const command = parseWith(zAppoint, envelope.command);
     if (!command) {
@@ -883,6 +898,7 @@ const normalizers: CommandNormalizerMap = {
     changePermission: normalizeChangePermission,
     kick: normalizeKick,
     appoint: normalizeAppoint,
+    cityOfficeRequest: normalizeCityOfficeRequest,
     tournamentRefund: normalizeTournamentRefund,
     tournamentBettingPayout: normalizeTournamentBettingPayout,
     tournamentReward: normalizeTournamentReward,

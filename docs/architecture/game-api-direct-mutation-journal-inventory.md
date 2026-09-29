@@ -3,7 +3,7 @@
 ## 범위와 판정 규칙
 
 `app/game-api/src/router/**`에서 `.mutation()`으로 선언하고 실제 `appRouter`에 mount한
-87개 route를 2026-08-24 기준으로 전수 분류한다. 이 목록은 “mutation transport를
+89개 route를 2026-09-29 기준으로 전수 분류한다. 이 목록은 “mutation transport를
 사용한다”와 “game DB를 변경한다”를 구분한다. 신규 route가 추가되거나 선언한 router가
 mount되지 않으면
 `app/game-api/test/directMutationJournalInventory.test.ts`가 실패하므로 소유권과
@@ -37,7 +37,7 @@ writer reconciliation을 포함한다. rolling deployment가 끝난 뒤에만
 | durable journal | 19 | `betting.bet`; `diplomacy.destroyLetter`, `diplomacy.respondLetter`, `diplomacy.rollbackLetter`, `diplomacy.sendLetter`; `inherit.checkOwner`; `messages.delete`, `messages.respond`, `messages.send`; `turns.reserved.repeatGeneral`, `turns.reserved.setGeneral`, `turns.reserved.setGeneralBulk`, `turns.reserved.setNation`, `turns.reserved.setNationBulk`, `turns.reserved.shiftGeneral`; `vote.closePoll`, `vote.createPoll`, `vote.submitVote`, `vote.updatePoll` |
 | separate access journal | 1 | `public.recordAccess` |
 | explicit no realtime consumer | 7 | `board.writeArticle`, `board.writeComment`; `join.listPossessCandidates`; `messages.readLatest`; `turns.reserved.repeatNation`, `turns.reserved.shiftNation`; `vote.addComment` |
-| engine owned | 38 | `auction.bidBuyRice`, `auction.bidSellRice`, `auction.bidUnique`, `auction.openBuyRice`, `auction.openSellRice`, `auction.openUnique`; `general.adjustIcon`, `general.buildNationCandidate`, `general.dieOnPrestart`, `general.dropItem`, `general.ensureDieOnPrestartStatus`, `general.instantRetreat`, `general.setMySetting`, `general.vacation`; `inherit.openUniqueAuction`; `join.createGeneral`, `join.getSelectionPool`, `join.possessGeneral`, `join.reselectPoolGeneral`, `join.selectPoolGeneral`; `nation.appoint`, `nation.changePermission`, `nation.kick`, `nation.setBill`, `nation.setBlockScout`, `nation.setBlockWar`, `nation.setNotice`, `nation.setRate`, `nation.setScoutMsg`, `nation.setSecretLimit`; `npc.setGeneralPriority`, `npc.setNationPolicy`, `npc.setNationPriority`; `troop.create`, `troop.exit`, `troop.join`, `troop.kick`, `troop.rename` |
+| engine owned | 39 | `auction.bidBuyRice`, `auction.bidSellRice`, `auction.bidUnique`, `auction.openBuyRice`, `auction.openSellRice`, `auction.openUnique`; `general.adjustIcon`, `general.buildNationCandidate`, `general.dieOnPrestart`, `general.dropItem`, `general.ensureDieOnPrestartStatus`, `general.instantRetreat`, `general.setMySetting`, `general.vacation`; `inherit.openUniqueAuction`; `join.createGeneral`, `join.getSelectionPool`, `join.possessGeneral`, `join.reselectPoolGeneral`, `join.selectPoolGeneral`; `nation.appoint`, `nation.changePermission`, `nation.cityOfficeRequest`, `nation.kick`, `nation.setBill`, `nation.setBlockScout`, `nation.setBlockWar`, `nation.setNotice`, `nation.setRate`, `nation.setScoutMsg`, `nation.setSecretLimit`; `npc.setGeneralPriority`, `npc.setNationPolicy`, `npc.setNationPriority`; `troop.create`, `troop.exit`, `troop.join`, `troop.kick`, `troop.rename` |
 | mixed saga | 9 | `inherit.buyHiddenBuff`, `inherit.buyRandomUnique`, `inherit.resetSpecialWar`, `inherit.resetStat`, `inherit.resetTurnTime`, `inherit.setNextSpecialWar`; `tournament.cancel`, `tournament.join`, `tournament.placeBet` |
 | Redis projection | 6 | `tournament.patchState`, `tournament.seedParticipants`, `tournament.setBettingEntries`, `tournament.setMatches`, `tournament.setParticipants`, `tournament.setState` |
 | operational | 3 | `turnDaemon.pause`, `turnDaemon.resume`, `turnDaemon.run` |
@@ -95,3 +95,7 @@ public dashboard event로 내보내지 않는다. browser wake-up은 정밀 enti
 4. 따라서 dashboard/map coverage v1 코드 조건은 충족했지만 migration은 rolling deploy
    안전을 위해 0을 유지한다. 전체 writer binary 배포가 확인된 뒤에만 activation command를
    실행하며, 문제 시 meta를 0으로 내려 즉시 full-compute fallback한다.
+
+도시 관직 자원은 ENGINE 입력 이벤트로 접수·처리하며, `general.meta.cityOfficeRequest`
+변경을 front-status journal/SSE에 연결한다. [처리 정책](../design/city-office-requests.md)을
+따르며, HTTP actor 검증과 실제 ENGINE PostgreSQL rollback/reload를 별도로 확인한다.

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
     GAME_TICKS_PER_TURN,
+    readOfficeRequest,
     MAX_SAFE_GAME_TICK,
     GameClock,
     buildClockAlignmentPlan,
@@ -336,6 +337,24 @@ const readParticipantSnapshots = async (
             })
         ),
         snapshot(
+            'city-office-request-occurrence',
+            'KEEP',
+            generals.flatMap(({ id, meta }) => {
+                const request = readOfficeRequest(meta);
+                return request ? [{ id, createdTick: request.createdTick }] : [];
+            })
+        ),
+        snapshot(
+            'city-office-request-deadline',
+            'SHIFT',
+            generals.flatMap(({ id, meta }) => {
+                const request = readOfficeRequest(meta);
+                return request?.status === 'pending' && BigInt(request.dueTick) >= cutTick
+                    ? [{ id, dueTick: request.dueTick }]
+                    : [];
+            })
+        ),
+        snapshot(
             'auction-open-occurrence',
             'KEEP',
             auctions.map(({ id, openTick }) => ({ id, openTick }))
@@ -536,7 +555,7 @@ const assertShiftFits = (participants: readonly ParticipantSnapshot[], shiftTick
 const assertScheduleRanges = async (db: GamePrisma.TransactionClient, shiftTicks: number): Promise<void> => {
     const shift = BigInt(shiftTicks);
     const maximum = BigInt(MAX_SAFE_GAME_TICK) - shift;
-    const [general, reselection, auction, message, vote, pool, npcValid, npcMore] = await Promise.all([
+    const [general, reselection, auction, message, vote, pool, npcValid, npcMore, office] = await Promise.all([
         db.general.aggregate({ _max: { turnTick: true }, where: { turnTick: { not: null } } }),
         db.$queryRaw<Array<{ maxTick: bigint | null }>>(GamePrisma.sql`
             SELECT MAX((meta->>'next_change_tick')::bigint) AS "maxTick"
@@ -561,8 +580,14 @@ const assertScheduleRanges = async (db: GamePrisma.TransactionClient, shiftTicks
             _max: { pickMoreFromTick: true },
             where: { pickMoreFromTick: { not: null } },
         }),
+        db.$queryRaw<Array<{ maxTick: bigint | null }>>(GamePrisma.sql`
+            SELECT MAX((meta #>> '{cityOfficeRequest,dueTick}')::bigint) AS "maxTick"
+            FROM general WHERE meta #>> '{cityOfficeRequest,status}' = 'pending'
+            AND meta #>> '{cityOfficeRequest,dueTick}' ~ '^-?[0-9]+$'
+        `),
     ]);
     const values: Array<[string, bigint | null]> = [
+        ['general.meta.cityOfficeRequest.dueTick', office[0]?.maxTick ?? null],
         ['general.turn_tick', general._max.turnTick],
         ['general.meta.next_change_tick', reselection[0]?.maxTick ?? null],
         ['auction.close_tick', auction._max.closeTick],
@@ -631,6 +656,16 @@ const applyParticipantShift = async (
             WHERE meta->>'next_change_tick' ~ '^-?[0-9]+$'
               AND (meta->>'next_change_tick')::bigint >= ${cutTick}
         `)
+    );
+    affected.set(
+        'city-office-request-deadline',
+        await db.$executeRaw(GamePrisma.sql`
+        UPDATE general SET meta = jsonb_set(meta, '{cityOfficeRequest,dueTick}',
+            to_jsonb((meta #>> '{cityOfficeRequest,dueTick}')::bigint + ${shiftTicks}))
+        WHERE meta #>> '{cityOfficeRequest,status}' = 'pending'
+          AND meta #>> '{cityOfficeRequest,dueTick}' ~ '^-?[0-9]+$'
+          AND (meta #>> '{cityOfficeRequest,dueTick}')::bigint >= ${cutTick}
+    `)
     );
     affected.set(
         'auction-deadline',

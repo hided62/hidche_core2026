@@ -44,6 +44,7 @@ messages.respond	durable-journal	direct-endpoint	session-user-db-general	dynamic
 messages.send	durable-journal	direct-endpoint	session-user-db-general	endpoint-unit	app/game-api/test/messagesRouter.test.ts	no-route-actual-db
 nation.appoint	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/nationPersonnelRouter.test.ts	no-route-actual-db
 nation.changePermission	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/nationPersonnelRouter.test.ts	no-route-actual-db
+nation.cityOfficeRequest	engine-owned	core-only	session-user-engine-general	actual-db	app/game-engine/test/cityOfficeRequestPersistence.integration.test.ts	no-route-actual-db
 nation.kick	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/nationPersonnelRouter.test.ts	no-route-actual-db
 nation.setBill	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/nationSettingRouter.test.ts	no-route-actual-db
 nation.setBlockScout	engine-owned	domain-command	session-user-engine-general	endpoint-unit	app/game-api/test/scoutBlockRouter.test.ts	no-route-actual-db

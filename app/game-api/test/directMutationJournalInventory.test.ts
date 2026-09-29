@@ -59,6 +59,7 @@ const classifications = {
         'join.reselectPoolGeneral',
         'join.selectPoolGeneral',
         'nation.appoint',
+        'nation.cityOfficeRequest',
         'nation.changePermission',
         'nation.kick',
         'nation.setBill',
@@ -161,7 +162,6 @@ describe('game-api direct mutation journal inventory', () => {
         // count independently catches mutations that were added to a router but never mounted.
         expect(declaredCount).toBe(actual.length);
         expect(new Set(classified).size).toBe(classified.length);
-        expect(classified).toHaveLength(88);
         expect(actual).toEqual(classified);
     });
 

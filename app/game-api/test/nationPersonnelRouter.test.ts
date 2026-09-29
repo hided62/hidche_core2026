@@ -1,3 +1,6 @@
+import { createHTTPServer } from '@trpc/server/adapters/standalone';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ChangeJournal } from '@sammo-ts/common';
@@ -346,4 +349,135 @@ describe('nation personnel router', () => {
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
         expect(memberCommand).not.toHaveBeenCalled();
     });
+});
+
+describe('city office requests', () => {
+    it.each(['approve', 'reject', 'withdraw'] as const)(
+        'binds %s to the session actor and durable request ID',
+        async (action) => {
+            const requestCommand = vi.fn().mockResolvedValue({ type: 'cityOfficeRequest', ok: true, generalId: 22 });
+            const caller = appRouter.createCaller(createContext({ requestId: 'office-http', requestCommand }));
+            await expect(
+                caller.nation.cityOfficeRequest({ action, targetGeneralId: 30, officeRequestId: '30:760' })
+            ).resolves.toEqual({ ok: true });
+            expect(requestCommand).toHaveBeenCalledWith({
+                type: 'cityOfficeRequest',
+                userId: 'user-22',
+                generalId: 22,
+                requestId: 'office-http:nation.cityOfficeRequest:engine:0:cityOfficeRequest',
+                action,
+                targetGeneralId: 30,
+                officeRequestId: '30:760',
+            });
+        }
+    );
+    it('validates request fields and propagates engine rejection', async () => {
+        const requestCommand = vi
+            .fn()
+            .mockResolvedValue({ type: 'cityOfficeRequest', ok: false, generalId: 22, reason: '이번 분기 자원 완료' });
+        const caller = appRouter.createCaller(createContext({ requestCommand }));
+        await expect(caller.nation.cityOfficeRequest({ action: 'request', officerLevel: 4 })).rejects.toMatchObject({
+            message: '이번 분기 자원 완료',
+        });
+        // @ts-expect-error invalid officer must also be rejected at the HTTP boundary
+        await expect(caller.nation.cityOfficeRequest({ action: 'request', officerLevel: 12 })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(requestCommand).toHaveBeenCalledTimes(1);
+    });
+    it.each([1, 5])('redacts other requests for ordinary members (officer %s)', async (officerLevel) => {
+        const office = {
+            id: '30:760',
+            generalId: 30,
+            userId: 'user-30',
+            nationId: 1,
+            cityId: 1,
+            officerLevel: 4,
+            incumbentId: 0,
+            quarter: 760,
+            createdTick: 0,
+            dueTick: 3600000,
+            defaultDecision: 'approve',
+            defaultReason: 'vacant',
+            status: 'pending',
+        };
+        const me = { ...baseGeneral, officerLevel };
+        const caller = appRouter.createCaller(
+            createContext({
+                me,
+                db: {
+                    general: {
+                        findFirst: vi.fn(async () => me),
+                        findMany: vi.fn(async () => [
+                            me,
+                            {
+                                ...baseGeneral,
+                                id: 30,
+                                userId: 'user-30',
+                                officerLevel: 1,
+                                meta: { belong: 5, cityOfficeRequest: office },
+                            },
+                        ]),
+                    },
+                    nation: { findUnique: vi.fn(async () => ({ meta: { secretlimit: 3 } })) },
+                    city: { findMany: vi.fn(async () => [{ id: 1, name: '허창', nationId: 1, meta: {} }]) },
+                    worldState: {
+                        findFirst: vi.fn(async () => ({
+                            currentYear: 190,
+                            currentMonth: 1,
+                            tickSeconds: 600,
+                            meta: {},
+                            config: { stat: { chiefMin: 65 } },
+                            clockBaseTime: new Date('2026-01-01'),
+                            clockTick: 0n,
+                            clockMode: 'manual',
+                            clockWallAnchor: new Date('2026-01-01'),
+                            clockPhase: 'RUNNING',
+                        })),
+                    },
+                },
+            })
+        );
+        const result = await caller.nation.getCityOfficeRequests();
+        expect(result.requests).toHaveLength(officerLevel === 5 ? 1 : 0);
+        expect(JSON.stringify(result)).not.toContain('user-30');
+        expect(result.options.find((option) => option.level === 4)?.allowed).toBe(false);
+    });
+});
+
+it('city office HTTP transport rejects unauthenticated and malformed requests and ignores a forged actor', async () => {
+    const requestCommand = vi.fn().mockResolvedValue({ type: 'cityOfficeRequest', ok: true, generalId: 22 });
+    const server = createHTTPServer({
+        router: appRouter,
+        createContext: ({ req }): GameApiContext => ({
+            ...createContext({ requestId: 'office-http-wire', requestCommand }),
+            auth: req.headers['x-test-session'] ? auth : null,
+        }),
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address() as AddressInfo;
+    const send = (body: unknown, authenticated = true) =>
+        fetch(`http://127.0.0.1:${address.port}/nation.cityOfficeRequest`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...(authenticated ? { 'x-test-session': 'fixture' } : {}) },
+            body: JSON.stringify(body),
+        });
+    try {
+        expect((await send({ action: 'request', officerLevel: 4 }, false)).status).toBe(401);
+        expect((await send({ action: 'request', officerLevel: 12 })).status).toBe(400);
+        expect(requestCommand).not.toHaveBeenCalled();
+        expect((await send({ action: 'request', officerLevel: 4, generalId: 99, userId: 'forged' })).status).toBe(200);
+        expect(requestCommand).toHaveBeenCalledWith(expect.objectContaining({ generalId: 22, userId: 'user-22' }));
+        requestCommand.mockResolvedValueOnce({
+            type: 'cityOfficeRequest',
+            ok: false,
+            generalId: 22,
+            reason: '이미 처리된 요청',
+        });
+        expect((await send({ action: 'approve', targetGeneralId: 30, officeRequestId: 'stale' })).status).toBe(400);
+    } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
 });

@@ -208,7 +208,14 @@ const generalSignatures = (general: TurnGeneral): ReadModelSignatures => ({
         permission: asRecord(general.meta).permission,
         penalty: general.penalty,
     }),
-    frontStatus: signature({ name: general.name, nationId: general.nationId }),
+    frontStatus: signature({
+        name: general.name,
+        nationId: general.nationId,
+        officerLevel: general.officerLevel,
+        userId: general.userId,
+        penalty: general.penalty,
+        cityOfficeRequest: asRecord(general.meta).cityOfficeRequest,
+    }),
     frontStatusGlobal: '',
     lobbyCount: signature({ npcState: general.npcState }),
     lobbyPersonal: signature({
@@ -1406,7 +1413,12 @@ export const createDatabaseTurnHooks = async (
                     GamePrisma.sql`
                         UPDATE general
                         SET turn_tick = CASE WHEN turn_tick IS NULL THEN NULL ELSE turn_tick + ${deltaTicks} END,
-                            turn_time = turn_time + (${deltaSeconds} * INTERVAL '1 second')
+                            turn_time = turn_time + (${deltaSeconds} * INTERVAL '1 second'),
+                            meta = CASE WHEN meta #>> '{cityOfficeRequest,status}' = 'pending'
+                                AND meta #>> '{cityOfficeRequest,dueTick}' ~ '^-?[0-9]+$'
+                                THEN jsonb_set(meta, '{cityOfficeRequest,dueTick}',
+                                    to_jsonb((meta #>> '{cityOfficeRequest,dueTick}')::bigint + ${deltaTicks}))
+                                ELSE meta END
                     `
                 );
                 await prisma.$executeRaw(

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { GameClock, GAME_TICKS_PER_TURN as T, readTurnRecovery } from '@sammo-ts/common';
+import { GameClock, GAME_TICKS_PER_TURN as T, readTurnRecovery, readOfficeRequest } from '@sammo-ts/common';
 import {
     createGamePostgresConnector,
     readTurnRuntimeReady,
@@ -793,6 +793,21 @@ describeIntegration('durable clock reconciliation', () => {
                 meta:
                     index === 0
                         ? {
+                              cityOfficeRequest: {
+                                  id: '1:760',
+                                  generalId: 1,
+                                  userId: 'clock-user',
+                                  nationId: 1,
+                                  cityId: 1,
+                                  officerLevel: 4,
+                                  incumbentId: 0,
+                                  quarter: 760,
+                                  createdTick: initialTick - 100,
+                                  dueTick: reselectionTick,
+                                  defaultDecision: 'approve',
+                                  defaultReason: 'vacant',
+                                  status: 'pending',
+                              },
                               next_change_tick: reselectionTick,
                               next_change: clock.tickToDate(reselectionTick).toISOString(),
                               nextChangeAt: clock.tickToDate(reselectionTick).toISOString(),
@@ -922,6 +937,11 @@ describeIntegration('durable clock reconciliation', () => {
         );
         const shiftedReselectionMeta = generals[0]!.meta as Record<string, unknown>;
         expect(shiftedReselectionMeta.next_change_tick).toBe(reselectionTick + reconciled.shiftTicks);
+        expect(readOfficeRequest(shiftedReselectionMeta)).toMatchObject({
+            createdTick: initialTick - 100,
+            dueTick: reselectionTick + reconciled.shiftTicks,
+            status: 'pending',
+        });
         expect(new Date(String(shiftedReselectionMeta.next_change)).getTime()).toBe(
             clock.tickToDate(reselectionTick).getTime() + 65 * 60_000 + 17_250
         );

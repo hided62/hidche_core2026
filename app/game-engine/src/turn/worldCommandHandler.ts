@@ -1,3 +1,4 @@
+import { handleCityOfficeRequest, settleCityOfficeRequests } from './cityOfficeRequests.js';
 import type {
     TurnDaemonCommandHandler,
     TurnDaemonCommand,
@@ -187,6 +188,7 @@ const ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST = [
     'changePermission',
     'kick',
     'appoint',
+    'cityOfficeRequest',
     'voteReward',
     'syncDiplomaticResponse',
 ] as const satisfies readonly TurnDaemonCommand['type'][];
@@ -2587,6 +2589,7 @@ async function handleAppoint(
     } else {
         return { type: 'appoint', ok: false, generalId: command.generalId, reason: '올바르지 않은 지정입니다.' };
     }
+    settleCityOfficeRequests(world, Number.NEGATIVE_INFINITY);
     refreshActorKillturn(world, general);
     return { type: 'appoint', ok: true, generalId: command.generalId };
 }
@@ -3243,6 +3246,12 @@ export const createTurnDaemonCommandHandler = (options: {
         changePermission: (command) =>
             handleChangePermission(ctx, command as Extract<TurnDaemonCommand, { type: 'changePermission' }>),
         kick: (command) => handleKick(ctx, command as Extract<TurnDaemonCommand, { type: 'kick' }>),
+        cityOfficeRequest: async (command) =>
+            handleCityOfficeRequest(
+                ctx.world,
+                command as Extract<TurnDaemonCommand, { type: 'cityOfficeRequest' }>,
+                ctx.commandDb ? await resolveOperationalAcceptedAt(ctx.commandDb, command) : new Date()
+            ),
         appoint: (command) => handleAppoint(ctx, command as Extract<TurnDaemonCommand, { type: 'appoint' }>),
         tournamentRefund: (command) =>
             handleTournamentRefund(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>),

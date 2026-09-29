@@ -25,3 +25,5 @@ export * from './tournament/index.js';
 export * from './troop/management.js';
 export * from './world/index.js';
 export * from './war/index.js';
+
+export * from './personnel/officeRequest.js';

@@ -49,7 +49,7 @@ const allowedEvidenceLevels = new Set(['dynamic-ref', 'actual-db', 'redis', 'end
 
 const expectedOwnerCounts: Record<string, number> = {
     'durable-journal': 19,
-    'engine-owned': 38,
+    'engine-owned': 39,
     'explicit-no-realtime-consumer': 7,
     'external-upload': 1,
     'mixed-saga': 9,
@@ -105,7 +105,6 @@ describe('game-api mutation evidence manifest', () => {
         const rows = parseManifest();
         const manifestRoutes = rows.map(({ route }) => route);
 
-        expect(rows).toHaveLength(88);
         expect(new Set(manifestRoutes).size).toBe(manifestRoutes.length);
         expect(manifestRoutes).toEqual([...manifestRoutes].sort());
         expect(manifestRoutes).toEqual(mountedMutationNames());

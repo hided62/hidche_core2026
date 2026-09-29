@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CityOfficeRequestNotice from '../components/personnel/CityOfficeRequestNotice.vue';
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import type { RuntimeNavigationConfig } from '@sammo-ts/common/navigation/menuConfig';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -335,6 +336,7 @@ watch(
             />
         </div>
 
+        <CityOfficeRequestNotice :server-id="frontStatus?.serverId" :summary="frontStatus?.cityOfficeRequests" />
         <aside v-if="surveyNotice" class="survey-notice" role="status" aria-live="polite">
             <div class="survey-notice-title">
                 <strong>설문조사 안내</strong>

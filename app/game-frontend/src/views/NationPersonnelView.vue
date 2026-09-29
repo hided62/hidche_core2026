@@ -5,6 +5,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 
+import CityOfficeRequests from '../components/personnel/CityOfficeRequests.vue';
 import PermissionMultiSelect from '../components/personnel/PermissionMultiSelect.vue';
 import PersonnelSelectionDialog from '../components/personnel/PersonnelSelectionDialog.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
@@ -321,6 +322,8 @@ onMounted(() => void loadPersonnel());
                 </tr>
             </tbody>
         </table>
+
+        <CityOfficeRequests @changed="loadPersonnel" />
 
         <div v-if="error" class="feedback error" role="alert">{{ error }}</div>
         <div v-if="loading" class="loading">불러오는 중...</div>
