@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useDefaultGeneralIcon } from '../../utils/generalIcon';
 
 type SelectionMetric = {
     label: string;
@@ -12,7 +13,7 @@ type SelectionItem = {
     subtitle: string;
     searchText: string;
     accent?: 'current' | 'assigned' | 'available';
-    iconBackground?: string;
+    iconUrl?: string;
     badges?: string[];
     stats?: SelectionMetric[];
     details?: SelectionMetric[];
@@ -168,11 +169,13 @@ onBeforeUnmount(() => {
                             :aria-pressed="selectedId === item.id"
                             @click="select(item.id)"
                         >
-                            <span
-                                v-if="item.iconBackground"
+                            <img
+                                v-if="item.iconUrl"
                                 class="personnel-picker-portrait"
-                                :style="{ backgroundImage: item.iconBackground }"
+                                :src="item.iconUrl"
+                                alt=""
                                 aria-hidden="true"
+                                @error="useDefaultGeneralIcon"
                             />
                             <span v-else class="personnel-picker-city-icon" aria-hidden="true">城</span>
 
@@ -366,9 +369,7 @@ small {
     background-color: #0b0c0a;
 }
 .personnel-picker-portrait {
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: cover;
+    object-fit: cover;
 }
 .personnel-picker-city-icon,
 .vacancy-icon {

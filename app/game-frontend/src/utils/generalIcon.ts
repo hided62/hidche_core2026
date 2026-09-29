@@ -43,11 +43,6 @@ export const resolveGeneralIconUrl = (
     return `${trimTrailingSlashes(baseUrl)}/${encodedPicture}`;
 };
 
-export const resolveGeneralIconBackgroundImage = (source: GeneralIconSource, options?: GeneralIconOptions): string => {
-    const resolved = resolveGeneralIconUrl(source, options);
-    return `url(${JSON.stringify(resolved)}), url(${JSON.stringify(DEFAULT_GENERAL_ICON_URL)})`;
-};
-
 export const resolveMessageGeneralIconUrl = (
     icon: string | null | undefined,
     userIconBaseUrl = configuredUserIconPublicUrl()

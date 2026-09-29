@@ -8,7 +8,7 @@ import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import PermissionMultiSelect from '../components/personnel/PermissionMultiSelect.vue';
 import PersonnelSelectionDialog from '../components/personnel/PersonnelSelectionDialog.vue';
 import { useGameFeedback } from '../composables/useGameFeedback';
-import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { sortGeneralsByTypeThenName } from '../utils/generalOrder';
 import { trpc } from '../utils/trpc';
 import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
@@ -25,7 +25,7 @@ type SelectionDialogItem = {
     subtitle: string;
     searchText: string;
     accent: 'current' | 'assigned' | 'available';
-    iconBackground?: string;
+    iconUrl?: string;
     badges: string[];
     stats?: Array<{ label: string; value: string }>;
     details: Array<{ label: string; value: string }>;
@@ -77,7 +77,7 @@ const chiefAssignments = computed(() => data.value?.chiefAssignments ?? {});
 const cityNameMap = computed(() => new Map((data.value?.cityAssignments ?? []).map((city) => [city.id, city.name])));
 const generalMap = computed(() => new Map((data.value?.generals ?? []).map((general) => [general.id, general])));
 
-const imageBackground = (general: GeneralEntry | undefined): string => resolveGeneralIconBackgroundImage(general ?? {});
+const imageUrl = (general: GeneralEntry | undefined): string => resolveGeneralIconUrl(general ?? {});
 const officerLocked = (value: number, level: number): boolean => (value & (1 << level)) !== 0;
 const chiefLocked = (level: number): boolean => officerLocked(data.value?.nation.chiefSet ?? 0, level);
 const cityOfficerLocked = (city: PersonnelResponse['cityAssignments'][number], level: number): boolean =>
@@ -197,7 +197,7 @@ const generalSelectionItem = (general: GeneralEntry, currentGeneralId: number): 
             .filter(Boolean)
             .join(' '),
         accent: isCurrent ? 'current' : isAssigned ? 'assigned' : 'available',
-        iconBackground: imageBackground(general),
+        iconUrl: imageUrl(general),
         badges,
         stats: [
             { label: '통솔', value: general.stats.leadership.toLocaleString('ko-KR') },
@@ -355,10 +355,12 @@ onMounted(() => void loadPersonnel());
                                     <span class="chief-entry-role">{{
                                         formatOfficerLevelText(level, nationLevel)
                                     }}</span>
-                                    <span
+                                    <img
                                         class="general-icon"
-                                        :style="{ backgroundImage: imageBackground(chiefAssignments[level]) }"
+                                        :src="imageUrl(chiefAssignments[level])"
+                                        alt=""
                                         aria-hidden="true"
+                                        @error="useDefaultGeneralIcon"
                                     />
                                     <span class="chief-entry-copy">
                                         <strong>{{ chiefAssignments[level]?.name ?? '공석' }}</strong>
@@ -736,9 +738,7 @@ select {
     grid-area: icon;
     width: 64px;
     height: 64px;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: 64px 64px;
+    object-fit: fill;
 }
 .chief-entry-copy {
     display: grid;
@@ -943,7 +943,6 @@ select {
     .general-icon {
         width: 48px;
         height: 48px;
-        background-size: 48px 48px;
     }
     .chief-entry-copy strong {
         font-size: var(--sammo-font-size-personnel-mobile-name);

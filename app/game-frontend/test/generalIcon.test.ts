@@ -3,7 +3,6 @@ import { describe, it } from 'node:test';
 
 import {
     DEFAULT_GENERAL_ICON_URL,
-    resolveGeneralIconBackgroundImage,
     resolveGeneralIconUrl,
     resolveMessageGeneralIconUrl,
 } from '../src/utils/generalIcon.ts';
@@ -38,17 +37,10 @@ void describe('generalIcon', () => {
         );
     });
 
-    void it('uses a deterministic default and safe layered fallback for CSS backgrounds', () => {
+    void it('uses a deterministic default when the picture is missing', () => {
         assert.equal(
             resolveGeneralIconUrl({ picture: null, imageServer: 0 }),
             'https://sam-image.hided.net/icons/default.jpg'
-        );
-        assert.equal(
-            resolveGeneralIconBackgroundImage(
-                { picture: 'custom.jpg', imageServer: 1 },
-                { userIconBaseUrl: '/gateway/api/user-icons' }
-            ),
-            'url("/gateway/api/user-icons/custom.jpg"), url("https://sam-image.hided.net/icons/default.jpg")'
         );
     });
 

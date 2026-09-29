@@ -1,5 +1,5 @@
 import { devices, expect, test, type Page, type Route } from '@playwright/test';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -11,6 +11,7 @@ type FixtureState = {
     role: Role;
     failNextRate?: boolean;
     failPersonnelLoad?: boolean;
+    testIcons?: boolean;
     rate: number;
     appointedGeneralId?: number;
     appointedCityId?: number;
@@ -98,8 +99,8 @@ const personnelFixture = (state: FixtureState) => {
     const officerLevel = state.role === 'leader' ? 12 : state.role === 'head' ? 5 : 1;
     const fullGenerals = [
         general(1, '조조', 12),
-        general(2, '순욱', 11),
-        general(3, '하후돈', 4),
+        general(2, '순욱', 11, state.testIcons ? { picture: 'transparent.png', imageServer: 1 } : {}),
+        general(3, '하후돈', 4, state.testIcons ? { picture: 'missing.png', imageServer: 1 } : {}),
         general(4, '곽가', 3),
         general(5, '정욱', 2),
         general(6, '장료', 1, { npcState: 2 }),
@@ -1022,3 +1023,69 @@ test('finance adopts the server-purified notice and scout message before renderi
         )
         .toBeUndefined();
 });
+
+for (const width of [1365, 390]) {
+    test(`personnel custom icons never layer the default at ${width}px`, async ({ page }, testInfo) => {
+        await installFixture(page, { role: 'leader', rate: 20, testIcons: true });
+        await page.setViewportSize({ width, height: 900 });
+        await page.route('**/transparent.png', (route) =>
+            route.fulfill({
+                contentType: 'image/svg+xml',
+                body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="12" fill="red"/></svg>',
+            })
+        );
+        await page.route('**/missing.png', (route) => route.fulfill({ status: 404, body: '' }));
+        await page.route('**/icons/default.jpg', async (route) =>
+            route.fulfill({
+                contentType: 'image/jpeg',
+                body: await referenceAsset('icons/default.jpg'),
+            })
+        );
+        await gotoOffice(page, 'nation/personnel');
+        const chief = page.locator('.chief-entry').filter({ hasText: '순욱' }).locator('.general-icon');
+        await expect(chief).toHaveCSS('background-image', 'none');
+        await expect(chief).toHaveAttribute('src', /transparent\.png$/);
+        await expect(page.locator('.chief-entry').filter({ hasText: '조조' }).locator('.general-icon')).toHaveAttribute(
+            'src',
+            /default\.jpg$/
+        );
+        await page.getByRole('button', { name: '주부 변경하기', exact: true }).click();
+        const picker = page.getByTestId('personnel-selection-dialog');
+        const custom = picker
+            .locator('.personnel-picker-card')
+            .filter({ hasText: '순욱' })
+            .locator('.personnel-picker-portrait');
+        const missing = picker
+            .locator('.personnel-picker-card')
+            .filter({ hasText: '하후돈' })
+            .locator('.personnel-picker-portrait');
+        await expect(custom).toHaveCSS('background-image', 'none');
+        await expect(custom).toHaveAttribute('src', /transparent\.png$/);
+        await expect(missing).toHaveAttribute('src', /default\.jpg$/);
+        await expect.poll(() => custom.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBe(64);
+        await page.evaluate(() => document.fonts.ready);
+        const metrics = await page.locator('.general-icon, .personnel-picker-portrait').evaluateAll((elements) =>
+            elements.map((el) => ({
+                src: (el as HTMLImageElement).currentSrc,
+                rect: el.getBoundingClientRect().toJSON(),
+                background: getComputedStyle(el).backgroundImage,
+                objectFit: getComputedStyle(el).objectFit,
+                naturalWidth: (el as HTMLImageElement).naturalWidth,
+                naturalHeight: (el as HTMLImageElement).naturalHeight,
+            }))
+        );
+        expect(metrics.every((entry) => entry.background === 'none')).toBe(true);
+        await writeFile(testInfo.outputPath('icon-geometry.json'), JSON.stringify(metrics, null, 2));
+        await writeFile(testInfo.outputPath('icon-dom.html'), await page.content());
+        await testInfo.attach('icon-geometry', {
+            body: JSON.stringify(metrics, null, 2),
+            contentType: 'application/json',
+        });
+        await page.screenshot({
+            path: testInfo.outputPath('personnel-icons.png'),
+            fullPage: true,
+            animations: 'disabled',
+        });
+        await testInfo.attach('icon-dom', { body: await page.content(), contentType: 'text/html' });
+    });
+}
