@@ -142,6 +142,7 @@ watch(
 }
 
 .activity-status .status-row {
+    align-content: safe center;
     padding-right: 0;
     padding-left: 0;
     text-align: center;

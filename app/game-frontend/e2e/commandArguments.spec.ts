@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import {
@@ -5035,5 +5036,18 @@ for (const width of [1200, 390]) {
         await form.getByLabel('국가명').fill('신국');
         await picker.getByRole('button', { name: '건국 입력', exact: true }).click();
         await expect.poll(() => JSON.stringify(requests)).toContain('"nationType":"che_덕가"');
+    });
+}
+
+for (const width of [500, 1000]) {
+    test(`징병 현황 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await install(page);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/');
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        await picker.getByRole('button', { name: '내정', exact: true }).click();
+        await picker.getByRole('button', { name: '징병', exact: true }).click();
+        await verifyVerticalAlignment(page, testInfo, ['.recruitment-status > span']);
     });
 }

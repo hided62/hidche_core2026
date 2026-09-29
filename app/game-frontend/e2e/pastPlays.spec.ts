@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -378,3 +379,13 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
     expect(detailMetrics.hallColumns.split(' ')).toHaveLength(3);
     expect(detailMetrics.recordBottom).toBeLessThanOrEqual(detailMetrics.shellBottom);
 });
+
+for (const width of [500, 1000]) {
+    test(`지난 플레이 전투 수치 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installArchive(page);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('past-plays');
+        await page.locator('.detail-toggle').click();
+        await verifyVerticalAlignment(page, testInfo, ['.hall-battle-record dt', '.hall-battle-record dd']);
+    });
+}

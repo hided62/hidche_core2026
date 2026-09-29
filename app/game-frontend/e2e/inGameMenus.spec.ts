@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
@@ -2680,3 +2681,17 @@ test('감찰부 사관 연수를 채운 일반 장수는 개인 기록 거부에
         await expect(page.locator('[data-log-type="battleResult"]')).toContainText('battleResult 감찰 기록');
     }
 });
+
+for (const width of [500, 1000]) {
+    test(`내 정보의 오른쪽 수치와 왼쪽 날짜 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await install(page, { permission: 'head', myset: 3, settingMutations: [], accessPages: [] });
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('my-page');
+        await verifyVerticalAlignment(page, testInfo, [
+            '.battle-general-extra > span',
+            '.battle-general-extra > strong',
+            '.dex-row > span',
+            '.dex-row > strong',
+        ]);
+    });
+}

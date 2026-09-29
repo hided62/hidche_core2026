@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -1050,3 +1051,17 @@ test('renders the same Ref season status on the public gateway page', async ({ p
     await expect(status).toHaveAttribute('title', '2026-07-30 00:00:00\n~ 2026-07-30 00:05:00');
     await expect(page.getByRole('button', { name: '현황 새로고침' })).toBeEnabled();
 });
+
+for (const width of [390, 500]) {
+    test(`모바일 로비 식별 정보와 동작 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installFixture(page);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('lobby');
+        await verifyVerticalAlignment(page, testInfo, [
+            '.profile-server-cell',
+            '.profile-portrait-cell',
+            '.profile-general-cell',
+            '.profile-action-cell',
+        ]);
+    });
+}

@@ -114,6 +114,7 @@ const experiencePercent = computed(() =>
 .stat-grid > *,
 .experience-row > *,
 .dex-row > * {
+    align-content: safe center;
     box-sizing: border-box;
     min-width: 0;
     border-right: 1px solid #666;

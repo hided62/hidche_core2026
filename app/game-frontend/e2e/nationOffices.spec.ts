@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { devices, expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -1087,5 +1088,14 @@ for (const width of [1365, 390]) {
             animations: 'disabled',
         });
         await testInfo.attach('icon-dom', { body: await page.content(), contentType: 'text/html' });
+    });
+}
+
+for (const width of [500, 1000]) {
+    test(`재정 격자 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installFixture(page, { role: 'head', rate: 20 });
+        await page.setViewportSize({ width, height: 900 });
+        await gotoOffice(page, 'nation/finance');
+        await verifyVerticalAlignment(page, testInfo, ['.diplomacy-row > div', '.budget-row > span', '.blue-heading']);
     });
 }

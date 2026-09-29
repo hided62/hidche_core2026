@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 // 기존 화면 fixture의 읽기 응답을 고정했다. 실제 계정이나 게임 서버에는 접근하지 않는다.
@@ -191,4 +192,30 @@ for (const width of [500, 1000]) {
         await waitForFonts(page);
         await page.screenshot({ path: testInfo.outputPath('battle-log-exception.png'), fullPage: true });
     });
+}
+
+for (const width of [500, 1000]) {
+    for (const scene of [
+        {
+            name: 'main',
+            route: './',
+            selectors: [
+                '.general-basic-grid > .cell-label',
+                '.general-basic-grid > strong',
+                '.city-title',
+                '.city-nation',
+                '.record-title',
+                '.activity-status .status-row',
+            ],
+        },
+        { name: 'personnel', route: 'nation/personnel', selectors: ['.nation-heading', '.personnel-change-button'] },
+        { name: 'possession', route: 'join', selectors: ['.npc-token-status'] },
+    ]) {
+        test(`세로 정렬은 셀 크기와 가로 정렬을 보존한다 ${scene.name} ${width}px`, async ({ page }, testInfo) => {
+            await page.setViewportSize({ width, height: 900 });
+            await install(page, scene.name, names[0].general, names[0].nation);
+            await page.goto(scene.route);
+            await verifyVerticalAlignment(page, testInfo, scene.selectors);
+        });
+    }
 }

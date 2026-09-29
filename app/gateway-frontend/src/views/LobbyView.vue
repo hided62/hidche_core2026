@@ -1028,6 +1028,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
         border-bottom: 1px solid #3f3f46;
     }
 
+    .profile-server-cell,
+    .profile-portrait-cell,
+    .profile-general-cell,
+    .profile-action-cell {
+        align-content: safe center;
+    }
+
     .profile-portrait-cell {
         grid-area: portrait;
     }

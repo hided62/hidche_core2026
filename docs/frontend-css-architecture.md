@@ -3,7 +3,7 @@
 The game frontend preserves the rendered contract of `ref/sam`; CSS reuse is
 not a reason to normalize a page's width, height, typography, texture, or
 interaction states. When reuse and the reference geometry conflict, the
-reference geometry wins.
+reference geometry wins unless an explicit Core UX policy below changes that contract.
 
 ## Layers
 
@@ -210,3 +210,43 @@ rendering, including rem/em/% semantics. Zero-sized hidden markers and arbitrary
 user HTML remain content contracts. The betting page and bracket now reference
 the shared tier variables directly instead of the redundant `--bet-font-*` aliases.
 The historical deferral reasons above describe the original 12px proposal.
+
+## Text alignment on both axes (2026-09-29)
+
+Core intentionally centers compact UI text vertically when its cell has spare
+height. Horizontal alignment remains independent: numerical values can stay
+right-aligned and dates or field labels left-aligned. This policy does not change
+game state, field order, font tiers, cell dimensions, or the meaning of Ref data.
+
+| Content | Vertical alignment |
+| --- | --- |
+| A short heading, status, button/link label, identity or scalar value | Center within its own cell when it fits |
+| A short label that wraps on a narrow viewport | Center the complete label if it fits; allow natural height and preserve wrapping |
+| A form label next to one input | Center against the input; if the field also has help/error text, align to the input rather than the entire help block |
+| Prose, logs, notices, editor content, multi-paragraph detail, card collections | Preserve the reading start at the top |
+| A table cell with text/numbers/actions | Use table-cell `vertical-align: middle`; retain explicit top alignment for narrative/detail cells |
+| A column flex container | The vertical axis is `justify-content`, not `align-items` |
+
+Choose the smallest owner of the text. For a block or grid-item cell with inline
+markup, `align-content: safe center` preserves inline wrapping, ellipsis and the
+existing text-align. It also leaves overflowing content at the start. Do not
+turn mixed inline text/links/tooltips into separate flex items to center a label.
+For an existing row flex/grid layout use its appropriate axis; centering the
+whole grid is different from centering the contents of each bordered cell.
+Do not globally style every `td`, `span`, `.center` or user HTML.
+
+Avoid fixed-height line-height hacks and manual top padding to imitate centering.
+Existing equal-height line boxes and native table cells need no redundant rewrite.
+Keep raised-button face/edge geometry and hover/active bottom coordinates intact.
+The shared legacy control uses block content alignment without changing display.
+On the mobile Gateway lobby grid, center server identity, portrait, general and
+action cells; the multi-line server information keeps its reading order.
+
+For new or changed UI, record the role and both alignment axes before choosing
+CSS. Review shared components plus every rendered desktop/mobile variant. Verify
+in Chromium after fonts/images load: actual text bounds, cell bounds, horizontal
+alignment, wrapping/ellipsis, overflow and focus/hover/active/disabled behavior.
+Test maximum names, narrow layouts and content that outgrows a cell. Preserve
+original screenshots and DOM/computed-style measurements. The alignment checks
+in the game typography/menu/NPC/command suites and Gateway lobby suite use mocked
+API data and production bundles; they are not live-server or deployment proof.

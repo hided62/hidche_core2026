@@ -530,6 +530,7 @@ textarea:focus-visible {
     text-align: center;
 }
 .diplomacy-row > div {
+    align-content: safe center;
     border-bottom: 1px solid gray;
     overflow: hidden;
     white-space: nowrap;
@@ -618,6 +619,7 @@ textarea {
     width: 50%;
 }
 .blue-heading {
+    align-content: safe center;
     height: 18.19px;
     text-align: center;
     background: var(--sammo-texture-blue);
@@ -632,6 +634,9 @@ textarea {
 .budget-row span:first-child,
 .green-label {
     background: var(--sammo-texture-green);
+}
+.budget-row > span {
+    align-content: safe center;
 }
 .budget-row > span,
 .green-label,

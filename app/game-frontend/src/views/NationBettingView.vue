@@ -597,6 +597,7 @@ onMounted(() => {
 }
 
 .payout-row > div {
+    align-content: safe center;
     min-width: 0;
     padding: 0 4px;
 }

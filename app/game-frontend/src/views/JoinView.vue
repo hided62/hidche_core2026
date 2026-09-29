@@ -1705,6 +1705,7 @@ small {
 }
 
 .npc-token-status {
+    align-content: safe center;
     min-height: 22px;
     text-align: center;
     font-size: var(--sammo-font-size-small);

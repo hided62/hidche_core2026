@@ -23,6 +23,7 @@ defineProps<{
 }
 
 .record-title {
+    align-content: safe center;
     box-sizing: border-box;
     height: 23px;
     margin: 0;

@@ -117,6 +117,7 @@ const killRate = computed(() => {
 }
 
 .battle-general-extra > * {
+    align-content: safe center;
     min-height: 24px;
     box-sizing: border-box;
     border-right: 1px solid #777;

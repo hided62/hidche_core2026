@@ -677,6 +677,7 @@ select {
     font: inherit;
 }
 .nation-heading {
+    align-content: safe center;
     height: 32px;
     text-align: center;
     font-size: var(--sammo-font-size-title);

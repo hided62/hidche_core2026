@@ -126,6 +126,10 @@ UI의 공통 보존·Chromium·artifact 요구는 [상위 UI 지침](../AGENTS.m
   분석 편의를 위해 배포하는 산출물입니다. 보안상 비공개가 필요하다는 별도 요구와
   검토가 없는 한 번들 크기, build 시간 또는 일반적인 "최적화" 지시만으로
   `build.sourcemap`을 끄거나 `.map` 파일을 배포 산출물에서 제외하지 말아 주세요.
+- 짧은 제목·상태·버튼·정보 셀은 가로와 세로 정렬을 각각 결정합니다. 가로 가운데만
+  지정하고 끝내지 말고, 왼쪽/오른쪽 정렬 값도 세로 가운데가 적절한지 확인합니다.
+  여러 줄 본문·로그는 읽기 시작점을 보존하고, 좁은 화면의 줄바꿈과 overflow를
+  검증합니다. 구현 방법과 예외는 [두 축 텍스트 정렬](docs/frontend-css-architecture.md#text-alignment-on-both-axes-2026-09-29)을 따릅니다.
 - 공통화는 동일한 렌더링 계약이 확인된 token/shell에 한합니다. `.error`,
   `.stack`처럼 이름만 같은 page selector를 전역화하지 말아 주세요.
 - `v-html`은 입력 source와 sanitization/allowlist를 확인해 주세요. 기존 warning을

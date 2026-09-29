@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -618,3 +619,18 @@ test('runs 1000 battles in the Chromium worker and matches the Node processor ex
     });
     expect(workerUrls.some((url) => url.includes('battleSimulator.worker'))).toBe(true);
 });
+
+for (const width of [500, 1000]) {
+    test(`전투 시뮬레이터 요약표 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installApi(page, {
+            hasGeneral: true,
+            requests: [],
+            preparedPayloads: [],
+            serverResults: [],
+            prepareResponseBytes: [],
+        });
+        await page.setViewportSize({ width, height: 900 });
+        await gotoSimulator(page);
+        await verifyVerticalAlignment(page, testInfo, ['.summary-table th', '.summary-table td'], 'table');
+    });
+}

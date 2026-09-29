@@ -1617,7 +1617,7 @@ button:disabled {
 /*
  * Ref renders this as a Bootstrap table: 7px padding on every side, a #444
  * bottom rule and the transparent accent inset shadow the framework always
- * emits.
+ * emits. Core centers the compact label/value cells vertically.
  */
 .summary-table th,
 .summary-table td {
@@ -1625,7 +1625,7 @@ button:disabled {
     border-bottom: 1px solid #444;
     box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0);
     text-align: left;
-    vertical-align: top;
+    vertical-align: middle;
 }
 
 .summary-table th {

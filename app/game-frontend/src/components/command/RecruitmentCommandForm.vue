@@ -310,6 +310,7 @@ small {
     text-align: center;
 }
 .recruitment-status > span {
+    align-content: safe center;
     padding: 4px 2px;
 }
 .injured {

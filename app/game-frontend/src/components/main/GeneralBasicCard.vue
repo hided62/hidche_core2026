@@ -481,6 +481,7 @@ const specialText = computed(() => {
 }
 
 .general-basic-grid > * {
+    align-content: safe center;
     box-sizing: border-box;
     min-width: 0;
     min-height: 0;

@@ -693,6 +693,7 @@ onBeforeUnmount(() => {
 }
 
 .panel-header {
+    align-content: safe center;
     height: 18px;
     text-align: center;
 }

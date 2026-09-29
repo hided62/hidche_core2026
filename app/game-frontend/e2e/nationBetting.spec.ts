@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -115,3 +116,13 @@ test('keeps the nation-betting amount while changing candidates, submitting, and
     await expect(amount).toHaveValue('100');
     await page.screenshot({ path: testInfo.outputPath('nation-betting-amount-retained.png'), fullPage: true });
 });
+
+for (const width of [500, 1000]) {
+    test(`국가 베팅 지급표 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installFixture(page);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('nation-betting');
+        await page.getByRole('button', { name: /두 번째 천통국 베팅/u }).click();
+        await verifyVerticalAlignment(page, testInfo, ['.payout-row > div']);
+    });
+}

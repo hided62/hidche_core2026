@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { devices, expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -454,3 +455,12 @@ test('a user below secret read permission receives a recoverable page error', as
     await expect(page.locator('#container')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '다시 시도' })).toBeVisible();
 });
+
+for (const width of [500, 1000]) {
+    test(`NPC 정책 제목 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installFixture(page, { permissionLevel: 4, mutations: [] });
+        await page.setViewportSize({ width, height: 900 });
+        await gotoPolicy(page);
+        await verifyVerticalAlignment(page, testInfo, ['.section_bar', '.sub_bar']);
+    });
+}

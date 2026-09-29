@@ -661,6 +661,7 @@ th {
 
 .hall-battle-record dt,
 .hall-battle-record dd {
+    align-content: safe center;
     margin: 0;
     padding: 2px 5px;
 }

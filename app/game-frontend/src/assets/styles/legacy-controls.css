@@ -1,4 +1,5 @@
 .legacy-button {
+    align-content: safe center;
     display: inline-block;
     box-sizing: border-box;
     border: 1px solid var(--sammo-button-base1-border);

@@ -157,6 +157,7 @@ const nationStyle = computed(() => {
 
 .city-title,
 .city-nation {
+    align-content: safe center;
     grid-column: 1 / -1;
     min-width: 0;
     border-top: 1px solid gray;

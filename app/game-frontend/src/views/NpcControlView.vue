@@ -647,6 +647,7 @@ small {
 }
 
 .section_bar {
+    align-content: safe center;
     min-height: 23px;
     border: 0.5px solid #aaa;
     box-sizing: border-box;
@@ -826,6 +827,7 @@ small {
 }
 
 .sub_bar {
+    align-content: safe center;
     height: 22px;
     margin: 0 5px;
     border: 0.5px solid #aaa;

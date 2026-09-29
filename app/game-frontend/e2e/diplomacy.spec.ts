@@ -1,3 +1,4 @@
+import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -161,3 +162,12 @@ test('keeps diplomacy detail redacted below permission three', async ({ page }) 
     await expect(page.getByText('문서 작성 권한은 군주/수뇌에게만 제공됩니다.')).toBeVisible();
     await expect(page.getByRole('button', { name: '전송' })).toHaveCount(0);
 });
+
+for (const width of [500, 1000]) {
+    test(`외교 제목 세로 정렬 ${width}px`, async ({ page }, testInfo) => {
+        await installFixture(page, 4);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('diplomacy');
+        await verifyVerticalAlignment(page, testInfo, ['.panel-header']);
+    });
+}
