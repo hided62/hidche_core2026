@@ -1,5 +1,10 @@
 # 요청·턴·저장 흐름
 
+이 문서는 데이터베이스와 트랜잭션을 아는 독자를 위한 실행 흐름입니다. 처음이라면
+[기초 구조 안내](./first-steps.md)를 먼저 읽으세요. **mutation**은 상태 변경,
+**flush**는 메모리에서 바뀐 내용을 저장소에 반영하는 작업입니다.
+조회·즉시 변경·예약 수정·시간에 따른 턴 실행을 구분해서 읽습니다.
+
 ## 조회
 
 ```text
@@ -13,31 +18,35 @@ endpoint DTO에서 공개 field를 선택합니다.
 ## API transaction mutation
 
 ```text
-request
-  -> requestId와 input 검증
-  -> session actor·권한 검사
-  -> InputEvent(target=API, PROCESSING)
-  -> Prisma transaction
-       -> domain row mutation
-       -> InputEvent(SUCCEEDED)
-  -> commit
-  -> notification
+request → requestId·입력·actor·권한 검증
+  → PostgreSQL transaction
+       → API InputEvent 생성 또는 기존 row 잠금
+       → identity 확인 → PROCESSING(attempts + 1)
+       → savepoint 이후 업무 변경
+       → SUCCEEDED + 실제 result → commit
+  → notification
 ```
 
 `app/game-api/src/inputEventBoundary.ts`의 `executeInputEvent()`가 이 경계를
-제공합니다. 중복 request ID는 완료·처리 중 event를 다시 실행하지 않으며,
-실패 event는 claim 조건을 만족할 때 attempts를 증가시킵니다.
+제공합니다. identity는 event type, actor, payload digest를 포함합니다. 같은 요청의
+완료 결과는 재사용하고, 다른 내용으로 같은 ID를 사용하면 충돌로 거부합니다.
+`PENDING`·`FAILED`는 identity가 맞으면 재시도할 수 있고, `PROCESSING`은 임의로
+다시 선점하지 않습니다.
+
+업무 오류는 savepoint까지 되돌린 뒤 실패 상태를 저장합니다. DB transaction
+자체가 실패하면 그 안의 변경은 rollback됩니다. 상세 상태 표와 HTTP 응답 계약은
+[API 입력 재시도](../architecture/api-input-event-replay.md)를 따릅니다.
 
 ## Daemon mutation
 
 ```text
 request
   -> actor·input 검증
-  -> InputEvent(target=DAEMON)
+  -> InputEvent(target=ENGINE)
   -> daemon transport
   -> lease owner claim
   -> in-memory world mutation
-  -> EngineStateManager transaction flush
+  -> EngineStateManager의 메모리 복원 경계 안에서 DB transaction flush
   -> PostgreSQL event 결과 commit과 in-memory world checkpoint 확정
   -> SSE/realtime
 ```
@@ -60,7 +69,9 @@ request
 7. PostgreSQL transaction에서 dirty state, turn queue, log와 event를 flush하고,
    같은 `EngineStateManager` 경계에서 world checkpoint를 확정합니다.
 
-Transaction 실패 시 `EngineStateManager`가 in-memory snapshot을 복원합니다.
+`databaseHooks.ts`가 PostgreSQL transaction을 담당하고, 이를 감싼
+`EngineStateManager`가 실패 시 메모리 snapshot을 복원합니다. 이 관리자는 DB를
+직접 알지 못합니다. DB rollback과 메모리 복원을 함께 유지해야 합니다.
 Lease를 잃은 process는 fencing 검사에서 commit하지 못합니다.
 `InMemoryTurnStateStore`는 checkpoint를 별도로 복제하지 않고 rollback 대상인
 `InMemoryTurnWorld`에서 읽습니다. 따라서 flush 실패 뒤 다음 run도 복원된

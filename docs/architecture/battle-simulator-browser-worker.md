@@ -1,5 +1,10 @@
 # 전투 시뮬레이터 브라우저 실행 경계
 
+**Web Worker**는 브라우저 화면과 별도로 계산을 실행하는 기능입니다. 긴 전투 반복
+계산으로 화면이 멎지 않도록 사용합니다. 이 문서는 시뮬레이션의 경계이며 실제
+게임 턴의 전투를 브라우저가 확정한다는 뜻이 아닙니다. 실제 상태 저장은
+[요청·턴·저장](../developer/request-turn-persistence.md)의 엔진 경계를 따릅니다.
+
 ## 요청과 권위 데이터
 
 `BattleSimulatorView.vue`는 화면을 열 때 `battle.getSimulatorContext`에서 form

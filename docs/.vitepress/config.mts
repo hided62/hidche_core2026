@@ -17,11 +17,30 @@ export default defineConfig({
             { text: '릴리스 운영', link: '/release-operations' },
         ],
         sidebar: {
+            '/architecture/': [
+                {
+                    text: '구조와 학습 경로',
+                    items: [
+                        { text: '독자별 읽기 순서', link: '/developer/' },
+                        { text: '아키텍처 개요', link: '/architecture/overview' },
+                        { text: '런타임', link: '/architecture/runtime' },
+                        { text: '패키지 경계', link: '/architecture/package-boundaries' },
+                        { text: '요청·턴·저장', link: '/developer/request-turn-persistence' },
+                        { text: '게임 시계', link: '/architecture/game-clock' },
+                        { text: '시나리오 합성', link: '/architecture/scenario-composition' },
+                        { text: '행동 모듈', link: '/architecture/action-module-protocol' },
+                        { text: '실시간 변경 알림', link: '/architecture/realtime-change-journal' },
+                    ],
+                },
+            ],
             '/developer/': [
                 {
                     text: '개발자 핸드북',
                     items: [
-                        { text: '시작하기', link: '/developer/' },
+                        { text: '독자별 읽기 순서', link: '/developer/' },
+                        { text: '기초 구조 안내', link: '/developer/first-steps' },
+                        { text: '경험자를 위한 시스템 읽기', link: '/developer/system-walkthrough' },
+                        { text: '구조 문서 찾아보기', link: '/developer/reference-map' },
                         { text: '아키텍처 개요', link: '/architecture/overview' },
                         { text: '런타임 아키텍처', link: '/architecture/runtime' },
                         { text: '관리자 콘솔', link: '/admin-console' },
@@ -37,7 +56,13 @@ export default defineConfig({
                     text: '플레이어 가이드',
                     items: [
                         { text: '시작하기', link: '/user/' },
+                        { text: '장수와 도시, 내정', link: '/user/general-and-city' },
                         { text: '시간과 턴', link: '/user/time-and-turns' },
+                        { text: '전쟁과 예턴 조합', link: '/user/war-and-orders' },
+                        { text: '보급·정찰·땅따', link: '/user/map-and-supply' },
+                        { text: '국가 재정과 외교', link: '/user/economy-and-diplomacy' },
+                        { text: '용어 사전', link: '/user/glossary' },
+                        { text: '자료와 확인 범위', link: '/user/sources' },
                         { text: '커맨드와 실행 시기', link: '/user/commands-and-timing' },
                         { text: '커맨드 전체 목록', link: '/user/command-catalog.generated' },
                         { text: '국가 운영과 주요 기능', link: '/user/nation-and-features' },

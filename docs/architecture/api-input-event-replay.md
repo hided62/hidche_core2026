@@ -1,5 +1,10 @@
 # API input-event 재실행·복구 계약
 
+요청을 처리했지만 응답을 받지 못한 사용자가 다시 시도할 때, 상태를 두 번 바꾸지
+않으면서 원래 결과를 돌려주기 위한 계약입니다. 여기서 **replay**는 저장한 API
+응답의 재사용이며 NPC 판단이나 게임 전체의 재실행과는 다릅니다.
+전체 흐름은 [요청·턴·저장](../developer/request-turn-persistence.md)에 있습니다.
+
 ## 목적과 범위
 
 game-api mutation은 HTTP `Idempotency-Key`를 profile·인증 actor와 함께 scope한 base ID,

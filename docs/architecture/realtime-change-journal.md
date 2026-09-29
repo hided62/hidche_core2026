@@ -1,5 +1,20 @@
 # 실시간 read-model change journal과 revision-first 조회 설계
 
+## 읽기 안내
+
+**read model**은 화면 조회에 맞춰 구성한 데이터, **revision**은 변경 세대를 나타내는
+번호, **journal**은 어떤 조회 결과가 바뀌었는지 남기는 기록입니다. 서버는 DB 저장을
+확정한 뒤 필요한 화면에 변경을 알립니다. 브라우저는 알림 자체를 최종 상태로 삼지
+않고 권한에 맞는 데이터를 다시 조회합니다.
+
+이 문서는 설계 당시의 병목과 이후 구현·측정을 함께 보존한 상세 자료입니다.
+아래의 “설계 출발점”은 개선 전 경로이며 현재 전체 호출 흐름으로 읽지 마세요.
+구현 단계 표와 측정 결과도 해당 날짜·workload의 증거입니다. 운영 서버의 현재 수용량을
+보장하지 않습니다. 먼저 [요청·턴·저장](../developer/request-turn-persistence.md)을 읽고,
+변경 생산은 `app/game-engine/src/turn/databaseHooks.ts`, API 전달은
+`app/game-api/src/realtime/`, 브라우저 반영은
+`app/game-frontend/src/stores/mainDashboard.ts`에서 확인합니다.
+
 ## 목적
 
 메인 화면의 실시간 갱신이 실제 화면 변화가 없는 경우에도 viewer별 PostgreSQL
@@ -19,9 +34,9 @@ read model을 다시 구성한 뒤 `unchanged`를 판정하는 비용을 제거�
 추산이 아니라 아래 workload를 실제 PostgreSQL·Redis·HTTP/SSE 경계에서 실행한
 결과로 판정한다.
 
-## 현재 상태와 병목
+## 설계 출발점: 개선 전 상태와 병목
 
-현재 turn daemon은 `InMemoryTurnWorld`의 dirty general/city/nation 후보를 daemon
+설계 출발점의 turn daemon은 `InMemoryTurnWorld`의 dirty general/city/nation 후보를 daemon
 수명의 in-memory baseline과 비교한다. `databaseHooks`가 `content`, `map`,
 `contacts`, `frontStatus`, `lobby` canonical projection을 나누어 비교한 뒤
 `RealtimeReadModelChanges`를 만든다. 이 단계는 dirty entity만 직렬화하며 일반
@@ -46,7 +61,7 @@ readModelInvalidated
 보통 소속 장수의 context-only 자동 갱신은 access gate를 포함해 약 13 SQL이고,
 command table까지 포함하면 약 21 SQL이다. 300 viewer가 global 변화 burst를 1초
 간격으로 받으면 bundle만 이론상 약 3,900~6,300 statement/s까지 커질 수 있다.
-이는 실제 운영 측정값이 아니라 현재 호출 그래프의 상한식이며, 구현 뒤 실제
+이는 실제 운영 측정값이 아니라 설계 당시 호출 그래프의 상한식이며, 구현 뒤 실제
 statement rate로 대체한다.
 
 ## 보존할 계약
@@ -162,29 +177,29 @@ statement 수와 row lock 시간을 제한한다. 없는 key의 revision은 0으
 
 초기 domain은 다음과 같다.
 
-| domain | entity ID | 의미 |
-| --- | ---: | --- |
-| `general.content` | general ID | 현재 장수 context/command/board dependency |
-| `city.content` | city ID | 현재 도시 context/command dependency |
-| `nation.content` | nation ID | 현재 국가 context/command/board dependency |
-| `dashboard.global` | 0 | 부대·예약턴 및 전체 general/city/nation aggregate를 포괄하는 source-only dependency |
-| `world.content` | 0 | 연월, scenario/config/catalog 성격의 dependency |
-| `map.world` | 0 | shared base map projection |
-| `map.general` | general ID | 현재 장수 이동처럼 actor별 map wake-up에 필요한 변화 |
-| `records.general` | general ID | 개인 최근 기록 |
-| `records.global` | 0 | 장수 동향 |
-| `records.history` | 0 | 중원 정세 |
-| `front.general` | general ID | actor별 front status |
-| `front.nation` | nation ID | 국가 공지 등 viewer별 front status |
-| `front.global` | 0 | 설문과 global front status |
-| `access.general` | general ID | 접속 점수와 제한 상태, public fan-out 없음 |
-| `lobby.world` | 0 | NPC/국가 수, 공용 lobby projection |
-| `lobby.general` | general ID | 본인 lobby에 보이는 이름·아이콘 projection |
-| `contacts.world` | 0 | 장수 목록·외교 연락처 공용 projection |
-| `reserved.general` | general ID | 장수 예약 명령 projection |
-| `messages.mailbox` | mailbox ID | commit된 메시지 mailbox wake-up; public SSE에는 ID 미노출 |
-| `tournament` | 0 | 토너먼트 stage/state |
-| `betting` | 0 | 국가/토너먼트 베팅 목록·상태 |
+| domain             |  entity ID | 의미                                                                                |
+| ------------------ | ---------: | ----------------------------------------------------------------------------------- |
+| `general.content`  | general ID | 현재 장수 context/command/board dependency                                          |
+| `city.content`     |    city ID | 현재 도시 context/command dependency                                                |
+| `nation.content`   |  nation ID | 현재 국가 context/command/board dependency                                          |
+| `dashboard.global` |          0 | 부대·예약턴 및 전체 general/city/nation aggregate를 포괄하는 source-only dependency |
+| `world.content`    |          0 | 연월, scenario/config/catalog 성격의 dependency                                     |
+| `map.world`        |          0 | shared base map projection                                                          |
+| `map.general`      | general ID | 현재 장수 이동처럼 actor별 map wake-up에 필요한 변화                                |
+| `records.general`  | general ID | 개인 최근 기록                                                                      |
+| `records.global`   |          0 | 장수 동향                                                                           |
+| `records.history`  |          0 | 중원 정세                                                                           |
+| `front.general`    | general ID | actor별 front status                                                                |
+| `front.nation`     |  nation ID | 국가 공지 등 viewer별 front status                                                  |
+| `front.global`     |          0 | 설문과 global front status                                                          |
+| `access.general`   | general ID | 접속 점수와 제한 상태, public fan-out 없음                                          |
+| `lobby.world`      |          0 | NPC/국가 수, 공용 lobby projection                                                  |
+| `lobby.general`    | general ID | 본인 lobby에 보이는 이름·아이콘 projection                                          |
+| `contacts.world`   |          0 | 장수 목록·외교 연락처 공용 projection                                               |
+| `reserved.general` | general ID | 장수 예약 명령 projection                                                           |
+| `messages.mailbox` | mailbox ID | commit된 메시지 mailbox wake-up; public SSE에는 ID 미노출                           |
+| `tournament`       |          0 | 토너먼트 stage/state                                                                |
+| `betting`          |          0 | 국가/토너먼트 베팅 목록·상태                                                        |
 
 projection 세부 ID 목록은 Redis wake-up의 viewer filtering에 사용하고, DB revision
 row는 API가 작은 dependency vector를 읽는 authoritative 경계로 사용한다.
@@ -376,12 +391,12 @@ BroadcastChannel 계약을 유지한다. 변경 ID set/boolean은 drop하지 않
 
 초기 cadence 목표는 다음과 같다.
 
-| 종류 | 최대 시작 빈도 | 이유 |
-| --- | ---: | --- |
-| 자기 context/commands/board | 1초 1회 | 자기 명령 결과의 빠른 반영 |
-| records/front status | 2초 1회 | global burst 합치기 |
-| map/lobby/tournament/betting | 5초 1회 | 300 viewer의 shared fan-out 제한 |
-| access-only non-limited 재확인 | 5초 1회 | 제한 DB gate fan-out 제한 |
+| 종류                           | 최대 시작 빈도 | 이유                             |
+| ------------------------------ | -------------: | -------------------------------- |
+| 자기 context/commands/board    |        1초 1회 | 자기 명령 결과의 빠른 반영       |
+| records/front status           |        2초 1회 | global burst 합치기              |
+| map/lobby/tournament/betting   |        5초 1회 | 300 viewer의 shared fan-out 제한 |
+| access-only non-limited 재확인 |        5초 1회 | 제한 DB gate fan-out 제한        |
 
 manual refresh, visible 복귀와 realtime 재활성화는 cadence를 기다리지 않고 fresh
 snapshot을 한 번 읽는다. 숫자는 실제 혼합 부하 결과에 따라 조정하며, 부하만 낮추기
@@ -444,12 +459,12 @@ visible 복귀는 leader가 fresh 3-slice snapshot 한 번을 읽어 pub/sub gap
 
 ### 2026-08-17 구현 상태
 
-| Phase | 상태 | 현재 근거 |
-| --- | --- | --- |
-| A | 완료 | all-false access gate, frontend 강제 context 제거, Chromium realtime trace |
-| B | 완료 | typed journal, PostgreSQL revision/outbox/meta, engine/API 원자 writer, retry dispatcher, 86 mutation inventory |
-| C | 완료 | dashboard revision-first, auth/global dependency, durable map cache, 모든 tournament Redis writer 원자화, stage-only main realtime invalidation, coverage v1 activation/rollback integration |
-| D | 부분 완료 | E1 1,200장수 1개월 deterministic profile과 300 SSE/HTTP 짧은 calibration 완료. E2 actual daemon DB flush 및 30분 M1/R1은 미실행 |
+| Phase | 상태      | 현재 근거                                                                                                                                                                                    |
+| ----- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A     | 완료      | all-false access gate, frontend 강제 context 제거, Chromium realtime trace                                                                                                                   |
+| B     | 완료      | typed journal, PostgreSQL revision/outbox/meta, engine/API 원자 writer, retry dispatcher, 86 mutation inventory                                                                              |
+| C     | 완료      | dashboard revision-first, auth/global dependency, durable map cache, 모든 tournament Redis writer 원자화, stage-only main realtime invalidation, coverage v1 activation/rollback integration |
+| D     | 부분 완료 | E1 1,200장수 1개월 deterministic profile과 300 SSE/HTTP 짧은 calibration 완료. E2 actual daemon DB flush 및 30분 M1/R1은 미실행                                                              |
 
 `부분 완료`는 capacity 합격을 뜻하지 않는다. 이 작업의 수용 추산은 아래 실제 짧은
 calibration과 E1 결과를 함께 사용하되, 장기 soak/daemon flush 경계는 별도 admission
@@ -472,15 +487,15 @@ API와 process 경합을 제외하므로 production 수용 근거로 단독 사�
 
 ### workload
 
-| ID | workload | 필수 관찰값 |
-| --- | --- | --- |
-| E1 | 5분 턴, 900 NPC 및 총 1,200장수 DB-free 고정 seed | turns/actions/s, command p95/p99, memory high-water, 최종 state hash |
-| E2 | 실제 DB flush를 포함한 12 turns/s와 1,200 동시 경계 | 계산/flush/publish, schedule lag, rows/statements, rollback 0 |
-| A1 | 300 SSE idle 30분 | 연결 성공/유지율, ping, runtime RSS, event-loop lag |
-| A2 | 300 viewer own context 변화 5분 주기 | HTTP p95/p99, fast unchanged 비율, DB statements/s |
-| A3 | 초당 3회 map/record 후보 10분 | coalesced request rate, shared cache hit, stale/missed revision 0 |
-| M1 | E2 + A1 + A2 + A3 혼합 30분 | CPU/RSS/DB/Redis/HTTP/SSE와 daemon lag 전체 |
-| R1 | Redis publish/cache 장애와 API/daemon restart | durable revision 수렴, full snapshot 1회, 유실/중복 표시 0 |
+| ID  | workload                                            | 필수 관찰값                                                          |
+| --- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| E1  | 5분 턴, 900 NPC 및 총 1,200장수 DB-free 고정 seed   | turns/actions/s, command p95/p99, memory high-water, 최종 state hash |
+| E2  | 실제 DB flush를 포함한 12 turns/s와 1,200 동시 경계 | 계산/flush/publish, schedule lag, rows/statements, rollback 0        |
+| A1  | 300 SSE idle 30분                                   | 연결 성공/유지율, ping, runtime RSS, event-loop lag                  |
+| A2  | 300 viewer own context 변화 5분 주기                | HTTP p95/p99, fast unchanged 비율, DB statements/s                   |
+| A3  | 초당 3회 map/record 후보 10분                       | coalesced request rate, shared cache hit, stale/missed revision 0    |
+| M1  | E2 + A1 + A2 + A3 혼합 30분                         | CPU/RSS/DB/Redis/HTTP/SSE와 daemon lag 전체                          |
+| R1  | Redis publish/cache 장애와 API/daemon restart       | durable revision 수렴, full snapshot 1회, 유실/중복 표시 0           |
 
 ### provisional pass gate
 
@@ -515,12 +530,12 @@ API와 process 경합을 제외하므로 production 수용 근거로 단독 사�
 1개월/1,200 general turn을 두 번 실행했다. 두 실행의 최종 state SHA-256은 모두
 `d14a5f451385095bb56f9459928f100bf81864178bac9861686e06001a7f02a0`이었다.
 
-| 관찰값 | 결과 |
-| --- | ---: |
-| 처리량 | 1,283.986 general turns/s |
-| general turn p95 / p99 | 2.793 / 3.393 ms |
-| month wall p95 | 934.590 ms |
-| max RSS | 681,316,352 bytes |
+| 관찰값                 |                      결과 |
+| ---------------------- | ------------------------: |
+| 처리량                 | 1,283.986 general turns/s |
+| general turn p95 / p99 |          2.793 / 3.393 ms |
+| month wall p95         |                934.590 ms |
+| max RSS                |         681,316,352 bytes |
 
 이는 평균 필요량 4 turns/s와 설계 burst 12 turns/s보다 계산량 자체가 충분히 작다는
 근거다. 그러나 DB-free in-memory profile이며 local CPU는 운영 후보 host와 다르다.
@@ -541,19 +556,19 @@ Ryzen 7 5800X와 동급이라고 간주하지 않는다. 각 run은 idle 5초, o
 모두 성공했다. 3,607 dashboard 응답, 즉 10,821개 slice에서 전송한 `knownSource`가
 응답 source와 같았고 전부 payload loader 이전 `unchanged`로 반환됐다.
 
-| 지표 | coverage 0 | coverage 1 | 변화 |
-| --- | ---: | ---: | ---: |
-| own dashboard 요청 | 1,347 | 2,454 | +82.2% |
-| mixed dashboard 요청 | 1,222 | 1,753 | +43.5% |
-| unchanged slice | 5,907 | 10,821 | +83.2% |
-| API CPU time / 약 35초 | 27.377 s | 15.505 s | -43.4% |
-| API MemoryPeak | 728.1 MB | 682.5 MB | -6.3% |
-| DB transaction delta | 52,367 | 34,237 | -34.6% |
-| DB tuple returned delta | 5,026,942 | 2,053,957 | -59.1% |
-| own mean / p50 | 1,107.4 / 1,113.0 ms | 214.2 / 4.7 ms | -80.7% / -99.6% |
-| own p95 / p99 | 1,460.6 / 1,564.7 ms | 1,566.1 / 1,869.2 ms | +7.2% / +19.5% |
-| mixed own mean / p50 | 498.0 / 493.1 ms | 76.5 / 4.5 ms | -84.6% / -99.1% |
-| mixed own p95 / p99 | 653.7 / 738.9 ms | 583.1 / 782.9 ms | -10.8% / +6.0% |
+| 지표                    |           coverage 0 |           coverage 1 |            변화 |
+| ----------------------- | -------------------: | -------------------: | --------------: |
+| own dashboard 요청      |                1,347 |                2,454 |          +82.2% |
+| mixed dashboard 요청    |                1,222 |                1,753 |          +43.5% |
+| unchanged slice         |                5,907 |               10,821 |          +83.2% |
+| API CPU time / 약 35초  |             27.377 s |             15.505 s |          -43.4% |
+| API MemoryPeak          |             728.1 MB |             682.5 MB |           -6.3% |
+| DB transaction delta    |               52,367 |               34,237 |          -34.6% |
+| DB tuple returned delta |            5,026,942 |            2,053,957 |          -59.1% |
+| own mean / p50          | 1,107.4 / 1,113.0 ms |       214.2 / 4.7 ms | -80.7% / -99.6% |
+| own p95 / p99           | 1,460.6 / 1,564.7 ms | 1,566.1 / 1,869.2 ms |  +7.2% / +19.5% |
+| mixed own mean / p50    |     498.0 / 493.1 ms |        76.5 / 4.5 ms | -84.6% / -99.1% |
+| mixed own p95 / p99     |     653.7 / 738.9 ms |     583.1 / 782.9 ms |  -10.8% / +6.0% |
 
 coverage 1 run에서 API CPU는 wall time 대비 약 한 core의 44.1%, 할당 4 CPU의 11.0%였다.
 global-only front/lobby/records p95는 각각 6.7/6.4/5.7ms였다. source-fast-path가 반복

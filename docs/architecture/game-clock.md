@@ -1,5 +1,9 @@
 # 게임 시계
 
+예약된 행동까지 얼마나 남았는지와 로그인·소유권이 현실에서 언제 만료되는지는
+다른 질문입니다. 그래서 게임을 멈출 때 모든 시간을 한꺼번에 멈추지 않습니다.
+이 문서는 그 구분을 설명하고, 상세 필드 목록은 아래 시간 도메인 문서로 연결합니다.
+
 시간 규칙은 `GAME_TIME`, `WALL_TIME`, `MONOTONIC_ELAPSED_TIME`로
 나뉩니다. 게임 진행의 권위는 `world_state.clock_tick`, 영속 wall
 판정의 권위는 PostgreSQL UTC 시계, 프로세스 내부 경과시간의 권위는
@@ -67,14 +71,20 @@ column을 9시간 미래로 쓰지 않습니다.
 
 ## 중단 후 재개
 
-realtime daemon은 재개할 때 Ref `checkDelay()`와 같은 한도를 적용합니다.
-밀린 완전 턴 수가 턴 간격 20분 이상이면 1턴, 10분 이상이면 3턴, 그보다
-짧으면 6턴을 초과할 때 장기 중단으로 봅니다. 한도 이내의 짧은 중단은 턴을
-순서대로 실행해 따라잡고, 한도를 넘으면 밀린 완전 턴만큼 `last_turn_tick`,
-전 장수의 `turn_tick`, 미완료 경매의 `close_tick`과 각각의 DateTime 투영값을
-한 transaction에서 옮깁니다. 이 보정은 명령이나 월 이벤트를 실행하지 않으므로
-건너뛴 기간의 RNG를 소비하지 않습니다. 이미 처리 중 anchor 갱신으로 표시
-시각이 늦어진 상태도 현재 wall time에 맞추되 game tick은 되감지 않습니다.
+현재 maintenance·장애 복구는 `RECOVER_TURNS` 정책을 사용합니다. 전체 중단이
+현실 시간 10분 이내면 기존 실행 순서와 budget으로 밀린 턴을 처리합니다.
+그보다 길면 밀린 시간 중 완전한 12턴 묶음을 일정 이동으로 건너뛰고, 나머지
+지연은 월 경계에 맞춘 복구 구간에서 두 배 속도로 실행해 정상 시간표에 합류합니다.
+설정된 기본 턴 간격 자체를 절반으로 변경하지 않습니다.
+
+건너뛴 구간에는 게임 행동·월 이벤트를 실행하지 않으며, 따라잡는 구간에는 실제
+행동을 순서대로 실행합니다. DB에 복구 구간을 보존하므로 프로세스 교체가 새 복구를
+중복 적용해서는 안 됩니다. 가오픈·통일 대기와 명시적 정지는 별도 상태 검사를 거칩니다.
+
+기준 구현은 `packages/common/src/time/TurnRecovery.ts`,
+`app/game-engine/src/turn/prepareRealtimeRecovery.ts`, `clockReconciliation.ts`입니다.
+계산식·참여자·Redis 투영까지의 절차는 [시계 재정렬](./game-clock-reconciliation.md),
+실패 후 관찰과 재시도는 [복구 안내](../developer/game-clock-recovery.md)에 있습니다.
 
 운영자가 명시적으로 일정을 지연하거나 가속하려면 Gateway 작업을 사용합니다.
 이 작업은 `clock_base_time`과 DateTime 투영값을 같이 이동하고, game tick 및

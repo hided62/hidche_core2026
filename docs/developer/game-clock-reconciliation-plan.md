@@ -4,9 +4,11 @@ Baseline: `main@b91dcbcaaac5acd4c7349cd3ed0996c547f58756`
 
 Branch: `test/game-clock-reconciliation-20260903`
 
-This plan is the status source for the long-running user test branch. A checked
-item means code and focused automated evidence exist on this branch; it does not
-mean deployment or production validation.
+이 문서는 위 기준선·branch에서 진행한 구현 계획의 기록입니다. 체크 표시는 당시
+코드와 집중 검증이 있었다는 뜻이며, 현재 main·배포·운영 검증 상태를 나타내지 않습니다.
+현재 동작은 [게임 시계](../architecture/game-clock.md)와
+[재정렬 계약](../architecture/game-clock-reconciliation.md), 장애 처리는
+[복구 안내](./game-clock-recovery.md)를 읽으세요.
 
 ## Milestone 1 - authority and inventory
 

@@ -2,21 +2,23 @@
 
 ## 의존 방향
 
-제품 소스의 의존 방향은 다음과 같습니다.
+패키지는 함께 재사용할 코드의 묶음입니다. **의존 방향**은 어느 묶음이 다른
+묶음의 코드를 가져오는지 뜻하며, 서버 사이의 네트워크 통신 방향과는 다릅니다.
+아래는 `tools/check-package-boundaries.mjs`가 허용하는 workspace 의존입니다.
+허용 목록은 모든 파일이 실제로 전부 import한다는 뜻은 아닙니다.
 
-```text
-packages/common
-       ↑
-packages/logic ← packages/infra
-       ↑              ↑
-       └──── app/game-engine ────┐
-                    ↑             │
-           app/game-api    app/gateway-api
-                    ↑             ↑
-           game-frontend   gateway-frontend
-```
+| 가져오는 쪽          | 가져올 수 있는 workspace 코드                              |
+| -------------------- | ---------------------------------------------------------- |
+| common               | 다른 workspace package 없음                                |
+| logic                | common                                                     |
+| infra                | common, logic                                              |
+| game-engine          | common, logic, infra                                       |
+| game-api·gateway-api | common, logic, infra, game-engine의 공개 subpath           |
+| release-controller   | gateway-api, infra                                         |
+| game-frontend        | common, logic의 브라우저용 값; game-api·gateway-api의 타입 |
+| gateway-frontend     | common의 브라우저용 값; game-api·gateway-api의 타입        |
 
-화살표의 시작점이 끝점을 import합니다. `packages/logic`은 DB, Redis, 파일,
+`packages/logic`은 DB, Redis, 파일,
 네트워크, 환경 변수와 stdout을 직접 사용하지 않습니다. 런타임 관찰이 필요한
 경우 `packages/logic/src/ports/`에 포트를 선언하고 app 계층에서 구현을
 주입합니다. Prisma 생성 타입과 connector는 `packages/infra`가 소유하며,

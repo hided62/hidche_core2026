@@ -2,9 +2,16 @@
 
 ## 읽기 순서
 
-신규 관리자 플레이 감사의 확정 범위, 수집·조회 비용과 후속 구현 체크리스트는
-[프로필별 플레이 감사 설계](../design/play-audit.md)에 있습니다. 해당 기능은
-아직 미구현이며 아래의 현재 구조 설명과 상태를 구분합니다.
+프로그래밍 기초만 안다면 [코드가 처음인 사람을 위한 구조 안내](./first-steps.md)에서
+시작하세요. 화면·서버·저장을 익힌 뒤 아키텍처 개요와 파일 지도로 넘어갑니다.
+
+개발 경험이 있다면 [경험자를 위한 시스템 읽기](./system-walkthrough.md) →
+[아키텍처 개요](../architecture/overview.md) → [요청·턴·저장](./request-turn-persistence.md)
+순서가 좋습니다. 이후 아래 표에서 맡은 기능을 고르세요. 런타임 문서는 배포·worker까지
+포함하는 상세 참고서입니다.
+
+관리자 감사는 [운영 안내](../play-audit-operations.md)에서 현재 기능을,
+[설계](../design/play-audit.md)에서 요구사항과 배경을 확인합니다.
 
 | 작업                  | 문서                                                            | 코드 시작점                    |
 | --------------------- | --------------------------------------------------------------- | ------------------------------ |
@@ -17,6 +24,9 @@
 | mutation·flush        | [요청·턴·저장](./request-turn-persistence.md)                   | game API, game engine          |
 | action module         | [행동 모듈 프로토콜](../architecture/action-module-protocol.md) | `actionModules/`               |
 | ref 비교              | [차등 검증](../architecture/turn-state-differential-testing.md) | `tools/integration-tests`      |
+
+[구조 문서 찾아보기](./reference-map.md)에는 시계·재시도·실시간 갱신·측정·운영 자료를
+질문별로 모았습니다. 과거 계획과 현재 계약의 구분도 여기서 확인할 수 있습니다.
 
 ## 경계
 

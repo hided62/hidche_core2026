@@ -1,5 +1,10 @@
 # Time-domain inventory
 
+이 문서는 시간을 필드별로 분류하는 개발자 참고표입니다. 먼저 [게임 시계](./game-clock.md)를
+읽으세요. `GAME_TIME`은 게임 진행, `WALL_TIME`은 현실의 만료·기록,
+`MONOTONIC_ELAPSED_TIME`은 프로세스 내부 경과시간입니다. 아래 `SHIFT`는 일정 이동,
+`KEEP`는 값 보존, `REBUILD`는 새 기준으로 다시 만드는 처리를 뜻합니다.
+
 This document is the authoritative classification of persistent timestamps,
 deadlines, cooldowns, and process-local elapsed-time rules. Classification is
 per rule, not per table. A feature may record both a wall occurrence and a game

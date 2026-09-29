@@ -1,5 +1,10 @@
 # core2026 아키텍처
 
+이 문서는 프로그램들의 책임을 한눈에 보는 지도입니다. 웹 서버가 처음이라면
+[기초 구조 안내](../developer/first-steps.md), 개발 경험이 있다면
+[시스템 읽기](../developer/system-walkthrough.md)를 먼저 읽어도 좋습니다.
+세부 운영 절차는 [런타임](./runtime.md)에 있습니다.
+
 ## 시스템 경계
 
 `core2026`은 계정·profile 운영을 담당하는 gateway와 profile별 게임 런타임을
@@ -34,6 +39,10 @@ PostgreSQL 상태와 결합해 서버에서 결정합니다.
   기능을 제공합니다.
 - `app/gateway-api/src/orchestrator/`는 DB operation queue, commit별 worktree,
   build, PM2 process와 예약 상태를 조정합니다.
+
+Gateway 자체를 업데이트하는 `app/release-controller`는 Gateway 밖에서 실행합니다.
+게임 profile 작업을 담당하는 orchestrator와 Gateway 전체 릴리스 담당을 나누어,
+업데이트 대상 프로세스가 자신의 종료 이후 단계까지 직접 책임지지 않도록 합니다.
 
 ### Game
 
@@ -70,6 +79,14 @@ Command는 `GeneralActionDefinition` 또는 국가 command module로 args,
 constraint, turn metadata, 결과와 로그를 선언합니다. 런타임 context와
 persistence는 `app/game-engine`이 제공합니다.
 
+### 자주 나오는 용어
+
+- **registry**: 이름으로 사용할 명령·효과를 찾아 주는 등록 목록입니다.
+- **loader**: 파일이나 DB 값을 읽어 실행에 필요한 형태로 만드는 코드입니다.
+- **context**: 한 행동을 계산할 때 필요한 장수·도시·시각·난수 등의 입력 묶음입니다.
+- **hook·trigger**: 정해진 계산 또는 사건 지점에 연결하는 추가 효과입니다.
+- **persistence**: 재시작해도 남도록 저장하는 일입니다.
+
 ### `packages/infra`
 
 `prisma/gateway.prisma`와 `prisma/game.prisma`가 영속 schema의 기준입니다.
@@ -99,7 +116,9 @@ DB commit의 대체 조건으로 사용하지 않습니다.
 
 ## 시나리오와 profile
 
-`profile`은 규칙·자산 계열이고 `scenario`는 게임 초기 데이터입니다.
+운영 화면의 프로필은 독립적으로 실행·배포·진행 상태를 관리하는 게임 대상입니다.
+설정에서 `profile`은 규칙·자산 계열을, `scenario`는 선택한 시나리오를 나타냅니다.
+서로 다른 곳에서 쓰는 같은 이름을 하나의 값으로 혼동하지 마세요.
 런타임 식별자는 `${profile}:${scenario}`입니다. Scenario JSON은
 `resources/scenario`에서 합성되고 zod parser를 거쳐 seeder와 runtime에
 전달됩니다. map, unit set, turn-command profile도 resource loader를 통해

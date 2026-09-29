@@ -1,5 +1,9 @@
 # 파일 지도
 
+먼저 증상이 보이는 화면이나 동작 하나를 고르고, 아래 시작점에서 호출을 따라가세요.
+폴더 이름만으로 저장 책임이나 권한을 추측하지 않습니다. 읽는 순서는
+[기초 안내](./first-steps.md)와 [경험자 안내](./system-walkthrough.md)에 있습니다.
+
 ## 최상위
 
 ```text
@@ -9,7 +13,8 @@ core2026/
 │  ├─ gateway-api/
 │  ├─ game-frontend/
 │  ├─ game-api/
-│  └─ game-engine/
+│  ├─ game-engine/
+│  └─ release-controller/
 ├─ packages/
 │  ├─ common/
 │  ├─ logic/

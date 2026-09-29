@@ -1,5 +1,11 @@
 # Game clock reconciliation
 
+게임을 멈춘 뒤 다시 시작할 때 여러 기능의 남은 시간과 순서를 함께 맞추는 계약입니다.
+**재정렬(reconciliation)**은 화면 날짜만 고치는 일이 아니라 DB 일정·worker 기한·
+메모리 상태를 같은 세대로 전환하는 과정입니다. 개념은 [게임 시계](./game-clock.md),
+실패 대응은 [복구 안내](../developer/game-clock-recovery.md)를 먼저 읽으세요.
+아래 `EXACT`는 역사적 정책이고 현재 maintenance·장애 복구는 `RECOVER_TURNS`입니다.
+
 ## Product contract
 
 Gameplay time is an integer `GameTick`; one turn is permanently `36,000,000`

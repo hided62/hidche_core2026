@@ -5,6 +5,13 @@
 비교하고, 명시적인 신규 기능·밸런스·UX는 Core 계약으로 검증합니다.
 작업 규칙과 분야별 지침의 시작점은 [AGENTS.md](AGENTS.md)입니다.
 
+## 독자별 시작점
+
+- 게임이 처음인 플레이어: [삼국지 모의전투 첫 안내](docs/user/index.md)
+- 프로그래밍 기초만 아는 독자: [화면·서버·저장부터 배우기](docs/developer/first-steps.md)
+- 개발 경험이 있는 독자: [요청·실행·운영의 구조 읽기](docs/developer/system-walkthrough.md)
+- 전체 문서 탐색: [핸드북](docs/index.md), [게시판 용어 사전](docs/user/glossary.md)
+
 ## 저장소 구성
 
 | 경로                           | 책임                                                           |

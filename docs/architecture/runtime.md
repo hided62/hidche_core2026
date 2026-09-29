@@ -1,5 +1,11 @@
 # 런타임 아키텍처
 
+이 문서는 개발 경험자를 위한 상세 참고서입니다. 처음부터 모든 운영 설정을 외울
+필요는 없습니다. [전체 구조](./overview.md)와 [요청·턴·저장](../developer/request-turn-persistence.md)을
+읽고, 실행 문제에 해당하는 절을 찾아보세요. **프로세스**는 실행 중인 프로그램,
+**worker**는 특정 작업 담당, **daemon**은 계속 실행하며 일을 기다리는 프로그램입니다.
+아래 구성은 코드의 배포 정의이며 특정 운영 서버의 현재 실행 상태를 증명하지는 않습니다.
+
 ## 프로세스
 
 | 프로세스             | 시작점                                                   | 책임                                        |
@@ -204,7 +210,7 @@ Mutation은 두 형태입니다.
 - API transaction으로 끝나는 mutation은 `executeInputEvent()`가
   `target=API` event를 만들고 결과와 event 상태를 같은 transaction에서
   commit합니다.
-- turn world가 필요한 mutation은 daemon transport가 `target=DAEMON`
+- turn world가 필요한 mutation은 daemon transport가 `target=ENGINE`
   event를 만들고 turn daemon의 처리 대상으로 전달합니다.
 
 같은 `requestId`의 완료·처리 중 event는 중복 수락하지 않습니다. 실패 event는
@@ -219,7 +225,8 @@ claim 가능한 상태에서 attempts를 증가시켜 재처리합니다.
    event와 resource snapshot을 읽습니다.
 3. scenario, map, unit set과 command profile을 적재합니다.
 4. action-module bundle, AI, command registry, 월간 event action을 조립합니다.
-5. `EngineStateManager`가 in-memory mutation과 transaction flush를 묶습니다.
+5. `EngineStateManager`가 메모리 상태의 snapshot·실패 복원을 맡고,
+   `databaseHooks`가 실제 PostgreSQL transaction과 flush를 맡습니다.
 6. `TurnDaemonLifecycle`이 control queue와 schedule을 실행합니다.
 
 `turn_daemon_lease`는 운영 WALL_TIME입니다. 모든 write와 active 비교는 DB
@@ -237,7 +244,7 @@ lease/fencing 확인
   -> input_event claim
   -> in-memory command 또는 calendar action
   -> world dirty state와 side effect 수집
-  -> EngineStateManager transaction
+  -> EngineStateManager의 메모리 복원 경계 안에서 DB transaction
        -> world/general/nation/city/turn/log flush
        -> input_event result/status 갱신
        -> in-memory world checkpoint 갱신
