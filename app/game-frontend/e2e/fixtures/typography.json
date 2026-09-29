@@ -2659,6 +2659,40 @@
                     }
                 }
             }
+        },
+        "nation.getCityOfficeRequests": {
+            "result": {
+                "data": {
+                    "canManage": true,
+                    "generalId": 1,
+                    "nationId": 1,
+                    "serverId": "typography-fixture",
+                    "city": {
+                        "id": 1,
+                        "name": "허창"
+                    },
+                    "options": [],
+                    "requests": [
+                        {
+                            "id": "typography-request",
+                            "generalId": 3,
+                            "generalName": "가나다라마바사아자",
+                            "cityId": 1,
+                            "cityName": "허창",
+                            "officerLevel": 4,
+                            "status": "pending",
+                            "defaultDecision": "approve",
+                            "defaultReason": "vacant",
+                            "dueYear": 190,
+                            "dueMonth": 2,
+                            "remainingSeconds": 540,
+                            "invalidReason": null
+                        }
+                    ],
+                    "running": true,
+                    "tickSeconds": 600
+                }
+            }
         }
     },
     "possession": {

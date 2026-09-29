@@ -101,6 +101,11 @@ for (const width of [500, 1000]) {
             await waitForFonts(page);
             await expect(page.locator('.nation-heading')).toHaveCSS('font-size', width === 500 ? '16px' : '24px');
             await expect(page.locator('.chief-entry-copy strong').first()).toHaveCSS('font-size', '16px');
+            const requests = page.locator('#city-office-requests');
+            await expect(requests.locator('.request-row')).toHaveCount(1);
+            await expect(requests.locator('.request-row small')).toHaveCSS('font-size', '12px');
+            await expect(requests.locator('.request-actions button').first()).toHaveCSS('font-size', '14px');
+
             const geometry = await page.locator('#personnel-container').evaluate((element) => ({
                 width: element.getBoundingClientRect().width,
                 scrollWidth: element.scrollWidth,
@@ -284,16 +289,14 @@ for (const width of [500, 1000]) {
         await expect(page.locator('.create-form')).toBeVisible();
         await page.locator('.advanced-options > summary').click();
         await waitForFonts(page);
-        const steps = await page
-            .locator('small')
-            .evaluateAll((elements) =>
-                elements
-                    .filter((element) => element.checkVisibility())
-                    .map((element) => ({
-                        parent: getComputedStyle(element.parentElement!).fontSize,
-                        size: getComputedStyle(element).fontSize,
-                    }))
-            );
+        const steps = await page.locator('small').evaluateAll((elements) =>
+            elements
+                .filter((element) => element.checkVisibility())
+                .map((element) => ({
+                    parent: getComputedStyle(element.parentElement!).fontSize,
+                    size: getComputedStyle(element).fontSize,
+                }))
+        );
         expect(steps.length).toBeGreaterThan(0);
         const next: Record<string, string> = {
             '24px': '16px',
