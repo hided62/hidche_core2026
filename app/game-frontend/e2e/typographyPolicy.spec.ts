@@ -92,7 +92,7 @@ for (const width of [500, 1000]) {
             await page.screenshot({ path: testInfo.outputPath('main-maximum-name.png'), fullPage: true });
         });
 
-        test(`네 단계와 밀집 화면 보류 계약 ${width}px ${name.label}`, async ({ page }, testInfo) => {
+        test(`인사부도 공통 네 단계를 사용한다 ${width}px ${name.label}`, async ({ page }, testInfo) => {
             await page.setViewportSize({ width, height: 900 });
             await install(page, 'personnel', name.general, name.nation);
             await page.goto('nation/personnel');
@@ -100,11 +100,7 @@ for (const width of [500, 1000]) {
             await expect(page.locator('.chief-entry-copy strong').first()).toHaveText(name.general);
             await waitForFonts(page);
             await expect(page.locator('.nation-heading')).toHaveCSS('font-size', width === 500 ? '16px' : '24px');
-            // 500px의 15px 이름/10px 잠금은 확대 시 표시 이름이 줄어들어 보류했다.
-            await expect(page.locator('.chief-entry-copy strong').first()).toHaveCSS(
-                'font-size',
-                width === 500 ? '15px' : '16px'
-            );
+            await expect(page.locator('.chief-entry-copy strong').first()).toHaveCSS('font-size', '16px');
             const geometry = await page.locator('#personnel-container').evaluate((element) => ({
                 width: element.getBoundingClientRect().width,
                 scrollWidth: element.scrollWidth,
@@ -123,17 +119,17 @@ for (const width of [500, 1000]) {
         });
     }
 
-    test(`사령부 12턴 요약의 기존 밀도를 유지한다 ${width}px`, async ({ page }, testInfo) => {
+    test(`사령부 12턴 요약은 12px와 겹치지 않는 행을 사용한다 ${width}px`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 900 });
         await install(page, 'chief', names[0].general, names[0].nation);
         await page.goto('chief-center');
         const row = page.locator('.chief-overview .chief-card.compact .chief-row').first();
         await expect(row).toBeVisible();
         await waitForFonts(page);
-        await expect(row).toHaveCSS('font-size', '8.8px');
-        await expect(row).toHaveCSS('line-height', '11.25px');
-        await expect(page.locator('.chief-overview .compact-name').first()).toHaveCSS('font-size', '10.4px');
-        expect((await row.boundingBox())?.height).toBe(11.25);
+        await expect(row).toHaveCSS('font-size', '12px');
+        await expect(row).toHaveCSS('line-height', '16px');
+        await expect(page.locator('.chief-overview .compact-name').first()).toHaveCSS('font-size', '12px');
+        expect((await row.boundingBox())?.height).toBe(16);
         await page.screenshot({ path: testInfo.outputPath('chief-deferred-density.png'), fullPage: true });
     });
 
@@ -187,8 +183,8 @@ for (const width of [500, 1000]) {
         const summary = page.locator('.small_war_log').first();
         await expect(summary).toContainText('【경국지색소교】');
         await expect(summary).toHaveCSS('font-size', '14px');
-        await expect(summary.locator('.name_plate').first()).toHaveCSS('font-size', '10.5px');
-        await expect(summary.locator('.crew_plate').first()).toHaveCSS('font-size', '12.6px');
+        await expect(summary.locator('.name_plate').first()).toHaveCSS('font-size', '12px');
+        await expect(summary.locator('.crew_plate').first()).toHaveCSS('font-size', '12px');
         await waitForFonts(page);
         await page.screenshot({ path: testInfo.outputPath('battle-log-exception.png'), fullPage: true });
     });
@@ -218,4 +214,96 @@ for (const width of [500, 1000]) {
             await verifyVerticalAlignment(page, testInfo, scene.selectors);
         });
     }
+}
+
+// Actual page CSS, including the reset and scoped component rules, must implement the ladder.
+test('small은 부모 단계에서 내려가고 다섯 번째 크기에서 멈춘다', async ({ page }, testInfo) => {
+    await install(page, 'main', names[0].general, names[0].nation);
+    await page.goto('./');
+    await expect(page.locator('.game-shell__title')).toBeVisible();
+    const actual = await page.evaluate(() => {
+        const host = document.createElement('section');
+        host.id = 'typography-ladder-probe';
+        document.body.append(host);
+        const result = ['title', 'emphasis', 'normal', 'small'].map((tier) => {
+            const parent = document.createElement('div');
+            parent.className = `sammo-text-${tier}`;
+            parent.innerHTML = '본문<small>보조<span>상속</span><small>중첩<small>최소</small></small></small>';
+            host.append(parent);
+            return [parent, ...parent.querySelectorAll('small')].map((node) => getComputedStyle(node).fontSize);
+        });
+        host.remove();
+        return result;
+    });
+    expect(actual).toEqual([
+        ['24px', '16px', '14px', '12px'],
+        ['16px', '14px', '12px', '10px'],
+        ['14px', '12px', '10px', '10px'],
+        ['12px', '10px', '10px', '10px'],
+    ]);
+    await testInfo.attach('small-ladder', { body: JSON.stringify(actual), contentType: 'application/json' });
+});
+
+for (const width of [500, 1000]) {
+    for (const general of ['가나다라', names[0].general, names[1].general]) {
+        test(`명장 이름은 12px를 최대로 칸에 맞게 축소한다 ${width}px ${general.length}자`, async ({
+            page,
+        }, testInfo) => {
+            await page.setViewportSize({ width, height: 900 });
+            await install(page, 'best', general, names[0].nation);
+            await page.goto('best-general');
+            const label = page.locator('.hall-name .sammo-fit-text').first();
+            await expect(label).toHaveText(general);
+            await waitForFonts(page);
+            await expect(label).toHaveAttribute('data-font-fit-max', '12');
+            await expect(label).toHaveAttribute('title', general);
+            const measured = await label.evaluate((element) => {
+                const style = getComputedStyle(element);
+                return {
+                    size: Number.parseFloat(style.fontSize),
+                    overflow: style.overflow,
+                    ellipsis: style.textOverflow,
+                };
+            });
+            expect(measured.size).toBeLessThanOrEqual(12);
+            expect(measured.size).toBeGreaterThanOrEqual(10);
+            if (general.length === 4) expect(measured.size).toBe(12);
+            if (general.length === 18) expect(measured.size).toBeLessThan(12);
+            expect(measured).toMatchObject({ overflow: 'hidden', ellipsis: 'ellipsis' });
+            await page.screenshot({ path: testInfo.outputPath('ranking-fitted-name.png'), fullPage: true });
+            await testInfo.attach('fitted-name', { body: JSON.stringify(measured), contentType: 'application/json' });
+        });
+    }
+}
+
+for (const width of [500, 1000]) {
+    test(`장수 생성의 보조 설명 class는 small 단계를 덮어쓰지 않는다 ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        await install(page, 'join', names[0].general, names[0].nation);
+        await page.goto('join');
+        await expect(page.locator('.create-form')).toBeVisible();
+        await page.locator('.advanced-options > summary').click();
+        await waitForFonts(page);
+        const steps = await page
+            .locator('small')
+            .evaluateAll((elements) =>
+                elements
+                    .filter((element) => element.checkVisibility())
+                    .map((element) => ({
+                        parent: getComputedStyle(element.parentElement!).fontSize,
+                        size: getComputedStyle(element).fontSize,
+                    }))
+            );
+        expect(steps.length).toBeGreaterThan(0);
+        const next: Record<string, string> = {
+            '24px': '16px',
+            '16px': '14px',
+            '14px': '12px',
+            '12px': '10px',
+            '10px': '10px',
+        };
+        for (const step of steps) expect(step.size).toBe(next[step.parent]);
+        await expect(page.locator('.primary-field small.muted')).toHaveCSS('font-size', '10px');
+        await testInfo.attach('join-small-steps', { body: JSON.stringify(steps), contentType: 'application/json' });
+    });
 }

@@ -796,27 +796,27 @@ const repeatTurns = async (amount: number) => {
 }
 .chief-overview-frame {
     width: 500px;
-    height: 310px;
+    height: 448px;
     margin-top: 0;
     margin-bottom: 11px;
     overflow: hidden;
 }
 .chief-overview {
     width: 500px;
-    height: 310px;
+    height: 448px;
     margin-top: 0;
     display: flex;
     flex-direction: column;
 }
 .chief-overview-row {
     width: 500px;
-    height: 155px;
+    height: 224px;
     display: grid;
     grid-template-columns: 12px repeat(4, 119px) 12px;
 }
 .chief-overview :deep(.chief-card) {
     width: 119px;
-    height: 155px;
+    height: 224px;
     border: 0;
     border-left: 1px solid #fff;
     box-shadow: none;
@@ -827,26 +827,26 @@ const repeatTurns = async (amount: number) => {
 }
 .chief-overview :deep(.chief-card.compact .chief-row) {
     grid-template-columns: 38px minmax(0, 1fr);
-    height: 11.25px !important;
+    height: 16px !important;
     min-height: 0;
     padding: 0;
     gap: 0;
     text-align: center;
-    font-size: var(--sammo-font-size-chief-compact-row);
-    line-height: 11.25px !important;
+    font-size: var(--sammo-font-size-small);
+    line-height: 16px !important;
 }
 .chief-overview :deep(.chief-card.compact .chief-header) {
     box-sizing: border-box;
-    height: 20px !important;
-    min-height: 20px !important;
+    height: 32px !important;
+    min-height: 32px !important;
     grid-template-columns: 1fr;
-    grid-template-rows: 10px 10px;
-    line-height: 10px;
+    grid-template-rows: 16px 16px;
+    line-height: 16px;
 }
 .chief-overview :deep(.compact-name),
 .chief-overview :deep(.compact-meta) {
-    height: 10px;
-    line-height: 10px;
+    height: 16px;
+    line-height: 16px;
 }
 .chief-overview :deep(.row-time),
 .chief-overview :deep(.row-action) {
@@ -855,12 +855,12 @@ const repeatTurns = async (amount: number) => {
 }
 .overview-turn-index {
     display: grid;
-    grid-template-rows: 20px repeat(12, 11.25px);
+    grid-template-rows: 32px repeat(12, 16px);
     width: 12px;
-    height: 155px;
+    height: 224px;
     color: #fff;
-    font-size: var(--sammo-font-size-chief-compact-row);
-    line-height: 11.25px;
+    font-size: var(--sammo-font-size-small);
+    line-height: 16px;
     text-align: center;
 }
 .overview-turn-index span {

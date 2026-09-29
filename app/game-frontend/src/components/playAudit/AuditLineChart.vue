@@ -22,6 +22,11 @@ let chart: Chart<'line'> | undefined;
 const render = () => {
     if (!canvas.value) return;
     chart?.destroy();
+    const style = getComputedStyle(canvas.value);
+    const font = {
+        family: style.fontFamily,
+        size: Number.parseFloat(style.getPropertyValue('--sammo-font-size-small')),
+    };
     chart = new Chart(canvas.value, {
         type: 'line',
         data: {
@@ -42,10 +47,13 @@ const render = () => {
             maintainAspectRatio: false,
             animation: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: '#e5eee9' } } },
+            plugins: {
+                legend: { labels: { color: '#e5eee9', font } },
+                tooltip: { titleFont: font, bodyFont: font, footerFont: font },
+            },
             scales: {
-                x: { ticks: { color: '#c3d0c8', maxTicksLimit: 12 }, grid: { color: '#34473e' } },
-                y: { ticks: { color: '#c3d0c8' }, grid: { color: '#34473e' } },
+                x: { ticks: { color: '#c3d0c8', maxTicksLimit: 12, font }, grid: { color: '#34473e' } },
+                y: { ticks: { color: '#c3d0c8', font }, grid: { color: '#34473e' } },
             },
         },
     });

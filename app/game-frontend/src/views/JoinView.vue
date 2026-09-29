@@ -1270,11 +1270,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .join-page {
     min-height: 100vh;
     padding: 24px;
@@ -1519,7 +1514,6 @@ small {
 
 .advanced-title small {
     color: #ccc;
-    font-size: var(--sammo-font-size-small);
     font-weight: 400;
 }
 
@@ -1871,10 +1865,6 @@ small {
     max-width: none;
 }
 
-.npc-general-name small {
-    font-size: var(--sammo-font-size-small);
-}
-
 #btn-print-more-generals {
     width: 100%;
     min-height: 28px;
@@ -1883,6 +1873,9 @@ small {
 
 .muted {
     color: rgba(232, 221, 196, 0.6);
+}
+
+.muted:not(small) {
     font-size: var(--sammo-font-size-small);
 }
 

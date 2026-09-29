@@ -219,11 +219,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .personnel-picker-backdrop {
     position: fixed;
     z-index: 2050;
@@ -437,7 +432,6 @@ small {
 .personnel-picker-stats small,
 .personnel-picker-details small {
     color: #aaa99f;
-    font-size: var(--sammo-font-size-small);
 }
 .personnel-picker-stats strong {
     color: #f1d47e;

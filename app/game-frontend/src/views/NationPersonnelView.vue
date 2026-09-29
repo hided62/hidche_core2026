@@ -609,11 +609,6 @@ onMounted(() => void loadPersonnel());
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .legacy-office {
     width: 1000px;
     min-height: 100vh;
@@ -758,7 +753,6 @@ select {
 .chief-entry-copy small {
     overflow: hidden;
     color: #c8c5bc;
-    font-size: var(--sammo-font-size-small);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -855,9 +849,6 @@ select {
 .city-identity strong {
     display: block;
 }
-.city-identity small {
-    font-size: var(--sammo-font-size-small);
-}
 .city-officer-cell {
     padding: 5px !important;
     vertical-align: middle;
@@ -880,7 +871,6 @@ select {
 }
 .city-officer-copy small {
     color: #c9c6bd;
-    font-size: var(--sammo-font-size-small);
 }
 .city-change-button {
     min-width: 70px;
@@ -949,10 +939,7 @@ select {
         height: 48px;
     }
     .chief-entry-copy strong {
-        font-size: var(--sammo-font-size-personnel-mobile-name);
-    }
-    .chief-entry-copy small {
-        font-size: var(--sammo-font-size-small);
+        font-size: var(--sammo-font-size-emphasis);
     }
     .personnel-change-button {
         min-height: 30px;
@@ -961,7 +948,7 @@ select {
         line-height: 18px;
     }
     .personnel-lock-label {
-        font-size: var(--sammo-font-size-personnel-mobile-lock);
+        font-size: var(--sammo-font-size-smaller);
     }
     .award-label {
         font-size: var(--sammo-font-size-small);
@@ -995,9 +982,6 @@ select {
         width: 16%;
         font-size: var(--sammo-font-size-small);
     }
-    .city-identity small {
-        font-size: var(--sammo-font-size-small);
-    }
     .city-officer-cell {
         padding: 4px !important;
     }
@@ -1006,9 +990,6 @@ select {
         gap: 4px;
     }
     .city-officer-copy strong {
-        font-size: var(--sammo-font-size-small);
-    }
-    .city-officer-copy small {
         font-size: var(--sammo-font-size-small);
     }
     .city-change-button {

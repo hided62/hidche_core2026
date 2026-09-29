@@ -1,0 +1,32 @@
+/* 페이지와 공통 컴포넌트가 같은 단계 이름을 사용한다. */
+.sammo-text-title {
+    font-size: var(--sammo-font-size-title);
+}
+.sammo-text-emphasis {
+    font-size: var(--sammo-font-size-emphasis);
+}
+.sammo-text-normal {
+    font-size: var(--sammo-font-size-normal);
+}
+.sammo-text-small {
+    font-size: var(--sammo-font-size-small);
+}
+
+/* 부모의 단계에서 한 단계 아래. 12px의 보조 설명만 10px, 중첩해도 더 줄지 않는다. */
+small,
+sub,
+sup,
+.sammo-text-smaller,
+.legacy-small {
+    font-size: var(--sammo-font-size-smaller);
+}
+
+/* v-fit-text measures from the inherited tier; an extreme name keeps its full title. */
+.sammo-fit-text {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}

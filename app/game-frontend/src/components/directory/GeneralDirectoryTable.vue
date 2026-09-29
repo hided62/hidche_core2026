@@ -355,11 +355,6 @@ const sortHelp = (header: Header): string =>
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .directory-table {
     width: 1000px;
     border-collapse: collapse;

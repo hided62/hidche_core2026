@@ -363,11 +363,6 @@ const start = async () => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .legacy-page {
     width: 100%;
     max-width: 1200px;

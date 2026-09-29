@@ -270,11 +270,6 @@ watch(
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .recruitment-command-form {
     box-sizing: border-box;
     width: 100%;
@@ -383,7 +378,6 @@ small {
 }
 .crew-name small {
     display: block;
-    font-size: var(--sammo-font-size-small);
 }
 .crew-row small {
     display: none;
@@ -515,11 +509,7 @@ small {
     }
     .crew-row small {
         display: block;
-        font-size: var(--sammo-font-size-small);
         line-height: 1;
-    }
-    .crew-row .crew-name small {
-        font-size: var(--sammo-font-size-small);
     }
     .crew-header .attack,
     .crew-header .defence,

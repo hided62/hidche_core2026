@@ -57,3 +57,19 @@ void describe('game content font contract', () => {
         assert.deepEqual(violations, []);
     });
 });
+
+void describe('game typography size contract', () => {
+    void it('keeps page and component size declarations on shared tiers', async () => {
+        const violations: string[] = [];
+        for (const file of await listStyleSources()) {
+            const source = await readFile(file, 'utf8');
+            for (const match of source.matchAll(/\bfont-size\s*:\s*([^;]+);/g)) {
+                const value = match[1]!.trim();
+                if (value === '0' || value === 'inherit') continue;
+                if (/^var\(--sammo-font-size-(?:title|emphasis|normal|small|smaller)\)$/.test(value)) continue;
+                violations.push(`${path.relative(sourceRoot, file)}: ${value}`);
+            }
+        }
+        assert.deepEqual(violations, []);
+    });
+});

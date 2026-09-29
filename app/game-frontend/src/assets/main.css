@@ -1,6 +1,7 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 @import 'tailwindcss';
 @import './styles/tokens.css';
+@import './styles/typography.css';
 @import './styles/legacy-controls.css';
 @import './styles/game-shell.css';
 @import './styles/ref-shell.css';
@@ -144,7 +145,7 @@ input[inputmode='search'] {
 }
 
 .small_war_log .name_plate {
-    font-size: var(--sammo-font-size-war-name);
+    font-size: var(--sammo-font-size-small);
 }
 
 .small_war_log .name_plate_cover {
@@ -153,5 +154,5 @@ input[inputmode='search'] {
 
 .small_war_log .crew_plate {
     color: orangered;
-    font-size: var(--sammo-font-size-war-crew);
+    font-size: var(--sammo-font-size-small);
 }

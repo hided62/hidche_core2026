@@ -631,7 +631,10 @@ watch(
                     >
                         - {{ row.name }}
                     </button>
-                    <span>: <span class="nation-type-pros">{{ row.pros }}</span>,</span>
+                    <span
+                        >: <span class="nation-type-pros">{{ row.pros }}</span
+                        >,</span
+                    >
                     <span class="nation-type-cons">{{ row.cons }}</span>
                 </li>
             </ul>
@@ -967,11 +970,6 @@ watch(
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .target-search {
     grid-column: 1 / -1;
     display: flex;
@@ -1186,7 +1184,7 @@ small {
     display: grid;
     place-items: center;
     min-height: 2em;
-    font-size: 1.3em;
+    font-size: var(--sammo-font-size-emphasis);
     text-align: center;
 }
 
@@ -1467,7 +1465,6 @@ small {
 }
 
 .assignment-target-list .target-option small {
-    font-size: inherit;
     line-height: 1.45;
 }
 

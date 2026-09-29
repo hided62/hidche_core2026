@@ -555,11 +555,6 @@ const submitPriority = async (section: PrioritySectionKey) => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 /*
  * The document contract belongs to this page only. An unscoped html/body rule
  * here leaked a 21px line-height and a 500px min-width onto every other screen.
@@ -813,7 +808,6 @@ small {
 }
 
 .priority-description small {
-    font-size: var(--sammo-font-size-small);
     line-height: 18.375px;
 }
 

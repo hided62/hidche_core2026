@@ -214,7 +214,7 @@ const displayChiefName = (chief: NationChief | undefined): string => {
     min-width: 0;
     height: 193px;
     color: #fff;
-    font-size: var(--sammo-font-size-nation-card);
+    font-size: var(--sammo-font-size-small);
 }
 
 .nation-grid {

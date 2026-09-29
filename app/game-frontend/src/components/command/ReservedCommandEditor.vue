@@ -913,11 +913,6 @@ const clickOutsideMenu = (event: Event) => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .reserved-command-editor {
     position: relative;
     width: 100%;
@@ -1177,7 +1172,6 @@ small {
     visibility: visible;
 }
 .action-column small {
-    font-size: var(--sammo-font-size-small);
     line-height: 1;
 }
 .reserved-command-editor.mobile .action-column > div.autonomous {
@@ -1379,7 +1373,7 @@ small {
     min-width: 0;
     margin: 0;
     overflow: hidden;
-    font-size: 18pt;
+    font-size: var(--sammo-font-size-title);
     font-weight: normal;
     line-height: 1.2;
     white-space: nowrap;
@@ -1388,7 +1382,6 @@ small {
 .overlay-title small {
     overflow: hidden;
     color: #ffe0a0;
-    font-size: var(--sammo-font-size-small);
     text-overflow: ellipsis;
 }
 .command-picker.argument-overlay .selected-command,
@@ -1457,7 +1450,7 @@ small {
     .argument-overlay-bar > .overlay-title {
         grid-column: 1 / -1;
         grid-row: 1;
-        font-size: 14pt;
+        font-size: var(--sammo-font-size-emphasis);
     }
 }
 

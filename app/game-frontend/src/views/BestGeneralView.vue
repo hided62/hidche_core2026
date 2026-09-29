@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFitText } from '../directives/fitText';
 import { usePageExit } from '../composables/usePageExit';
 
 import { onMounted, ref, watch } from 'vue';
@@ -117,11 +118,18 @@ watch(viewMode, () => {
                                 @error="useDefaultGeneralIcon"
                             />
                         </div>
-                        <div class="hall-nation" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
+                        <div
+                            v-fit-text
+                            class="hall-nation sammo-fit-text"
+                            :title="entry.nationName || '-'"
+                            :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }"
+                        >
                             {{ entry.nationName || '-' }}
                         </div>
                         <div class="hall-name" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
-                            <span>{{ entry.name || '-' }}</span>
+                            <span v-fit-text class="sammo-fit-text" :title="entry.name || '-'">{{
+                                entry.name || '-'
+                            }}</span>
                             <small v-if="entry.ownerName">({{ entry.ownerName }})</small>
                         </div>
                         <div class="hall-value">{{ entry.printValue }}</div>
@@ -152,7 +160,9 @@ watch(viewMode, () => {
                             />
                         </div>
                         <div
-                            class="hall-nation"
+                            v-fit-text
+                            class="hall-nation sammo-fit-text"
+                            :title="entry.owner.nationName || '-'"
                             :style="{ backgroundColor: entry.owner.bgColor, color: entry.owner.fgColor }"
                         >
                             {{ entry.owner.nationName || '-' }}
@@ -161,7 +171,9 @@ watch(viewMode, () => {
                             class="hall-name"
                             :style="{ backgroundColor: entry.owner.bgColor, color: entry.owner.fgColor }"
                         >
-                            <span>{{ entry.owner.name || '-' }}</span>
+                            <span v-fit-text class="sammo-fit-text" :title="entry.owner.name || '-'">{{
+                                entry.owner.name || '-'
+                            }}</span>
                         </div>
                     </li>
                 </ul>
@@ -179,11 +191,6 @@ watch(viewMode, () => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 :global(body:has(.legacy-ranking-page)) {
     min-width: 500px;
     overflow-x: hidden;
@@ -346,7 +353,7 @@ small {
 
 .hall-nation,
 .hall-name {
-    font-size: var(--sammo-font-size-hall-name);
+    font-size: var(--sammo-font-size-small);
 }
 
 .hall-name {
@@ -354,10 +361,6 @@ small {
     height: 28px;
     flex-direction: column;
     justify-content: center;
-}
-
-.hall-name small {
-    font-size: var(--sammo-font-size-hall-secondary);
 }
 
 .hall-value {

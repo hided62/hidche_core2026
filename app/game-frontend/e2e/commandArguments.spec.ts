@@ -1956,8 +1956,8 @@ test('shows all 12 advanced chief turns before the actions and uses the full mob
     expect(geometry.frameWidth).toBe(500);
     expect(geometry.rowWidth).toBe(500);
     expect(geometry.rowEdges).toEqual([
-        { top: 0, bottom: 155 },
-        { top: 155, bottom: 310 },
+        { top: 0, bottom: 224 },
+        { top: 224, bottom: 448 },
     ]);
     expect(geometry.gutterWidths).toEqual([12, 12]);
     expect(geometry.gutterEdges).toEqual([

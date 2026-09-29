@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { formatLegacyLogHtml } from '../src/logging/formatLegacyLogHtml.js';
 
 describe('formatLegacyLogHtml', () => {
+    it('can render semantic small spans without changing the legacy default or color markup', () => {
+        expect(formatLegacyLogHtml('<Y1>작게<1>중첩</></>', { smallText: 'semantic' })).toBe(
+            '<span class="legacy-small" style="color: yellow;">작게<span class="legacy-small" style="">중첩</span></span>'
+        );
+        expect(formatLegacyLogHtml('<Y1>작게</>', { smallText: 'semantic', colorize: false })).toBe('작게');
+    });
+
     it('converts legacy colors and preserves intentional emphasis and line breaks', () => {
         expect(formatLegacyLogHtml('<R><b>위험</b></><br><Y1>작게</><1>작게만</>')).toBe(
             '<span style="color: red;"><b>위험</b></span><br><span style="color: yellow;font-size: 0.9em;">작게</span><span style="font-size: 0.9em;">작게만</span>'

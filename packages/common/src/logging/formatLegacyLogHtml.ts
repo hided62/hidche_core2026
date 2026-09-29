@@ -65,6 +65,8 @@ const normalizeStructuralTag = (tag: string): string | null => {
 
 export type FormatLegacyLogHtmlOptions = {
     colorize?: boolean;
+    /** Game UI can use its shared step-down class; other consumers retain the legacy ratio. */
+    smallText?: 'relative' | 'semantic';
 };
 
 /**
@@ -88,7 +90,8 @@ export const formatLegacyLogHtml = (value?: string | null, options: FormatLegacy
                 if (legacy === '/') return '</span>';
                 const colorCode = legacy === '1' ? null : legacy[0]!;
                 const small = legacy === '1' || legacy.endsWith('1');
-                return `<span style="${colorCode ? (legacyStyleMap[colorCode] ?? '') : ''}${small ? legacyStyleMap['1'] : ''}">`;
+                const semanticSmall = small && options.smallText === 'semantic';
+                return `<span${semanticSmall ? ' class="legacy-small"' : ''} style="${colorCode ? (legacyStyleMap[colorCode] ?? '') : ''}${small && !semanticSmall ? legacyStyleMap['1'] : ''}">`;
             }
 
             return normalizeStructuralTag(part) ?? escapeText(part);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFitText } from '../directives/fitText';
 import { usePageExit } from '../composables/usePageExit';
 
 import { computed, onMounted, ref, watch } from 'vue';
@@ -169,11 +170,18 @@ onMounted(loadOptions);
                         >
                             {{ entry.serverName }}{{ entry.serverIdx }}기
                         </div>
-                        <div class="hall-nation" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
+                        <div
+                            v-fit-text
+                            class="hall-nation sammo-fit-text"
+                            :title="entry.nationName || '-'"
+                            :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }"
+                        >
                             {{ entry.nationName || '-' }}
                         </div>
                         <div class="hall-name" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
-                            <span>{{ entry.name || '-' }}</span>
+                            <span v-fit-text class="sammo-fit-text" :title="entry.name || '-'">{{
+                                entry.name || '-'
+                            }}</span>
                             <small v-if="entry.ownerName">({{ entry.ownerName }})</small>
                         </div>
                         <div class="hall-value">{{ entry.printValue }}</div>
@@ -193,11 +201,6 @@ onMounted(loadOptions);
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 /* Ref's document does not clip; the page column stays 500px wide instead. */
 :global(body:has(.legacy-hall-page)) {
     min-width: 500px;
@@ -349,7 +352,7 @@ small {
 .hall-server,
 .hall-nation,
 .hall-name {
-    font-size: var(--sammo-font-size-hall-name);
+    font-size: var(--sammo-font-size-small);
 }
 
 .hall-name {
@@ -357,10 +360,6 @@ small {
     height: 28px;
     flex-direction: column;
     justify-content: center;
-}
-
-.hall-name small {
-    font-size: var(--sammo-font-size-hall-secondary);
 }
 
 .hall-value {

@@ -342,7 +342,7 @@ const mobilePairs = computed(() => {
     border-radius: 3px;
     color: #fff3cd;
     background: #59400e;
-    font: 700 var(--sammo-font-size-bracket-bet-button)/1 var(--sammo-font-sans);
+    font: 700 var(--sammo-font-size-small)/1 var(--sammo-font-sans);
     cursor: pointer;
 }
 .bracket-bet-button:hover,

@@ -228,7 +228,7 @@ onBeforeUnmount(() => editor.value?.destroy());
                 <span class="legacy-html-editor__sr-only">크기</span>
                 <select aria-label="글꼴 크기" @change="setFontSize">
                     <option value="">크기</option>
-                    <option v-for="size in fontSizes" :key="size" :value="size" :style="{ fontSize: size }">
+                    <option v-for="size in fontSizes" :key="size" :value="size">
                         {{ size }}
                     </option>
                 </select>

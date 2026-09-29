@@ -2910,5 +2910,126 @@
                 }
             }
         }
+    },
+    "best": {
+        "lobby.info": {
+            "result": {
+                "data": {
+                    "year": 197,
+                    "month": 7,
+                    "userCnt": 17,
+                    "npcCnt": 31,
+                    "nationCnt": 5,
+                    "maxUserCnt": 50,
+                    "turnTerm": 60,
+                    "fictionMode": "가상",
+                    "otherTextInfo": "표준",
+                    "starttime": "0190-01-01T00:00:00.000Z",
+                    "myGeneral": {
+                        "id": 1,
+                        "name": "가나다라마바사아자",
+                        "troopId": 0
+                    }
+                }
+            }
+        },
+        "auth.status": {
+            "result": {
+                "data": {
+                    "userId": "frontend-legacy-fixture-user"
+                }
+            }
+        },
+        "ranking.getBestGeneral": {
+            "result": {
+                "data": {
+                    "isUnited": true,
+                    "sections": [
+                        {
+                            "title": "명 성",
+                            "valueType": "int",
+                            "entries": [
+                                {
+                                    "id": 1,
+                                    "name": "가나다라마바사아자",
+                                    "ownerName": "시각검증",
+                                    "nationName": "대한민국천하통일국",
+                                    "bgColor": "#006400",
+                                    "fgColor": "#ffffff",
+                                    "picture": "default.jpg",
+                                    "imageServer": 0,
+                                    "value": 12000,
+                                    "printValue": "12,000"
+                                },
+                                {
+                                    "id": 2,
+                                    "name": "가나다라마바사아자",
+                                    "ownerName": "검증계정",
+                                    "nationName": "대한민국천하통일국",
+                                    "bgColor": "#8b0000",
+                                    "fgColor": "#ffffff",
+                                    "picture": "default.jpg",
+                                    "imageServer": 0,
+                                    "value": 11000,
+                                    "printValue": "11,000"
+                                }
+                            ]
+                        },
+                        {
+                            "title": "계 급",
+                            "valueType": "int",
+                            "entries": []
+                        }
+                    ],
+                    "uniqueItems": [
+                        {
+                            "title": "명 마",
+                            "slot": "horse",
+                            "entries": [
+                                {
+                                    "itemKey": "che_명마_15_적토마",
+                                    "itemName": "적토마",
+                                    "itemInfo": "최고의 명마",
+                                    "owner": {
+                                        "id": 1,
+                                        "name": "가나다라마바사아자",
+                                        "nationName": "대한민국천하통일국",
+                                        "bgColor": "#006400",
+                                        "fgColor": "#ffffff",
+                                        "picture": "default.jpg",
+                                        "imageServer": 0
+                                    }
+                                },
+                                {
+                                    "itemKey": "che_명마_15_적토마",
+                                    "itemName": "적토마",
+                                    "itemInfo": "최고의 명마",
+                                    "owner": {
+                                        "id": 0,
+                                        "name": "가나다라마바사아자",
+                                        "nationName": "대한민국천하통일국",
+                                        "bgColor": "#00582c",
+                                        "fgColor": "#ffffff",
+                                        "picture": null,
+                                        "imageServer": 0
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "join": {
+        "lobby.info": "result",
+        "auth.status": {
+            "result": {
+                "data": {
+                    "ok": true
+                }
+            }
+        },
+        "join.getConfig": "result"
     }
 }

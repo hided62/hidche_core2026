@@ -592,11 +592,17 @@ const install = async (page: Page, state: FixtureState) => {
                     if (type === 'generalHistory') {
                         return response({
                             type,
-                            logs: Array.from({ length: 25 }, (_, index) => ({ id: 100 - index, text: `열전-${index}` })),
+                            logs: Array.from({ length: 25 }, (_, index) => ({
+                                id: 100 - index,
+                                text: `열전-${index}`,
+                            })),
                         });
                     }
                     if (type === 'generalAction') {
-                        const firstPage = Array.from({ length: 24 }, (_, index) => ({ id: 50 - index, text: `행동-${index}` }));
+                        const firstPage = Array.from({ length: 24 }, (_, index) => ({
+                            id: 50 - index,
+                            text: `행동-${index}`,
+                        }));
                         return response({
                             type,
                             logs: jsonInput.beforeId ? [{ id: 26, text: '이전 행동' }] : firstPage,
@@ -1034,10 +1040,10 @@ test('메인 장수 동향과 개인 전투 기록은 Ref 행 간격·색상·�
         expect(geometry.battle.top).toBeCloseTo(geometry.line.top, 0);
         expect(geometry.styles).toEqual({
             diamondColor: 'rgb(135, 206, 235)',
-            namePlateFontSize: '10.5px',
+            namePlateFontSize: '12px',
             nameCoverColor: 'rgb(255, 255, 0)',
             crewPlateColor: 'rgb(255, 69, 0)',
-            crewPlateFontSize: '12.6px',
+            crewPlateFontSize: '12px',
             defenseArrowColor: 'rgb(255, 0, 255)',
         });
     };
@@ -1317,7 +1323,7 @@ test('메인 개인 기록의 공격·수비 시각은 Ref와 같은 90% 글자 
         expect(measurements.map((entry) => entry.row.fontSize)).toEqual(['14px', '14px', '14px']);
         expect(measurements.map((entry) => entry.row.lineHeight)).toEqual(['21px', '21px', '21px']);
         expect(measurements.map((entry) => entry.row.height)).toEqual([21, 21, 21]);
-        expect(measurements.map((entry) => entry.time.fontSize)).toEqual(['12.6px', '12.6px', '12.6px']);
+        expect(measurements.map((entry) => entry.time.fontSize)).toEqual(['12px', '12px', '12px']);
         expect(measurements.map((entry) => entry.timeSpanCount)).toEqual([1, 1, 1]);
         expect(measurements[0]?.nameFontSize).toBe('14px');
         expect(measurements[0]?.actionFontSize).toBe('14px');
@@ -1387,7 +1393,12 @@ test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ p
 
 test('내 정보 열전은 전체 표시 후 종료하고 행동 기록만 다음 페이지를 요청한다', async ({ page }) => {
     const state: FixtureState = {
-        permission: 'head', myset: 3, settingMutations: [], accessPages: [], pagedMyLogs: true, myLogInputs: [],
+        permission: 'head',
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+        pagedMyLogs: true,
+        myLogInputs: [],
     };
     await install(page, state);
     await page.goto('my-page');
@@ -1414,7 +1425,8 @@ test('내 정보 열전은 전체 표시 후 종료하고 행동 기록만 다�
     await expect(action.getByRole('button', { name: '이전 로그 불러오기' })).toHaveCount(0);
     expect(state.myLogInputs?.filter((input) => input.type === 'generalHistory')).toHaveLength(1);
     expect(state.myLogInputs?.filter((input) => input.type === 'generalAction')).toEqual([
-        { type: 'generalAction' }, { type: 'generalAction', beforeId: 27 },
+        { type: 'generalAction' },
+        { type: 'generalAction', beforeId: 27 },
     ]);
 });
 

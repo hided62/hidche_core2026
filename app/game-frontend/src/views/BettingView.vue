@@ -281,11 +281,6 @@ const placeBet = async (target: TournamentBracketSlot) => {
 </template>
 
 <style scoped>
-/* UI 보조 글자는 부모의 80%가 아니라 공통 소형 크기를 사용한다. */
-small {
-    font-size: var(--sammo-font-size-small);
-}
-
 .betting-page {
     width: 100%;
     max-width: 1200px;
@@ -347,7 +342,6 @@ small {
 }
 .section-title small {
     color: orange;
-    font-size: var(--sammo-font-size-normal);
 }
 select {
     width: 100%;
@@ -551,9 +545,6 @@ select:disabled {
     .betting-footer small {
         white-space: normal;
     }
-}
-.betting-page small {
-    font-size: var(--sammo-font-size-small);
 }
 .bet-preset {
     position: relative;
