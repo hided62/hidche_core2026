@@ -14,6 +14,7 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
     const userIds = new Set<string>();
     const challengeIds = new Set<string>();
     const sessionIds = new Set<string>();
+    const stateIds = new Set<string>();
 
     beforeAll(async () => {
         await client.connect();
@@ -24,6 +25,7 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
             ...[...challengeIds].map((id) => `${prefix}:kakao-login-challenge:${id}`),
             ...[...userIds].map((id) => `${prefix}:kakao-login-challenge-user:${id}`),
             ...[...sessionIds].map((id) => `${prefix}:oauth-session:${id}`),
+            ...[...stateIds].map((id) => `${prefix}:oauth-state:${id}`),
         ];
         if (keys.length > 0) {
             await client.del(keys);
@@ -44,6 +46,14 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
         challengeIds.add(challenge.id);
         return challenge;
     };
+
+    it('consumes a pending OAuth state once under concurrent callbacks', async () => {
+        const pending = await store.createPendingState('verify', ['account_email'], randomUUID());
+        stateIds.add(pending.state);
+        const results = await Promise.all(Array.from({ length: 8 }, () => store.consumePendingState(pending.state)));
+        expect(results.filter((result) => result !== null)).toEqual([pending]);
+        await expect(store.consumePendingState(pending.state)).resolves.toBeNull();
+    });
 
     it('preserves and consumes a retained-email recovery target once', async () => {
         const targetUserId = randomUUID();
