@@ -111,10 +111,15 @@ const EXPENSIVE_ACTIONS = new Set([
     'account.changePassword',
     'account.scheduleDeletion',
 ]);
-const PUBLIC_ACTIONS = new Set(['auth.passwordKey', 'auth.checkRegistrationField', 'auth.kakaoStart']);
+const LIGHTWEIGHT_ACTIONS = new Set([
+    'auth.passwordKey',
+    'auth.checkRegistrationField',
+    'auth.kakaoStart',
+    'auth.issueGameSession',
+]);
 
 export const isBudgetedAuthAction = (action: string): boolean =>
-    EXPENSIVE_ACTIONS.has(action) || PUBLIC_ACTIONS.has(action);
+    EXPENSIVE_ACTIONS.has(action) || LIGHTWEIGHT_ACTIONS.has(action);
 
 export class AuthAttemptBudget {
     private active = 0;
@@ -149,7 +154,11 @@ export class AuthAttemptBudget {
                     { key: this.key('client', client), limit: 600, windowMs: 60_000 },
                 ];
                 if (resolvedSubject)
-                    counters.push({ key: this.key('subject', resolvedSubject), limit: 10, windowMs: 60_000 });
+                    counters.push({
+                        key: this.key('subject', resolvedSubject),
+                        limit: action === 'auth.issueGameSession' ? 32 : 10,
+                        windowMs: 60_000,
+                    });
                 return this.store.consume(counters);
             };
             this.pendingChecks += 1;

@@ -578,6 +578,7 @@ batch의 항목도 각각 차감한다. 기본 창은 최초 허용 요청부터
 | ----------------------------------------------------------------------- | ---------------------- |
 | 정규화한 로그인 계정명, peer와 무관                                     | 10회/60초              |
 | 같은 인증 actor의 비밀번호 변경·탈퇴, session을 바꿔도 공유             | 10회/60초              |
+| 같은 계정의 게임 세션 발급, 로그인 session/profile을 바꿔도 공유        | 32회/60초              |
 | 인증 시작·등록·자격 증명·OTP와 public key/가입 필드 검사, socket peer별 | 600회/60초             |
 | 위 인증 procedure 전체, 같은 Gateway Redis namespace                    | 1200회/60초            |
 | RSA/Argon2/provider 호출이 있는 인증 작업, API 프로세스별               | 동시 4개, 대기 큐 없음 |
@@ -614,9 +615,33 @@ Kakao transport는 각 HTTP 요청의 header와 body 전체에 10초 deadline, d
 게임 시간·OTP 만료·기존 session lifetime·Argon2 강도와 무관하다.
 
 이 단계는 온라인 자격 증명/가입 비용을 보호하며 established session의 일반 조회,
-logout과 game-session 교환에 동일한 인증 시작 budget을 강제로 적용하지 않는다.
+logout은 이 budget에서 제외한다. 게임 세션 발급은 별도 계정 counter 32회/60초를
+사용하고 peer/global counter와 확인 대기 상한을 공유하며 RSA/Argon2 동시 자리에는
+들어가지 않는다.
 임시 운영 stack과 공개 운영/개발 stack은 Redis와 prefix를 공유하지 않으며 새 코드의
 검증 결과를 실제 공개 배포 근거로 사용하지 않는다.
+
+### 게임 세션 발급·추적 수명 (2026-10-09)
+
+Gateway 로그인 하나가 추적하는 살아 있는 게임 세션은 모든 profile을 합쳐 256개까지
+허용한다. 기존 게임 토큰을 강제로 폐기하지 않으며 초과 발급은 HTTP 429다.
+발급 전에 만료된 Redis key를 추적 set에서 제거한다. 로그인별 추적 set이 이전
+버전에서 이미 256개보다 크다면 전부 펼치지 않고 새 발급을 거절하며, 로그아웃 뒤
+다시 로그인하거나 기존 index가 만료된 뒤 복구한다. 정상 다중 탭/여러 profile을
+지원하되 발급 자료의 무제한 누적을 허용하지 않는 Core 보안 정책이다.
+
+Redis Lua가 부모 session의 존재·snapshot 일치·만료, 정리·상한과 새 저장을 한 번에
+검사한다. 로그아웃은 부모 제거와 최대 64개 게임 key/index 삭제를 원자적으로
+반복하여, 발급 경합과 큰 기존 index의 일괄 응답을 방지한다. 부모만 회수하는
+`revokeGames:false`는 독립 게임 TTL을 유지한다. 게임 token TTL은 여전히 발급 시점부터
+`GAME_SESSION_TTL_SECONDS`이고 부모 로그인 만료가 이미 발급된 게임 token의 만료를
+앞당기지는 않는다. index TTL은 남은 부모 TTL과 게임 TTL 중 큰 값이며 새 부모 TTL로
+매번 초기화하지 않는다. 새로운 env key와 DB migration은 필요 없다.
+
+암호화 게임 token의 issuedAt/expiresAt은 추적 항목의 최초 발급 시각에서 계산한다.
+이후 icon/identity 조회 중 logout/flush가 겹쳐도 issuedAt을 더 늦은 시각으로
+바꿔 이전 flush를 피하지 않는다. 이는 한 발급 flow의 경합 방어이며 pub/sub 누락이나
+API 재시작 후 회수 유지까지 증명하는 정책은 아니다.
 
 ### Builder 요청 인증과 자원 경계 (2026-10-09)
 

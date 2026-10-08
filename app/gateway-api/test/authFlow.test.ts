@@ -1242,6 +1242,35 @@ describe('gateway auth flow', () => {
         expect(validated?.user.username).toBe('tester');
     });
 
+    it('retains the original issuance instant when logout flush overlaps later identity reads', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({ username: 'issue-flush-race', password: 'synthetic-password' });
+        const parent = await sessions.createSession(user);
+        const issuedAt = new Date().toISOString();
+        vi.useFakeTimers({ now: new Date(issuedAt) });
+        const create = vi.spyOn(sessions, 'createGameSession');
+        const original = sessions.createGameSession.bind(sessions);
+        create.mockImplementationOnce(async (...args) => {
+            // Snapshot admitted before the subsequent logout/flush instant.
+            const game = await original(...args);
+            vi.advanceTimersByTime(5_000);
+            await sessions.revokeSession(parent.sessionToken);
+            return game;
+        });
+        try {
+            const issued = await caller.auth.issueGameSession({
+                sessionToken: parent.sessionToken,
+                profile: 'che:default',
+            });
+            const payload = decryptGameSessionToken(issued.gameToken, 'test-secret');
+            expect(payload?.issuedAt).toBe(issuedAt);
+            expect(payload?.expiresAt).toBe(new Date(Date.parse(issuedAt) + 600_000).toISOString());
+        } finally {
+            create.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
     it('keeps the migrated member number inside the encrypted game identity', async () => {
         const { caller, users, sessions } = buildCaller();
         const user = await users.createUser({

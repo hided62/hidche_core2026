@@ -15,9 +15,13 @@ export const procedure = t.procedure.use(async ({ ctx, path, getRawInput, next }
         if (path === 'auth.login' && typeof input.username === 'string' && input.username.length <= 64) {
             return `login:${input.username.trim().toLocaleLowerCase('en-US')}`;
         }
-        if (path.startsWith('account.') && typeof input.sessionToken === 'string' && input.sessionToken.length <= 256) {
+        if (
+            (path.startsWith('account.') || path === 'auth.issueGameSession') &&
+            typeof input.sessionToken === 'string' &&
+            input.sessionToken.length <= 256
+        ) {
             const session = await ctx.sessions.getSession(input.sessionToken);
-            if (session) return `account:${session.userId}`;
+            if (session) return `${path === 'auth.issueGameSession' ? 'game-session' : 'account'}:${session.userId}`;
         }
         return undefined;
     };
