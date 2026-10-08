@@ -36,6 +36,7 @@ import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
 import { RedisRealtimeEventHub } from './realtime/eventHub.js';
 import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 import { AuthenticatedRealtimeConnection } from './realtime/authenticatedConnection.js';
+import { RealtimeConnectionAdmission } from './realtime/connectionAdmission.js';
 import { formatSseFrame } from './realtime/sse.js';
 import {
     shouldForwardRealtimeEvent,
@@ -115,7 +116,9 @@ export const createGameApiServer = async () => {
     });
     app.setErrorHandler(safeHttpErrorHandler);
     const realtimeConnections = new Set<AuthenticatedRealtimeConnection>();
+    const realtimeAdmission = new RealtimeConnectionAdmission();
     app.addHook('preClose', async () => {
+        realtimeAdmission.close();
         for (const connection of realtimeConnections) connection.close();
     });
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
@@ -345,115 +348,165 @@ export const createGameApiServer = async () => {
         const query = request.query as { token?: string; scope?: string };
         const subscriptionScope = query.scope === 'tournament' ? 'tournament' : 'dashboard';
         const tokenFromHeader = extractBearerToken(request.headers.authorization);
-        let auth: GameSessionTokenPayload | null = null;
-        try {
-            auth = query.token === undefined ? await resolveRealtimeAuth(tokenFromHeader) : null;
-        } catch {
-            await reply.status(503).send({ ok: false, error: 'authentication_unavailable' });
-            return;
-        }
-
-        if (!auth || auth.profile !== config.profileName) {
+        if (query.token !== undefined || !tokenFromHeader) {
             await reply.status(401).send({ ok: false, error: 'unauthorized' });
             return;
         }
-
-        const loadViewerIdentity = async (): Promise<RealtimeViewerIdentity> => {
-            const general = await postgres.prisma.general.findFirst({
-                where: { userId: auth.user.id, npcState: 0 },
-                select: { id: true, cityId: true, nationId: true, officerLevel: true, meta: true, penalty: true },
-            });
-            if (!general) {
-                return { generalId: null, cityId: null, nationId: null, canReadDiplomacy: false };
+        let expired = false;
+        let disconnected = false;
+        const opening = realtimeAdmission.begin(() => {
+            expired = true;
+            if (!reply.sent && !reply.raw.destroyed) {
+                reply.header('Retry-After', '15');
+                void reply.status(503).send({ ok: false, error: 'realtime_unavailable' });
             }
-            const nation =
-                general.nationId > 0
-                    ? await postgres.prisma.nation.findUnique({
-                          where: { id: general.nationId },
-                          select: { meta: true },
-                      })
-                    : null;
-            return {
-                generalId: general.id,
-                cityId: general.cityId,
-                nationId: general.nationId,
-                canReadDiplomacy: Boolean(nation && resolveNationPermission(general, nation.meta, false) >= 3),
-            };
-        };
-        let viewerIdentity = await loadViewerIdentity();
-
-        reply.hijack();
-        const requestOrigin = request.headers.origin;
-        if (typeof requestOrigin === 'string' && requestOrigin.length > 0) {
-            // Hijacked SSE responses bypass Fastify's normal CORS response hook.
-            reply.raw.setHeader('Access-Control-Allow-Origin', requestOrigin);
-            reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
-            reply.raw.setHeader('Vary', 'Origin');
+        });
+        if (!opening) {
+            await reply.header('Retry-After', '15').status(503).send({ ok: false, error: 'realtime_unavailable' });
+            return;
         }
-        reply.raw.setHeader('Content-Type', 'text/event-stream');
-        reply.raw.setHeader('Cache-Control', 'no-cache');
-        reply.raw.setHeader('Connection', 'keep-alive');
-        reply.raw.setHeader('X-Accel-Buffering', 'no');
-        request.raw.setTimeout(0);
-        reply.raw.setTimeout?.(0);
-        reply.raw.flushHeaders?.();
+        const cancelOpening = () => {
+            disconnected = true;
+            opening.cancelOpening();
+        };
+        request.raw.once('aborted', cancelOpening);
+        reply.raw.once('close', cancelOpening);
+        let transferred = false;
+        try {
+            let auth: GameSessionTokenPayload | null = null;
+            try {
+                auth = await resolveRealtimeAuth(tokenFromHeader);
+            } catch {
+                if (opening.canContinue() && !reply.raw.destroyed)
+                    await reply.status(503).send({ ok: false, error: 'authentication_unavailable' });
+                return;
+            }
+            if (!opening.canContinue() || reply.raw.destroyed) return;
 
-        const connection = new AuthenticatedRealtimeConnection(auth, reply.raw, () =>
-            resolveRealtimeAuth(tokenFromHeader)
-        );
-        realtimeConnections.add(connection);
-        connection.onClose(() => {
-            realtimeConnections.delete(connection);
-        });
-        connection.enqueue(async () => formatSseFrame({ event: 'ready', data: '{}' }));
-        const unsubscribe = realtimeHub.subscribe((event) => {
-            if (!shouldForwardRealtimeEvent(event, subscriptionScope)) return;
-            connection.enqueue(async (currentAuth) => {
-                const identities = [viewerIdentity];
-                if (shouldReloadRealtimeViewerIdentity(event, viewerIdentity)) {
-                    const nextIdentity = await loadViewerIdentity();
-                    identities.push(nextIdentity);
-                    viewerIdentity = nextIdentity;
-                }
-                let refreshGrant: string | undefined;
-                const publicEvent = toPublicRealtimeEvent(event, identities, () => {
-                    refreshGrant ??= createRealtimeAccessGrant(currentAuth, config.profileName, config.gameTokenSecret);
-                    return refreshGrant;
+            if (!auth || auth.profile !== config.profileName) {
+                await reply.status(401).send({ ok: false, error: 'unauthorized' });
+                return;
+            }
+            if (!opening.reserveUser(auth.user.id)) {
+                if (opening.canContinue())
+                    await reply
+                        .header('Retry-After', '15')
+                        .status(429)
+                        .send({ ok: false, error: 'realtime_connection_limit' });
+                return;
+            }
+
+            const loadViewerIdentity = async (): Promise<RealtimeViewerIdentity> => {
+                const general = await postgres.prisma.general.findFirst({
+                    where: { userId: auth.user.id, npcState: 0 },
+                    select: { id: true, cityId: true, nationId: true, officerLevel: true, meta: true, penalty: true },
                 });
-                if (!publicEvent || connection.closed) return null;
-                if (refreshGrant) {
-                    try {
-                        await registerRealtimeAccessGrant(redis.client, refreshGrant, config.profileName);
-                    } catch {
-                        // An unregistered grant falls back to the scored refresh path.
+                if (!general) {
+                    return { generalId: null, cityId: null, nationId: null, canReadDiplomacy: false };
+                }
+                const nation =
+                    general.nationId > 0
+                        ? await postgres.prisma.nation.findUnique({
+                              where: { id: general.nationId },
+                              select: { meta: true },
+                          })
+                        : null;
+                return {
+                    generalId: general.id,
+                    cityId: general.cityId,
+                    nationId: general.nationId,
+                    canReadDiplomacy: Boolean(nation && resolveNationPermission(general, nation.meta, false) >= 3),
+                };
+            };
+            let viewerIdentity = await loadViewerIdentity();
+            if (!opening.canContinue() || reply.raw.destroyed || !opening.startStreaming()) return;
+
+            reply.hijack();
+            const requestOrigin = request.headers.origin;
+            if (typeof requestOrigin === 'string' && requestOrigin.length > 0) {
+                // Hijacked SSE responses bypass Fastify's normal CORS response hook.
+                reply.raw.setHeader('Access-Control-Allow-Origin', requestOrigin);
+                reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
+                reply.raw.setHeader('Vary', 'Origin');
+            }
+            reply.raw.setHeader('Content-Type', 'text/event-stream');
+            reply.raw.setHeader('Cache-Control', 'no-cache');
+            reply.raw.setHeader('Connection', 'keep-alive');
+            reply.raw.setHeader('X-Accel-Buffering', 'no');
+            request.raw.setTimeout(0);
+            reply.raw.setTimeout?.(0);
+            reply.raw.flushHeaders?.();
+
+            const connection = new AuthenticatedRealtimeConnection(auth, reply.raw, () =>
+                resolveRealtimeAuth(tokenFromHeader)
+            );
+            realtimeConnections.add(connection);
+            connection.onClose(() => {
+                realtimeConnections.delete(connection);
+                // A disconnected socket can still own an in-flight Redis/SQL operation.
+                void connection.whenIdle().then(opening.release, opening.release);
+            });
+            transferred = true;
+            connection.enqueue(async () => formatSseFrame({ event: 'ready', data: '{}' }));
+            const unsubscribe = realtimeHub.subscribe((event) => {
+                if (!shouldForwardRealtimeEvent(event, subscriptionScope)) return;
+                connection.enqueue(async (currentAuth) => {
+                    const identities = [viewerIdentity];
+                    if (shouldReloadRealtimeViewerIdentity(event, viewerIdentity)) {
+                        const nextIdentity = await loadViewerIdentity();
+                        identities.push(nextIdentity);
+                        viewerIdentity = nextIdentity;
                     }
-                }
-                return formatSseFrame({ event: publicEvent.type, data: JSON.stringify(publicEvent) });
-            });
-        });
-        connection.onClose(unsubscribe);
-        let heartbeatPending = false;
-        const heartbeat = setInterval(() => {
-            if (heartbeatPending || connection.closed) return;
-            heartbeatPending = true;
-            connection.enqueue(async () => {
-                try {
-                    return formatSseFrame({
-                        event: 'ping',
-                        data: JSON.stringify({ turnEngineRunning: await turnEngineStatus.get() }),
+                    let refreshGrant: string | undefined;
+                    const publicEvent = toPublicRealtimeEvent(event, identities, () => {
+                        refreshGrant ??= createRealtimeAccessGrant(
+                            currentAuth,
+                            config.profileName,
+                            config.gameTokenSecret
+                        );
+                        return refreshGrant;
                     });
-                } finally {
-                    heartbeatPending = false;
-                }
+                    if (!publicEvent || connection.closed) return null;
+                    if (refreshGrant) {
+                        try {
+                            await registerRealtimeAccessGrant(redis.client, refreshGrant, config.profileName);
+                        } catch {
+                            // An unregistered grant falls back to the scored refresh path.
+                        }
+                    }
+                    return formatSseFrame({ event: publicEvent.type, data: JSON.stringify(publicEvent) });
+                });
             });
-        }, 15_000);
-        connection.onClose(() => {
-            clearInterval(heartbeat);
-        });
-        request.raw.once('aborted', connection.close);
-        connection.onClose(() => {
-            request.raw.off('aborted', connection.close);
-        });
+            connection.onClose(unsubscribe);
+            let heartbeatPending = false;
+            const heartbeat = setInterval(() => {
+                if (heartbeatPending || connection.closed) return;
+                heartbeatPending = true;
+                connection.enqueue(async () => {
+                    try {
+                        return formatSseFrame({
+                            event: 'ping',
+                            data: JSON.stringify({ turnEngineRunning: await turnEngineStatus.get() }),
+                        });
+                    } finally {
+                        heartbeatPending = false;
+                    }
+                });
+            }, 15_000);
+            connection.onClose(() => {
+                clearInterval(heartbeat);
+            });
+            request.raw.once('aborted', connection.close);
+            connection.onClose(() => {
+                request.raw.off('aborted', connection.close);
+            });
+        } catch (error) {
+            if (!expired && !disconnected) throw error;
+        } finally {
+            request.raw.off('aborted', cancelOpening);
+            reply.raw.off('close', cancelOpening);
+            if (!transferred) opening.release();
+        }
     });
 
     app.get('/healthz', async (_request, reply) => {

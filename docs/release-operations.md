@@ -557,8 +557,35 @@ user/session/profile과 게임 접근 제재를 확인한다. flush watermark는
 대기 중인 연결을 닫고 Redis 장애는 fail closed로 처리한다. 연결별 대기 작업은
 32개, frame과 socket buffer는 64 KiB로 제한하고 slow consumer를 닫는다.
 재연결 뒤 메인은 기존 갱신 큐로 snapshot을 복구한다. 게임 계산·RNG·DB schema와
-read-model invalidation/grant의 사용자 범위는 변경하지 않는다. 연결 수 전체의
-상한이나 온라인 인증 rate limit까지 구현한 것으로 해석하지 않는다.
+read-model invalidation/grant의 사용자 범위는 변경하지 않는다. 전체 연결 admission은
+아래 별도 계약을 따르며, 일반 게임 HTTP 인증의 전역 rate limit 증거로 확대하지 않는다.
+
+### SSE 연결과 준비 작업 상한 (2026-10-09)
+
+game API의 `RealtimeConnectionAdmission`은 프로세스별로 다음 용량을 소유한다.
+
+| 범위                                                            | 상한  |
+| --------------------------------------------------------------- | ----- |
+| 같은 인증 사용자: token·session·scope를 바꾸어도 공유           | 8개   |
+| 인증 중/준비 중, 열린 연결, 닫힌 연결의 미완료 작업을 합친 전체 | 512개 |
+| 인증·viewer 조회가 아직 끝나지 않은 연결 준비                   | 32개  |
+
+인증 actor는 검증한 token의 user ID로 결정하며 client query/user ID를 신뢰하지 않는다.
+전체/준비 용량은 첫 async 인증 조회 전에 예약하고 사용자 용량은 viewer DB 조회 전에
+예약한다. 대기 큐를 만들지 않고 사용자 초과는 429 `realtime_connection_limit`,
+전체/준비 초과는 503 `realtime_unavailable`과 `Retry-After: 15`를 반환한다.
+이미 열린 정상 연결은 새 요청의 초과 때문에 닫지 않는다.
+
+연결 준비는 5초 뒤 503으로 실패한다. 호출자 timeout/client disconnect가 실제 Redis/SQL
+완료를 뜻하지 않으므로 해당 준비 용량은 작업이 settle할 때까지 유지한다. 늦게 완료한
+작업이 이미 끝난 HTTP 요청에서 SSE를 새로 열지 못한다. 열린 socket의 종료도 구독과
+heartbeat를 즉시 정리하지만 미완료 frame 작업이 끝날 때까지 사용자/전체 용량을
+보유한다. app shutdown은 새 admission과 늦은 준비를 거절하고 기존 stream을 닫는다.
+
+이는 한 game API process/profile의 자원 상한이며 DB pool connection 수를 사용자 수로
+환산한 값이나 다중 replica/모든 profile에 걸친 전역 제한이 아니다. 일반 request RPS와
+backend의 모든 장애 복구를 보장하지 않는다. 기존 header auth, 만료/회수·개인정보
+필터와 refresh grant는 유지한다. 비활성화 env key와 credential은 추가하지 않는다.
 
 Game/Gateway HTTP logger는 raw URL/query/header/body와 error message/cause/stack
 대신 static route, request ID, status와 허용된 error code만 남긴다. Fastify의

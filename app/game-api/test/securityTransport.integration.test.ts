@@ -3589,6 +3589,168 @@ integration('game API security over HTTP transport', () => {
         return { abort, reader };
     };
 
+    it('SSE limits simultaneous openings for one authenticated user', async () => {
+        const actor = `security-http-sse-concurrent-${process.pid}`;
+        const token = await createAccessToken('sse-concurrent', {}, actor);
+        const aborts = Array.from({ length: 10 }, () => new AbortController());
+        try {
+            const responses = await Promise.all(
+                aborts.map((abort) =>
+                    fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                        headers: { authorization: `Bearer ${token}` },
+                        signal: abort.signal,
+                    })
+                )
+            );
+            expect(responses.filter((response) => response.status === 200)).toHaveLength(8);
+            expect(responses.filter((response) => response.status === 429)).toHaveLength(2);
+            for (const response of responses.filter((item) => item.status === 429)) {
+                expect(response.headers.get('retry-after')).toBe('15');
+                expect(response.headers.get('content-type')).not.toBe('text/event-stream');
+                expect(await response.json()).toEqual({ ok: false, error: 'realtime_connection_limit' });
+            }
+        } finally {
+            for (const abort of aborts) abort.abort();
+            await accessTokenStore.revoke(token);
+        }
+    });
+
+    it('SSE limits the same user across tokens and scopes and recovers after disconnect', async () => {
+        const actor = `security-http-sse-shared-${process.pid}`;
+        const token = await createAccessToken('sse-shared-a', {}, actor);
+        const otherToken = await createAccessToken('sse-shared-b', {}, actor);
+        const otherActorToken = await createAccessToken('sse-independent', {}, `${actor}-other`);
+        const streams: Awaited<ReturnType<typeof openRealtime>>[] = [];
+        const replacementAbort = new AbortController();
+        try {
+            for (let index = 0; index < 8; index += 1) streams.push(await openRealtime(token));
+            const rejected = await fetch(`${baseUrl}${server!.config.eventsPath}?scope=tournament`, {
+                headers: { authorization: `Bearer ${otherToken}` },
+            });
+            expect(rejected.status).toBe(429);
+            expect(await rejected.json()).toEqual({ ok: false, error: 'realtime_connection_limit' });
+            streams.push(await openRealtime(otherActorToken));
+            await streams[0]!.reader.cancel();
+            streams[0]!.abort.abort();
+            let replacement: Response | undefined;
+            await expect
+                .poll(async () => {
+                    const response = await fetch(`${baseUrl}${server!.config.eventsPath}?scope=tournament`, {
+                        headers: { authorization: `Bearer ${otherToken}` },
+                        signal: replacementAbort.signal,
+                    });
+                    if (response.status === 200) replacement = response;
+                    else await response.arrayBuffer();
+                    return response.status;
+                })
+                .toBe(200);
+            const ready = await replacement!.body!.getReader().read();
+            expect(new TextDecoder().decode(ready.value)).toContain('event: ready');
+        } finally {
+            replacementAbort.abort();
+            for (const stream of streams) stream.abort.abort();
+            await Promise.all([token, otherToken, otherActorToken].map((value) => accessTokenStore.revoke(value)));
+        }
+    });
+
+    it('SSE bounds pending openings after disconnect and backend deadline until real SQL work settles', async () => {
+        if (!/^[A-Za-z0-9_]+$/.test(profileId)) throw new Error('Invalid isolated schema identifier');
+        const actor = `security-http-sse-pending-${process.pid}`;
+        const tokens = await Promise.all(
+            Array.from({ length: 33 }, (_, index) => createAccessToken(`sse-pending-${index}`, {}, `${actor}-${index}`))
+        );
+        const aborts = Array.from({ length: 33 }, () => new AbortController());
+        let unlock!: () => void;
+        const release = new Promise<void>((resolve) => {
+            unlock = resolve;
+        });
+        let ready!: (tx: GamePrisma.TransactionClient) => void;
+        let lockError!: (error: unknown) => void;
+        const locked = new Promise<GamePrisma.TransactionClient>((resolve, reject) => {
+            ready = resolve;
+            lockError = reject;
+        });
+        // Only the guarded, dedicated fixture schema is locked. No runtime or Ref table is touched.
+        const locking = db.$transaction(
+            async (tx) => {
+                await tx.$executeRawUnsafe(`LOCK TABLE "${profileId}"."general" IN ACCESS EXCLUSIVE MODE`);
+                ready(tx);
+                await release;
+            },
+            { timeout: 20_000 }
+        );
+        void locking.catch(lockError);
+        try {
+            const tx = await locked;
+            const first = fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${tokens[0]!}` },
+                signal: aborts[0]!.signal,
+            }).then(
+                () => false,
+                () => true
+            );
+            await expect
+                .poll(
+                    async () => {
+                        const rows = await tx.$queryRaw<Array<{ count: number }>>`
+                    SELECT COUNT(*)::int AS count FROM pg_locks
+                    WHERE NOT granted AND relation = ${`${profileId}.general`}::regclass
+                        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                `;
+                        return rows[0]!.count;
+                    },
+                    { timeout: 3000 }
+                )
+                .toBeGreaterThan(0);
+            const startedAt = Date.now();
+            const waiting = tokens.slice(1, 32).map((token, index) =>
+                fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                    headers: { authorization: `Bearer ${token}` },
+                    signal: aborts[index + 1]!.signal,
+                })
+            );
+            aborts[0]!.abort();
+            expect(await first).toBe(true);
+            const responses = await Promise.all(waiting);
+            expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4500);
+            expect(Date.now() - startedAt).toBeLessThan(8500);
+            for (const response of responses) {
+                expect(response.status).toBe(503);
+                expect(await response.json()).toEqual({ ok: false, error: 'realtime_unavailable' });
+            }
+            const refusedAt = Date.now();
+            const refused = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${tokens[32]!}` },
+                signal: aborts[32]!.signal,
+            });
+            expect(refused.status).toBe(503);
+            expect(refused.headers.get('retry-after')).toBe('15');
+            expect(Date.now() - refusedAt).toBeLessThan(2000);
+            await refused.arrayBuffer();
+            unlock();
+            await locking;
+            let recovered: Response | undefined;
+            await expect
+                .poll(async () => {
+                    const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                        headers: { authorization: `Bearer ${tokens[32]!}` },
+                        signal: aborts[32]!.signal,
+                    });
+                    if (response.status === 200) recovered = response;
+                    else await response.arrayBuffer();
+                    return response.status;
+                })
+                .toBe(200);
+            const frame = await recovered!.body!.getReader().read();
+            expect(new TextDecoder().decode(frame.value)).toContain('event: ready');
+        } finally {
+            unlock();
+            for (const abort of aborts) abort.abort();
+            await locking;
+            await Promise.all(tokens.map((token) => accessTokenStore.revoke(token)));
+        }
+    }, 15_000);
+
     it('SSE accepts header auth and rejects query or cross-profile credentials', async () => {
         const token = await createAccessToken('sse-query', {});
         const queryOnly = await fetch(`${baseUrl}${server!.config.eventsPath}?token=${encodeURIComponent(token)}`);

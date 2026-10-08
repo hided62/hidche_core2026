@@ -28,6 +28,10 @@ export class AuthenticatedRealtimeConnection {
         return this.ended;
     }
 
+    whenIdle(): Promise<void> {
+        return this.queue;
+    }
+
     onClose(cleanup: () => void): void {
         if (this.ended) cleanup();
         else this.cleanup.add(cleanup);
