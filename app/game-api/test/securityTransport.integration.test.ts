@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { buildGameEventChannel } from '@sammo-ts/common';
 import { createHash } from 'node:crypto';
 import { projectCurrentGeneral } from '../src/router/playAudit/projection.js';
@@ -819,6 +820,28 @@ integration('game API security over HTTP transport', () => {
         if (redis) {
             await redis.client.del(`sammo:${profileName}:read-model:revision`);
         }
+    });
+
+    it('image upload enforces real HTTP authentication, officer authority and decoded pixel limits', async () => {
+        const input = { dataUrl: 'data:image/png;base64,AA==' };
+        const unauthenticated = await requestTrpc('board.uploadImage', { method: 'POST', input });
+        expect(unauthenticated.response.status).toBe(401);
+        const ordinary = await createAccessToken('image-ordinary', {}, ordinaryUserId);
+        const denied = await requestTrpc('board.uploadImage', { method: 'POST', input, accessToken: ordinary });
+        expect(denied.response.status).toBe(403);
+        const officer = await createAccessToken('image-officer', {});
+        const malformed = await requestTrpc('board.uploadImage', { method: 'POST', input, accessToken: officer });
+        expect(malformed.response.status).toBe(400);
+        const png = await sharp({ create: { width: 4096, height: 4097, channels: 3, background: '#224466' } })
+            .png()
+            .toBuffer();
+        const oversized = await requestTrpc('board.uploadImage', {
+            method: 'POST',
+            accessToken: officer,
+            input: { dataUrl: `data:image/png;base64,${png.toString('base64')}` },
+        });
+        expect(oversized.response.status).toBe(400);
+        expect(oversized.body).toMatchObject({ error: { data: { code: 'BAD_REQUEST' } } });
     });
 
     it('accepts an authenticated query from a POST JSON body', async () => {

@@ -3,6 +3,7 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
     entry: {
         index: 'src/index.ts',
+        'images/imageUpload': 'src/images/imageUpload.ts',
         'auth/gameToken': 'src/auth/gameToken.ts',
         'auth/gameSessionTransfer': 'src/auth/gameSessionTransfer.ts',
         'auth/sessionRevocation': 'src/auth/sessionRevocation.ts',

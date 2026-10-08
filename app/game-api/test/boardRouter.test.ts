@@ -288,6 +288,81 @@ describe('board router actor, nation, and secret permissions', () => {
         expect(result).toMatchObject({ width: 64, height: 48, format: 'webp', animated: false });
     });
 
+    it('rejects highly compressed images over the decoded pixel budget before upload', async () => {
+        const upload = vi.fn(async () => ({ publicUrl: 'https://image.example/image.webp' }));
+        const fixture = buildContext({ me: buildGeneral({ officerLevel: 5 }), contentImageUpload: { upload } });
+        const png = await sharp({ create: { width: 4096, height: 4097, channels: 3, background: '#224466' } })
+            .png()
+            .toBuffer();
+        expect(png.length).toBeLessThan(1024 * 1024);
+        await expect(
+            appRouter.createCaller(fixture.context).board.uploadImage({
+                dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects excess concurrent image work and recovers when uploads settle', async () => {
+        const pending: Array<() => void> = [];
+        const upload = vi.fn(
+            () =>
+                new Promise<{ publicUrl: string }>((resolve) => {
+                    pending.push(() => resolve({ publicUrl: 'https://image.example/image.webp' }));
+                })
+        );
+        const fixture = buildContext({ me: buildGeneral({ officerLevel: 5 }), contentImageUpload: { upload } });
+        const png = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#224466' } })
+            .png()
+            .toBuffer();
+        const caller = appRouter.createCaller(fixture.context);
+        const input = { dataUrl: `data:image/png;base64,${png.toString('base64')}` };
+        const admitted = Array.from({ length: 4 }, () => caller.board.uploadImage(input));
+        try {
+            await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(4));
+            await expect(caller.board.uploadImage(input)).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+        } finally {
+            pending.forEach((done) => done());
+            await Promise.all(admitted);
+        }
+        upload.mockImplementation(async () => ({ publicUrl: 'https://image.example/image.webp' }));
+        await expect(caller.board.uploadImage(input)).resolves.toMatchObject({ format: 'webp' });
+    });
+
+    it('rejects SVG before a native image parser or upload is used', async () => {
+        const upload = vi.fn();
+        const fixture = buildContext({ me: buildGeneral({ officerLevel: 5 }), contentImageUpload: { upload } });
+        await expect(
+            appRouter.createCaller(fixture.context).board.uploadImage({
+                dataUrl: Buffer.from('<svg width="64" height="64"><script>alert(1)</script></svg>').toString('base64'),
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        expect(upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects excessive animation frames while preserving ordinary GIF animation', async () => {
+        const upload = vi.fn(async () => ({ publicUrl: 'https://image.example/image.webp' }));
+        const fixture = buildContext({ me: buildGeneral({ officerLevel: 5 }), contentImageUpload: { upload } });
+        const caller = appRouter.createCaller(fixture.context);
+        const makeGif = (pages: number) =>
+            sharp(Buffer.alloc(pages * 4, 255), {
+                raw: { width: 1, height: pages, channels: 4, pageHeight: 1 },
+            })
+                .gif({ keepDuplicateFrames: true, delay: Array(pages).fill(10) })
+                .toBuffer();
+        const excessive = await makeGif(257);
+        expect((await sharp(excessive, { animated: true }).metadata()).pages).toBe(257);
+        await expect(caller.board.uploadImage({ dataUrl: excessive.toString('base64') })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(upload).not.toHaveBeenCalled();
+        const ordinary = await makeGif(3);
+        await expect(caller.board.uploadImage({ dataUrl: ordinary.toString('base64') })).resolves.toMatchObject({
+            animated: true,
+            format: 'webp',
+        });
+    });
+
     it('preserves an AVIF editor image when resizing is unnecessary', async () => {
         const upload = vi.fn(async ({ filename }: { filename: string }) => ({
             publicUrl: `https://sam-image.hided.net/uploads/core2026/${filename}`,

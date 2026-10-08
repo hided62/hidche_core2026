@@ -61,6 +61,10 @@
         "./util/JosaUtil": {
             "types": "./dist/util/JosaUtil.d.ts",
             "default": "./dist/util/JosaUtil.js"
+        },
+        "./images/imageUpload": {
+            "types": "./dist/images/imageUpload.d.ts",
+            "default": "./dist/images/imageUpload.js"
         }
     },
     "scripts": {

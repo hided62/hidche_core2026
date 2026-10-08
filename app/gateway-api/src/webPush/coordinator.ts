@@ -1,3 +1,4 @@
+import { sendBoundedNotification } from './sendNotification.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
@@ -12,7 +13,7 @@ import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 import webPush from 'web-push';
 
 import { resolveGatewayProfileDisplayName } from '../profileOrder.js';
-import { parsePushEndpoint, publicPushAgent, PushEndpointPolicyError, validatePushEndpoint } from './endpointPolicy.js';
+import { parsePushEndpoint, PushEndpointPolicyError, validatePushEndpoint } from './endpointPolicy.js';
 
 export interface WebPushCoordinatorConfig {
     enabled: boolean;
@@ -455,7 +456,7 @@ export class WebPushCoordinator {
             try {
                 // 기존 DB 구독도 검사한다. DNS 검사는 실제 socket lookup에서 다시 수행한다.
                 parsePushEndpoint(delivery.subscription.endpoint);
-                await webPush.sendNotification(
+                await sendBoundedNotification(
                     {
                         endpoint: delivery.subscription.endpoint,
                         keys: { p256dh: delivery.subscription.p256dh, auth: delivery.subscription.auth },
@@ -465,8 +466,7 @@ export class WebPushCoordinator {
                         body: delivery.notification.body,
                         url: delivery.notification.url,
                         tag: delivery.notification.tag,
-                    }),
-                    { TTL: 60 * 60, timeout: 10_000, agent: publicPushAgent }
+                    })
                 );
                 await this.prisma.$executeRaw(GatewayPrisma.sql`
                     UPDATE web_push_delivery

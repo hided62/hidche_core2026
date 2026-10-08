@@ -1527,6 +1527,46 @@ describe('account self service', () => {
         }
     });
 
+    it('bounds pending icon uploads without changing the owned library limit', async () => {
+        const { caller, users, sessions, userIconUpload } = buildCaller();
+        const user = await users.createUser({ username: 'icon-budget', password: 'current-password' });
+        const session = await sessions.createSession(user);
+        const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#224466' } })
+            .png()
+            .toBuffer();
+        const input = {
+            sessionToken: session.sessionToken,
+            imageData: `data:image/png;base64,${png.toString('base64')}`,
+        };
+        const pending: Array<() => void> = [];
+        userIconUpload.upload.mockImplementation(
+            ({ filename }) =>
+                new Promise((resolve) => {
+                    pending.push(() =>
+                        resolve({
+                            picture: `users/core2026/${filename}`,
+                            publicUrl: `https://image.example/${filename}`,
+                        })
+                    );
+                })
+        );
+        const admitted = Array.from({ length: 4 }, () => caller.account.changeIcon(input));
+        try {
+            await vi.waitFor(() => expect(userIconUpload.upload).toHaveBeenCalledTimes(4));
+            await expect(caller.account.changeIcon(input)).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+        } finally {
+            pending.forEach((done) => done());
+            await Promise.all(admitted);
+        }
+        expect(await users.listIcons(user.id)).toHaveLength(4);
+        userIconUpload.upload.mockImplementation(async ({ filename }) => ({
+            picture: `users/core2026/${filename}`,
+            publicUrl: `https://image.example/${filename}`,
+        }));
+        await expect(caller.account.changeIcon(input)).resolves.toMatchObject({ ok: true });
+        expect(await users.listIcons(user.id)).toHaveLength(5);
+    });
+
     it('accepts concurrent uploads until the five-icon limit is reached', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-race-'));
         try {

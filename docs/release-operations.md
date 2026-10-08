@@ -744,3 +744,31 @@ NDJSON frame 512 KiB/stream 64 MiB, 느린 소비자의 write buffer 1 MiB를 �
 실패합니다. 해당 host의 wrapper와 정확한 project를 사용하고 기존 volume·active
 release를 보존합니다. 외부 공개 stack과 임시 localhost stack의 token 파일은
 공유하지 않습니다. 임시 host의 절차는 상위 local-runtime README를 따릅니다.
+
+
+### 이미지 업로드와 WebPush 전송 경계
+
+게시판 이미지의 기존 1 MiB 입력·2048px 변환 정책, AVIF 원본 보존과 WebP 변환,
+계정 아이콘의 50 KiB·64~128px 정사각형·활성 5개 정책은 유지한다.
+서버 자원 보호를 위해 게시판은 총 16,777,216 입력 픽셀, 아이콘은 총 4,194,304
+입력 픽셀, 양쪽은 최대 256 프레임을 허용한다. raster signature를 먼저 확인하고
+Sharp의 `limitInputPixels`와 처리 timeout 10초를 적용한다. 각 API 프로세스의
+이미지 작업은 최대 4개이며 대기열 없이 초과 요청을 `TOO_MANY_REQUESTS`로 거절한다.
+실제 작업이 끝나기 전에는 슬롯을 반환하지 않는다. 이 제한은 일일 업로드 횟수나
+아이콘 소유권 정책을 변경하지 않는다. 기존 Fastify HTTP body limit도 유지한다.
+
+공통 server 전용 `@sammo-ts/common/images/imageUpload`가 두 이미지 저장 adapter의
+서명 PUT 전송을 처리한다. 기존 60초 HMAC·path/body binding을 유지하며 redirect를
+거부하고, 요청부터 응답 완료까지 10초, JSON 응답 16 KiB, 전송 body 16 MiB를
+제한한다. 실제 streaming bytes를 세므로 Content-Length가 없거나 부정확해도 제한이
+적용된다. 응답 path만 검증하고 공개 URL은 설정한 public base에서 생성한다.
+abort를 무시하는 작업도 실제 종료까지 최대 4개 전송 슬롯을 점유한다.
+저장소 실패는 API에서 `SERVICE_UNAVAILABLE`, 작업 포화는 `TOO_MANY_REQUESTS`이다.
+
+WebPush는 `web-push.generateRequestDetails`의 암호화·VAPID·TTL을 유지하면서
+`sendNotification.ts`에서 HTTPS 전송을 직접 수행한다. 기존 public DNS/socket lookup
+정책을 유지하고 redirect를 따르지 않는다. 전체 요청 10초와 실제 응답 16 KiB를
+제한하며 응답 body를 저장하지 않는다. HTTP status는 기존 404/410 subscription
+비활성화와 재시도 판단에 전달된다. 일반 전송 오류는 일시 재시도 대상으로 유지한다.
+이 값에는 추가 `.env`나 credential이 필요 없다. VAPID가 없는 설치의 WebPush는
+기존대로 비활성 상태이며, 이 경우 실제 외부 push 성공 검증을 대신하지 않는다.
