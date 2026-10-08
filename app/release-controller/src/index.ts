@@ -29,7 +29,12 @@ const main = async (): Promise<void> => {
         baseEnv: config.baseEnv,
     });
     const migrationRunner = new PnpmBuildRunner();
-    const releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, migrationRunner);
+    const releaseBuildRunner = createReleaseBuildRunner(
+        config.releaseBuilderUrl,
+        migrationRunner,
+        fetch,
+        config.baseEnv.RELEASE_BUILDER_TOKEN_FILE
+    );
     const processManager = new Pm2ProcessManager();
     const controller = new GatewayReleaseController(
         repository,

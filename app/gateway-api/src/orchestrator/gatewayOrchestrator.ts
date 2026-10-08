@@ -1023,7 +1023,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.releaseBuildRunner = createReleaseBuildRunner(
             options.processConfig.releaseBuilderUrl,
             options.buildRunner,
-            options.fetchImpl ?? fetch
+            options.fetchImpl ?? fetch,
+            options.processConfig.baseEnv?.RELEASE_BUILDER_TOKEN_FILE
         );
         this.workspaceManager = options.workspaceManager;
         this.processConfig = options.processConfig;

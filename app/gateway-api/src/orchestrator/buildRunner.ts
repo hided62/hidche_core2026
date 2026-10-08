@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 export interface BuildCommand {
@@ -33,7 +34,8 @@ export interface BuildRunner {
 
 export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
 const DEFAULT_RELEASE_TURBO_CONCURRENCY = 1;
-const RELEASE_BUILD_ENV_NAME = /^(?:CI|PATH|NODE_OPTIONS|RELEASE_BUILD_NODE_OPTIONS|PROFILE_FRONTEND_BUILD_NODE_OPTIONS|RAYON_NUM_THREADS|RELEASE_TURBO_CONCURRENCY|TURBO_CACHE_DIR|TZ|VITE_[A-Z0-9_]+)$/u;
+const RELEASE_BUILD_ENV_NAME =
+    /^(?:CI|PATH|NODE_OPTIONS|RELEASE_BUILD_NODE_OPTIONS|PROFILE_FRONTEND_BUILD_NODE_OPTIONS|RAYON_NUM_THREADS|RELEASE_TURBO_CONCURRENCY|TURBO_CACHE_DIR|TZ|VITE_[A-Z0-9_]+)$/u;
 
 export const sanitizeReleaseBuildEnv = (
     env: NodeJS.ProcessEnv | Record<string, string> | undefined
@@ -236,11 +238,100 @@ interface RemoteBuildMessage {
     error?: string;
 }
 
+export const MAX_REMOTE_BUILD_FRAME_BYTES = 512 * 1024;
+const REMOTE_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+const record = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const validRemoteMessage = (value: unknown): value is RemoteBuildMessage => {
+    if (!record(value)) return false;
+    if (Object.keys(value).length !== 1) return false;
+    if (value.result) {
+        const result = value.result;
+        return (
+            record(result) &&
+            typeof result.ok === 'boolean' &&
+            (!result.ok || (result.exitCode === 0 && result.aborted !== true)) &&
+            (result.exitCode === null || (typeof result.exitCode === 'number' && Number.isInteger(result.exitCode))) &&
+            typeof result.output === 'string' &&
+            result.output.length <= MAX_BUILD_OUTPUT_CHARS &&
+            (result.aborted === undefined || typeof result.aborted === 'boolean')
+        );
+    }
+    if (typeof value.error === 'string') return value.error.length <= 2000;
+    if (!record(value.event)) return false;
+    const event = value.event;
+    if (event.type === 'OUTPUT')
+        return (
+            typeof event.stream === 'string' &&
+            ['stdout', 'stderr'].includes(event.stream) &&
+            typeof event.message === 'string' &&
+            event.message.length <= 2000
+        );
+    if (
+        typeof event.type !== 'string' ||
+        !['COMMAND_START', 'COMMAND_END'].includes(event.type) ||
+        !record(event.command)
+    )
+        return false;
+    const command = event.command;
+    if (
+        typeof command.command !== 'string' ||
+        !['pnpm', 'node'].includes(command.command) ||
+        typeof command.cwd !== 'string' ||
+        command.cwd.length > 2048 ||
+        !Array.isArray(command.args) ||
+        command.args.length > 40 ||
+        !command.args.every((arg: unknown) => typeof arg === 'string' && arg.length <= 2048)
+    )
+        return false;
+    if (
+        command.env !== undefined &&
+        (!record(command.env) ||
+            Object.keys(command.env).length > 32 ||
+            !Object.values(command.env).every((entry) => typeof entry === 'string' && entry.length <= 8192))
+    )
+        return false;
+    return (
+        event.type === 'COMMAND_START' ||
+        event.exitCode === null ||
+        (typeof event.exitCode === 'number' && Number.isInteger(event.exitCode))
+    );
+};
+
+const readRemoteBuildToken = (filename: string | undefined): string => {
+    try {
+        if (!filename || !statSync(filename).isFile() || statSync(filename).size > 256) throw new Error();
+        const token = readFileSync(filename, 'utf8').trim();
+        if (token.startsWith('replace-with-') || !/^[A-Za-z0-9_-]{43,128}$/.test(token)) throw new Error();
+        return token;
+    } catch {
+        throw new Error('A valid RELEASE_BUILDER_TOKEN_FILE is required.');
+    }
+};
+
+export interface RemoteBuildOptions {
+    tokenFile?: string;
+    timeoutMs?: number;
+}
+
 export class RemoteBuildRunner implements BuildRunner {
     private readonly endpoint: string;
+    private readonly timeoutMs: number;
 
-    constructor(baseUrl: string, private readonly fetchImpl: typeof fetch = fetch) {
-        this.endpoint = new URL('/v1/builds', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
+    constructor(
+        baseUrl: string,
+        private readonly fetchImpl: typeof fetch = fetch,
+        private readonly config: RemoteBuildOptions = {}
+    ) {
+        const parsed = new URL('/v1/builds', baseUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+            throw new Error('Invalid release builder endpoint.');
+        }
+        this.endpoint = parsed.toString();
+        this.timeoutMs = config.timeoutMs ?? REMOTE_BUILD_TIMEOUT_MS;
+        if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > REMOTE_BUILD_TIMEOUT_MS) {
+            throw new Error('Invalid release builder deadline.');
+        }
     }
 
     async run(
@@ -249,73 +340,92 @@ export class RemoteBuildRunner implements BuildRunner {
         options?: BuildRunOptions
     ): Promise<BuildResult> {
         let output = '';
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        timeout.unref();
+        const signal = options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+        let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
         try {
+            const token = readRemoteBuildToken(this.config.tokenFile);
             const response = await this.fetchImpl(this.endpoint, {
                 method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                redirect: 'error',
+                headers: { 'content-type': 'application/json', 'x-release-builder-token': token },
                 body: JSON.stringify({
-                    commands: commands.map((command) => ({
-                        ...command,
-                        env: sanitizeReleaseBuildEnv(command.env),
-                    })),
+                    commands: commands.map((command) => ({ ...command, env: sanitizeReleaseBuildEnv(command.env) })),
                 }),
-                signal: options?.signal,
+                signal,
             });
             if (!response.ok || !response.body) {
-                const detail = await response.text().catch(() => '');
-                return {
-                    ok: false,
-                    exitCode: null,
-                    output: appendOutputTail(output, detail || `Release builder returned HTTP ${response.status}.`),
-                };
+                await response.body?.cancel().catch(() => undefined);
+                return { ok: false, exitCode: null, output: `Release builder returned HTTP ${response.status}.` };
             }
-            const decoder = new TextDecoder();
+            reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8', { fatal: true });
             let buffer = '';
-            for await (const chunk of response.body) {
-                buffer += decoder.decode(chunk, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() ?? '';
-                for (const line of lines) {
-                    const result = await this.handleRemoteMessage(line, onProgress);
-                    if (result.event?.type === 'OUTPUT') {
-                        output = appendOutputTail(output, `${result.event.message}\n`);
-                    }
-                    if (result.result) return result.result;
-                    if (result.error) {
-                        return { ok: false, exitCode: null, output: appendOutputTail(output, result.error) };
-                    }
+            let bytes = 0;
+            while (true) {
+                const chunk = await reader.read();
+                if (chunk.done) {
+                    buffer += decoder.decode();
+                    break;
                 }
+                bytes += chunk.value.byteLength;
+                if (bytes > 64 * 1024 * 1024) throw new Error('Build stream too large.');
+                buffer += decoder.decode(chunk.value, { stream: true });
+                let newline: number;
+                while ((newline = buffer.indexOf('\n')) >= 0) {
+                    const line = buffer.slice(0, newline);
+                    buffer = buffer.slice(newline + 1);
+                    const result = await this.handleRemoteMessage(line, onProgress);
+                    if (result.event?.type === 'OUTPUT') output = appendOutputTail(output, `${result.event.message}\n`);
+                    if (result.result) return result.result;
+                    if (result.error)
+                        return { ok: false, exitCode: null, output: appendOutputTail(output, result.error) };
+                }
+                if (Buffer.byteLength(buffer) > MAX_REMOTE_BUILD_FRAME_BYTES) throw new Error('Build frame too large.');
             }
             if (buffer.trim()) {
                 const result = await this.handleRemoteMessage(buffer, onProgress);
                 if (result.result) return result.result;
                 if (result.error) return { ok: false, exitCode: null, output: appendOutputTail(output, result.error) };
             }
-            return { ok: false, exitCode: null, output: appendOutputTail(output, 'Release builder closed without a result.') };
-        } catch (error) {
+            return {
+                ok: false,
+                exitCode: null,
+                output: appendOutputTail(output, 'Release builder closed without a result.'),
+            };
+        } catch {
             const aborted = options?.signal?.aborted ?? false;
             return {
                 ok: false,
                 exitCode: null,
                 output: appendOutputTail(
                     output,
-                    aborted ? 'Build cancelled by operator.' : error instanceof Error ? error.message : String(error)
+                    aborted ? 'Build cancelled by operator.' : 'Release builder request failed.'
                 ),
                 ...(aborted ? { aborted: true } : {}),
             };
+        } finally {
+            clearTimeout(timeout);
+            controller.abort();
+            await reader?.cancel().catch(() => undefined);
+            reader?.releaseLock();
         }
     }
 
-    private async handleRemoteMessage(
-        line: string,
-        onProgress?: BuildProgressObserver
-    ): Promise<RemoteBuildMessage> {
-        let message: RemoteBuildMessage;
+    private async handleRemoteMessage(line: string, onProgress?: BuildProgressObserver): Promise<RemoteBuildMessage> {
+        if (!line.trim()) return {};
+        if (Buffer.byteLength(line) > MAX_REMOTE_BUILD_FRAME_BYTES)
+            return { error: 'Release builder frame is too large.' };
+        let message: unknown;
         try {
-            message = JSON.parse(line) as RemoteBuildMessage;
+            message = JSON.parse(line);
         } catch {
             return { error: 'Release builder returned malformed progress data.' };
         }
+        if (!validRemoteMessage(message)) return { error: 'Release builder returned invalid progress data.' };
+        if (message.error !== undefined) return { error: 'Release builder rejected the build request.' };
         if (message.event && onProgress) await onProgress(message.event);
         return message;
     }
@@ -324,5 +434,6 @@ export class RemoteBuildRunner implements BuildRunner {
 export const createReleaseBuildRunner = (
     baseUrl: string | undefined,
     localRunner: BuildRunner,
-    fetchImpl: typeof fetch = fetch
-): BuildRunner => (baseUrl?.trim() ? new RemoteBuildRunner(baseUrl.trim(), fetchImpl) : localRunner);
+    fetchImpl: typeof fetch = fetch,
+    tokenFile?: string
+): BuildRunner => (baseUrl?.trim() ? new RemoteBuildRunner(baseUrl.trim(), fetchImpl, { tokenFile }) : localRunner);

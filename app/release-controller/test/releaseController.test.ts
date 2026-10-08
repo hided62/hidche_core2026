@@ -447,6 +447,8 @@ describe('GatewayReleaseController', () => {
 
     it('runs release builds remotely while keeping Gateway migration on the runtime runner', async () => {
         const workspace = await createReleaseWorkspace();
+        const tokenFile = path.join(workspace, 'builder-token.fixture');
+        await fs.writeFile(tokenFile, 't'.repeat(64), { mode: 0o600 });
         const harness = createRepository();
         const localCommandGroups: string[][] = [];
         const remoteRequests: Array<{ commands: Array<{ args: string[] }> }> = [];
@@ -481,10 +483,15 @@ describe('GatewayReleaseController', () => {
                     running.delete(name);
                 },
             },
-            { ...config, releaseBuilderUrl: 'http://builder:15100' },
+            {
+                ...config,
+                releaseBuilderUrl: 'http://builder:15100',
+                baseEnv: { ...config.baseEnv, RELEASE_BUILDER_TOKEN_FILE: tokenFile },
+            },
             () => new Date('2026-08-01T00:00:00.000Z'),
             async (input, init) => {
                 if (String(input) === 'http://builder:15100/v1/builds') {
+                    expect(new Headers(init?.headers).get('x-release-builder-token')).toBe('t'.repeat(64));
                     remoteRequests.push(JSON.parse(String(init?.body)) as { commands: Array<{ args: string[] }> });
                     return new Response(`${JSON.stringify({ result: { ok: true, exitCode: 0, output: '' } })}\n`, {
                         status: 200,

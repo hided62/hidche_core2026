@@ -617,3 +617,40 @@ Kakao transport는 각 HTTP 요청의 header와 body 전체에 10초 deadline, d
 logout과 game-session 교환에 동일한 인증 시작 budget을 강제로 적용하지 않는다.
 임시 운영 stack과 공개 운영/개발 stack은 Redis와 prefix를 공유하지 않으며 새 코드의
 검증 결과를 실제 공개 배포 근거로 사용하지 않는다.
+
+### Builder 요청 인증과 자원 경계 (2026-10-09)
+
+`RELEASE_BUILDER_URL`을 설정한 원격 build는 전용 `RELEASE_BUILDER_TOKEN_FILE`이
+필요합니다. 파일의 무작위 token은 `x-release-builder-token` 헤더로만 전달하며
+명령·progress event·`VITE_*`에 넣지 않습니다. 파일 누락/오류는 build 실패이며
+로컬 runner로 우회하지 않습니다. HTTP redirect를 따라가지 않고 오류 response의
+원문 body도 릴리스 로그에 복사하지 않습니다.
+
+Docker builder와 runtime에 같은 파일을 read-only mount합니다. host 파일은 Git
+제외·mode 0600으로 보존하고 DB/Redis/OAuth/bootstrap token과 공유하지 않습니다.
+이 경계는 신뢰하는 Core repository와 dependency의 build script를 실행하기 위한
+인증입니다. 악의적인 repository code를 OS 수준으로 격리하는 sandbox가 아니며
+builder 파일 시스템에 있는 builder 전용 token은 신뢰하는 build code가 읽을 수
+있습니다. 다른 운영 credential은 builder에 mount하거나 child env로 전달하지 않습니다.
+
+Builder는 허용된 package의 frozen install·build·Prisma generate·frontend materialize만
+실행하며 임의 task/flag, cwd/cache의 탈출 symlink와 Node preload 옵션을 거부합니다.
+동시에 실행하는 job은 하나이며 실행·대기·body 읽기를 합쳐 3개까지만 받습니다.
+초과 요청은 429이고, byte 기준 body 256 KiB/읽기 5초, job 전체 30분,
+NDJSON frame 512 KiB/stream 64 MiB, 느린 소비자의 write buffer 1 MiB를 상한으로 둡니다.
+취소·deadline·response 중단은 자식 process group을 TERM/KILL하며 실제 종료까지
+대기 자리를 보존합니다. Core client도 30분 deadline과 같은 frame/stream 상한을
+적용하고 progress/result의 실제 type과 길이를 검사합니다.
+
+기존 무인증 builder에서 전환할 때는 다음 순서로 작업합니다.
+
+1. 전용 token 파일을 준비하고 현재 이미지에 mount·환경 경로만 추가합니다.
+2. 기존 builder를 유지한 채 새 Core controller self-upgrade와 Gateway UPDATE를
+   수행해 새 인증 client를 활성화합니다. 기존 builder는 추가 헤더를 허용합니다.
+3. 인증을 강제하는 새 Docker builder와 bootstrap client를 함께 build·재생성합니다.
+4. 인증 없는 POST가 401이고 정상 bootstrap/release가 성공하는지 확인합니다.
+
+새 builder를 먼저 적용하면 구형 Core/구형 Docker bootstrap client의 요청이 401로
+실패합니다. 해당 host의 wrapper와 정확한 project를 사용하고 기존 volume·active
+release를 보존합니다. 외부 공개 stack과 임시 localhost stack의 token 파일은
+공유하지 않습니다. 임시 host의 절차는 상위 local-runtime README를 따릅니다.
