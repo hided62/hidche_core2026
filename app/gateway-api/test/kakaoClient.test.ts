@@ -25,11 +25,16 @@ describe('Kakao OAuth HTTP transport', () => {
         await expect(createClient().signup('access-token')).resolves.toEqual({
             alreadyRegistered: true,
         });
-        expect(fetchMock).toHaveBeenCalledWith(new URL('https://kapi.example.test/v1/user/signup'), {
-            headers: {
-                Authorization: 'Bearer access-token',
-            },
-        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            new URL('https://kapi.example.test/v1/user/signup'),
+            expect.objectContaining({
+                headers: {
+                    Authorization: 'Bearer access-token',
+                },
+                redirect: 'error',
+                signal: expect.any(AbortSignal),
+            })
+        );
     });
 
     it('continues to reject unrelated Kakao signup errors', async () => {
@@ -40,8 +45,6 @@ describe('Kakao OAuth HTTP transport', () => {
             })
         );
 
-        await expect(createClient().signup('access-token')).rejects.toThrow(
-            'Kakao signup error: {"msg":"invalid request","code":-201}'
-        );
+        await expect(createClient().signup('access-token')).rejects.toThrow('Kakao signup error.');
     });
 });

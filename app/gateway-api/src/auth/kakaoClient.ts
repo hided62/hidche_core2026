@@ -4,6 +4,7 @@ export interface KakaoOAuthConfig {
     redirectUri: string;
     oauthHost?: string;
     apiHost?: string;
+    requestTimeoutMs?: number;
 }
 
 export interface KakaoOAuthToken {
@@ -52,12 +53,57 @@ export class KakaoOAuthClient {
     private readonly redirectUri: string;
     private readonly oauthHost: string;
     private readonly apiHost: string;
+    private readonly requestTimeoutMs: number;
 
     constructor(config: KakaoOAuthConfig) {
         this.restKey = config.restKey;
         this.redirectUri = config.redirectUri;
         this.oauthHost = config.oauthHost ?? 'https://kauth.kakao.com';
         this.apiHost = config.apiHost ?? 'https://kapi.kakao.com';
+        this.requestTimeoutMs = config.requestTimeoutMs ?? 10_000;
+        if (!Number.isInteger(this.requestTimeoutMs) || this.requestTimeoutMs < 50 || this.requestTimeoutMs > 10_000) {
+            throw new Error('Kakao request timeout must be between 50 and 10000 milliseconds.');
+        }
+    }
+
+    private async requestJson(
+        url: URL,
+        init: RequestInit
+    ): Promise<{ response: Response; payload: Record<string, unknown> }> {
+        try {
+            const response = await fetch(url, {
+                ...init,
+                redirect: 'error',
+                signal: AbortSignal.timeout(this.requestTimeoutMs),
+            });
+            if (!response.body) throw new Error('Missing response body.');
+            const reader = response.body.getReader();
+            const chunks: Uint8Array[] = [];
+            let bytes = 0;
+            try {
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    bytes += chunk.value.byteLength;
+                    if (bytes > 64 * 1024) {
+                        void reader.cancel().catch(() => undefined);
+                        throw new Error('Response is too large.');
+                    }
+                    chunks.push(chunk.value);
+                }
+            } finally {
+                reader.releaseLock();
+            }
+            const payload: unknown = JSON.parse(
+                new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+            );
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+                throw new Error('Invalid response shape.');
+            return { response, payload: payload as Record<string, unknown> };
+        } catch {
+            // Provider/network payloads can include access tokens or account details.
+            throw new Error('Kakao HTTP request failed.');
+        }
     }
 
     buildAuthUrl(state: string, scopes: string[]): string {
@@ -73,7 +119,7 @@ export class KakaoOAuthClient {
     }
 
     async exchangeCode(code: string): Promise<KakaoOAuthToken> {
-        const response = await fetch(new URL('/oauth/token', this.oauthHost), {
+        const { response, payload } = await this.requestJson(new URL('/oauth/token', this.oauthHost), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -85,15 +131,14 @@ export class KakaoOAuthClient {
                 code,
             }),
         });
-        const payload = (await response.json()) as Record<string, unknown>;
         if (!response.ok) {
-            throw new Error(`Kakao OAuth token error: ${JSON.stringify(payload)}`);
+            throw new Error('Kakao OAuth token error.');
         }
         return parseToken(payload);
     }
 
     async refreshToken(refreshToken: string): Promise<KakaoOAuthToken> {
-        const response = await fetch(new URL('/oauth/token', this.oauthHost), {
+        const { response, payload } = await this.requestJson(new URL('/oauth/token', this.oauthHost), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -104,27 +149,25 @@ export class KakaoOAuthClient {
                 refresh_token: refreshToken,
             }),
         });
-        const payload = (await response.json()) as Record<string, unknown>;
         if (!response.ok) {
-            throw new Error(`Kakao OAuth refresh error: ${JSON.stringify(payload)}`);
+            throw new Error('Kakao OAuth refresh error.');
         }
         return parseToken(payload);
     }
 
     async signup(accessToken: string): Promise<KakaoSignupResult> {
-        const response = await fetch(new URL('/v1/user/signup', this.apiHost), {
+        const { response, payload } = await this.requestJson(new URL('/v1/user/signup', this.apiHost), {
             headers: {
                 Authorization: `Bearer ${accessToken}`,
             },
         });
-        const payload = (await response.json()) as Record<string, unknown>;
         if (!response.ok && payload.code === -102 && payload.msg === 'already registered') {
             return {
                 alreadyRegistered: true,
             };
         }
         if (!response.ok) {
-            throw new Error(`Kakao signup error: ${JSON.stringify(payload)}`);
+            throw new Error('Kakao signup error.');
         }
         return {
             id: payload.id ? String(payload.id) : undefined,
@@ -133,15 +176,14 @@ export class KakaoOAuthClient {
     }
 
     async getMe(accessToken: string): Promise<KakaoUserInfo> {
-        const response = await fetch(new URL('/v2/user/me', this.apiHost), {
+        const { response, payload } = await this.requestJson(new URL('/v2/user/me', this.apiHost), {
             method: 'GET',
             headers: {
                 Authorization: `Bearer ${accessToken}`,
             },
         });
-        const payload = (await response.json()) as Record<string, unknown>;
         if (!response.ok) {
-            throw new Error(`Kakao me error: ${JSON.stringify(payload)}`);
+            throw new Error('Kakao me error.');
         }
         const kakaoAccount = (payload.kakao_account ?? {}) as Record<string, unknown>;
         return {
@@ -156,7 +198,7 @@ export class KakaoOAuthClient {
     }
 
     async sendTalkMessage(accessToken: string, message: string, link: string): Promise<void> {
-        const response = await fetch(new URL('/v2/api/talk/memo/default/send', this.apiHost), {
+        const { response, payload } = await this.requestJson(new URL('/v2/api/talk/memo/default/send', this.apiHost), {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${accessToken}`,
@@ -174,10 +216,9 @@ export class KakaoOAuthClient {
                 }),
             }),
         });
-        const payload = (await response.json()) as Record<string, unknown>;
         const code = Number(payload.code ?? 0);
         if (!response.ok || code < 0) {
-            throw new Error(`Kakao talk message error: ${JSON.stringify(payload)}`);
+            throw new Error('Kakao talk message error.');
         }
     }
 }

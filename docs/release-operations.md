@@ -566,3 +566,54 @@ message는 일반 문구로 치환한다. 4xx의 사용자용 검증/권한 문�
 이 정책은 HTTP API 로그의 범위이며 release builder의 관리자 build log를
 일괄 숨기지 않는다. 장애 조사 시 request ID·route·status·code와 별도 격리 재현을
 사용하며 운영 HTTP 로그에 credential이나 raw error payload를 다시 추가하지 않는다.
+
+## 온라인 인증 시도와 비용 제한 (2026-10-09)
+
+Gateway HTTP server는 기존 전용 Redis와 `GATEWAY_REDIS_PREFIX`에 인증 counter를
+공유한다. 별도 credential이나 비활성화 env key는 추가하지 않는다. 각 procedure
+실행 전에 원자적으로 모든 counter를 검사하고 허용된 요청만 차감한다. 같은 tRPC
+batch의 항목도 각각 차감한다. 기본 창은 최초 허용 요청부터 60초이며 다음과 같다.
+
+| 경계                                                                    | 기본 상한              |
+| ----------------------------------------------------------------------- | ---------------------- |
+| 정규화한 로그인 계정명, peer와 무관                                     | 10회/60초              |
+| 같은 인증 actor의 비밀번호 변경·탈퇴, session을 바꿔도 공유             | 10회/60초              |
+| 인증 시작·등록·자격 증명·OTP와 public key/가입 필드 검사, socket peer별 | 600회/60초             |
+| 위 인증 procedure 전체, 같은 Gateway Redis namespace                    | 1200회/60초            |
+| RSA/Argon2/provider 호출이 있는 인증 작업, API 프로세스별               | 동시 4개, 대기 큐 없음 |
+
+계정 counter는 존재하지 않는 이름과 성공/실패를 동일하게 차감하고 성공 직후에도
+초기화하지 않는다. 거절된 시도는 TTL이나 다른 counter를 갱신하지 않으므로 공격자가
+고정된 창을 연장할 수 없다. 계정 자체를 DB에서 잠그거나 sanction을 만들지 않으며
+기존 session·OAuth 시작/복구·logout은 계정명 counter와 별도다. 계속되는 공격이
+매 새 창의 예산을 소진하면 password login은 일시 제한될 수 있다. account 중심
+제한의 가용성 tradeoff로 기록하고 운영자는 인증 정책을 지워서 해결하지 않는다.
+
+Fastify `trustProxy:false`를 유지해 임의 `X-Forwarded-For`로 peer counter를 바꿀 수
+없다. 현재 Docker의 Caddy 뒤에서는 이 counter가 해당 proxy를 공유하는 사용자들의
+합계다. 이를 인터넷 client별 제한이라고 보고하지 않는다. 원래 client IP를 써야
+한다면 실제 두 proxy 경계와 덮어쓰기 규칙, 좁은 trusted proxy allowlist를 먼저
+결정해야 하며 `trustProxy:true`나 단순 hop 수를 켜지 않는다. global/account counter와
+동시 비용 상한은 forwarded header에 의존하지 않는다.
+
+아직 끝나지 않은 counter/actor 확인은 프로세스당 32개로 제한한다. 요청의 2초
+시간 초과 뒤에도 이 자리는 실제 확인 Promise가 끝날 때까지 유지한다. backend가
+멈춘 동안 대기하는 payload가 계속 늘어나지 않게 하며 확인이 끝나면 정상 복구한다.
+
+Redis 확인은 2초 안에 끝나야 하고 unready/error/잘못된 counter는 503으로 fail
+closed 처리한다. 한도를 넘으면 429와 재시도 초를 포함한 메시지를 보낸다.
+Redis namespace 내 key는 purpose를 나눈 HMAC으로 식별해 계정명/IP 원문을 저장하지
+않으며 모두 TTL이 있다. key namespace 때문에 secret rotation은 남은 최대 60초의
+시도 counter의 key 식별자를 전환한다. 내부 직접 caller/test의 기본 context는
+bounded memory store를 사용하지만 실제 HTTP server는 공유 Redis budget을 주입한다.
+
+Kakao transport는 각 HTTP 요청의 header와 body 전체에 10초 deadline, decoded JSON
+응답 64 KiB 상한과 redirect 거절을 적용한다. provider payload·token·account 정보를
+오류 문구에 넣지 않는다. `-102 already registered`의 명시적 복구 분기는 유지한다.
+여러 요청을 순차 수행하는 OAuth flow의 전체 시간이 10초라는 뜻은 아니다. 상한은
+게임 시간·OTP 만료·기존 session lifetime·Argon2 강도와 무관하다.
+
+이 단계는 온라인 자격 증명/가입 비용을 보호하며 established session의 일반 조회,
+logout과 game-session 교환에 동일한 인증 시작 budget을 강제로 적용하지 않는다.
+임시 운영 stack과 공개 운영/개발 stack은 Redis와 prefix를 공유하지 않으며 새 코드의
+검증 결과를 실제 공개 배포 근거로 사용하지 않는다.

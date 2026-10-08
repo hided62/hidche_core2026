@@ -25,6 +25,7 @@ import { createPasswordEnvelopeService } from './auth/passwordEnvelope.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
 import { createGatewayReleaseRepository } from './orchestrator/gatewayReleaseRepository.js';
+import { AuthAttemptBudget, RedisAuthCounterStore } from './auth/attemptBudget.js';
 import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
@@ -66,6 +67,11 @@ export const createGatewayApiServer = async () => {
         sessionTtlSeconds: config.sessionTtlSeconds,
         gameSessionTtlSeconds: config.gameSessionTtlSeconds,
     });
+    const authBudget = new AuthAttemptBudget(
+        new RedisAuthCounterStore(redis.client),
+        config.redisKeyPrefix,
+        config.gameTokenSecret
+    );
     const flushPublisher = new RedisGatewayFlushPublisher(redis.client, config.flushChannel);
     const kakaoClient = new KakaoOAuthClient({
         restKey: config.kakaoRestKey,
@@ -91,6 +97,8 @@ export const createGatewayApiServer = async () => {
     );
     const app = fastify({
         logger: safeHttpLoggerOptions,
+        // Count the actual peer; forwarded headers are untrusted without an explicit proxy policy.
+        trustProxy: false,
         routerOptions: gatewayFastifyRouterOptions,
     });
     app.setErrorHandler(safeHttpErrorHandler);
@@ -154,6 +162,8 @@ export const createGatewayApiServer = async () => {
                     releases,
                     orchestrator,
                     profileStatus,
+                    authBudget,
+                    requestIp: req.ip,
                     requestHeaders: req.headers,
                     prisma: postgres.prisma as GatewayPrismaClient,
                     navigationConfig,
