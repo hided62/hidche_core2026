@@ -1,3 +1,4 @@
+import { safeHttpLoggerOptions, safeHttpErrorHandler } from '@sammo-ts/common';
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -32,6 +33,8 @@ import { appRouter } from './router.js';
 import { buildBattleSimQueueKeys } from './battleSim/keys.js';
 import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
 import { RedisRealtimeEventHub } from './realtime/eventHub.js';
+import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
+import { AuthenticatedRealtimeConnection } from './realtime/authenticatedConnection.js';
 import { formatSseFrame } from './realtime/sse.js';
 import {
     shouldForwardRealtimeEvent,
@@ -99,10 +102,15 @@ export const createGameApiServer = async () => {
         imageUploadSecret
     );
     const app = fastify({
-        logger: true,
+        logger: safeHttpLoggerOptions,
         routerOptions: {
             maxParamLength: 2048,
         },
+    });
+    app.setErrorHandler(safeHttpErrorHandler);
+    const realtimeConnections = new Set<AuthenticatedRealtimeConnection>();
+    app.addHook('preClose', async () => {
+        for (const connection of realtimeConnections) connection.close();
     });
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
@@ -150,6 +158,12 @@ export const createGameApiServer = async () => {
         config.flushChannel,
         flushStore,
         async (event) => {
+            const flushedAt = Date.parse(event.flushedAt);
+            for (const connection of realtimeConnections) {
+                if (connection.auth.user.id === event.userId && Date.parse(connection.auth.issuedAt) <= flushedAt) {
+                    connection.close();
+                }
+            }
             await Promise.all([iconFlushHandler(event), identityFlushHandler(event)]);
         },
         (error, event) => {
@@ -299,14 +313,24 @@ export const createGameApiServer = async () => {
         },
     });
 
+    const resolveRealtimeAuth = async (token: string | null): Promise<GameSessionTokenPayload | null> => {
+        const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore);
+        if (
+            !auth ||
+            auth.profile !== config.profileName ||
+            isGameAccessBlocked(auth.sanctions, [config.profileName, config.profile])
+        )
+            return null;
+        return auth;
+    };
+
     app.get(config.eventsPath, async (request, reply) => {
         const query = request.query as { token?: string; scope?: string };
         const subscriptionScope = query.scope === 'tournament' ? 'tournament' : 'dashboard';
         const tokenFromHeader = extractBearerToken(request.headers.authorization);
-        const tokenFromQuery = typeof query.token === 'string' ? query.token : null;
-        const auth = await resolveAuthFromToken(tokenFromHeader ?? tokenFromQuery, accessTokenStore, flushStore);
+        const auth = query.token === undefined ? await resolveRealtimeAuth(tokenFromHeader) : null;
 
-        if (!auth) {
+        if (!auth || auth.profile !== config.profileName) {
             await reply.status(401).send({ ok: false, error: 'unauthorized' });
             return;
         }
@@ -351,88 +375,62 @@ export const createGameApiServer = async () => {
         reply.raw.setTimeout?.(0);
         reply.raw.flushHeaders?.();
 
-        const sendFrame = (payload: string) => {
-            try {
-                reply.raw.write(payload);
-            } catch {
-                return;
-            }
-        };
-
-        sendFrame(
-            formatSseFrame({
-                event: 'ready',
-                data: '{}',
-            })
+        const connection = new AuthenticatedRealtimeConnection(auth, reply.raw, () =>
+            resolveRealtimeAuth(tokenFromHeader)
         );
-
-        let closed = false;
-        let eventQueue = Promise.resolve();
+        realtimeConnections.add(connection);
+        connection.onClose(() => {
+            realtimeConnections.delete(connection);
+        });
+        connection.enqueue(async () => formatSseFrame({ event: 'ready', data: '{}' }));
         const unsubscribe = realtimeHub.subscribe((event) => {
             if (!shouldForwardRealtimeEvent(event, subscriptionScope)) return;
-            eventQueue = eventQueue
-                .then(async () => {
-                    if (closed) return;
-                    const identities = [viewerIdentity];
-                    if (shouldReloadRealtimeViewerIdentity(event, viewerIdentity)) {
-                        const nextIdentity = await loadViewerIdentity();
-                        identities.push(nextIdentity);
-                        viewerIdentity = nextIdentity;
-                    }
-                    let refreshGrant: string | undefined;
-                    const publicEvent = toPublicRealtimeEvent(event, identities, () => {
-                        refreshGrant ??= createRealtimeAccessGrant(auth, config.profileName, config.gameTokenSecret);
-                        return refreshGrant;
-                    });
-                    if (!publicEvent || closed) return;
-                    if (refreshGrant) {
-                        try {
-                            await registerRealtimeAccessGrant(redis.client, refreshGrant, config.profileName);
-                        } catch {
-                            // Preserve the invalidation. An unregistered grant safely falls back
-                            // to the normal scored refresh path.
-                        }
-                    }
-                    sendFrame(
-                        formatSseFrame({
-                            event: publicEvent.type,
-                            data: JSON.stringify(publicEvent),
-                        })
-                    );
-                })
-                .catch(() => {
-                    // A best-effort notification must not affect committed game state.
+            connection.enqueue(async (currentAuth) => {
+                const identities = [viewerIdentity];
+                if (shouldReloadRealtimeViewerIdentity(event, viewerIdentity)) {
+                    const nextIdentity = await loadViewerIdentity();
+                    identities.push(nextIdentity);
+                    viewerIdentity = nextIdentity;
+                }
+                let refreshGrant: string | undefined;
+                const publicEvent = toPublicRealtimeEvent(event, identities, () => {
+                    refreshGrant ??= createRealtimeAccessGrant(currentAuth, config.profileName, config.gameTokenSecret);
+                    return refreshGrant;
                 });
+                if (!publicEvent || connection.closed) return null;
+                if (refreshGrant) {
+                    try {
+                        await registerRealtimeAccessGrant(redis.client, refreshGrant, config.profileName);
+                    } catch {
+                        // An unregistered grant falls back to the scored refresh path.
+                    }
+                }
+                return formatSseFrame({ event: publicEvent.type, data: JSON.stringify(publicEvent) });
+            });
         });
-
+        connection.onClose(unsubscribe);
         let heartbeatPending = false;
         const heartbeat = setInterval(() => {
-            if (heartbeatPending) return;
+            if (heartbeatPending || connection.closed) return;
             heartbeatPending = true;
-            void turnEngineStatus
-                .get()
-                .then((turnEngineRunning) => {
-                    if (closed) return;
-                    sendFrame(
-                        formatSseFrame({
-                            event: 'ping',
-                            data: JSON.stringify({ turnEngineRunning }),
-                        })
-                    );
-                })
-                .finally(() => {
+            connection.enqueue(async () => {
+                try {
+                    return formatSseFrame({
+                        event: 'ping',
+                        data: JSON.stringify({ turnEngineRunning: await turnEngineStatus.get() }),
+                    });
+                } finally {
                     heartbeatPending = false;
-                });
-        }, 15000);
-
-        const close = () => {
-            closed = true;
+                }
+            });
+        }, 15_000);
+        connection.onClose(() => {
             clearInterval(heartbeat);
-            unsubscribe();
-        };
-
-        request.raw.on('close', close);
-        request.raw.on('aborted', close);
+        });
+        request.raw.once('aborted', connection.close);
+        connection.onClose(() => {
+            request.raw.off('aborted', connection.close);
+        });
     });
 
     app.get('/healthz', async (_request, reply) => {

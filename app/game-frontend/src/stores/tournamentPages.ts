@@ -1,3 +1,4 @@
+import { createAuthenticatedEventSource, type AuthenticatedEventSource } from '../utils/authenticatedEventSource';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import type { PublicRealtimeEvent, TournamentViewInvalidation } from '@sammo-ts/common';
@@ -49,7 +50,7 @@ export const useTournamentPagesStore = defineStore('tournamentPages', () => {
     const realtimeStatus = ref<'idle' | 'connected'>('idle');
 
     let activeConsumers = 0;
-    let realtimeSource: EventSource | null = null;
+    let realtimeSource: AuthenticatedEventSource | null = null;
     let realtimeToken: string | null = null;
     let realtimeCoordinator: BroadcastTabCoordinator<TournamentTabMessage> | null = null;
     let realtimeCoordinatorScope: string | null = null;
@@ -136,10 +137,9 @@ export const useTournamentPagesStore = defineStore('tournamentPages', () => {
         if (!(await session.exchangeGatewayToken())) return null;
         return session.gameToken && isAccessToken(session.gameToken) ? session.gameToken : null;
     };
-    const buildRealtimeUrl = (token: string): string => {
+    const buildRealtimeUrl = (): string => {
         const base = gameFrontendRuntimeConfig.gameSseUrl;
         const url = new URL(base, window.location.origin);
-        url.searchParams.set('token', token);
         url.searchParams.set('scope', 'tournament');
         return url.toString();
     };
@@ -181,7 +181,7 @@ export const useTournamentPagesStore = defineStore('tournamentPages', () => {
         if (realtimeSource && realtimeToken === token) return;
         closeRealtimeSource();
         realtimeToken = token;
-        const source = new EventSource(buildRealtimeUrl(token));
+        const source = createAuthenticatedEventSource(buildRealtimeUrl(), token);
         realtimeSource = source;
         source.addEventListener('open', () => {
             realtimeStatus.value = 'connected';
@@ -196,7 +196,8 @@ export const useTournamentPagesStore = defineStore('tournamentPages', () => {
                 });
             }
         });
-        source.addEventListener('error', () => {
+        source.addEventListener('error', (event) => {
+            if (event.code === 401) void session.refreshGeneralStatus();
             needsRecovery = true;
             realtimeStatus.value = 'idle';
             realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'idle' });

@@ -880,56 +880,66 @@ const installFixture = async (page: Page | BrowserContext, state: NavigationFixt
 
 const installRealtimeHarness = async (page: Page) => {
     await page.addInitScript(() => {
-        class TestEventSource extends EventTarget {
-            static latest: TestEventSource | null = null;
-            static created = 0;
-            static closed = 0;
-            readonly url: string;
-
-            constructor(url: string | URL) {
-                super();
-                this.url = url.toString();
-                TestEventSource.created += 1;
-                TestEventSource.latest = this;
-                queueMicrotask(() => this.dispatchEvent(new Event('open')));
-            }
-
-            close() {
-                if (TestEventSource.latest === this) {
-                    TestEventSource.latest = null;
-                    TestEventSource.closed += 1;
-                }
-            }
-        }
-
-        Object.defineProperty(window, 'EventSource', { configurable: true, value: TestEventSource });
-        Object.defineProperty(window, '__emitMainRealtime', {
-            configurable: true,
-            value: (type: string, payload: unknown) => {
-                TestEventSource.latest?.dispatchEvent(
-                    new MessageEvent(type, {
-                        data: JSON.stringify({
-                            type,
-                            ...(type === 'readModelInvalidated' || type === 'messagesInvalidated'
-                                ? { refreshGrant: 'fixture-realtime-grant' }
-                                : {}),
-                            ...((payload as object) ?? {}),
-                        }),
-                    })
-                );
+        const originalFetch = window.fetch.bind(window);
+        let latest: { emit: (type: string, payload: unknown) => void; close: () => void } | null = null;
+        let created = 0;
+        let closed = 0;
+        let authenticated = false;
+        let credentialInUrl = false;
+        window.fetch = (input, init) => {
+            const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+            if (!url.pathname.endsWith('/events')) return originalFetch(input, init);
+            if (init?.signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+            authenticated = new Headers(init?.headers).get('authorization')?.startsWith('Bearer ga_') ?? false;
+            credentialInUrl = url.searchParams.has('token');
+            let controller!: ReadableStreamDefaultController<Uint8Array>;
+            let ended = false;
+            const source = {
+                close: () => {
+                    if (ended) return;
+                    ended = true;
+                    closed += 1;
+                    if (latest === source) latest = null;
+                    controller.close();
+                },
+                emit: (type: string, payload: unknown) => {
+                    if (ended) return;
+                    controller.enqueue(
+                        new TextEncoder().encode(
+                            `event: ${type}\ndata: ${JSON.stringify({
+                                type,
+                                ...(type === 'readModelInvalidated' || type === 'messagesInvalidated'
+                                    ? { refreshGrant: 'fixture-realtime-grant' }
+                                    : {}),
+                                ...((payload as object) ?? {}),
+                            })}\n\n`
+                        )
+                    );
+                },
+            };
+            const body = new ReadableStream<Uint8Array>({
+                start: (next) => {
+                    controller = next;
+                },
+                cancel: () => {
+                    if (!ended) {
+                        ended = true;
+                        closed += 1;
+                        if (latest === source) latest = null;
+                    }
+                },
+            });
+            created += 1;
+            latest = source;
+            init?.signal?.addEventListener('abort', source.close, { once: true });
+            return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }));
+        };
+        Object.assign(window, {
+            __emitMainRealtime: (type: string, payload: unknown) => {
+                latest?.emit(type, payload);
             },
-        });
-        Object.defineProperty(window, '__hasMainRealtime', {
-            configurable: true,
-            value: () => TestEventSource.latest !== null,
-        });
-        Object.defineProperty(window, '__mainRealtimeStats', {
-            configurable: true,
-            value: () => ({
-                active: TestEventSource.latest !== null,
-                created: TestEventSource.created,
-                closed: TestEventSource.closed,
-            }),
+            __hasMainRealtime: () => latest !== null,
+            __mainRealtimeStats: () => ({ active: latest !== null, created, closed, authenticated, credentialInUrl }),
         });
     });
 };
@@ -5430,9 +5440,52 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
             page.evaluate(() => (window as unknown as { __hasMainRealtime: () => boolean }).__hasMainRealtime())
         )
         .toBe(true);
+    expect(
+        await page.evaluate(() =>
+            (
+                window as unknown as {
+                    __mainRealtimeStats: () => { authenticated: boolean; credentialInUrl: boolean };
+                }
+            ).__mainRealtimeStats()
+        )
+    ).toMatchObject({ authenticated: true, credentialInUrl: false });
     await expect(page.locator('.tournament-status')).toHaveText('토너먼트: 경기 없음');
     await expect(page.locator('[data-navigation-id="tournament"]')).not.toHaveClass(/highlight/u);
     expect(state.dashboardGrantHeaders).toContain(null);
+
+    const captureRefreshLayout = async (phase: string): Promise<void> => {
+        if (!autoRefreshArtifactRoot) return;
+        await page.evaluate(() => document.fonts.ready);
+        const layout = await page.evaluate(() => ({
+            url: location.href,
+            viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+            cards: Array.from(document.querySelectorAll('[data-main-target="general"], [data-main-target="city"]')).map(
+                (element) => {
+                    const style = getComputedStyle(element);
+                    return {
+                        target: element.getAttribute('data-main-target'),
+                        bounds: element.getBoundingClientRect().toJSON(),
+                        fontFamily: style.fontFamily,
+                        fontSize: style.fontSize,
+                        color: style.color,
+                        backgroundColor: style.backgroundColor,
+                        display: style.display,
+                    };
+                }
+            ),
+            images: Array.from(document.images).map((image) => ({
+                src: image.getAttribute('src'),
+                width: image.naturalWidth,
+                height: image.naturalHeight,
+                complete: image.complete,
+                objectFit: getComputedStyle(image).objectFit,
+            })),
+        }));
+        await Promise.all([
+            writeFile(resolve(autoRefreshArtifactRoot, `${phase}-layout.json`), JSON.stringify(layout, null, 2)),
+            writeFile(resolve(autoRefreshArtifactRoot, `${phase}-dom.html`), await page.content()),
+        ]);
+    };
 
     const operationsBeforeTournament = state.operations.length;
     state.stage = 1;
@@ -5473,6 +5526,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
         }).observe({ entryTypes: ['measure'] });
     });
 
+    await captureRefreshLayout('before-refresh');
     const callsBeforeRefresh = state.generalMeCalls;
     const operationsBeforeClockOnly = state.operations.length;
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -5616,6 +5670,7 @@ test('realtime read-model events skip clock-only work, merge bursts, patch in pl
             vueMeasures: probe.vueMeasures.filter((name) => /render|patch/u.test(name)),
         };
     });
+    await captureRefreshLayout('after-refresh');
     expect(profile.generalMounted).toBe(true);
     expect(profile.cityMounted).toBe(true);
     expect(profile.generalMutations).toBeGreaterThan(0);

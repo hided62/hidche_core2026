@@ -540,3 +540,29 @@ schema head·component 검사는 그대로 수행합니다.
 Local unit, 격리 DB integration과 fixture Chromium 통과는 운영 PM2, 외부
 Caddy/HTTPS, 방화벽과 실제 운영 DB 전환을 증명하지 않습니다. 운영 배포에서는
 위 확인 목록을 실제 서비스 경로에서 다시 수행해 주세요.
+
+## SSE 인증 전송과 API 진단 보안 (2026-10-09)
+
+게임 frontend의 SSE는 `eventsource@5.1.2`의 fetch adapter로
+`Authorization: Bearer`를 전달한다. URL에는 `scope=tournament` 같은 구독 선택만
+남기며 token, URL credential, ambient cookie, redirect 전달을 허용하지 않는다.
+기존 native EventSource를 사용하는 열린 탭은 새 game API에서 401을 받으므로
+배포 후 새로고침해야 한다. 독립 배포라면 새 frontend를 먼저 게시하고 game API를
+갱신한다. 새 frontend의 헤더 인증은 이전 game API도 지원한다. API만 먼저
+갱신하면 구형 탭의 실시간 갱신이 중단될 수 있다.
+
+SSE는 최초 요청과 매 frame 작업 전·전송 전에 Redis token, flush watermark,
+user/session/profile과 게임 접근 제재를 확인한다. 만료 타이머와 Gateway flush가
+대기 중인 연결을 닫고 Redis 장애는 fail closed로 처리한다. 연결별 대기 작업은
+32개, frame과 socket buffer는 64 KiB로 제한하고 slow consumer를 닫는다.
+재연결 뒤 메인은 기존 갱신 큐로 snapshot을 복구한다. 게임 계산·RNG·DB schema와
+read-model invalidation/grant의 사용자 범위는 변경하지 않는다. 연결 수 전체의
+상한이나 온라인 인증 rate limit까지 구현한 것으로 해석하지 않는다.
+
+Game/Gateway HTTP logger는 raw URL/query/header/body와 error message/cause/stack
+대신 static route, request ID, status와 허용된 error code만 남긴다. Fastify의
+기본 404/오류 message도 정화한다. 공개 tRPC 오류의 stack을 제거하고 내부 500의
+message는 일반 문구로 치환한다. 4xx의 사용자용 검증/권한 문구는 유지한다.
+이 정책은 HTTP API 로그의 범위이며 release builder의 관리자 build log를
+일괄 숨기지 않는다. 장애 조사 시 request ID·route·status·code와 별도 격리 재현을
+사용하며 운영 HTTP 로그에 credential이나 raw error payload를 다시 추가하지 않는다.

@@ -1,3 +1,4 @@
+import { safeHttpLoggerOptions, safeHttpErrorHandler } from '@sammo-ts/common';
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -89,9 +90,10 @@ export const createGatewayApiServer = async () => {
         config.defaultNavigationConfigFile
     );
     const app = fastify({
-        logger: true,
+        logger: safeHttpLoggerOptions,
         routerOptions: gatewayFastifyRouterOptions,
     });
+    app.setErrorHandler(safeHttpErrorHandler);
     const webPush = new WebPushCoordinator(
         postgres.prisma as GatewayPrismaClient,
         {

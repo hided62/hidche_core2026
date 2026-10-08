@@ -1,3 +1,4 @@
+import { buildGameEventChannel } from '@sammo-ts/common';
 import { createHash } from 'node:crypto';
 import { projectCurrentGeneral } from '../src/router/playAudit/projection.js';
 import { asRecord } from '@sammo-ts/common';
@@ -2317,9 +2318,51 @@ integration('game API security over HTTP transport', () => {
                     {
                         decisionId: decisionIds[0]!,
                         ordinal: 0,
-                        steps: Array.from({ length: 128 }, (_, sequence) => sequence === 127
-                            ? { ...step, sequence, kind: 'DECISION_START', reservedAction: '휴식', effectivePolicy: {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5],"secret":"decision-secret"},"secret":"decision-secret"} }
-                            : ({ ...step, sequence })),
+                        steps: Array.from({ length: 128 }, (_, sequence) =>
+                            sequence === 127
+                                ? {
+                                      ...step,
+                                      sequence,
+                                      kind: 'DECISION_START',
+                                      reservedAction: '휴식',
+                                      effectivePolicy: {
+                                          schemaVersion: 1,
+                                          general: { priority: ['징병'], flags: { 징병: true, 출병: false } },
+                                          nation: {
+                                              priority: ['천도'],
+                                              flags: { 천도: true },
+                                              values: {
+                                                  reqNationGold: 4321,
+                                                  reqNationRice: 100,
+                                                  reqHumanWarUrgentGold: 100,
+                                                  reqHumanWarUrgentRice: 100,
+                                                  reqHumanWarRecommandGold: 100,
+                                                  reqHumanWarRecommandRice: 100,
+                                                  reqHumanDevelGold: 100,
+                                                  reqHumanDevelRice: 100,
+                                                  reqNpcWarGold: 100,
+                                                  reqNpcWarRice: 100,
+                                                  reqNpcDevelGold: 100,
+                                                  reqNpcDevelRice: 100,
+                                                  minimumResourceActionAmount: 100,
+                                                  maximumResourceActionAmount: 100,
+                                                  minNpcWarLeadership: 100,
+                                                  minWarCrew: 100,
+                                                  minNpcRecruitCityPopulation: 100,
+                                                  safeRecruitCityPopulationRatio: 100,
+                                                  properWarTrainAtmos: 100,
+                                                  cureThreshold: 100,
+                                              },
+                                              combatForce: { '1': [2, 3] },
+                                              supportForce: [4],
+                                              developForce: [5],
+                                              secret: 'decision-secret',
+                                          },
+                                          secret: 'decision-secret',
+                                      },
+                                  }
+                                : { ...step, sequence }
+                        ),
                     },
                     {
                         decisionId: decisionIds[0]!,
@@ -3527,6 +3570,108 @@ integration('game API security over HTTP transport', () => {
                     currentMonth: originalWorld.currentMonth,
                 },
             });
+        }
+    });
+
+    const openRealtime = async (accessToken: string) => {
+        const abort = new AbortController();
+        const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+            headers: { authorization: `Bearer ${accessToken}` },
+            signal: abort.signal,
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe('text/event-stream');
+        const reader = response.body!.getReader();
+        const ready = await reader.read();
+        expect(new TextDecoder().decode(ready.value)).toContain('event: ready');
+        return { abort, reader };
+    };
+
+    it('SSE accepts header auth and rejects query or cross-profile credentials', async () => {
+        const token = await createAccessToken('sse-query', {});
+        const queryOnly = await fetch(`${baseUrl}${server!.config.eventsPath}?token=${encodeURIComponent(token)}`);
+        expect(queryOnly.status).toBe(401);
+        const foreign = await accessTokenStore.create({ ...buildPayload('sse-foreign', {}), profile: 'other:default' });
+        if (!foreign) throw new Error('SSE foreign token fixture failed');
+        try {
+            const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${foreign.accessToken}` },
+            });
+            expect(response.status).toBe(401);
+            const stream = await openRealtime(token);
+            stream.abort.abort();
+        } finally {
+            await accessTokenStore.revoke(token);
+            await accessTokenStore.revoke(foreign.accessToken);
+        }
+    });
+
+    it.each([
+        { label: 'ban', sanctions: { bannedUntil: '2099-01-01T00:00:00.000Z' } },
+        { label: 'suspension', sanctions: { suspendedUntil: '2099-01-01T00:00:00.000Z' } },
+        {
+            label: 'profile game restriction',
+            sanctions: { serverRestrictions: { [profileName]: { blockedFeatures: ['game'] } } },
+        },
+    ])('SSE rejects $label before opening a stream', async ({ label, sanctions }) => {
+        const token = await createAccessToken(`sse-${label}`, sanctions);
+        try {
+            const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${token}` },
+            });
+            expect(response.status).toBe(401);
+            expect(response.headers.get('content-type')).not.toBe('text/event-stream');
+        } finally {
+            await accessTokenStore.revoke(token);
+        }
+    });
+
+    it('SSE closes on idle expiry without forwarding another frame', async () => {
+        const auth = { ...buildPayload('sse-expiry', {}), expiresAt: new Date(Date.now() + 3500).toISOString() };
+        const created = await accessTokenStore.create(auth);
+        if (!created) throw new Error('SSE expiry token fixture failed');
+        const stream = await openRealtime(created.accessToken);
+        try {
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+            expect((await requestTrpc('general.me', { accessToken: created.accessToken })).response.status).toBe(401);
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(created.accessToken);
+        }
+    });
+
+    it('SSE rechecks a revoked token before forwarding a relevant event or refresh grant', async () => {
+        const accessToken = await createAccessToken('sse-revoke', {});
+        const stream = await openRealtime(accessToken);
+        const channel = server!.config.profileName;
+        try {
+            const event = JSON.stringify({ type: 'tournamentChanged' });
+            await redis!.client.publish(buildGameEventChannel(channel), event);
+            const valid = await stream.reader.read();
+            expect(new TextDecoder().decode(valid.value)).toContain('refreshGrant');
+            expect(await accessTokenStore.revoke(accessToken)).toBe(true);
+            await redis!.client.publish(buildGameEventChannel(channel), event);
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('SSE closes an idle flushed user immediately without waiting for heartbeat', async () => {
+        const sseUser = `security-http-sse-flush-${process.pid}`;
+        const created = await accessTokenStore.create(buildPayload('sse-flush', {}, sseUser));
+        if (!created) throw new Error('SSE flush fixture failed');
+        const stream = await openRealtime(created.accessToken);
+        try {
+            await redis!.client.publish(
+                `${redisPrefix}:flush`,
+                JSON.stringify({ userId: sseUser, flushedAt: new Date().toISOString() })
+            );
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(created.accessToken);
         }
     });
 

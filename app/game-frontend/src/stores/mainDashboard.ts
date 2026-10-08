@@ -1,3 +1,4 @@
+import { createAuthenticatedEventSource, type AuthenticatedEventSource } from '../utils/authenticatedEventSource';
 import { receiveClockEngineState } from '../composables/useClockDisplay';
 import { computed, ref, toRaw, watch } from 'vue';
 import { defineStore } from 'pinia';
@@ -1139,16 +1140,15 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
-    let realtimeSource: EventSource | null = null;
+    let realtimeSource: AuthenticatedEventSource | null = null;
     let realtimeToken: string | null = null;
     let visibilityListenerInstalled = false;
 
     const isAccessToken = (token: string | null): boolean => Boolean(token?.startsWith('ga_'));
 
-    const buildRealtimeUrl = (token: string): string => {
+    const buildRealtimeUrl = (): string => {
         const base = gameFrontendRuntimeConfig.gameSseUrl;
         const url = new URL(base, window.location.origin);
-        url.searchParams.set('token', token);
         return url.toString();
     };
 
@@ -1284,15 +1284,22 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         realtimeToken = token;
         realtimeStatus.value = 'idle';
 
-        const source = new EventSource(buildRealtimeUrl(token));
+        let needsRecovery = false;
+        const source = createAuthenticatedEventSource(buildRealtimeUrl(), token);
         realtimeSource = source;
 
         source.addEventListener('open', () => {
             markGameServerContact();
             realtimeStatus.value = 'connected';
             realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'connected' });
+            if (needsRecovery) {
+                needsRecovery = false;
+                realtimeRefreshQueue.request();
+            }
         });
-        source.addEventListener('error', () => {
+        source.addEventListener('error', (event) => {
+            if (event.code === 401) void session.refreshGeneralStatus();
+            needsRecovery = true;
             realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
             realtimeCoordinator?.postFromLeader({ kind: 'status', status: 'idle' });
         });
