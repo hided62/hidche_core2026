@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
 import fs from 'node:fs/promises';
+import { TRPCError } from '@trpc/server';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import {
     buildGameEventChannel,
@@ -22,7 +23,7 @@ import {
 import { resolveGameApiConfigFromEnv } from './config.js';
 import { createGameApiContext, type DatabaseClient as _DatabaseClient } from './context.js';
 import { DatabaseTurnDaemonTransport } from './daemon/databaseTransport.js';
-import { InMemoryFlushStore, RedisGatewayFlushSubscriber, type FlushStore } from './auth/flushStore.js';
+import { RedisFlushStore, RedisGatewayFlushSubscriber, type FlushStore } from './auth/flushStore.js';
 import { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 import {
     consumeRealtimeAccessGrantHeader,
@@ -83,7 +84,12 @@ const resolveAuthFromToken = async (
     if (!stored) {
         return null;
     }
-    const flushedAt = flushStore.getFlushedAt(stored.user.id);
+    let flushedAt: Date | null;
+    try {
+        flushedAt = await flushStore.getFlushedAt(stored.user.id);
+    } catch {
+        throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'Authentication protection is unavailable.' });
+    }
     if (flushedAt && new Date(stored.issuedAt) <= flushedAt) {
         return null;
     }
@@ -142,7 +148,18 @@ export const createGameApiServer = async () => {
         requestTimeoutMs: config.battleSimRequestTimeoutMs,
         resultTtlSeconds: config.battleSimResultTtlSeconds,
     });
-    const flushStore = new InMemoryFlushStore();
+    const flushStore = new RedisFlushStore(redis.client, config.flushChannel);
+    try {
+        await flushStore.assertInitialized();
+    } catch {
+        await Promise.allSettled([
+            Promise.resolve().then(() => {
+                if (redis.client.isOpen) redis.client.destroy();
+            }),
+            postgres.disconnect(),
+        ]);
+        throw new Error('Gateway session revocation is unavailable; game API startup refused.');
+    }
     const flushSubscriberClient = redis.client.duplicate();
     try {
         await flushSubscriberClient.connect();
@@ -328,7 +345,13 @@ export const createGameApiServer = async () => {
         const query = request.query as { token?: string; scope?: string };
         const subscriptionScope = query.scope === 'tournament' ? 'tournament' : 'dashboard';
         const tokenFromHeader = extractBearerToken(request.headers.authorization);
-        const auth = query.token === undefined ? await resolveRealtimeAuth(tokenFromHeader) : null;
+        let auth: GameSessionTokenPayload | null = null;
+        try {
+            auth = query.token === undefined ? await resolveRealtimeAuth(tokenFromHeader) : null;
+        } catch {
+            await reply.status(503).send({ ok: false, error: 'authentication_unavailable' });
+            return;
+        }
 
         if (!auth || auth.profile !== config.profileName) {
             await reply.status(401).send({ ok: false, error: 'unauthorized' });

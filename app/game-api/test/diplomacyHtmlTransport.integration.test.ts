@@ -68,6 +68,7 @@ const restoreEnv = (): void => {
 
 const deleteProfileRedisKeys = async (): Promise<void> => {
     if (!redis) return;
+    await redis.client.del(`${redisPrefix}:flush:revocation:v1:baseline`);
     for await (const keys of redis.client.scanIterator({ MATCH: `sammo:game:*:${profileName}:*`, COUNT: 100 })) {
         if (keys.length > 0) await redis.client.del(keys);
     }
@@ -199,6 +200,8 @@ integration('diplomacy HTML purification over PostgreSQL and HTTP transport', ()
         if (!created) throw new Error('failed to seed diplomacy HTML access token');
         accessToken = created.accessToken;
 
+        // 이 격리 fixture는 이미 전환된 Gateway namespace를 합성 cutoff 0으로 준비한다.
+        await redis!.client.set(`${redisPrefix}:flush:revocation:v1:baseline`, '0', { NX: true });
         server = await createGameApiServer();
         baseUrl = await server.app.listen({ host: server.config.host, port: server.config.port });
     }, 30_000);

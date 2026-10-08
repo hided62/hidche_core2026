@@ -73,6 +73,17 @@ export const createGatewayApiServer = async () => {
         config.gameTokenSecret
     );
     const flushPublisher = new RedisGatewayFlushPublisher(redis.client, config.flushChannel);
+    try {
+        await flushPublisher.initialize();
+    } catch {
+        await Promise.allSettled([
+            Promise.resolve().then(() => {
+                if (redis.client.isOpen) redis.client.destroy();
+            }),
+            postgres.disconnect(),
+        ]);
+        throw new Error('Gateway session revocation initialization failed.');
+    }
     const kakaoClient = new KakaoOAuthClient({
         restKey: config.kakaoRestKey,
         adminKey: config.kakaoAdminKey,

@@ -66,7 +66,15 @@ export const authRouter = router({
                     message: 'Game access is restricted for this account.',
                 });
             }
-            const flushedAt = ctx.flushStore.getFlushedAt(payload.user.id);
+            let flushedAt: Date | null;
+            try {
+                flushedAt = await ctx.flushStore.getFlushedAt(payload.user.id);
+            } catch {
+                throw new TRPCError({
+                    code: 'SERVICE_UNAVAILABLE',
+                    message: 'Authentication protection is unavailable.',
+                });
+            }
             if (flushedAt && new Date(payload.issuedAt) <= flushedAt) {
                 throw new TRPCError({
                     code: 'UNAUTHORIZED',

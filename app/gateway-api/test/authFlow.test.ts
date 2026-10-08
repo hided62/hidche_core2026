@@ -1242,6 +1242,30 @@ describe('gateway auth flow', () => {
         expect(validated?.user.username).toBe('tester');
     });
 
+    it('starts token age before the user snapshot so a concurrent role flush can revoke stale identity', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({ username: 'role-snapshot-race', password: 'synthetic-password' });
+        const parent = await sessions.createSession(user);
+        const issuedAt = new Date().toISOString();
+        vi.useFakeTimers({ now: new Date(issuedAt) });
+        const original = users.findById.bind(users);
+        const find = vi.spyOn(users, 'findById').mockImplementationOnce(async (id) => {
+            const snapshot = await original(id);
+            vi.advanceTimersByTime(5000); // admin mutation/flush arrives after the snapshot.
+            return snapshot;
+        });
+        try {
+            const result = await caller.auth.issueGameSession({
+                sessionToken: parent.sessionToken,
+                profile: 'che:default',
+            });
+            expect(decryptGameSessionToken(result.gameToken, 'test-secret')?.issuedAt).toBe(issuedAt);
+        } finally {
+            find.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
     it('retains the original issuance instant when logout flush overlaps later identity reads', async () => {
         const { caller, users, sessions } = buildCaller();
         const user = await users.createUser({ username: 'issue-flush-race', password: 'synthetic-password' });

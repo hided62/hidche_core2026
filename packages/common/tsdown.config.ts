@@ -5,6 +5,7 @@ export default defineConfig({
         index: 'src/index.ts',
         'auth/gameToken': 'src/auth/gameToken.ts',
         'auth/gameSessionTransfer': 'src/auth/gameSessionTransfer.ts',
+        'auth/sessionRevocation': 'src/auth/sessionRevocation.ts',
         'auth/sanctions': 'src/auth/sanctions.ts',
         'gateway/profileStatus': 'src/gateway/profileStatus.ts',
         'http/trpcTransport': 'src/http/trpcTransport.ts',

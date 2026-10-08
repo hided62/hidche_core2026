@@ -1056,6 +1056,8 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                // 권한 snapshot보다 이후에 발생한 flush도 이 발급을 회수해야 한다.
+                const authorizationStartedAt = Date.now();
                 const gatewaySession = await ctx.sessions.getSession(input.sessionToken);
                 if (!gatewaySession) {
                     throw new TRPCError({
@@ -1108,7 +1110,7 @@ export const appRouter = router({
                     });
                 }
                 // 발급 뒤 logout/flush가 겹쳐도 issuedAt을 나중 시각으로 다시 쓰지 않는다.
-                const now = new Date(gameSession.issuedAt);
+                const now = new Date(Math.min(authorizationStartedAt, Date.parse(gameSession.issuedAt)));
                 const accountIcon = resolveEffectiveAccountIcon(user);
                 const accountIcons = await ctx.users.listIcons(user.id);
                 const payload = {

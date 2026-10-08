@@ -552,7 +552,8 @@ Caddy/HTTPS, 방화벽과 실제 운영 DB 전환을 증명하지 않습니다. 
 갱신하면 구형 탭의 실시간 갱신이 중단될 수 있다.
 
 SSE는 최초 요청과 매 frame 작업 전·전송 전에 Redis token, flush watermark,
-user/session/profile과 게임 접근 제재를 확인한다. 만료 타이머와 Gateway flush가
+user/session/profile과 게임 접근 제재를 확인한다. flush watermark는 아래 지속 회수
+계약에 따라 Redis에서 읽으며 메모리에만 의존하지 않는다. 만료 타이머와 Gateway flush가
 대기 중인 연결을 닫고 Redis 장애는 fail closed로 처리한다. 연결별 대기 작업은
 32개, frame과 socket buffer는 64 KiB로 제한하고 slow consumer를 닫는다.
 재연결 뒤 메인은 기존 갱신 큐로 snapshot을 복구한다. 게임 계산·RNG·DB schema와
@@ -638,10 +639,47 @@ Redis Lua가 부모 session의 존재·snapshot 일치·만료, 정리·상한�
 앞당기지는 않는다. index TTL은 남은 부모 TTL과 게임 TTL 중 큰 값이며 새 부모 TTL로
 매번 초기화하지 않는다. 새로운 env key와 DB migration은 필요 없다.
 
-암호화 게임 token의 issuedAt/expiresAt은 추적 항목의 최초 발급 시각에서 계산한다.
+암호화 게임 token의 issuedAt/expiresAt은 권한 조회 시작과 추적 항목 생성 중 더
+이른 시각에서 계산한다.
 이후 icon/identity 조회 중 logout/flush가 겹쳐도 issuedAt을 더 늦은 시각으로
-바꿔 이전 flush를 피하지 않는다. 이는 한 발급 flow의 경합 방어이며 pub/sub 누락이나
-API 재시작 후 회수 유지까지 증명하는 정책은 아니다.
+바꿔 이전 flush를 피하지 않는다. user snapshot 이후 role/sanction 변경과 겹친 발급도
+그 flush보다 오래된 credential로 취급한다. 회수 지속성은 아래 별도 Redis 계약을 따른다.
+
+### 게임 token 회수의 지속성 (2026-10-09)
+
+Gateway는 기존 `GATEWAY_REDIS_PREFIX`의 flush channel 아래 `revocation:v1` namespace에
+최초 전환 cutoff와 사용자별 마지막 회수 시각을 저장한다. 사용자당 한 값이며
+DB/Redis credential, 게임 actor와 profile 경계는 바꾸지 않는다. Lua가 최신 watermark를
+보존하고 저장한 뒤 pub/sub을 보내므로 구독자 0명이나 알림 누락도 회수를 되돌리지
+않는다. HTTP 인증, 미사용 Gateway token 교환과 SSE 작업 전/쓰기 전이 매번 동일한
+Redis watermark와 최초 cutoff를 읽는다. allow 결과를 캐시하지 않고 Redis 조회는
+2초 deadline/연결 준비 상태 검사 후 fail closed다. pub/sub은 즉시 연결 종료와
+기존 identity/icon durable 동기화를 빠르게 하는 경로다.
+
+진행 중인 회수 Redis 명령은 Gateway publisher당 32개, game API store당 64개로
+제한한다. 2초 뒤 호출자가 실패해도 이미 전송된 명령은 실제 완료/연결 실패까지
+그 용량을 점유한다. 응답하지 않는 Redis가 caller timeout 뒤에도 계속 명령을
+쌓게 하지 않는다. startup 실패는 이 프로세스가 소유한 Redis 연결을 강제 종료한다.
+
+최초 Gateway 활성화 시 `SET NX`로 이전 게임 credential 전체를 회수하는 cutoff를
+한 번 만든다. 일반 Gateway session은 유지하므로 사용자는 Gateway에서 새 game token을
+받아 재접속한다. 반복 기동은 cutoff를 보존한다. 이 전환은 이전 메모리에서만 알고
+있던 회수 이력을 추측하여 이관하지 않고 기존 credential을 폐기하는 보안 정책이다.
+Gateway publisher를 먼저 갱신한 뒤 모든 game API를 갱신한다. 새 game API는 초기화
+marker가 없거나 잘못됐으면 기동을 거절하며 실행 중 조회 장애/marker 누락도 인증을
+허용하지 않는다. 여러 Gateway writer가 있으면 모두 새 publisher 계약을 적용해야 한다.
+
+cutoff/watermark는 TTL로 삭제하지 않는다. game TTL 설정을 줄인 뒤 과거의 더 긴
+token이 다시 살아나는 것을 막는다. 저장량은 회수한 사용자 수에 비례하는 작은
+metadata이며 Redis의 기존 persistence/volume에 보존한다. 회수 key 수명 정리는
+모든 기존 credential의 만료를 증명한 별도 유지보수 작업이다. watermark 삭제,
+Redis 복원/namespace 변경을 일반 restart와 같은 것으로 처리하지 않는다.
+
+Gateway DB 변경과 Redis 회수는 하나의 분산 transaction이 아니다. DB 변경 뒤 회수
+저장이 실패하면 API는 성공을 반환하지 않으며 운영자는 partial progress와 재시도를
+확인해야 한다. 이 계약은 성공한 회수의 pub/sub 누락·API 재시작 내구성을 보장하며,
+DB/Redis backup의 시점 불일치나 이미 허용된 in-flight mutation을 자동 취소하는
+정책으로 확대하지 않는다. 기존 대기 frame/identity 동기화는 별도 기존 경계를 유지한다.
 
 ### Builder 요청 인증과 자원 경계 (2026-10-09)
 

@@ -173,7 +173,7 @@ const deleteProfileRedisKeys = async (): Promise<void> => {
     if (!redis) {
         return;
     }
-    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`]) {
+    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`, `${redisPrefix}:*`]) {
         for await (const keys of redis.client.scanIterator({
             MATCH: pattern,
             COUNT: 100,
@@ -417,7 +417,7 @@ const readAccessTelemetryState = async () => ({
 const readRealtimeRedisState = async (): Promise<Array<[string, string | null]>> => {
     if (!redis) return [];
     const keys = new Set<string>();
-    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`]) {
+    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`, `${redisPrefix}:*`]) {
         for await (const batch of redis.client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
             for (const key of batch) keys.add(key);
         }
@@ -743,6 +743,8 @@ integration('game API security over HTTP transport', () => {
         await redis.connect();
         accessTokenStore = new RedisAccessTokenStore(redis.client, profileName);
 
+        // 이 격리 fixture는 이미 전환된 Gateway namespace를 합성 cutoff 0으로 준비한다.
+        await redis!.client.set(`${redisPrefix}:flush:revocation:v1:baseline`, '0', { NX: true });
         server = await createGameApiServer();
         baseUrl = await server.app.listen({
             host: server.config.host,
@@ -3672,6 +3674,98 @@ integration('game API security over HTTP transport', () => {
         } finally {
             stream.abort.abort();
             await accessTokenStore.revoke(created.accessToken);
+        }
+    });
+
+    it('rejects access using persisted revocation state without any pubsub delivery', async () => {
+        const actor = `security-http-durable-missed-${process.pid}`;
+        const accessToken = await createAccessToken('durable-missed', {}, actor);
+        try {
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(200);
+            await redis!.client.set(`${redisPrefix}:flush:revocation:v1:user:${actor}`, String(Date.now()));
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(401);
+        } finally {
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('retains persisted revocation state across an actual API restart', async () => {
+        const actor = `security-http-durable-restart-${process.pid}`;
+        const accessToken = await createAccessToken('durable-restart', {}, actor);
+        try {
+            const gatewayToken = encryptGameSessionToken(buildPayload('unused-durable-restart', {}, actor), secret);
+            await redis!.client.set(`${redisPrefix}:flush:revocation:v1:user:${actor}`, String(Date.now()));
+            await server!.app.close();
+            server = await createGameApiServer();
+            baseUrl = await server.app.listen({ host: '127.0.0.1', port: 0 });
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(401);
+            const exchanged = await requestTrpc('auth.exchangeGatewayToken', {
+                method: 'POST',
+                input: { gatewayToken },
+            });
+            expect(exchanged.response.status).toBe(401);
+        } finally {
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('SSE closes after persisted revocation even when the flush notification was missed', async () => {
+        const actor = `security-http-durable-sse-${process.pid}`;
+        const accessToken = await createAccessToken('durable-sse', {}, actor);
+        const stream = await openRealtime(accessToken);
+        try {
+            await redis!.client.set(`${redisPrefix}:flush:revocation:v1:user:${actor}`, String(Date.now()));
+            await redis!.client.publish(
+                buildGameEventChannel(profileName),
+                JSON.stringify({ type: 'tournamentChanged' })
+            );
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('denies legacy credentials before the initial cutoff and admits a fresh one afterwards', async () => {
+        const actor = `security-http-durable-cutoff-${process.pid}`;
+        const accessToken = await createAccessToken('durable-cutoff', {}, actor);
+        const key = `${redisPrefix}:flush:revocation:v1:baseline`;
+        try {
+            await redis!.client.set(key, String(Date.now()));
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(401);
+            const fresh = await accessTokenStore.create({
+                ...buildPayload('fresh-cutoff', {}, actor),
+                issuedAt: new Date(Date.now() + 1).toISOString(),
+            });
+            expect(fresh).not.toBeNull();
+            try {
+                expect((await requestTrpc('auth.status', { accessToken: fresh!.accessToken })).response.status).toBe(
+                    200
+                );
+            } finally {
+                await accessTokenStore.revoke(fresh!.accessToken);
+            }
+        } finally {
+            await redis!.client.set(key, '0');
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('fails closed for missing initialization in HTTP, SSE and API startup', async () => {
+        const actor = `security-http-durable-missing-${process.pid}`;
+        const accessToken = await createAccessToken('durable-missing', {}, actor);
+        const key = `${redisPrefix}:flush:revocation:v1:baseline`;
+        try {
+            await redis!.client.del(key);
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(503);
+            const sse = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${accessToken}` },
+            });
+            expect(sse.status).toBe(503);
+            await expect(createGameApiServer()).rejects.toThrow('startup refused');
+        } finally {
+            await redis!.client.set(key, '0');
+            await accessTokenStore.revoke(accessToken);
         }
     });
 
