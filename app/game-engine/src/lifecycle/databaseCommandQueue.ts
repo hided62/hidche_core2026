@@ -120,7 +120,13 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
             const claimCoordinate = await readInputEventClockCoordinate(transaction);
             const world = await transaction.worldState.findFirst({
                 orderBy: { id: 'asc' },
-                select: { clockPhase: true, clockRevision: true, deadlineGeneration: true, clockTick: true, meta: true },
+                select: {
+                    clockPhase: true,
+                    clockRevision: true,
+                    deadlineGeneration: true,
+                    clockTick: true,
+                    meta: true,
+                },
             });
             // 가오픈도 장수 생성·삭제·거병·예약 등 사용자 명령은 처리한다.
             // 자동 턴의 RUNNING/MANUAL gate는 TurnDaemonLifecycle이 별도로 지킨다.
@@ -184,7 +190,7 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
                       OR (${postUnificationSurvey} AND "event_type" = 'voteReward')
                       OR (
                           ${suspendedTournamentBetCommand}
-                          AND "event_type" IN ('adjustGeneralResources', 'adjustGeneralMeta')
+                          AND "event_type" IN ('adjustGeneralResources', 'adjustGeneralMeta', 'tournamentAdjustGeneral')
                           AND "payload" ->> 'reason' IN ('tournamentBet', 'tournamentBetRollback')
                       )
                       OR (

@@ -20,7 +20,7 @@ const profile: GameProfile = {
 
 const auth: GameSessionTokenPayload = {
     version: 1,
-    profile: 'che',
+    profile: 'che:default',
     issuedAt: '2026-07-26T00:00:00.000Z',
     expiresAt: '2026-07-27T00:00:00.000Z',
     sessionId: 'ranking-session',
@@ -239,7 +239,7 @@ const buildContext = (options?: {
         turnDaemon: new InMemoryTurnDaemonTransport(),
         battleSim: new InMemoryBattleSimTransport(),
         profile: selectedProfile,
-        auth: options?.authenticated === false ? null : auth,
+        auth: options?.authenticated === false ? null : { ...auth, profile: selectedProfile.name },
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,

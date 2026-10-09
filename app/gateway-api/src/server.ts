@@ -1,4 +1,4 @@
-import { safeHttpLoggerOptions, safeHttpErrorHandler } from '@sammo-ts/common';
+import { safeHttpLoggerOptions, safeHttpErrorHandler, createApiOriginGuard } from '@sammo-ts/common';
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -125,8 +125,9 @@ export const createGatewayApiServer = async () => {
         (error) => app.log.error({ err: error }, 'web push delivery failed')
     );
 
+    app.addHook('onRequest', createApiOriginGuard(config.corsAllowedOrigins));
     await app.register(cors, {
-        origin: true,
+        origin: config.corsAllowedOrigins,
         credentials: true,
     });
     await fs.mkdir(path.resolve(process.cwd(), config.userIconDir), { recursive: true });

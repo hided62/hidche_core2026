@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asRecord } from '@sammo-ts/common';
+import { asRecord, type TurnDaemonCommandResult } from '@sammo-ts/common';
 import type { TournamentType } from '@sammo-ts/logic';
 import type { TournamentState } from '../../tournament/types.js';
 
@@ -17,6 +17,16 @@ import {
     ensureTournamentParticipationRedisClockFence,
 } from '../../services/redisClockFence.js';
 import { loadClockAdminStatus } from '../../services/clockReadiness.js';
+
+const assertTournamentAdjustment = (result: TurnDaemonCommandResult | null): void => {
+    if (result?.type === 'commandRejected') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: result.reason });
+    }
+    if (!result || result.type !== 'tournamentAdjustGeneral') {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected tournament response' });
+    }
+    if (!result.ok) throw new TRPCError({ code: result.code, message: result.reason });
+};
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -197,6 +207,7 @@ const zMatch = z.object({
 
 const zBetEntry = z.object({
     generalId: z.number().int().positive(),
+    userId: z.string().min(1).nullable().optional(),
     targetId: z.number().int().positive(),
     amount: z.number().int().positive(),
 });
@@ -458,7 +469,7 @@ export const tournamentRouter = router({
         });
     }),
     getBettingSummary: authedProcedure.query(async ({ ctx }) => {
-        const general = await getMyGeneral(ctx);
+        await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         const [state, entries, matches] = await Promise.all([
             store.getState(),
@@ -488,7 +499,7 @@ export const tournamentRouter = router({
             }
             totals[entry.targetId] = (totals[entry.targetId] ?? 0) + entry.amount;
             totalAmount += entry.amount;
-            if (entry.generalId === general.id) {
+            if (entry.userId === ctx.auth!.user.id) {
                 myTotals[entry.targetId] = (myTotals[entry.targetId] ?? 0) + entry.amount;
                 myAmount += entry.amount;
             }
@@ -523,20 +534,15 @@ export const tournamentRouter = router({
 
                 const develCost = resolveCurrentDevelCost(worldState);
                 const feeResult = await ctx.turnDaemon.requestCommand({
-                    type: 'adjustGeneralResources',
+                    type: 'tournamentAdjustGeneral',
                     requestId: tournamentJoinCommandRequestId(ctx.requestId, 'resources'),
                     reason: 'tournamentJoin',
-                    adjustments: [{ generalId: general.id, goldDelta: -develCost, minGoldAfter: 0 }],
+                    userId: ctx.auth!.user.id,
+                    generalId: general.id,
+                    goldDelta: -develCost,
+                    minGoldAfter: 0,
                 });
-                if (!feeResult || feeResult.type !== 'adjustGeneralResources') {
-                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-                }
-                if (!feeResult.ok || feeResult.processed !== 1) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: feeResult.ok ? '금이 부족합니다.' : feeResult.reason,
-                    });
-                }
+                assertTournamentAdjustment(feeResult);
 
                 const meta = asRecord(general.meta);
                 const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
@@ -558,12 +564,17 @@ export const tournamentRouter = router({
                 try {
                     await store.setParticipants(next);
                 } catch (error) {
-                    await ctx.turnDaemon.requestCommand({
-                        type: 'adjustGeneralResources',
-                        requestId: tournamentJoinCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
-                        reason: 'tournamentJoinRollback',
-                        adjustments: [{ generalId: general.id, goldDelta: develCost }],
-                    });
+                    assertTournamentAdjustment(
+                        await ctx.turnDaemon.requestCommand({
+                            type: 'tournamentAdjustGeneral',
+                            requestId: tournamentJoinCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
+                            reason: 'tournamentJoinRollback',
+                            userId: ctx.auth!.user.id,
+                            generalId: general.id,
+                            goldDelta: develCost,
+                            minGoldAfter: 0,
+                        })
+                    );
                     throw error;
                 }
                 return { ok: true, count: next.length };
@@ -663,8 +674,13 @@ export const tournamentRouter = router({
                     throw new TRPCError({ code: 'BAD_REQUEST', message: '올바르지 않은 베팅 대상입니다.' });
                 }
 
+                // 구형 row의 당시 actor는 현재 장수 소유자로 추정할 수 없다.
+                // 운영 전환은 베팅 종료 뒤 하거나 검증한 actor 정보를 관리자가 복원해야 한다.
+                if (entries.some((entry) => entry.userId === undefined)) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '이전 베팅의 사용자 확인이 필요합니다.' });
+                }
                 const previousBetAmount = entries
-                    .filter((entry) => entry.generalId === general.id)
+                    .filter((entry) => entry.userId === ctx.auth!.user.id)
                     .reduce((sum, entry) => sum + entry.amount, 0);
                 if (previousBetAmount + input.amount > 1_000) {
                     throw new TRPCError({
@@ -674,68 +690,37 @@ export const tournamentRouter = router({
                 }
 
                 const adjustResult = await ctx.turnDaemon.requestCommand({
-                    type: 'adjustGeneralResources',
+                    type: 'tournamentAdjustGeneral',
                     requestId: tournamentBetCommandRequestId(ctx.requestId, 'resources'),
                     reason: 'tournamentBet',
-                    adjustments: [{ generalId: general.id, goldDelta: -input.amount, minGoldAfter: 500 }],
+                    userId: ctx.auth!.user.id,
+                    generalId: general.id,
+                    goldDelta: -input.amount,
+                    betGoldDelta: input.amount,
+                    minGoldAfter: 500,
                 });
-                if (!adjustResult || adjustResult.type !== 'adjustGeneralResources') {
-                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-                }
-                if (!adjustResult.ok || adjustResult.processed !== 1) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: adjustResult.ok ? '금이 부족합니다.' : adjustResult.reason,
-                    });
-                }
-
-                const rankResult = await ctx.turnDaemon.requestCommand({
-                    type: 'adjustGeneralMeta',
-                    requestId: tournamentBetCommandRequestId(ctx.requestId, 'rank'),
-                    reason: 'tournamentBet',
-                    adjustments: [
-                        {
-                            generalId: general.id,
-                            metaDelta: { betgold: input.amount },
-                        },
-                    ],
-                });
-                if (!rankResult || rankResult.type !== 'adjustGeneralMeta' || !rankResult.ok) {
-                    await ctx.turnDaemon.requestCommand({
-                        type: 'adjustGeneralResources',
-                        requestId: tournamentBetCommandRequestId(ctx.requestId, 'rank-rollback-resources'),
-                        reason: 'tournamentBetRollback',
-                        adjustments: [{ generalId: general.id, goldDelta: input.amount }],
-                    });
-                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '베팅 기록을 저장하지 못했습니다.' });
-                }
+                assertTournamentAdjustment(adjustResult);
 
                 try {
                     await store.appendBettingEntry({
                         generalId: general.id,
+                        userId: ctx.auth!.user.id,
                         targetId: input.targetId,
                         amount: input.amount,
                     });
                 } catch (error) {
-                    await Promise.all([
-                        ctx.turnDaemon.requestCommand({
-                            type: 'adjustGeneralResources',
+                    assertTournamentAdjustment(
+                        await ctx.turnDaemon.requestCommand({
+                            type: 'tournamentAdjustGeneral',
                             requestId: tournamentBetCommandRequestId(ctx.requestId, 'projection-rollback-resources'),
                             reason: 'tournamentBetRollback',
-                            adjustments: [{ generalId: general.id, goldDelta: input.amount }],
-                        }),
-                        ctx.turnDaemon.requestCommand({
-                            type: 'adjustGeneralMeta',
-                            requestId: tournamentBetCommandRequestId(ctx.requestId, 'projection-rollback-rank'),
-                            reason: 'tournamentBetRollback',
-                            adjustments: [
-                                {
-                                    generalId: general.id,
-                                    metaDelta: { betgold: -input.amount },
-                                },
-                            ],
-                        }),
-                    ]);
+                            userId: ctx.auth!.user.id,
+                            generalId: general.id,
+                            goldDelta: input.amount,
+                            betGoldDelta: -input.amount,
+                            minGoldAfter: 0,
+                        })
+                    );
                     throw error;
                 }
                 return { ok: true };

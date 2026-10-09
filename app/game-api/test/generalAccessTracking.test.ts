@@ -387,7 +387,7 @@ describe('general access tracking', () => {
             db,
             generalAccessTracking: true,
             requestId: 'access-boundary-test',
-            profile: { id: 'che:default', name: 'che' },
+            profile: { id: 'che', name: 'che:default', scenario: 'default' },
             profileStatusSource,
         } as unknown as GameApiContext;
 

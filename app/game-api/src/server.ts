@@ -1,4 +1,4 @@
-import { safeHttpLoggerOptions, safeHttpErrorHandler } from '@sammo-ts/common';
+import { safeHttpLoggerOptions, safeHttpErrorHandler, createApiOriginGuard } from '@sammo-ts/common';
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -76,13 +76,14 @@ const extractBearerToken = (value: string | string[] | undefined): string | null
 const resolveAuthFromToken = async (
     token: string | null,
     accessTokenStore: RedisAccessTokenStore,
-    flushStore: FlushStore
+    flushStore: FlushStore,
+    profileName: string
 ): Promise<GameSessionTokenPayload | null> => {
     if (!token) {
         return null;
     }
     const stored = await accessTokenStore.get(token);
-    if (!stored) {
+    if (!stored || stored.profile !== profileName) {
         return null;
     }
     let flushedAt: Date | null;
@@ -273,8 +274,9 @@ export const createGameApiServer = async () => {
 
     app.addHook('onClose', closeResources);
 
+    app.addHook('onRequest', createApiOriginGuard(config.corsAllowedOrigins));
     await app.register(cors, {
-        origin: true,
+        origin: config.corsAllowedOrigins,
         credentials: true,
     });
 
@@ -290,7 +292,7 @@ export const createGameApiServer = async () => {
             ...trpcJsonBodyHttpServerOptions,
             createContext: async ({ req }: { req: FastifyRequest }) => {
                 const token = extractBearerToken(req.headers.authorization);
-                const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore);
+                const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore, config.profileName);
                 const rawIdempotencyKey = Array.isArray(req.headers['idempotency-key'])
                     ? req.headers['idempotency-key'][0]
                     : req.headers['idempotency-key'];
@@ -334,7 +336,7 @@ export const createGameApiServer = async () => {
     });
 
     const resolveRealtimeAuth = async (token: string | null): Promise<GameSessionTokenPayload | null> => {
-        const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore);
+        const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore, config.profileName);
         if (
             !auth ||
             auth.profile !== config.profileName ||

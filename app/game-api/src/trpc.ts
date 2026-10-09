@@ -24,7 +24,7 @@ import { recordGeneralActivity } from './services/generalActivity.js';
 const t = initTRPC.context<GameApiContext>().create({ errorFormatter: safeTrpcErrorFormatter });
 
 const requireAuthMiddleware = t.middleware(({ ctx, next }) => {
-    if (!ctx.auth) {
+    if (!ctx.auth || ctx.auth.profile !== ctx.profile.name) {
         throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Unauthorized',

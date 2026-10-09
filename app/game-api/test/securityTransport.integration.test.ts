@@ -70,6 +70,7 @@ const envKeys = [
     'GATEWAY_REDIS_PREFIX',
     'GATEWAY_INTERNAL_API_URL',
     'GAME_UPLOAD_DIR',
+    'API_ALLOWED_ORIGINS',
 ] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 
@@ -642,6 +643,7 @@ integration('game API security over HTTP transport', () => {
         process.env.GATEWAY_REDIS_PREFIX = redisPrefix;
         process.env.GATEWAY_INTERNAL_API_URL = await listenGatewayStatusStub();
         process.env.GAME_UPLOAD_DIR = uploadDir;
+        process.env.API_ALLOWED_ORIGINS = 'https://sam.hided.net';
 
         const connector = createGamePostgresConnector({ url: dedicatedTarget.databaseUrl });
         await connector.connect();
@@ -3773,6 +3775,58 @@ integration('game API security over HTTP transport', () => {
             await Promise.all(tokens.map((token) => accessTokenStore.revoke(token)));
         }
     }, 15_000);
+
+    it('rejects an untrusted browser Origin before an authenticated logout mutation', async () => {
+        const token = await createAccessToken('origin-mutation', {});
+        const response = await fetch(`${baseUrl}/trpc/auth.logout`, {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${token}`,
+                origin: 'https://untrusted.example',
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({}),
+        });
+        expect(response.status).toBe(403);
+        expect(response.headers.get('access-control-allow-origin')).toBeNull();
+        expect(await accessTokenStore.get(token)).not.toBeNull();
+        for (const origin of ['https://sam.hided.net', 'https://untrusted.example', 'null']) {
+            const preflight = await fetch(`${baseUrl}/trpc/auth.logout`, {
+                method: 'OPTIONS',
+                headers: {
+                    origin,
+                    'access-control-request-method': 'POST',
+                    'access-control-request-headers': 'authorization,content-type',
+                },
+            });
+            expect(preflight.status).toBe(origin === 'https://sam.hided.net' ? 204 : 403);
+            expect(preflight.headers.get('access-control-allow-origin')).toBe(
+                origin === 'https://sam.hided.net' ? origin : null
+            );
+        }
+        await accessTokenStore.revoke(token);
+    });
+
+    it('rejects a same-namespace foreign-profile token over tRPC before any DB mutation', async () => {
+        const foreign = await accessTokenStore.create({
+            ...buildPayload('trpc-foreign', {}),
+            profile: 'other:default',
+        });
+        if (!foreign) throw new Error('Foreign token fixture failed');
+        const before = await readReservedMutationState();
+        try {
+            const response = await fetch(
+                `${baseUrl}/trpc/turns.reserved.getGeneral?input=${encodeURIComponent(JSON.stringify({ generalId }))}`,
+                {
+                    headers: { authorization: `Bearer ${foreign.accessToken}` },
+                }
+            );
+            expect(response.status).toBe(401);
+            expect(await readReservedMutationState()).toEqual(before);
+        } finally {
+            await accessTokenStore.revoke(foreign.accessToken);
+        }
+    });
 
     it('SSE accepts header auth and rejects query or cross-profile credentials', async () => {
         const token = await createAccessToken('sse-query', {});

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseBooleanWithFallback, parseNumberWithFallback } from '@sammo-ts/common';
+import { parseBooleanWithFallback, parseNumberWithFallback, resolveApiAllowedOrigins } from '@sammo-ts/common';
 import { resolveFrontendServeMode, type FrontendServeMode } from './orchestrator/frontendArtifactManager.js';
 
 export interface GatewayApiConfig {
@@ -19,6 +19,7 @@ export interface GatewayApiConfig {
     kakaoAdminKey?: string;
     kakaoRedirectUri: string;
     publicBaseUrl: string;
+    corsAllowedOrigins: string[];
     userIconDir: string;
     userIconPublicUrl: string;
     imageUploadBaseUrl: string;
@@ -129,6 +130,7 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
         kakaoAdminKey: env.KAKAO_ADMIN_KEY,
         kakaoRedirectUri,
         publicBaseUrl,
+        corsAllowedOrigins: resolveApiAllowedOrigins(env.API_ALLOWED_ORIGINS, [publicBaseUrl]),
         userIconDir: env.GATEWAY_USER_ICON_DIR ?? 'uploads/user-icons',
         userIconPublicUrl: env.GATEWAY_USER_ICON_PUBLIC_URL ?? 'https://sam-image.hided.net/icons',
         imageUploadBaseUrl: env.GATEWAY_IMAGE_UPLOAD_URL ?? 'https://sam-image.hided.net',

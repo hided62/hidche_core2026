@@ -175,6 +175,7 @@ const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
 };
 
 const ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST = [
+    'tournamentAdjustGeneral',
     'troopCreate',
     'troopJoin',
     'troopExit',
@@ -627,11 +628,84 @@ async function handleSetNpcPolicy(
     return applyNpcPolicyMutation({ world: ctx.world, command, acceptedAt });
 }
 
+async function handleTournamentAdjustGeneral(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'tournamentAdjustGeneral' }>
+): Promise<TurnDaemonCommandResult> {
+    const general = ctx.world.getGeneralById(command.generalId);
+    // Ref의 참가/베팅 actor는 로그인 장수다. 큐 대기 중 빙의 소유자가 바뀐 경우도 막는다.
+    if (!general || general.userId !== command.userId) {
+        return { type: command.type, ok: false, code: 'FORBIDDEN', reason: '장수의 현재 소유자가 일치하지 않습니다.' };
+    }
+    const gold = general.gold + command.goldDelta;
+    if (!Number.isFinite(gold) || gold < command.minGoldAfter) {
+        return { type: command.type, ok: false, code: 'BAD_REQUEST', reason: '금이 부족합니다.' };
+    }
+    const meta = { ...general.meta };
+    if (command.betGoldDelta !== undefined) {
+        const current = typeof meta.betgold === 'number' ? meta.betgold : 0;
+        const betgold = current + command.betGoldDelta;
+        if (!Number.isFinite(betgold) || betgold < 0) {
+            return { type: command.type, ok: false, code: 'BAD_REQUEST', reason: '베팅 기록이 일치하지 않습니다.' };
+        }
+        meta.betgold = betgold;
+    }
+    // 금과 통계는 하나의 ENGINE event에서 함께 commit하거나 함께 거부한다.
+    ctx.world.updateGeneral(command.generalId, { gold, meta });
+    return { type: command.type, ok: true, generalId: command.generalId };
+}
+
+async function handleTournamentSeedNpcBets(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'tournamentSeedNpcBets' }>
+): Promise<TurnDaemonCommandResult> {
+    if (ctx.commandDb) {
+        const event = command.requestId
+            ? await ctx.commandDb.inputEvent.findUnique({
+                  where: { requestId: command.requestId },
+                  select: { actorUserId: true, target: true, eventType: true },
+              })
+            : null;
+        if (!event || event.actorUserId !== null || event.target !== 'ENGINE' || event.eventType !== command.type) {
+            return { type: command.type, ok: false, reason: 'NPC 베팅 입력 이벤트가 일치하지 않습니다.' };
+        }
+    }
+    if (new Set(command.bets.map((bet) => bet.generalId)).size !== command.bets.length) {
+        return { type: command.type, ok: false, reason: 'NPC 베팅 대상이 중복됩니다.' };
+    }
+    const processedGeneralIds: number[] = [];
+    const skippedGeneralIds: number[] = [];
+    for (const bet of command.bets) {
+        const general = ctx.world.getGeneralById(bet.generalId);
+        // 계획 이후 유저가 빙의한 장수는 NPC 비용·통계를 변경하지 않는다.
+        if (!general || general.userId != null || general.npcState < 2 || general.gold - bet.amount < 500) {
+            skippedGeneralIds.push(bet.generalId);
+            continue;
+        }
+        const current = typeof general.meta.betgold === 'number' ? general.meta.betgold : 0;
+        ctx.world.updateGeneral(bet.generalId, {
+            gold: general.gold - bet.amount,
+            meta: { ...general.meta, betgold: current + bet.amount },
+        });
+        processedGeneralIds.push(bet.generalId);
+    }
+    return { type: command.type, ok: true, processedGeneralIds, skippedGeneralIds };
+}
+
+const isLegacyTournamentAdjustment = (reason: string | undefined): boolean =>
+    reason !== undefined &&
+    ['tournamentJoin', 'tournamentJoinRollback', 'tournamentBet', 'tournamentBetRollback', 'tournamentNpcBet'].includes(
+        reason
+    );
+
 async function handleAdjustGeneralResources(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>
 ): Promise<TurnDaemonCommandResult> {
     const { world } = ctx;
+    if (isLegacyTournamentAdjustment(command.reason)) {
+        return { type: command.type, ok: false, reason: '소유권 없는 이전 토너먼트 조정 명령은 허용하지 않습니다.' };
+    }
     if (!command.adjustments || command.adjustments.length === 0) {
         return { type: 'adjustGeneralResources', ok: false, reason: '조정 대상이 없습니다.' };
     }
@@ -688,6 +762,9 @@ async function handleAdjustGeneralMeta(
     command: Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>
 ): Promise<TurnDaemonCommandResult> {
     const { world } = ctx;
+    if (isLegacyTournamentAdjustment(command.reason)) {
+        return { type: command.type, ok: false, reason: '소유권 없는 이전 토너먼트 조정 명령은 허용하지 않습니다.' };
+    }
     if (!command.adjustments || command.adjustments.length === 0) {
         return {
             type: 'adjustGeneralMeta',
@@ -3267,6 +3344,13 @@ export const createTurnDaemonCommandHandler = (options: {
             handleSetNationSetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationSetting' }>),
         setNpcPolicy: (command) =>
             handleSetNpcPolicy(ctx, command as Extract<TurnDaemonCommand, { type: 'setNpcPolicy' }>),
+        tournamentAdjustGeneral: (command) =>
+            handleTournamentAdjustGeneral(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'tournamentAdjustGeneral' }>
+            ),
+        tournamentSeedNpcBets: (command) =>
+            handleTournamentSeedNpcBets(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentSeedNpcBets' }>),
         adjustGeneralResources: (command) =>
             handleAdjustGeneralResources(
                 ctx,

@@ -33,6 +33,7 @@ export * from './game/accessPenalty.js';
 export * from './http/trpcTransport.js';
 export * from './http/safeLogger.js';
 export * from './http/errorPrivacy.js';
+export * from './http/apiOrigin.js';
 export * from './webPush/types.js';
 export { canReadPlayAudit, canReadPlayAuditAccounts } from './auth/playAudit.js';
 

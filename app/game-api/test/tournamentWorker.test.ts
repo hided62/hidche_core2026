@@ -53,7 +53,15 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const createNoopDaemonTransport = (): TurnDaemonTransport => ({
     sendCommand: async () => 'ok',
-    requestCommand: async () => null,
+    requestCommand: async (command) =>
+        command.type === 'tournamentSeedNpcBets'
+            ? {
+                  type: command.type,
+                  ok: true,
+                  processedGeneralIds: command.bets.map((bet) => bet.generalId),
+                  skippedGeneralIds: [],
+              }
+            : null,
     requestStatus: async () => null,
 });
 
@@ -440,10 +448,10 @@ describe('tournament worker (in-memory)', () => {
         const commands: TurnDaemonCommand[] = [];
         const daemonTransport: TurnDaemonTransport = {
             ...createNoopDaemonTransport(),
-            sendCommand: async (command) => {
+            requestCommand: async (command) => {
                 expect((await store.getState())?.stage).toBe(5);
                 commands.push(command);
-                return 'ok';
+                return createNoopDaemonTransport().requestCommand(command);
             },
         };
         const opened = await applyPreBattleStage(store, prisma, state, 'opening-seed', daemonTransport);
@@ -455,21 +463,14 @@ describe('tournament worker (in-memory)', () => {
         expect(new Set(bets.slice(1).map((bet) => bet.targetId)).size).toBeGreaterThan(1);
         expect(commands).toEqual([
             {
-                type: 'adjustGeneralResources',
-                requestId: 'tournament:123:npc-bet:resources',
-                reason: 'tournamentNpcBet',
-                adjustments: [3, 4, 5, 6, 7].map((generalId) => ({ generalId, goldDelta: -amount })),
-            },
-            {
-                type: 'adjustGeneralMeta',
-                requestId: 'tournament:123:npc-bet:meta',
-                reason: 'tournamentNpcBet',
-                adjustments: [3, 4, 5, 6, 7].map((generalId) => ({ generalId, metaDelta: { betgold: amount } })),
+                type: 'tournamentSeedNpcBets',
+                requestId: 'tournament:123:npc-bet:atomic',
+                bets: [3, 4, 5, 6, 7].map((generalId) => ({ generalId, amount })),
             },
         ]);
         await seedNpcBets({ prisma, store, state: opened, baseSeed: 'opening-seed', daemonTransport });
         expect(await store.getBettingEntries()).toEqual(bets);
-        expect(commands).toHaveLength(2);
+        expect(commands).toHaveLength(1);
         // A fresh projection with the same seed and DB inputs has the same choices.
         await store.setBettingEntries([bets[0]!]);
         await seedNpcBets({
@@ -480,6 +481,32 @@ describe('tournament worker (in-memory)', () => {
             daemonTransport: createNoopDaemonTransport(),
         });
         expect(await store.getBettingEntries()).toEqual(bets);
+    });
+
+    it('publishes only NPC bets acknowledged after the current-owner check', async () => {
+        const store = new TournamentStore(new MemoryRedis(), buildTournamentKeys('npc-owned-after-plan'));
+        const state = createTournamentState({
+            stage: 5,
+            bettingId: 789,
+            npcBettingPlan: [
+                { generalId: 3, userId: null, targetId: 11, amount: 10 },
+                { generalId: 4, userId: null, targetId: 12, amount: 10 },
+            ],
+        });
+        await store.setState(state);
+        await store.setMatches([{ id: 1, stage: 7, roundIndex: 0, attackerId: 11, defenderId: 12 }]);
+        const transport: TurnDaemonTransport = {
+            ...createNoopDaemonTransport(),
+            requestCommand: async (command) => {
+                expect(command.type).toBe('tournamentSeedNpcBets');
+                expect((await store.getState())?.stage).toBe(5);
+                expect(await store.getBettingEntries()).toEqual([]);
+                return { type: 'tournamentSeedNpcBets', ok: true, processedGeneralIds: [4], skippedGeneralIds: [3] };
+            },
+        };
+        const opened = await applyPreBattleStage(store, createPrismaMock({}), state, 'seed', transport);
+        expect(opened.stage).toBe(6);
+        expect(await store.getBettingEntries()).toEqual([{ generalId: 4, userId: null, targetId: 12, amount: 10 }]);
     });
 
     it('retries an opening query failure without advancing stage or changing the betting identity', async () => {
@@ -509,7 +536,7 @@ describe('tournament worker (in-memory)', () => {
         expect(await store.getBettingEntries()).toHaveLength(1);
     });
 
-    it('reuses durable command identities after a partial enqueue failure', async () => {
+    it('reuses durable command identities after an uncertain atomic command response', async () => {
         const store = new TournamentStore(new MemoryRedis(), buildTournamentKeys('npc-enqueue-retry'));
         const state = createTournamentState({ stage: 5, bettingId: 456 });
         await store.setState(state);
@@ -523,15 +550,15 @@ describe('tournament worker (in-memory)', () => {
         let fail = true;
         const transport: TurnDaemonTransport = {
             ...createNoopDaemonTransport(),
-            sendCommand: async (command) => {
+            requestCommand: async (command) => {
                 commands.push(command);
-                if (command.type === 'adjustGeneralMeta' && fail) {
+                if (command.type === 'tournamentSeedNpcBets' && fail) {
                     fail = false;
                     // The accepted debit may already have committed before retry.
                     prisma.general.findMany = async () => [];
                     throw new Error('enqueue unavailable');
                 }
-                return 'ok';
+                return createNoopDaemonTransport().requestCommand(command);
             },
         };
         await expect(applyPreBattleStage(store, prisma, state, 'seed', transport)).rejects.toThrow(
@@ -539,16 +566,14 @@ describe('tournament worker (in-memory)', () => {
         );
         expect(await store.getState()).toMatchObject({
             stage: 5,
-            npcBettingPlan: [{ generalId: 3, targetId: expect.any(Number), amount: 10 }],
+            npcBettingPlan: [{ generalId: 3, userId: null, targetId: expect.any(Number), amount: 10 }],
         });
         expect(await store.getBettingEntries()).toEqual([]);
         await applyPreBattleStage(store, prisma, (await store.getState())!, 'seed', transport);
-        expect(commands.slice(2)).toEqual(commands.slice(0, 2));
+        expect(commands.slice(1)).toEqual(commands.slice(0, 1));
         expect(commands.map((command) => command.requestId)).toEqual([
-            'tournament:456:npc-bet:resources',
-            'tournament:456:npc-bet:meta',
-            'tournament:456:npc-bet:resources',
-            'tournament:456:npc-bet:meta',
+            'tournament:456:npc-bet:atomic',
+            'tournament:456:npc-bet:atomic',
         ]);
         expect(await store.getBettingEntries()).toHaveLength(1);
     });
@@ -577,7 +602,10 @@ describe('tournament worker (in-memory)', () => {
                     commands.push(command);
                     return 'ok';
                 },
-                requestCommand: async () => null,
+                requestCommand: async (command) => {
+                    commands.push(command);
+                    return createNoopDaemonTransport().requestCommand(command);
+                },
                 requestStatus: async () => null,
             };
 
@@ -598,11 +626,8 @@ describe('tournament worker (in-memory)', () => {
             expect(rankedGeneralIds.size).toBeGreaterThanOrEqual(10);
             expect(commands).toContainEqual(
                 expect.objectContaining({
-                    type: 'adjustGeneralMeta',
-                    reason: 'tournamentNpcBet',
-                    adjustments: expect.arrayContaining([
-                        expect.objectContaining({ metaDelta: { betgold: expect.any(Number) } }),
-                    ]),
+                    type: 'tournamentSeedNpcBets',
+                    bets: expect.arrayContaining([expect.objectContaining({ amount: expect.any(Number) })]),
                 })
             );
         }

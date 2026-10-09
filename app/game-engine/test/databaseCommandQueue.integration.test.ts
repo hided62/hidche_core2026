@@ -274,69 +274,79 @@ integration('database command queue', () => {
         });
     });
 
-    it('stores a stale-owner rejection once and never redispatches the exact durable request', async () => {
-        const requestId = 'integration:engine:stale-owner-replay';
-        const command: TurnDaemonCommand = {
-            type: 'vacation',
-            requestId,
-            userId: 'old-owner',
-            generalId: 7,
-        };
-        await db.inputEvent.create({
-            data: {
-                requestId,
-                target: 'ENGINE',
-                eventType: command.type,
+    it.each(['vacation', 'tournamentAdjustGeneral'] as const)(
+        'stores a stale-owner %s rejection once and never redispatches it',
+        async (type) => {
+            const requestId = `integration:engine:stale-owner-replay:${type}`;
+            const command: TurnDaemonCommand =
+                type === 'vacation'
+                    ? { type, requestId, userId: 'old-owner', generalId: 7 }
+                    : {
+                          type,
+                          reason: 'tournamentBet',
+                          requestId,
+                          userId: 'old-owner',
+                          generalId: 7,
+                          goldDelta: -100,
+                          betGoldDelta: 100,
+                          minGoldAfter: 500,
+                      };
+            await db.inputEvent.create({
+                data: {
+                    requestId,
+                    target: 'ENGINE',
+                    eventType: command.type,
+                    actorUserId: command.userId,
+                    payload: command as GamePrisma.InputJsonValue,
+                },
+            });
+
+            const mutation = vi.fn();
+            const world = {
+                getGeneralById: vi.fn(() => ({ id: command.generalId, userId: 'new-owner' })),
+                updateGeneral: mutation,
+                updateNation: mutation,
+                createTroop: mutation,
+                updateTroop: mutation,
+                removeTroop: mutation,
+                pushLog: mutation,
+                queueMessage: mutation,
+            } as unknown as InMemoryTurnWorld;
+            const handler = createTurnDaemonCommandHandler({ world });
+            const handle = vi.spyOn(handler, 'handle');
+            const owner = new DatabaseTurnDaemonCommandQueue(db);
+
+            const claimed = await owner.drain();
+            expect(claimed).toEqual([
+                {
+                    ...command,
+                    processingGameTick: 123,
+                    requestedAtWall: expect.any(Date),
+                },
+            ]);
+            const result = await db.$transaction((transaction) => handler.handle(claimed[0]!, { db: transaction }));
+            expect(result).toMatchObject({
+                type: 'commandRejected',
+                ok: false,
+                commandType: command.type,
+            });
+            await owner.publishCommandResult(requestId, result!);
+
+            await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId } })).resolves.toMatchObject({
+                status: 'SUCCEEDED',
+                attempts: 1,
                 actorUserId: command.userId,
-                payload: command as GamePrisma.InputJsonValue,
-            },
-        });
-
-        const mutation = vi.fn();
-        const world = {
-            getGeneralById: vi.fn(() => ({ id: command.generalId, userId: 'new-owner' })),
-            updateGeneral: mutation,
-            updateNation: mutation,
-            createTroop: mutation,
-            updateTroop: mutation,
-            removeTroop: mutation,
-            pushLog: mutation,
-            queueMessage: mutation,
-        } as unknown as InMemoryTurnWorld;
-        const handler = createTurnDaemonCommandHandler({ world });
-        const handle = vi.spyOn(handler, 'handle');
-        const owner = new DatabaseTurnDaemonCommandQueue(db);
-
-        const claimed = await owner.drain();
-        expect(claimed).toEqual([
-            {
-                ...command,
-                processingGameTick: 123,
-                requestedAtWall: expect.any(Date),
-            },
-        ]);
-        const result = await db.$transaction((transaction) => handler.handle(claimed[0]!, { db: transaction }));
-        expect(result).toMatchObject({
-            type: 'commandRejected',
-            ok: false,
-            commandType: command.type,
-        });
-        await owner.publishCommandResult(requestId, result!);
-
-        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId } })).resolves.toMatchObject({
-            status: 'SUCCEEDED',
-            attempts: 1,
-            actorUserId: command.userId,
-            eventType: command.type,
-            payload: command,
-            result,
-            lockedBy: null,
-            leaseUntil: null,
-        });
-        await expect(new DatabaseTurnDaemonCommandQueue(db).drain()).resolves.toEqual([]);
-        expect(handle).toHaveBeenCalledOnce();
-        expect(mutation).not.toHaveBeenCalled();
-    });
+                eventType: command.type,
+                payload: command,
+                result,
+                lockedBy: null,
+                leaseUntil: null,
+            });
+            await expect(new DatabaseTurnDaemonCommandQueue(db).drain()).resolves.toEqual([]);
+            expect(handle).toHaveBeenCalledOnce();
+            expect(mutation).not.toHaveBeenCalled();
+        }
+    );
 
     it.each(['PREOPEN', 'RUNNING', 'MANUAL', 'SUSPENDED', 'RECONCILING', 'COMPLETED'])(
         'handles pre-opening user commands in %s without treating them as scheduled turns',
@@ -630,6 +640,8 @@ integration('database command queue', () => {
         const metaId = 'integration:engine:suspended-tournament-bet-meta';
         const rollbackId = 'integration:engine:suspended-tournament-bet-rollback';
         const unrelatedId = 'integration:engine:suspended-resource-adjustment';
+        const atomicBetId = 'integration:engine:suspended-atomic-bet';
+        const atomicJoinId = 'integration:engine:suspended-atomic-join';
         await db.inputEvent.createMany({
             data: [
                 {
@@ -679,6 +691,41 @@ integration('database command queue', () => {
             ],
         });
 
+        await db.inputEvent.createMany({
+            data: [
+                {
+                    requestId: atomicBetId,
+                    target: 'ENGINE',
+                    eventType: 'tournamentAdjustGeneral',
+                    actorUserId: 'user-7',
+                    payload: {
+                        type: 'tournamentAdjustGeneral',
+                        requestId: atomicBetId,
+                        userId: 'user-7',
+                        generalId: 7,
+                        reason: 'tournamentBet',
+                        goldDelta: -100,
+                        betGoldDelta: 100,
+                        minGoldAfter: 500,
+                    },
+                },
+                {
+                    requestId: atomicJoinId,
+                    target: 'ENGINE',
+                    eventType: 'tournamentAdjustGeneral',
+                    actorUserId: 'user-7',
+                    payload: {
+                        type: 'tournamentAdjustGeneral',
+                        requestId: atomicJoinId,
+                        userId: 'user-7',
+                        generalId: 7,
+                        reason: 'tournamentJoin',
+                        goldDelta: -200,
+                        minGoldAfter: 0,
+                    },
+                },
+            ],
+        });
         const queue = new DatabaseTurnDaemonCommandQueue(db);
         await expect(queue.drain()).resolves.toEqual([
             expect.objectContaining({ type: 'adjustGeneralResources', requestId: resourceId, reason: 'tournamentBet' }),
@@ -688,7 +735,15 @@ integration('database command queue', () => {
                 requestId: rollbackId,
                 reason: 'tournamentBetRollback',
             }),
+            expect.objectContaining({
+                type: 'tournamentAdjustGeneral',
+                requestId: atomicBetId,
+                reason: 'tournamentBet',
+            }),
         ]);
+        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: atomicJoinId } })).resolves.toMatchObject({
+            status: 'PENDING',
+        });
         await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: resourceId } })).resolves.toMatchObject({
             status: 'PROCESSING',
             processingGameTick: 321n,

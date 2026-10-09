@@ -7,6 +7,16 @@ import { normalizeTurnDaemonCommand } from '../src/turn/commandRegistry.js';
 import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
 
 const buildActorBoundCommands = (userId = 'old-owner'): TurnDaemonCommand[] => [
+    {
+        type: 'tournamentAdjustGeneral',
+        reason: 'tournamentBet',
+        requestId: 'tournamentAdjustGeneral',
+        userId,
+        generalId: 7,
+        goldDelta: -100,
+        betGoldDelta: 100,
+        minGoldAfter: 500,
+    },
     { type: 'troopCreate', requestId: 'troopCreate', userId, generalId: 7, troopName: '백마대' },
     { type: 'troopJoin', requestId: 'troopJoin', userId, generalId: 7, troopId: 8 },
     { type: 'troopExit', requestId: 'troopExit', userId, generalId: 7 },
