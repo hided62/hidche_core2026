@@ -135,7 +135,7 @@ integration(
                     name: '징병검증장',
                     nationId: 1,
                     cityId: city.id,
-                    officerLevel: 1,
+                    officerLevel: 5,
                     npcState: 2,
                     leadership: 80,
                     strength: 80,
@@ -245,10 +245,24 @@ integration(
             let result = await runtime.processor.run(baseTime, { budgetMs: 10_000, maxGenerals: 1, catchUpCap: 1 });
             expect(result.processedGenerals).toBe(1);
             expect(runtime.world.getGeneralById(2)!.crew).toBe(0);
+            expect(actions).toContainEqual(expect.objectContaining({ generalId: 2, kind: 'nation' }));
             expect(
                 actions.filter((action) => action.generalId === 2).some((action) => action.actionKey === 'che_징병')
             ).toBe(false);
             await runtime.hooks!.flushChanges!(result);
+            const nationDecision = await db.playAuditDecision.findFirstOrThrow({
+                where: { generalId: 2, phase: 'nation' },
+                include: { chunks: { orderBy: { ordinal: 'asc' } } },
+            });
+            const procedures = nationDecision.chunks.flatMap((chunk) =>
+                Array.isArray(chunk.steps)
+                    ? chunk.steps
+                          .map(asRecord)
+                          .filter((step) => step.kind === 'PROCEDURE_START')
+                          .map((step) => step.procedure)
+                    : []
+            );
+            expect(procedures).toEqual(['NPC포상']);
             expect(configuration(await call('getPolicy', {}))).toEqual(configuration(withoutRecruitment));
             // 같은 장수·자원으로 징병 우선순위를 맨 앞에 저장한 뒤 다시 시작한다.
             loop = runtime.lifecycle.start();
