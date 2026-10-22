@@ -15,6 +15,7 @@ import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unit
 import type { GameApiContext } from '../../context.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
+import { policyHistory, policyVersion } from './history.js';
 
 type SetterInfo = {
     setter: string | null;
@@ -356,6 +357,8 @@ const requestNpcPolicyMutation = async (
 };
 
 export const npcRouter = router({
+    policyHistory,
+    policyVersion,
     getPolicy: authedProcedure.query(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         if (general.nationId <= 0) {

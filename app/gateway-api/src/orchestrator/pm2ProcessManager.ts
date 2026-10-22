@@ -54,6 +54,8 @@ export const buildPm2StartOptions = (definition: ProcessDefinition) => ({
     args: definition.args,
     env: sanitizePm2IdentityEnv(definition.env ?? {}),
     autorestart: true,
+    // PM2의 chokidar/braces glob parser에 사용자 입력을 전달하는 watch 경로는 사용하지 않는다.
+    watch: false,
     max_restarts: 5,
     min_uptime: 10_000,
     restart_delay: 2_000,

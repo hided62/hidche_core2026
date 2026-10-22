@@ -148,12 +148,9 @@ export class RedisOAuthSessionStore implements OAuthSessionStore {
 
     async consumePendingState(state: string): Promise<OAuthPendingState | null> {
         const key = this.stateKey(state);
-        const raw = await this.client.get(key);
-        if (!raw) {
-            return null;
-        }
-        await this.client.del(key);
-        return parseJson<OAuthPendingState>(raw);
+        // Callback 재사용 방지는 읽기와 삭제를 같은 Redis 실행에서 완료해야 한다.
+        const raw = await this.client.eval(consumeOnceScript, { keys: [key], arguments: [] });
+        return typeof raw === 'string' ? parseJson<OAuthPendingState>(raw) : null;
     }
 
     async createSession(session: Omit<OAuthSession, 'id'>): Promise<OAuthSession> {

@@ -26,6 +26,7 @@ describe('buildPm2StartOptions', () => {
         expect(options).toMatchObject({
             name: 'sammo:che:2:game-api',
             autorestart: true,
+            watch: false,
             max_restarts: 5,
             min_uptime: 10_000,
             restart_delay: 2_000,

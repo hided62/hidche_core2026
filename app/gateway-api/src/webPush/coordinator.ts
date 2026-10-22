@@ -12,6 +12,7 @@ import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 import webPush from 'web-push';
 
 import { resolveGatewayProfileDisplayName } from '../profileOrder.js';
+import { parsePushEndpoint, publicPushAgent, PushEndpointPolicyError, validatePushEndpoint } from './endpointPolicy.js';
 
 export interface WebPushCoordinatorConfig {
     enabled: boolean;
@@ -200,8 +201,7 @@ export class WebPushCoordinator {
 
     async subscribe(userId: string, subscription: WebPushClientSubscription, userAgent?: string): Promise<void> {
         if (!this.configured) throw new Error('웹 알림 전송이 아직 활성화되지 않았습니다.');
-        const endpointUrl = new URL(subscription.endpoint);
-        if (endpointUrl.protocol !== 'https:') throw new Error('보안 연결의 Push 구독만 저장할 수 있습니다.');
+        await validatePushEndpoint(subscription.endpoint);
         const expirationTime = subscription.expirationTime ? new Date(subscription.expirationTime) : null;
         await this.prisma.webPushSubscription.upsert({
             where: { endpoint: subscription.endpoint },
@@ -428,7 +428,7 @@ export class WebPushCoordinator {
             const expired = await this.prisma.$transaction(async (tx) => {
                 const count = await tx.$executeRaw(GatewayPrisma.sql`
                     UPDATE web_push_delivery AS delivery
-                    SET status = 'FAILED'::"WebPushDeliveryStatus",
+                    SET status = 'FAILED',
                         locked_at = NULL,
                         lock_owner = NULL,
                         last_error = 'Push subscription expired.'
@@ -453,6 +453,8 @@ export class WebPushCoordinator {
                 continue;
             }
             try {
+                // 기존 DB 구독도 검사한다. DNS 검사는 실제 socket lookup에서 다시 수행한다.
+                parsePushEndpoint(delivery.subscription.endpoint);
                 await webPush.sendNotification(
                     {
                         endpoint: delivery.subscription.endpoint,
@@ -464,11 +466,11 @@ export class WebPushCoordinator {
                         url: delivery.notification.url,
                         tag: delivery.notification.tag,
                     }),
-                    { TTL: 60 * 60 }
+                    { TTL: 60 * 60, timeout: 10_000, agent: publicPushAgent }
                 );
                 await this.prisma.$executeRaw(GatewayPrisma.sql`
                     UPDATE web_push_delivery
-                    SET status = 'DELIVERED'::"WebPushDeliveryStatus",
+                    SET status = 'DELIVERED',
                         delivered_at = CURRENT_TIMESTAMP,
                         locked_at = NULL,
                         lock_owner = NULL,
@@ -481,6 +483,7 @@ export class WebPushCoordinator {
                         ? Number((error as { statusCode?: unknown }).statusCode)
                         : 0;
                 const terminal =
+                    error instanceof PushEndpointPolicyError ||
                     statusCode === 404 ||
                     statusCode === 410 ||
                     (statusCode >= 400 && statusCode < 500 && statusCode !== 429);
@@ -493,7 +496,7 @@ export class WebPushCoordinator {
                     const nextStatus = terminal || exhausted ? 'FAILED' : 'PENDING';
                     await tx.$executeRaw(GatewayPrisma.sql`
                         UPDATE web_push_delivery
-                        SET status = ${nextStatus}::"WebPushDeliveryStatus",
+                        SET status = ${nextStatus},
                             available_at = CURRENT_TIMESTAMP
                                 + ${delaySeconds * 1_000} * INTERVAL '1 millisecond',
                             locked_at = NULL,
@@ -501,7 +504,7 @@ export class WebPushCoordinator {
                             last_error = ${safeError}
                         WHERE id = ${delivery.id} AND lock_owner = ${this.owner}
                     `);
-                    if (statusCode === 404 || statusCode === 410) {
+                    if (error instanceof PushEndpointPolicyError || statusCode === 404 || statusCode === 410) {
                         await tx.$executeRaw(GatewayPrisma.sql`
                             UPDATE web_push_subscription
                             SET disabled_at = CURRENT_TIMESTAMP,

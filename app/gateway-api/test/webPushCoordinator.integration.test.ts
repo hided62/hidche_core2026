@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import webPush from 'web-push';
 
 import { createGatewayPostgresConnector, type GatewayPrismaClient } from '@sammo-ts/infra';
@@ -22,6 +22,7 @@ integration('web push Gateway persistence boundary', () => {
     let db: GatewayPrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
     let coordinator: WebPushCoordinator;
+    const dispatchErrors: string[] = [];
 
     beforeAll(async () => {
         assertDedicatedSchema();
@@ -64,12 +65,16 @@ integration('web push Gateway persistence boundary', () => {
             },
         });
         const vapid = webPush.generateVAPIDKeys();
-        coordinator = new WebPushCoordinator(db, {
-            enabled: true,
-            vapidSubject: 'mailto:web-push-test@example.invalid',
-            vapidPublicKey: vapid.publicKey,
-            vapidPrivateKey: vapid.privateKey,
-        });
+        coordinator = new WebPushCoordinator(
+            db,
+            {
+                enabled: true,
+                vapidSubject: 'mailto:web-push-test@example.invalid',
+                vapidPublicKey: vapid.publicKey,
+                vapidPrivateKey: vapid.privateKey,
+            },
+            (error) => dispatchErrors.push(error instanceof Error ? error.message : 'Unknown dispatcher error')
+        );
     });
 
     afterAll(async () => {
@@ -165,5 +170,73 @@ integration('web push Gateway persistence boundary', () => {
         await expect(
             db.webPushEventReceipt.findUnique({ where: { eventId: 'integration:disabled:1' } })
         ).resolves.toBeNull();
+    });
+
+    it('rejects a private endpoint before persisting a subscription', async () => {
+        const before = await db.webPushSubscription.count({ where: { userId } });
+        await expect(
+            coordinator.subscribe(userId, {
+                endpoint: 'https://127.0.0.1/internal',
+                expirationTime: null,
+                keys: { p256dh: 'unused', auth: 'unused' },
+            })
+        ).rejects.toThrow('public destination');
+        expect(await db.webPushSubscription.count({ where: { userId } })).toBe(before);
+    });
+
+    it('quarantines an existing unsafe subscription without sending a request', async () => {
+        await coordinator.stop();
+        await db.webPushDelivery.deleteMany({ where: { notification: { userId } } });
+        dispatchErrors.length = 0;
+        const subscription = await db.webPushSubscription.create({
+            data: {
+                userId,
+                endpoint: 'https://[::1]/internal',
+                p256dh: 'unused',
+                auth: 'unused',
+            },
+        });
+        const notification = await db.webPushNotification.create({
+            data: {
+                userId,
+                profileName,
+                dedupeKey: 'integration:unsafe-endpoint',
+                eventType: 'PRIVATE_MESSAGE_RECEIVED',
+                title: 'synthetic notification',
+                body: 'synthetic body',
+                url: '/hwe/',
+                tag: 'synthetic-tag',
+            },
+        });
+        const delivery = await db.webPushDelivery.create({
+            data: {
+                subscriptionId: subscription.id,
+                notificationId: notification.id,
+            },
+        });
+        const sender = vi.spyOn(webPush, 'sendNotification').mockRejectedValue({ statusCode: 410 });
+        try {
+            coordinator.start();
+            await vi.waitFor(
+                async () => {
+                    expect(dispatchErrors).toEqual([]);
+                    expect((await db.webPushDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe(
+                        'FAILED'
+                    );
+                },
+                { timeout: 5_000 }
+            );
+            expect(await db.webPushSubscription.findUnique({ where: { id: subscription.id } })).toMatchObject({
+                disabledAt: expect.any(Date),
+            });
+            expect(sender).not.toHaveBeenCalledWith(
+                expect.objectContaining({ endpoint: subscription.endpoint }),
+                expect.anything(),
+                expect.anything()
+            );
+        } finally {
+            await coordinator.stop();
+            sender.mockRestore();
+        }
     });
 });
