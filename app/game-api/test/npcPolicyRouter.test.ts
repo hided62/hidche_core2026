@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import fastify from 'fastify';
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { RedisConnector } from '@sammo-ts/infra';
@@ -96,10 +98,16 @@ const createContext = (
     options: {
         me?: GeneralRow;
         nation?: typeof baseNation;
-        world?: typeof baseWorld;
+        world?: {
+            config: typeof baseWorld.config;
+            meta: Record<string, unknown>;
+            currentYear?: number;
+            currentMonth?: number;
+        };
         requestCommand?: ReturnType<typeof vi.fn>;
         troopRows?: Array<{ troopLeaderId: number }>;
         cityRows?: Array<{ id: number }>;
+        historyRows?: Array<Record<string, unknown>>;
     } = {}
 ): { context: GameApiContext; findFirst: ReturnType<typeof vi.fn>; requestCommand: ReturnType<typeof vi.fn> } => {
     const requestCommand =
@@ -117,6 +125,11 @@ const createContext = (
         worldState: { findFirst: vi.fn(async () => options.world ?? baseWorld) },
         troop: { findMany: vi.fn(async () => options.troopRows ?? [{ troopLeaderId: 101 }]) },
         city: { findMany: vi.fn(async () => options.cityRows ?? [{ id: 1 }, { id: 2 }]) },
+        playAuditPolicy: {
+            findMany: vi.fn(async () => options.historyRows ?? []),
+            findFirst: vi.fn(async () => options.historyRows?.[0] ?? null),
+        },
+        $transaction: async <T>(read: (tx: object) => Promise<T>): Promise<T> => read(db),
     };
     const redisClient = { get: async () => null, set: async () => null };
     return {
@@ -140,6 +153,146 @@ const createContext = (
 };
 
 describe('NPC policy router', () => {
+    const historyRow = {
+        id: 'a'.repeat(64),
+        schemaVersion: 1,
+        nationId: 1,
+        area: 'NPC_NATION_PRIORITY',
+        revision: 2,
+        previousId: 'b'.repeat(64),
+        source: 'CHANGE',
+        year: 185,
+        month: 1,
+        createdAt: new Date('2026-01-01Z'),
+        actor: {
+            userId: 'private-user',
+            generalId: 22,
+            name: '정책담당',
+            nationId: 1,
+            officerLevel: 12,
+            npcState: 0,
+            permission: 4,
+        },
+        before: { priority: ['NPC전방발령', 'NPC포상'] },
+        after: { priority: ['NPC포상'] },
+    };
+    const historyContext = (options: Parameters<typeof createContext>[0] = {}) =>
+        createContext({
+            ...options,
+            world: {
+                ...baseWorld,
+                currentYear: 185,
+                currentMonth: 1,
+                meta: { ...baseWorld.meta, serverId: 'current-season' },
+            },
+            historyRows: options.historyRows ?? [historyRow],
+        });
+
+    it('lets an ordinary nation reader inspect the actor and changes without admin request/account fields', async () => {
+        const fixture = historyContext({ me: { ...baseGeneral, officerLevel: 2 } });
+        const caller = appRouter.createCaller(fixture.context);
+        const page = await caller.npc.policyHistory({ area: 'NPC_NATION_PRIORITY', limit: 1 });
+        expect(page.items[0]).toMatchObject({ actor: { name: '정책담당' }, revision: 2 });
+        const detail = await caller.npc.policyVersion({ id: historyRow.id });
+        expect(detail.fields).toEqual([
+            { key: 'priority', beforeJson: '["NPC전방발령","NPC포상"]', afterJson: '["NPC포상"]', changed: true },
+        ]);
+        expect(JSON.stringify(detail)).not.toMatch(/private-user|permission|requestId|inputSequence/);
+    });
+
+    it.each([
+        { nationId: 0 },
+        { officerLevel: 0 },
+        { officerLevel: 1, meta: { belong: 0 } },
+        { penalty: { noChief: true } },
+    ])('denies history when current nation read permission is missing: %j', async (patch) => {
+        const fixture = historyContext({ me: { ...baseGeneral, ...patch } });
+        await expect(
+            appRouter.createCaller(fixture.context).npc.policyHistory({ area: 'NPC_VALUES' })
+        ).rejects.toBeDefined();
+    });
+
+    it('scopes cursor and version lookups to the authenticated nation and current season', async () => {
+        const fixture = historyContext();
+        const caller = appRouter.createCaller(fixture.context);
+        await caller.npc.policyHistory({ area: 'NPC_VALUES', cursor: 7, limit: 1 });
+        const tx = await fixture.context.db.$transaction!(async (db) => db);
+        expect(tx.playAuditPolicy.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { serverId: 'current-season', nationId: 1, area: 'NPC_VALUES', revision: { lt: 7 } },
+                take: 2,
+            })
+        );
+        await caller.npc.policyVersion({ id: historyRow.id });
+        expect(tx.playAuditPolicy.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: {
+                    id: historyRow.id,
+                    serverId: 'current-season',
+                    nationId: 1,
+                    area: { in: ['NPC_VALUES', 'NPC_NATION_PRIORITY', 'NPC_GENERAL_PRIORITY'] },
+                },
+            })
+        );
+        await expect(caller.npc.policyHistory({ area: 'NPC_VALUES', limit: 51 })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        await expect(caller.npc.policyVersion({ id: 'bad' })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('requires authentication and rejects caller-supplied nation or defence history over HTTP', async () => {
+        const fixture = historyContext();
+        const app = fastify();
+        await app.register(fastifyTRPCPlugin, {
+            prefix: '/che/api/trpc',
+            trpcOptions: {
+                router: appRouter,
+                createContext: ({ req }: { req: { headers: Record<string, string | string[] | undefined> } }) => ({
+                    ...fixture.context,
+                    auth: req.headers['x-session-token'] === 'fixture-session' ? auth : null,
+                }),
+            },
+        });
+        try {
+            const query = (input: object, authenticated = true) =>
+                app.inject({
+                    url: `/che/api/trpc/npc.policyHistory?input=${encodeURIComponent(JSON.stringify(input))}`,
+                    headers: authenticated ? { 'x-session-token': 'fixture-session' } : {},
+                });
+            expect((await query({ area: 'NPC_VALUES' }, false)).statusCode).toBe(401);
+            expect((await query({ area: 'NPC_VALUES' })).statusCode).toBe(200);
+            expect((await query({ area: 'DEFENCE' })).statusCode).toBe(400);
+            expect((await query({ area: 'NPC_VALUES', nationId: 2 })).statusCode).toBe(400);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('denies sanctioned sessions before reading history', async () => {
+        const fixture = historyContext();
+        fixture.context.auth = { ...auth, sanctions: { suspendedUntil: '2999-01-01T00:00:00Z' } };
+        await expect(
+            appRouter.createCaller(fixture.context).npc.policyHistory({ area: 'NPC_VALUES' })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect(fixture.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('paginates revisions without exposing a missing or unavailable version', async () => {
+        const fixture = historyContext({ historyRows: [historyRow, { ...historyRow, revision: 1 }] });
+        const page = await appRouter
+            .createCaller(fixture.context)
+            .npc.policyHistory({ area: 'NPC_NATION_PRIORITY', limit: 1 });
+        expect(page.items).toHaveLength(1);
+        expect(page.nextCursor).toBe(2);
+        const missing = historyContext({ historyRows: [] });
+        await expect(
+            appRouter.createCaller(missing.context).npc.policyVersion({ id: historyRow.id })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+        const noIdentity = createContext();
+        await expect(
+            appRouter.createCaller(noIdentity.context).npc.policyHistory({ area: 'NPC_VALUES' })
+        ).resolves.toMatchObject({ coverage: 'IDENTITY_MISSING', items: [], nextCursor: null });
+    });
     it('loads server and nation overrides while calculating legacy zero-value hints from nation tech', async () => {
         const fixture = createContext();
         const result = await appRouter.createCaller(fixture.context).npc.getPolicy();

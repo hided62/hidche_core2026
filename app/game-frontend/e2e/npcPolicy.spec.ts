@@ -1,6 +1,6 @@
 import { verifyVerticalAlignment } from '../../../tools/frontend-legacy-parity/verticalAlignment.js';
 import { devices, expect, test, type Page, type Route } from '@playwright/test';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
@@ -14,6 +14,8 @@ type FixtureState = {
     mutations: string[];
     nationPriorityInput?: string[];
     currentNationPriority?: string[];
+    currentGeneralPriority?: string[];
+    historyVersion?: number;
 };
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -131,7 +133,7 @@ const policyFixture = (state: FixtureState) => ({
     currentNationPriority: state.currentNationPriority ?? nationPriority,
     availableNationPriorityItems: nationPriority,
     defaultGeneralActionPriority: generalPriority,
-    currentGeneralActionPriority: generalPriority,
+    currentGeneralActionPriority: state.currentGeneralPriority ?? generalPriority,
     availableGeneralActionPriorityItems: generalPriority,
     lastSetters: {
         policy: { setter: null, date: null },
@@ -175,6 +177,41 @@ const installFixture = async (page: Page, state: FixtureState) => {
                     ? errorResponse(operation, '권한이 부족합니다.', 'FORBIDDEN')
                     : response(policyFixture(state));
             }
+            if (operation === 'npc.policyHistory') {
+                return response({
+                    coverage: 'RECORDED_VERSIONS_ONLY',
+                    nextCursor: null,
+                    items: [
+                        {
+                            id: 'a'.repeat(64),
+                            revision: state.historyVersion ?? 2,
+                            year: 185,
+                            month: 1,
+                            source: 'CHANGE',
+                            actor: { name: '정책담당', generalId: 22 },
+                        },
+                    ],
+                });
+            }
+            if (operation === 'npc.policyVersion') {
+                return response({
+                    id: 'a'.repeat(64),
+                    revision: state.historyVersion ?? 2,
+                    year: 185,
+                    month: 1,
+                    source: 'CHANGE',
+                    createdAt: '2026-10-22T00:00:00Z',
+                    actor: { name: '정책담당', generalId: 22 },
+                    fields: [
+                        {
+                            key: 'priority',
+                            beforeJson: '["NPC전방발령","NPC포상"]',
+                            afterJson: '["NPC포상"]',
+                            changed: true,
+                        },
+                    ],
+                });
+            }
             if (
                 operation === 'npc.setNationPolicy' ||
                 operation === 'npc.setNationPriority' ||
@@ -188,6 +225,11 @@ const installFixture = async (page: Page, state: FixtureState) => {
                     state.failNextMutation = false;
                     return errorResponse(operation, '권한이 부족합니다.', 'FORBIDDEN');
                 }
+                state.historyVersion = (state.historyVersion ?? 2) + 1;
+                if (operation === 'npc.setNationPriority' && Array.isArray(jsonInput))
+                    state.currentNationPriority = jsonInput.map(String);
+                if (operation === 'npc.setGeneralPriority' && Array.isArray(jsonInput))
+                    state.currentGeneralPriority = jsonInput.map(String);
                 return response({ ok: true });
             }
             return errorResponse(operation, `Unhandled fixture operation: ${operation}`);
@@ -205,6 +247,103 @@ const screenshot = async (page: Page, name: string) => {
     await mkdir(artifactRoot, { recursive: true });
     await page.screenshot({ path: resolve(artifactRoot, name), fullPage: true });
 };
+
+for (const width of [500, 1000]) {
+    test(`일반 사용자가 정책 변경자와 전후 이력을 조회하고 새로고침한다 ${width}px`, async ({ page }, testInfo) => {
+        const state: FixtureState = { permissionLevel: 1, mutations: [], currentNationPriority: ['NPC포상'] };
+        await installFixture(page, state);
+        await page.setViewportSize({ width, height: 900 });
+        await gotoPolicy(page);
+        await page.getByRole('button', { name: '정책 변경 이력 조회' }).click();
+        const history = page.getByRole('region', { name: 'NPC 정책 변경 이력', exact: true });
+        await expect(history).toContainText('정책담당 (#22)');
+        await history.getByLabel('이력 종류').selectOption('NPC_NATION_PRIORITY');
+        await history.getByRole('button', { name: '버전 2', exact: true }).click();
+        const detail = page.getByRole('region', { name: '정책 변경 내용', exact: true });
+        await expect(detail).toContainText('["NPC전방발령","NPC포상"]');
+        await expect(detail).toContainText('["NPC포상"]');
+        await history.getByLabel('이력 종류').focus();
+        await expect(history.getByLabel('이력 종류')).toBeFocused();
+        const measurements = await history.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const cell = element.querySelector('td')!;
+            return {
+                rect: rect.toJSON(),
+                style: {
+                    verticalAlign: getComputedStyle(cell).verticalAlign,
+                    whiteSpace: getComputedStyle(cell.querySelector('pre')!).whiteSpace,
+                },
+                html: element.outerHTML,
+                overflow: document.documentElement.scrollWidth > innerWidth,
+            };
+        });
+        expect(measurements.style).toEqual({ verticalAlign: 'middle', whiteSpace: 'pre-wrap' });
+        expect(measurements.overflow).toBe(false);
+        await testInfo.attach('history-dom-geometry-style', {
+            body: JSON.stringify(measurements, null, 2),
+            contentType: 'application/json',
+        });
+        await writeFile(testInfo.outputPath('history-dom-geometry-style.json'), JSON.stringify(measurements, null, 2));
+        await page.screenshot({ path: testInfo.outputPath(`npc-history-${width}.png`), fullPage: true });
+        state.historyVersion = 3;
+        await history.getByRole('button', { name: '이력 새로고침' }).click();
+        await expect(history.getByRole('button', { name: '버전 3', exact: true })).toBeVisible();
+        await page.reload();
+        const nationPanel = page.locator('.priority-panel').first();
+        await expect(
+            nationPanel.locator('.priority-column').nth(1).getByText('NPC전방발령', { exact: true })
+        ).toHaveCount(0);
+        await expect(
+            nationPanel.locator('.priority-column').first().getByText('NPC전방발령', { exact: true })
+        ).toBeVisible();
+    });
+}
+
+test('발령 비활성화와 징병 우선순위를 저장한 뒤 새로고침해도 유지되고 열린 이력이 갱신된다', async ({ page }) => {
+    const state: FixtureState = {
+        permissionLevel: 4,
+        mutations: [],
+        currentNationPriority: ['NPC전방발령', 'NPC포상'],
+        currentGeneralPriority: ['출병', '일반내정', '징병'],
+    };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await gotoPolicy(page);
+    await page.getByRole('button', { name: '정책 변경 이력 조회' }).click();
+    const history = page.getByRole('region', { name: 'NPC 정책 변경 이력', exact: true });
+    await expect(history.getByRole('button', { name: '버전 2', exact: true })).toBeVisible();
+    const nationPanel = page.locator('.priority-panel').first();
+    await nationPanel
+        .locator('.priority-column')
+        .nth(1)
+        .getByText('NPC전방발령', { exact: true })
+        .dragTo(nationPanel.locator('.priority-column').first().locator('.priority-list'));
+    await nationPanel.locator('.submit_btn').click();
+    await acceptAppConfirmation(page, '저장할까요?');
+    await expect(history.getByRole('button', { name: '버전 3', exact: true })).toBeVisible();
+    const generalPanel = page.locator('.priority-panel').nth(1);
+    const active = generalPanel.locator('.priority-column').nth(1);
+    // 목록을 화면 중앙에 놓아 창 가장자리의 Sortable auto-scroll을 피한다.
+    await active
+        .locator('.priority-list')
+        .evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await touchDrag(page, active.getByText('징병', { exact: true }), active.getByText('출병', { exact: true }), {
+        targetYRatio: 0.1,
+    });
+    await expect(active.locator('.priority_info > span:nth-child(2)').first()).toHaveText('징병');
+    await generalPanel.locator('.submit_btn').click();
+    await acceptAppConfirmation(page, '저장할까요?');
+    await expect(history.getByRole('button', { name: '버전 4', exact: true })).toBeVisible();
+    expect(state.currentNationPriority).toEqual(['NPC포상']);
+    expect(state.currentGeneralPriority).toEqual(['징병', '출병', '일반내정']);
+    await page.reload();
+    await expect(
+        nationPanel.locator('.priority-column').first().getByText('NPC전방발령', { exact: true })
+    ).toBeVisible();
+    await expect(
+        generalPanel.locator('.priority-column').nth(1).locator('.priority_info > span:nth-child(2)').first()
+    ).toHaveText('징병');
+});
 
 test('desktop geometry, typography, textures, drag, focus, tooltip, and successful save match the reference', async ({
     page,

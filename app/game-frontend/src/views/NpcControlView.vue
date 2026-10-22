@@ -3,12 +3,14 @@ import { usePageExit } from '../composables/usePageExit';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
+import NpcPolicyHistory from '../components/NpcPolicyHistory.vue';
 import SortableStringList from '../components/ui/SortableStringList';
 import { useGameFeedback } from '../composables/useGameFeedback';
 import { npcPriorityHelp } from '../utils/npcPriorityHelp';
 import { trpc } from '../utils/trpc';
 
 const { pageExitLabel, exitPage } = usePageExit();
+const historyRevision = ref(0);
 
 type NpcPolicyResponse = Awaited<ReturnType<typeof trpc.npc.getPolicy.query>>;
 type NationPolicy = NpcPolicyResponse['currentNationPolicy'];
@@ -308,6 +310,7 @@ const submitPolicy = async () => {
     try {
         await trpc.npc.setNationPolicy.mutate(policyDraft.value);
         lastSavedPolicy.value = clonePolicy(policyDraft.value);
+        historyRevision.value += 1;
         showSuccessToast('NPC 정책이 반영되었습니다.');
     } catch (caught) {
         showErrorToast(`설정하지 못했습니다: ${resolveErrorMessage(caught)}`);
@@ -357,6 +360,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
             await trpc.npc.setGeneralPriority.mutate(state.active);
             lastSavedGeneralPriority.value = [...state.active];
         }
+        historyRevision.value += 1;
         showSuccessToast('NPC 정책이 반영되었습니다.');
     } catch (caught) {
         showErrorToast(`설정하지 못했습니다: ${resolveErrorMessage(caught)}`);
@@ -547,6 +551,7 @@ const submitPriority = async (section: PrioritySectionKey) => {
                 </section>
             </div>
         </section>
+        <NpcPolicyHistory v-if="data" :key="data.nationId" :revision="historyRevision" />
         <div class="sortable-compat-controls" aria-hidden="true">
             <button type="button" tabindex="-1" />
             <input v-for="index in 20" :key="index" type="hidden" />
