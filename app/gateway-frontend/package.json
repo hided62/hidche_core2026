@@ -9,13 +9,13 @@
         "test:e2e:operations": "playwright test --config e2e/playwright.config.mjs",
         "test:e2e:hwe-lifecycle": "playwright test --config e2e/hwe-lifecycle.playwright.config.mjs",
         "test:e2e:general-icons": "playwright test --config e2e/general-icon-lifecycle.playwright.config.mjs",
-        "build": "vue-tsc && vite build",
+        "build": "node ../../tools/vue-typecheck.mjs && vite build",
         "build:release": "vite build",
-        "typecheck:release": "vue-tsc --noEmit",
+        "typecheck:release": "node ../../tools/vue-typecheck.mjs --noEmit",
         "preview": "vite preview",
         "lint": "pnpm -w lint:target app/gateway-frontend",
         "lint:fix": "pnpm -w lint:target:fix app/gateway-frontend",
-        "typecheck": "vue-tsc --noEmit"
+        "typecheck": "node ../../tools/vue-typecheck.mjs --noEmit"
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",

@@ -90,7 +90,10 @@ server build는 기존 Turbo cache를 재사용할 수 있지만, 자원 보호�
   source와 공개 build-time 값이 다른 frontend artifact를 cache hit로 잘못 복원하지
   않습니다. Profile base path와 API/SSE URL은 공용 bundle 입력이 아니라 게시 시점의
   runtime JSON config이므로 profile 사이에서 의도적으로 같은 cache key를 사용합니다.
-  일반 개발용 `pnpm --filter <frontend> build`의 typecheck 계약은 그대로입니다.
+  일반 개발용 `pnpm --filter <frontend> build`도 Vue 타입 검사를 한 번 실행합니다.
+  일반 Turbo build는 이 내장 검사와 별도 frontend `typecheck`를 중복 실행하지 않습니다.
+  Vue CLI는 [빌드 도구](build-performance.md)의 전용 bridge를 사용하고, server 선언 파일은
+  고정 native TypeScript가 파일별로 생성합니다. 선언·JS source map은 유지합니다.
   `NODE_OPTIONS`와 `RAYON_NUM_THREADS`는 출력에는 영향을 주지 않는 resource 제한으로
   build child에 전달됩니다.
 - `TURN_DAEMON_NODE_OPTIONS`가 설정되어 있으면 Gateway orchestrator는 그 값을

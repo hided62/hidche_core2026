@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const expectedApiVersion = '6.0.3';
 const expectedCliVersion = '7.0.2';
+const expectedVueBridgeVersion = '6.0.3-bridge.18.tsgo.7.0.2';
 
 const consumers = [
     ['root', 'package.json'],
@@ -35,4 +36,10 @@ if (cliVersion !== expectedCliVersion) {
     throw new Error(`native tsc resolved ${cliVersion}; expected ${expectedCliVersion}`);
 }
 
-console.log(`TypeScript API ${expectedApiVersion}; native tsc ${expectedCliVersion}`);
+const requireFromRoot = createRequire(path.join(workspaceRoot, 'package.json'));
+const vueBridgeVersion = requireFromRoot('typescript-native-bridge/package.json').version;
+if (vueBridgeVersion !== expectedVueBridgeVersion) {
+    throw new Error(`Vue bridge resolved ${vueBridgeVersion}; expected ${expectedVueBridgeVersion}`);
+}
+
+console.log(`TypeScript API ${expectedApiVersion}; native tsc ${expectedCliVersion}; Vue bridge ${vueBridgeVersion}`);

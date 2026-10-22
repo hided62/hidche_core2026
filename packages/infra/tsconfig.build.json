@@ -3,7 +3,11 @@
     "compilerOptions": {
         "rootDir": "src",
         "outDir": "dist",
-        "composite": false
+        "composite": false,
+        "paths": {
+            "@sammo-ts/infra": ["./src/index.ts"],
+            "@sammo-ts/infra/*": ["./src/*"]
+        }
     },
     "include": ["src"]
 }

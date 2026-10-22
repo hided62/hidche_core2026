@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { encryptGameSessionToken } from '../../../packages/common/dist/auth/gameToken.js';
-import { createGamePostgresConnector } from '../../../packages/infra/dist/index.js';
+import { createGamePostgresConnector, GamePrisma } from '../../../packages/infra/dist/index.js';
 
 const databaseUrl = process.env.CHIEF_CENTER_LIVE_DATABASE_URL;
 const gameTokenSecret = process.env.CHIEF_CENTER_LIVE_GAME_SECRET;
@@ -174,7 +174,13 @@ test('persists one chief command and exposes it to a normal nation user and anot
             await transaction.nationTurn.deleteMany({
                 where: { nationId: editor.nationId, officerLevel: editor.officerLevel },
             });
-            if (originalTurns.length) await transaction.nationTurn.createMany({ data: originalTurns });
+            if (originalTurns.length)
+                await transaction.nationTurn.createMany({
+                    data: originalTurns.map((row: (typeof originalTurns)[number]) => ({
+                        ...row,
+                        arg: row.arg ?? GamePrisma.JsonNull,
+                    })),
+                });
             await transaction.nationTurnRevision.deleteMany({
                 where: { nationId: editor.nationId, officerLevel: editor.officerLevel },
             });
@@ -185,8 +191,8 @@ test('persists one chief command and exposes it to a normal nation user and anot
                     userId: viewer.userId,
                     officerLevel: viewer.officerLevel,
                     npcState: viewer.npcState,
-                    meta: viewer.meta,
-                    penalty: viewer.penalty,
+                    meta: viewer.meta ?? GamePrisma.JsonNull,
+                    penalty: viewer.penalty ?? GamePrisma.JsonNull,
                 },
             });
             await transaction.general.update({
@@ -195,8 +201,8 @@ test('persists one chief command and exposes it to a normal nation user and anot
                     userId: otherChief.userId,
                     officerLevel: otherChief.officerLevel,
                     npcState: otherChief.npcState,
-                    meta: otherChief.meta,
-                    penalty: otherChief.penalty,
+                    meta: otherChief.meta ?? GamePrisma.JsonNull,
+                    penalty: otherChief.penalty ?? GamePrisma.JsonNull,
                 },
             });
         });

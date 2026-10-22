@@ -152,6 +152,7 @@ const installGameFixture = async (page: Page, profile: ProfileFixture, userCnt: 
             }
             if (operation === 'lobby.info') {
                 return response({
+                    scenarioTitle: '공개 지도 테스트 시나리오',
                     year: 200,
                     month: profile.profile === 'che' ? 1 : 2,
                     userCnt,
@@ -448,8 +449,7 @@ test('renders the Gateway profile order returned by the API', async ({ page }, t
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('lobby');
 
-    const renderedProfiles = await page.locator('tbody tr td:first-child > div:first-child').allTextContents();
-    expect(renderedProfiles.map((name) => name.trim())).toEqual([
+    await expect(page.locator('tbody tr td:first-child > div:first-child')).toHaveText([
         '체섭',
         '퀘섭',
         '풰섭',

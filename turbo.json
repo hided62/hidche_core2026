@@ -6,7 +6,15 @@
         "build": {
             "dependsOn": ["^build", "typecheck"],
             "env": ["NODE_ENV"],
-            "inputs": ["$TURBO_DEFAULT$", ".env*"],
+            "inputs": [
+                "$TURBO_DEFAULT$",
+                ".env*",
+                "$TURBO_ROOT$/tsconfig*.json",
+                "$TURBO_ROOT$/tsdown.config.ts",
+                "$TURBO_ROOT$/tools/build-scripts/emit-declarations.mjs",
+                "$TURBO_ROOT$/tools/build-scripts/emit-declarations.d.mts",
+                "$TURBO_ROOT$/tools/vue-typecheck.mjs"
+            ],
             "outputs": ["dist/**"]
         },
         "build:release": {
@@ -27,13 +35,22 @@
                 "$TURBO_ROOT$/packages/logic/src/**",
                 "$TURBO_ROOT$/app/game-engine/src/**",
                 "$TURBO_ROOT$/app/game-api/src/**",
-                "$TURBO_ROOT$/app/gateway-api/src/**"
+                "$TURBO_ROOT$/app/gateway-api/src/**",
+                "$TURBO_ROOT$/tools/vue-typecheck.mjs"
             ],
-            "cache": true
+            "cache": true,
+            "env": ["!VITE_*"]
         },
         "typecheck": {
             "dependsOn": ["^build", "prisma:generate"],
-            "cache": true
+            "cache": true,
+            "inputs": [
+                "$TURBO_DEFAULT$",
+                "$TURBO_ROOT$/tsconfig*.json",
+                "$TURBO_ROOT$/tools/build-scripts/emit-declarations.d.mts",
+                "$TURBO_ROOT$/tools/vue-typecheck.mjs"
+            ],
+            "env": ["!VITE_*"]
         },
         "prisma:generate": {
             "inputs": ["$TURBO_DEFAULT$"],
@@ -53,6 +70,14 @@
         "dev": {
             "cache": false,
             "persistent": true
+        },
+        "@sammo-ts/game-frontend#build": {
+            "dependsOn": ["^build"],
+            "env": ["NODE_ENV", "VITE_*"]
+        },
+        "@sammo-ts/gateway-frontend#build": {
+            "dependsOn": ["^build"],
+            "env": ["NODE_ENV", "VITE_*"]
         }
     }
 }

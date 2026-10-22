@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsdown';
+import { emitDeclarations } from './tools/build-scripts/emit-declarations.mjs';
 
 export default defineConfig({
     workspace: {
@@ -8,9 +9,8 @@ export default defineConfig({
     entry: 'src/index.ts',
     format: 'es',
     outDir: 'dist',
-    dts: {
-        build: true
-    },
+    dts: false,
+    hooks: { 'build:done': emitDeclarations },
     sourcemap: true,
     target: 'node22',
     platform: 'node',

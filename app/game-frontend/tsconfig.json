@@ -30,16 +30,11 @@
             "@sammo-ts/game-api/*": ["../../app/game-api/src/*"],
             "@sammo-ts/gateway-api": ["../../app/gateway-api/src/index.ts"],
             "@sammo-ts/gateway-api/*": ["../../app/gateway-api/src/*"]
-        }
+        },
+        "declaration": false,
+        "declarationMap": false
     },
-    "include": [
-        "src/**/*.ts",
-        "src/**/*.d.ts",
-        "src/**/*.tsx",
-        "src/**/*.vue",
-        "test/**/*.ts",
-        "e2e/**/*.ts"
-    ],
+    "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "test/**/*.ts", "e2e/**/*.ts"],
     "references": [
         {
             "path": "./tsconfig.node.json"

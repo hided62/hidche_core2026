@@ -3,7 +3,11 @@
     "compilerOptions": {
         "rootDir": "src",
         "outDir": "dist",
-        "composite": false
+        "composite": false,
+        "paths": {
+            "@sammo-ts/game-api": ["./src/index.ts"],
+            "@sammo-ts/game-api/*": ["./src/*"]
+        }
     },
     "include": ["src"]
 }

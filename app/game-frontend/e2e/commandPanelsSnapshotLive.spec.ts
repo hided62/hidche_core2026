@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { createGamePostgresConnector } from '../../../packages/infra/dist/index.js';
+import { createGamePostgresConnector, GamePrisma } from '../../../packages/infra/dist/index.js';
 
 const bootstrapFile = process.env.COMMAND_PANEL_LIVE_BOOTSTRAP_FILE;
 const databaseUrl = process.env.DATABASE_URL;
@@ -166,14 +166,26 @@ test('reserves every requested general and chief command through Chromium and re
     } finally {
         await db.$transaction(async (transaction) => {
             await transaction.generalTurn.deleteMany({ where: { generalId: general.id } });
-            if (originalGeneralTurns.length) await transaction.generalTurn.createMany({ data: originalGeneralTurns });
+            if (originalGeneralTurns.length)
+                await transaction.generalTurn.createMany({
+                    data: originalGeneralTurns.map((row: (typeof originalGeneralTurns)[number]) => ({
+                        ...row,
+                        arg: row.arg ?? GamePrisma.JsonNull,
+                    })),
+                });
             await transaction.generalTurnRevision.deleteMany({ where: { generalId: general.id } });
             if (originalGeneralRevision)
                 await transaction.generalTurnRevision.create({ data: originalGeneralRevision });
             await transaction.nationTurn.deleteMany({
                 where: { nationId: general.nationId, officerLevel: general.officerLevel },
             });
-            if (originalNationTurns.length) await transaction.nationTurn.createMany({ data: originalNationTurns });
+            if (originalNationTurns.length)
+                await transaction.nationTurn.createMany({
+                    data: originalNationTurns.map((row: (typeof originalNationTurns)[number]) => ({
+                        ...row,
+                        arg: row.arg ?? GamePrisma.JsonNull,
+                    })),
+                });
             await transaction.nationTurnRevision.deleteMany({
                 where: { nationId: general.nationId, officerLevel: general.officerLevel },
             });

@@ -43,7 +43,7 @@ typecheck·unit·Chromium 검증을 실행한 것으로 설명하지 않습니�
 ## 새 worktree 준비
 
 Playwright 설정의 `webServer`는 frontend package의 `dev` 또는
-`vue-tsc && vite build`를 직접 실행합니다. 이 경로는 root Turbo task가
+Vue 타입 검사와 `vite build`를 직접 실행합니다. 이 경로는 root Turbo task가
 보장하는 Prisma 생성과 upstream package build를 거치지 않으므로, 새 worktree에서
 브라우저 test를 먼저 실행하면 제품 코드와 무관한 module/type 오류가 발생할 수
 있습니다.

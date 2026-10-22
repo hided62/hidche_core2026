@@ -89,6 +89,7 @@ input-event 결과를 transaction으로 반영합니다. Redis pub/sub과 SSE는
 
 - Node.js `24.21.0`, pnpm `12.5.1`, Turbo
 - TypeScript `6.0.3` compiler API와 TypeScript `7.0.2` native `tsc`
+- Vue CLI 전용 `typescript-native-bridge` (`6.0.3-bridge.18.tsgo.7.0.2`)
 - Fastify, tRPC, zod
 - Vue 3, Pinia, Vue Router, Vite
 - PostgreSQL, Prisma, Redis
@@ -99,7 +100,8 @@ Node.js는 `.nvmrc`에서 24.x로 고정합니다. 의존성 설치와 검증에
 `package.json`과 `pnpm-lock.yaml`을 함께 사용해 주세요. 모든 workspace package는
 내부 전용(`private`)이므로 manifest의 `0.0.0`은 배포 버전이 아닙니다. 배포 source는
 full Git commit으로 고정하고, 실험 릴리스 같은 milestone은 annotated Git tag로
-식별합니다. Profile frontend는 같은 commit의 정적 버전 문서를 고정 URL과 ETag로
+식별합니다. 선언 파일 생성·Vue 검사 범위와 캐시 계약은 [빌드 도구](docs/build-performance.md)를
+확인해 주세요. Profile frontend는 같은 commit의 정적 버전 문서를 고정 URL과 ETag로
 주기적으로 재검증하고, 현재 열린 bundle과 달라졌을 때만 강제 reload 없이 공용
 toast로 한 번 안내합니다.
 
