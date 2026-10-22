@@ -1,3 +1,4 @@
+import { canExecuteOpeningReservation } from '../openRequests/policy.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -1854,6 +1855,22 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return;
             }
 
+            if (operation.type === 'RESET' && typeof operation.payload.openRequestId === 'string') {
+                const install = isRecord(operation.payload.install) ? operation.payload.install : {};
+                if (
+                    !canExecuteOpeningReservation(
+                        profile,
+                        operation.payload.openRequestSeasonKey,
+                        install.openAt,
+                        this.now()
+                    )
+                ) {
+                    throw new Error(
+                        '오픈 요청 이후 서버가 다시 열렸거나 기수가 변경되었거나 오픈 시각이 지나 예약을 실행할 수 없습니다.'
+                    );
+                }
+            }
+
             if (!operation.sourceMode || !operation.sourceRef) {
                 throw new Error('Operation source mode and ref are required.');
             }
@@ -1958,7 +1975,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 commitSha,
                 assertLease,
                 operation.id,
-                readOperationReleaseSource(operation)
+                readOperationReleaseSource(operation),
+                typeof payload.openRequestId === 'string'
+                    ? { seasonKey: payload.openRequestSeasonKey, openAt: install.openAt }
+                    : undefined
             );
             if (result.status === 'REQUESTED') {
                 const retryAt = new Date(this.now().getTime() + this.adminActionIntervalMs).toISOString();
@@ -2413,7 +2433,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         commitShaOverride?: string,
         assertLease?: () => Promise<void>,
         operationId?: string,
-        releaseSource?: ProfileReleaseSource
+        releaseSource?: ProfileReleaseSource,
+        communityReservation?: { seasonKey: unknown; openAt: unknown }
     ): Promise<GatewayAdminActionResult> {
         const appendLog = async (
             phase: string,
@@ -2525,6 +2546,24 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 );
                 return { status: 'FAILED', detail: 'selected workspace build failed' };
             }
+            const assertCommunityReservation = async (): Promise<void> => {
+                if (!communityReservation) return;
+                const current = await this.repository.getProfile(profile.profileName);
+                if (
+                    !current ||
+                    !canExecuteOpeningReservation(
+                        current,
+                        communityReservation.seasonKey,
+                        communityReservation.openAt,
+                        this.now()
+                    )
+                ) {
+                    throw new Error(
+                        '오픈 요청 이후 서버 상태·기수가 변경되었거나 오픈 시각이 지나 초기화를 중단했습니다.'
+                    );
+                }
+            };
+            await assertCommunityReservation();
             await appendLog('seed', '선택 버전의 profile seed CLI를 확인합니다.');
             await this.assertProfileSeedCli(workspace.root);
             // A newly provisioned profile schema has no world_state row (or table) yet.
@@ -2568,6 +2607,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const firstGameIdx = resolveProfileFirstGameIdx(profileMeta);
             const baseSeason = readMetaNumber(normalizeMeta(seedInfo.meta), 'season');
             const season = nextSeasonIdx ?? baseSeason ?? 1;
+            await assertCommunityReservation();
             await updateClaimedProfile({ status: 'STOPPED' }, () =>
                 this.repository.updateStatus(profile.profileName, 'STOPPED')
             );

@@ -115,6 +115,8 @@ model AppUser {
   updatedAt                        DateTime                    @updatedAt @map("updated_at")
   lastLoginAt                      DateTime?                   @map("last_login_at")
   legacyData                       Json                        @default(dbgenerated("'{}'::jsonb")) @map("legacy_data")
+  openRequests                     GatewayOpenRequest[]
+  openEndorsements                 GatewayOpenEndorsement[]
   icons                            UserIcon[]
   specialAccessGrants              SpecialAccountAccessGrant[]
   webPushSubscriptions             WebPushSubscription[]
@@ -254,6 +256,7 @@ model GatewayProfile {
   meta             Json                   @default(dbgenerated("'{}'::jsonb"))
   createdAt        DateTime               @default(now()) @map("created_at")
   updatedAt        DateTime               @updatedAt @map("updated_at")
+  openRequests     GatewayOpenRequest[]
   operations       GatewayOperation[]
   runtimeActions   GatewayRuntimeAction[]
 
@@ -407,6 +410,7 @@ model GatewayOperation {
   bulkRelease       GatewayBulkRelease?    @relation(fields: [bulkReleaseId], references: [id], onDelete: SetNull)
   createdAt         DateTime               @default(now()) @map("created_at")
   updatedAt         DateTime               @updatedAt @map("updated_at")
+  openRequest       GatewayOpenRequest?
   logs              GatewayOperationLog[]
 
   @@index([status, scheduledAt, createdAt])
@@ -512,4 +516,41 @@ model SystemSetting {
   updatedAt           DateTime? @map("updated_at")
 
   @@map("system")
+}
+
+// Immutable proposal options; approval and operation creation commit atomically.
+model GatewayOpenRequest {
+  id           String @id @default(uuid())
+  profileName  String @map("profile_name")
+  profile      GatewayProfile @relation(fields: [profileName], references: [profileName], onDelete: Cascade)
+  requestedBy  String @map("requested_by")
+  requester    AppUser @relation(fields: [requestedBy], references: [id], onDelete: Cascade)
+  status       String @default("PENDING")
+  install      Json
+  announcement Json
+  seasonKey    String @map("season_key")
+  expiresAt    DateTime @map("expires_at")
+  preopenAt    DateTime @map("preopen_at")
+  openAt       DateTime @map("open_at")
+  operationId  String? @unique @map("operation_id")
+  operation    GatewayOperation? @relation(fields: [operationId], references: [id], onDelete: Restrict)
+  decidedBy    String? @map("decided_by")
+  decidedAt    DateTime? @map("decided_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  endorsements GatewayOpenEndorsement[]
+
+  @@index([profileName, status, expiresAt])
+  @@map("gateway_open_request")
+}
+
+model GatewayOpenEndorsement {
+  requestId String @map("request_id")
+  request   GatewayOpenRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String @map("user_id")
+  user      AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([requestId, userId])
+  @@map("gateway_open_endorsement")
 }

@@ -712,6 +712,7 @@ gateway_runtime_database_url=$(build_database_url "$gateway_runtime_schema")
 )
 export GATEWAY_RUNTIME_ACTION_DATABASE_URL=$gateway_runtime_database_url
 export GATEWAY_OPERATION_DATABASE_URL=$gateway_runtime_database_url
+export OPEN_REQUEST_DATABASE_URL=$gateway_runtime_database_url
 export GATEWAY_RELEASE_DATABASE_URL=$gateway_runtime_database_url
 export GATEWAY_RUNTIME_INTEGRATION_SCHEMA=$gateway_runtime_schema
 run_marked_tests app/gateway-api \

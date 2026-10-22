@@ -802,13 +802,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 </div>
                 <div class="p-6 text-center">
                     <p class="m-0 text-sm text-zinc-400">
-                        시나리오와 빌드 옵션을 확인하고 운영자에게 전달할 오픈 건의 문구를 만들 수 있습니다.
+                        다음 오픈을 요청하고, 다른 사용자의 요청에 동의하거나 진행 상황을 확인할 수 있습니다.
                     </p>
                     <RouterLink
                         to="/open-suggestion"
                         class="open-suggestion-link mt-4 inline-flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
                     >
-                        오픈 건의 양식 작성
+                        오픈 요청 · 목록
                     </RouterLink>
                 </div>
             </div>

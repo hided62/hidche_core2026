@@ -11,6 +11,7 @@ import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { UserOAuthInfo, UserRecord } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
+import { openRequestsRouter } from './openRequests/router.js';
 import { accountRouter } from './account/router.js';
 import {
     hasActiveSpecialAccountGrant,
@@ -130,6 +131,7 @@ const finishKakaoLoginOrRequestPasswordSetup = async <T extends 'login' | 'verif
 };
 
 export const appRouter = router({
+    openRequests: openRequestsRouter,
     navigation: router({
         get: procedure.query(({ ctx }) => ctx.navigationConfig.get()),
     }),

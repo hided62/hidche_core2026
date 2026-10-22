@@ -131,6 +131,8 @@ export const getAdminCapability = (permission: string): AdminCapabilityDefinitio
     CAPABILITY_BY_PERMISSION.get(permission);
 
 export const resolveAdminActionCapability = (path: string, rawInput?: unknown): string | undefined => {
+    if (path.endsWith('.openRequests.decide')) return 'admin.scenarios.reset';
+    if (path.endsWith('.openRequests.updatePolicy')) return 'admin.profiles.settings';
     if (path.endsWith('.users.createLocal')) return 'admin.users.create';
     if (path.includes('.users.')) return 'admin.users.manage';
     if (path.includes('.system.')) return 'admin.notice.manage';

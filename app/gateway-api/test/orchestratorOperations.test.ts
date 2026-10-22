@@ -669,6 +669,75 @@ describe('GatewayOrchestrator first-class operations', () => {
         ]);
     });
 
+    it.each([
+        { ...profile, status: 'RUNNING' as const },
+        { ...profile, openAt: '2026-10-22T00:00:00.000Z' },
+    ])('refuses a stale community reset before resolving or building code', async (changedProfile) => {
+        const reset: GatewayOperationRecord = {
+            ...buildOperation('START'),
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            sourceRef: profile.buildCommitSha,
+            payload: {
+                openRequestId: 'request',
+                openRequestSeasonKey: JSON.stringify([profile.currentScenario, null]),
+            },
+        };
+        const harness = createHarness(reset, false, false, true, false, undefined, undefined, {
+            profile: changedProfile,
+        });
+        await harness.orchestrator.runOperationsNow();
+        expect(harness.completions).toEqual(['FAILED']);
+        expect(harness.started).toHaveLength(0);
+        expect(harness.stopped).toHaveLength(0);
+        expect(harness.buildStatuses).toHaveLength(0);
+        expect(harness.completionFields[0]?.error).toContain('서버가 다시 열렸거나');
+    });
+
+    it('allows an eligible community reservation to proceed into the existing build path', async () => {
+        const reset: GatewayOperationRecord = {
+            ...buildOperation('START'),
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            sourceRef: profile.buildCommitSha,
+            payload: {
+                openRequestId: 'request',
+                openRequestSeasonKey: JSON.stringify([profile.currentScenario, null]),
+                install: { scenarioId: 2, openAt: '2099-01-01T00:00:00.000Z' },
+            },
+        };
+        const workspaceManager = {
+            resolveCommit: async () => profile.buildCommitSha!,
+            prepare: async () => {
+                throw new Error('fixture reached community build preparation');
+            },
+            remove: async () => {},
+        } as unknown as GitWorkspaceManager;
+        const harness = createHarness(reset, false, false, true, false, workspaceManager);
+        await harness.orchestrator.runOperationsNow();
+        expect(harness.completions).toEqual(['FAILED']);
+        expect(harness.completionFields[0]?.error).toBe('fixture reached community build preparation');
+    });
+
+    it('refuses a community reservation after its opening deadline', async () => {
+        const reset: GatewayOperationRecord = {
+            ...buildOperation('START'),
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            sourceRef: profile.buildCommitSha,
+            payload: {
+                openRequestId: 'request',
+                openRequestSeasonKey: JSON.stringify([profile.currentScenario, null]),
+                install: { openAt: '2020-01-01T00:00:00.000Z' },
+            },
+        };
+        const harness = createHarness(reset);
+        await harness.orchestrator.runOperationsNow();
+        expect(harness.completions).toEqual(['FAILED']);
+        expect(harness.buildStatuses).toHaveLength(0);
+        expect(harness.completionFields[0]?.error).toContain('오픈 시각이 지나');
+    });
+
     it('drains an in-flight operation before shutdown completes', async () => {
         let releaseStart: (() => void) | undefined;
         const startGate = new Promise<void>((resolve) => {

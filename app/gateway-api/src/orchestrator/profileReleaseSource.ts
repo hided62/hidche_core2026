@@ -13,7 +13,9 @@ export interface ProfileReleaseSource {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
-export const readProfileReleaseSource = (profile: GatewayProfileRecord): ProfileReleaseSource | null => {
+export const readProfileReleaseSource = (
+    profile: Pick<GatewayProfileRecord, 'meta' | 'buildCommitSha'>
+): ProfileReleaseSource | null => {
     const stored = isRecord(profile.meta) && isRecord(profile.meta.releaseSource) ? profile.meta.releaseSource : null;
     const mode = stored?.mode;
     const ref = typeof stored?.ref === 'string' ? stored.ref.trim() : '';

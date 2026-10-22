@@ -38,7 +38,7 @@ describe('readReleaseManifest', () => {
 
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
-            gatewaySchemaHead: '20260825000000_add_bulk_release_batches',
+            gatewaySchemaHead: '20261022000000_add_open_requests',
             gameSchemaHead: '20260916080000_index_play_audit_decision_month',
         });
     });

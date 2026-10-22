@@ -4,6 +4,9 @@
 되돌리는 현재 운영 경계를 설명합니다. Profile은 Gateway orchestrator가,
 Gateway 전체는 별도 release-controller가 처리합니다.
 
+일반 사용자의 다음 기수 요청·동의·오프너 수락과 서버별 준비 정책은
+[Gateway 오픈 요청](gateway-open-requests.md)을 참조합니다.
+
 ## 구성과 권한
 
 | 대상                              | 요청 경로           | 실행자                  | 영속 상태                                        |

@@ -7,6 +7,16 @@ import { gatewayProfileCapabilities } from '@sammo-ts/common';
 import type { GatewayPrisma } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
+import { zOpenRequestPolicy } from './openRequests/policy.js';
+import { actOnOpenRequest, updateOpenRequestPolicy } from './openRequests/service.js';
+import {
+    isAllowedTurnTerm,
+    zInstallOptions,
+    zOperationInstallOptions,
+    zProfileResetDefaults,
+    buildResetOtherTextInfo,
+    SYSTEM_PROFILE_RESET_DEFAULTS,
+} from './resetOptions.js';
 import {
     listScenarioPreviews,
     resolveGitBranchCommitSha,
@@ -51,7 +61,6 @@ const zSpecialAccessProfile = z
     .min(1)
     .max(64)
     .regex(/^[a-z0-9_-]+(?::[a-zA-Z0-9._-]+)?$/);
-const zJoinMode = z.enum(['full', 'onlyRandom']);
 const zServerAction = z.enum([
     'RESUME',
     'PAUSE',
@@ -441,15 +450,6 @@ const zLocalAccountInput = z.object({
     displayName: z.string().min(2).max(40).optional(),
 });
 
-const zInstallAutorun = z.object({
-    limitMinutes: z.number().int().min(0).max(43200),
-    options: z.array(z.enum(AUTORUN_USER_OPTIONS)),
-});
-
-// Ref aligns a 12-month game year inside a 24-hour wall-clock day. That makes
-// every positive divisor of 120 valid, including 3 and 8 minutes.
-const isAllowedTurnTerm = (value: number): boolean => Number.isInteger(value) && value > 0 && 120 % value === 0;
-
 const zRuntimeSettings = z
     .object({
         turnTermMinutes: z
@@ -479,60 +479,6 @@ const isUniqueConstraintError = (error: unknown): boolean =>
 const isProfileOperationConflictError = (error: unknown): boolean =>
     error instanceof GatewayProfileOperationConflictError || isUniqueConstraintError(error);
 
-const zInstallOptions = z.object({
-    scenarioId: z.number().int().min(0),
-    turnTermMinutes: z
-        .number()
-        .int()
-        .refine((value) => isAllowedTurnTerm(value), {
-            message: '턴 시간은 120의 약수여야 합니다.',
-        }),
-    sync: z.boolean(),
-    fiction: z.number().int().min(0).max(1),
-    extend: z.boolean(),
-    blockGeneralCreate: z.number().int().min(0).max(2),
-    npcMode: z.number().int().min(0).max(2),
-    showImgLevel: z.number().int().min(0).max(3),
-    tournamentTrig: z.boolean(),
-    joinMode: zJoinMode,
-    autorunUser: zInstallAutorun.nullable().optional(),
-    openAt: z.string().datetime().optional(),
-    preopenAt: z.string().datetime().optional(),
-    gitRef: z.string().min(1).max(128).optional(),
-});
-const zOperationInstallOptions = zInstallOptions.omit({ gitRef: true });
-const zProfileResetDefaults = zInstallOptions.omit({
-    scenarioId: true,
-    openAt: true,
-    preopenAt: true,
-    gitRef: true,
-});
-const SYSTEM_PROFILE_RESET_DEFAULTS: z.infer<typeof zProfileResetDefaults> = {
-    turnTermMinutes: 60,
-    sync: true,
-    fiction: 1,
-    extend: true,
-    blockGeneralCreate: 0,
-    npcMode: 0,
-    showImgLevel: 3,
-    tournamentTrig: true,
-    joinMode: 'full',
-    autorunUser: null,
-};
-
-const buildResetOtherTextInfo = (install: z.infer<typeof zOperationInstallOptions>): string => {
-    const settings: string[] = [];
-    if (!install.sync) settings.push('시간동기화 없음');
-    if (!install.extend) settings.push('확장 NPC 미포함');
-    if (install.blockGeneralCreate === 1) settings.push('장수 생성 불가');
-    if (install.blockGeneralCreate === 2) settings.push('장수명 무작위');
-    if (install.joinMode === 'onlyRandom') settings.push('랜덤 임관');
-    if (install.showImgLevel !== SYSTEM_PROFILE_RESET_DEFAULTS.showImgLevel) {
-        settings.push(['이미지 표시 안함', '전콘 표시', '전콘/병종 표시'][install.showImgLevel] ?? '이미지 표시');
-    }
-    if (!install.tournamentTrig) settings.push('토너먼트 수동 시작');
-    return settings.join(', ');
-};
 const zSourceMode = z.enum(['BRANCH', 'COMMIT']);
 const zResetSourceMode = z.enum(['CURRENT', 'BRANCH', 'COMMIT']);
 
@@ -631,6 +577,44 @@ const applyMetaPatch = (
 };
 
 export const adminRouter = router({
+    openRequests: router({
+        permissions: adminProcedure
+            .input(z.object({ profileName: z.string().min(1).max(64) }))
+            .query(({ ctx, input }) => ({
+                canAccept: hasScopedPermission(requireAdminAuth(ctx), ROLE_ADMIN_SCENARIO_RESET, input.profileName),
+                canManagePolicy: hasScopedPermission(
+                    requireAdminAuth(ctx),
+                    ROLE_ADMIN_PROFILE_SETTINGS,
+                    input.profileName
+                ),
+            })),
+        decide: adminProcedure
+            .input(z.object({ id: z.string().uuid(), action: z.enum(['ACCEPT', 'REJECT']) }).strict())
+            .mutation(async ({ ctx, input }) => {
+                const request = await ctx.prisma.gatewayOpenRequest.findUnique({
+                    where: { id: input.id },
+                    select: { profileName: true },
+                });
+                if (!request) throw new TRPCError({ code: 'NOT_FOUND', message: '오픈 요청을 찾을 수 없습니다.' });
+                const auth = requireAdminAuth(ctx);
+                assertPermission(auth, ROLE_ADMIN_SCENARIO_RESET, request.profileName);
+                return actOnOpenRequest(ctx, auth.user, input.id, input.action);
+            }),
+        updatePolicy: adminProcedure
+            .input(
+                z
+                    .object({
+                        profileName: z.string().min(1).max(64),
+                        policy: zOpenRequestPolicy,
+                        reason: z.string().trim().min(3).max(200),
+                    })
+                    .strict()
+            )
+            .mutation(async ({ ctx, input }) => {
+                assertPermission(requireAdminAuth(ctx), ROLE_ADMIN_PROFILE_SETTINGS, input.profileName);
+                return updateOpenRequestPolicy(ctx, input.profileName, input.policy, requireAdminAuth(ctx).user.id);
+            }),
+    }),
     capabilities: router({
         list: adminProcedure.query(({ ctx }) => {
             const adminAuth = requireAdminAuth(ctx);
