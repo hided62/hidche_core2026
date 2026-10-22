@@ -16,6 +16,7 @@ import {
 } from '../scenario/scenarioCatalog.js';
 import { canRequestOpening, openingSeasonKey, readOpenRequestPolicy, type OpenRequestPolicy } from './policy.js';
 import { z } from 'zod';
+import { resolveOpeningCatalogCommit } from './catalogSource.js';
 
 export const zOpeningInstall = zOperationInstallOptions.required({ preopenAt: true, openAt: true }).strict();
 export type OpeningInstall = z.infer<typeof zOpeningInstall>;
@@ -200,8 +201,11 @@ export const createOpenRequest = async (
         }
         if (old.filter((request) => activeStatus(request, profile, now) === 'PENDING').length >= 100)
             return fail('이 서버의 대기 요청이 너무 많습니다.', 'CONFLICT');
-        if (!profile.buildCommitSha) return fail('서버의 시나리오 버전이 준비되지 않았습니다.');
-        const scenario = (await listScenarioPreviews({ gitRef: profile.buildCommitSha })).find(
+        const catalogCommit = await resolveOpeningCatalogCommit({
+            meta: profile.meta as GatewayPrisma.JsonObject,
+            buildCommitSha: profile.buildCommitSha ?? undefined,
+        });
+        const scenario = (await listScenarioPreviews({ gitRef: catalogCommit })).find(
             (entry) => entry.id === install.scenarioId
         );
         if (!scenario) return fail('현재 서버에 없는 시나리오입니다.');

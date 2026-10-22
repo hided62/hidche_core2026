@@ -12,6 +12,7 @@ import { toPublicUser } from './auth/userRepository.js';
 import type { UserOAuthInfo, UserRecord } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
 import { openRequestsRouter } from './openRequests/router.js';
+import { resolveOpeningCatalogCommit } from './openRequests/catalogSource.js';
 import { accountRouter } from './account/router.js';
 import {
     hasActiveSpecialAccountGrant,
@@ -217,16 +218,11 @@ export const appRouter = router({
                     throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
                 }
                 const profile = await ctx.profiles.getProfile(input.profileName);
-                const activeBuildCommit = profile?.buildCommitSha?.trim();
-                if (!profile || !activeBuildCommit) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: 'The profile has no active build commit.',
-                    });
-                }
+                if (!profile) throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                const catalogCommit = await resolveOpeningCatalogCommit(profile);
 
                 try {
-                    return await listScenarioPreviews({ gitRef: activeBuildCommit });
+                    return await listScenarioPreviews({ gitRef: catalogCommit });
                 } catch {
                     throw new TRPCError({
                         code: 'INTERNAL_SERVER_ERROR',

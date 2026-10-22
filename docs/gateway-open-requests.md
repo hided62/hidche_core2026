@@ -18,6 +18,10 @@
   않는다. 정책 저장은 `admin.profiles.settings` 권한이 필요하다. 기존 superuser
   판정과 profile scope 검사를 그대로 사용하며 운영 mutation은 감사 원장에 남긴다.
 
+배포 이력이 있는 서버의 시나리오는 active build에서 읽는다. 아직 첫 build가 없는
+닫힌 서버는 운영자가 설정한 releaseSource에서 시나리오를 읽어 첫 오픈도 요청할 수
+있다. active build와 patch 정책이 모두 없으면 운영 설정 준비를 요구한다.
+
 ## 서버 정책
 
 정책은 `GatewayProfile.meta.openRequestPolicy`에 저장한다. 요청 화면의 권한자용

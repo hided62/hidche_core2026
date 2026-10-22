@@ -209,6 +209,17 @@ suite('durable opening requests (isolated PostgreSQL and HTTP)', () => {
         expect((await listOpenRequests(context(), await user(2), profileName)).requests).toHaveLength(1);
         expect(JSON.stringify(await listOpenRequests(context(), await user(2), profileName))).not.toContain('password');
     });
+    it('supports the first opening of a closed server using its configured source without an active build', async () => {
+        await prisma.gatewayProfile.update({
+            where: { profileName },
+            data: { buildCommitSha: null, meta: { releaseSource: { mode: 'BRANCH', ref: 'main' } } },
+        });
+        expect(await (await caller(1)).lobby.scenarios({ profileName })).toHaveLength(1);
+        expect(catalog.resolveGitBranchCommitSha).toHaveBeenCalledWith('main');
+        const request = await create();
+        await (await caller(3)).admin.openRequests.decide({ id: request.id, action: 'ACCEPT' });
+        expect((await prisma.gatewayOperation.findFirstOrThrow({ where: { profileName } })).sourceMode).toBe('BRANCH');
+    });
     it('uses the configured lifetime for distant proposals', async () => {
         await policy(null, { lifetimeDays: 2 });
         const input = install();
