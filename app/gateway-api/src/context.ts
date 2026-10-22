@@ -1,3 +1,4 @@
+import { AuthAttemptBudget, InMemoryAuthCounterStore } from './auth/attemptBudget.js';
 import type { GatewayFlushPublisher } from './auth/flushPublisher.js';
 import type { GatewaySessionService } from './auth/sessionService.js';
 import type { UserRepository } from './auth/userRepository.js';
@@ -40,6 +41,8 @@ export interface GatewayApiContext {
     releases: GatewayReleaseRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
+    authBudget: AuthAttemptBudget;
+    requestIp: string;
     requestHeaders: Record<string, string | string[] | undefined>;
     prisma: GatewayPrismaClient;
     adminAudit: AdminAuditStore;
@@ -69,6 +72,8 @@ export const createGatewayApiContext = (options: {
     releases?: GatewayReleaseRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
+    authBudget?: AuthAttemptBudget;
+    requestIp?: string;
     requestHeaders?: Record<string, string | string[] | undefined>;
     prisma: GatewayPrismaClient;
     adminAudit?: AdminAuditStore;
@@ -95,6 +100,10 @@ export const createGatewayApiContext = (options: {
     releases: options.releases ?? createGatewayReleaseRepository(options.prisma),
     orchestrator: options.orchestrator,
     profileStatus: options.profileStatus,
+    authBudget:
+        options.authBudget ??
+        new AuthAttemptBudget(new InMemoryAuthCounterStore(), 'direct-caller', options.gameTokenSecret),
+    requestIp: options.requestIp ?? 'unknown',
     requestHeaders: options.requestHeaders ?? {},
     prisma: options.prisma,
     adminAudit: options.adminAudit ?? createAdminAuditStore(options.prisma),

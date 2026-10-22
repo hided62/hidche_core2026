@@ -26,7 +26,7 @@ const buildContext = (executeRaw = vi.fn(async (_query: unknown) => 1), token = 
         auth: token,
         db: { $executeRaw: executeRaw },
         generalAccessTracking: true,
-        profile: { id: 'che:default', name: 'che', scenario: 'default' },
+        profile: { id: 'che', name: 'che:default', scenario: 'default' },
     }) as unknown as GameApiContext;
 
 const activityRouter = router({

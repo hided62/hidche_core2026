@@ -31,6 +31,7 @@ const buildContext = (
 ) =>
     ({
         auth: options.auth === undefined ? auth : options.auth,
+        profile: { id: 'che', name: 'che:default', scenario: 'default' },
         db: {
             general: {
                 findFirst: vi.fn(async () => ({

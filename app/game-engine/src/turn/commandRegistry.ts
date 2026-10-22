@@ -269,6 +269,21 @@ const zSetNpcPolicy = z.object({
     ]),
 });
 
+const zTournamentAdjustGeneral = z.object({
+    type: z.literal('tournamentAdjustGeneral'),
+    reason: z.enum(['tournamentJoin', 'tournamentJoinRollback', 'tournamentBet', 'tournamentBetRollback']),
+    userId: z.string().min(1),
+    generalId: zSafeInteger.positive(),
+    goldDelta: zFiniteNumber,
+    betGoldDelta: zFiniteNumber.optional(),
+    minGoldAfter: zFiniteNumber.nonnegative(),
+});
+
+const zTournamentSeedNpcBets = z.object({
+    type: z.literal('tournamentSeedNpcBets'),
+    bets: z.array(z.object({ generalId: zSafeInteger.positive(), amount: zSafeInteger.positive() })).min(1),
+});
+
 const zAdjustGeneralResources = z.object({
     type: z.literal('adjustGeneralResources'),
     reason: z.string().optional(),
@@ -737,6 +752,16 @@ const normalizeSetNpcPolicy: CommandNormalizer<'setNpcPolicy'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeTournamentAdjustGeneral: CommandNormalizer<'tournamentAdjustGeneral'> = (envelope) => {
+    const command = parseWith(zTournamentAdjustGeneral, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
+
+const normalizeTournamentSeedNpcBets: CommandNormalizer<'tournamentSeedNpcBets'> = (envelope) => {
+    const command = parseWith(zTournamentSeedNpcBets, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
+
 const normalizeAdjustGeneralResources: CommandNormalizer<'adjustGeneralResources'> = (envelope) => {
     const command = parseWith(zAdjustGeneralResources, envelope.command);
     if (!command) {
@@ -905,6 +930,8 @@ const normalizers: CommandNormalizerMap = {
     voteReward: normalizeVoteReward,
     setNationSetting: normalizeSetNationSetting,
     setNpcPolicy: normalizeSetNpcPolicy,
+    tournamentAdjustGeneral: normalizeTournamentAdjustGeneral,
+    tournamentSeedNpcBets: normalizeTournamentSeedNpcBets,
     adjustGeneralResources: normalizeAdjustGeneralResources,
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
     tournamentMatchResult: normalizeTournamentMatchResult,

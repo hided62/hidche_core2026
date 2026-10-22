@@ -1,3 +1,4 @@
+import { safeTrpcErrorFormatter } from '@sammo-ts/common';
 import { randomUUID } from 'node:crypto';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { middlewareMarker } from '@trpc/server/unstable-core-do-not-import';
@@ -20,10 +21,10 @@ import {
 import { getDeferredGeneralAccessLimit } from './services/deferredGeneralAccess.js';
 import { recordGeneralActivity } from './services/generalActivity.js';
 
-const t = initTRPC.context<GameApiContext>().create();
+const t = initTRPC.context<GameApiContext>().create({ errorFormatter: safeTrpcErrorFormatter });
 
 const requireAuthMiddleware = t.middleware(({ ctx, next }) => {
-    if (!ctx.auth) {
+    if (!ctx.auth || ctx.auth.profile !== ctx.profile.name) {
         throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Unauthorized',

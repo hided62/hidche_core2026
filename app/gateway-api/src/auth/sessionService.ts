@@ -1,5 +1,13 @@
 import type { UserRecord, UserSanctions } from './userRepository.js';
 
+// 한 Gateway 로그인에서 여러 profile/탭을 사용하되 추적 자료는 유한하게 유지한다.
+export const MAX_GAME_SESSIONS_PER_SESSION = 256;
+export class GameSessionLimitError extends Error {
+    constructor() {
+        super('Game session limit reached.');
+    }
+}
+
 export interface GatewaySessionInfo {
     sessionToken: string;
     userId: string;

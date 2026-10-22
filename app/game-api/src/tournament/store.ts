@@ -31,6 +31,7 @@ export class CorruptTournamentProjectionError extends Error {
 const zTournamentBet = z
     .object({
         generalId: z.number().int(),
+        userId: z.string().min(1).nullable().optional(),
         targetId: z.number().int(),
         amount: z.number(),
     })
@@ -286,7 +287,10 @@ export class TournamentStore {
     async appendBettingEntry(entry: TournamentBetEntry): Promise<TournamentBetEntry[]> {
         const entries = await this.getBettingEntries();
         const existing = entries.find(
-            (candidate) => candidate.generalId === entry.generalId && candidate.targetId === entry.targetId
+            (candidate) =>
+                candidate.generalId === entry.generalId &&
+                candidate.targetId === entry.targetId &&
+                candidate.userId === entry.userId
         );
         if (existing) {
             existing.amount += entry.amount;

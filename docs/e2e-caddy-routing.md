@@ -4,17 +4,18 @@
 
 | 환경          | 공개 주소·prefix                               | 접속·연결 계약                                                                                  |
 | ------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Ref           | `dev-sam-ref.hided.net`                        | 개발 호스트 `172.30.1.54:3400`의 PHP 기준 구현입니다.                                           |
+| Ref           | `dev-sam-ref.hided.net`                        | 공개 서비스 종료(410). 작업공간의 loopback 비교 Ref와 별개입니다.                               |
 | 로컬 E2E      | `dev-sam-e2e.hided.net`                        | 외부 Caddy TLS → 개발 호스트 `172.30.1.54:14999` HTTP → Docker Caddy입니다.                     |
 | 공개 개발     | `dev-sam2026.hided.net`                        | `ssh serv`의 `core2026-dev-sam2026`/`hidche_ng_my`입니다. 로컬 E2E `14999`와 다른 호스트입니다. |
 | sam Core 운영 | `sam.hided.net/gateway/`와 일곱 profile prefix | `ssh serv`의 `core2026-sam-production`/`hidche_core2026_my`입니다.                              |
-| sam PHP 운영  | `sam.hided.net/sam/`과 기존 PHP 경로           | `ssh serv`의 별도 `sam_hided_net` project입니다.                                                |
+| sam PHP 게임  | `sam.hided.net/sam/`                           | 2026-10-10 종료(410). `sam_hided_net`의 게시판·위키·DB는 유지합니다.                            |
 
 `dev-sam2026.hided.net`과 `sam.hided.net` Core prefix는 같은 Git 구현을 사용할 수
 있지만 PostgreSQL, Redis, named volume, release queue와 active commit이 분리된
 배포 환경입니다. 한 환경의 release/API/Chromium 결과를 다른 환경의 반영 근거로
 사용하지 않습니다. 상위 `sam_rebuild` 작업공간에서는
 `docs/docker-environment-routing.md`의 전체 결정 절차도 함께 따릅니다.
+현재 기기가 운영 host `serv-2204`이면 SSH 없이 해당 stack 경로에서 작업합니다.
 
 외부 Caddy는 E2E 호스트의 모든 경로를 `172.30.1.54:14999`로 전달하고 원래
 `Host` header와 path prefix를 보존합니다. `handle_path`처럼 prefix를 제거하는
@@ -80,6 +81,23 @@ GAME_API_PORT=15015
 GAME_TRPC_PATH=/hwe/api/trpc
 GAME_API_EVENTS_PATH=/hwe/api/events
 ```
+
+## API의 browser Origin 경계
+
+Gateway는 `GATEWAY_PUBLIC_URL`, game API는 `GATEWAY_PUBLIC_URL`과
+`GAME_PUBLIC_URL`의 origin을 기본으로 허용합니다. 공개 URL의 `/gateway/`, `/che/`
+같은 path는 origin에 포함하지 않습니다. 추가 frontend host가 필요하면 runtime의
+`API_ALLOWED_ORIGINS`에 정확한 origin을 쉼표로 지정합니다. 예:
+`http://localhost:14997,http://127.0.0.1:14997`. scheme·host·port 모두 일치해야 하며
+wildcard·`null`·URL credential·path가 있는 추가 항목은 거부합니다.
+
+허용하지 않은 `Origin`은 body parsing과 mutation 이전에 403으로 거부합니다.
+허용 목록이 비어 있으면 Origin이 있는 요청은 모두 거부하므로 standalone game
+개발 서버도 공개 URL 또는 명시 목록을 설정해야 합니다. Origin 없는 내부 client는
+기존 session/Bearer/HMAC 인증을 통과해야 합니다. Origin 허용은 권한을 부여하지
+않으며 비브라우저 client가 header를 조작하는 공격은 인증·resource ACL이 막습니다.
+PM2 managed API는 runtime base 환경을 상속하므로 설정 변경 뒤 해당 API process의
+환경까지 갱신합니다. 공개 운영·개발 목록을 서로 복사하지 않습니다.
 
 ## Frontend build
 

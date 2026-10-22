@@ -1,3 +1,4 @@
+import { safeHttpLoggerOptions, safeHttpErrorHandler, createApiOriginGuard } from '@sammo-ts/common';
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -24,6 +25,7 @@ import { createPasswordEnvelopeService } from './auth/passwordEnvelope.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
 import { createGatewayReleaseRepository } from './orchestrator/gatewayReleaseRepository.js';
+import { AuthAttemptBudget, RedisAuthCounterStore } from './auth/attemptBudget.js';
 import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
@@ -65,7 +67,23 @@ export const createGatewayApiServer = async () => {
         sessionTtlSeconds: config.sessionTtlSeconds,
         gameSessionTtlSeconds: config.gameSessionTtlSeconds,
     });
+    const authBudget = new AuthAttemptBudget(
+        new RedisAuthCounterStore(redis.client),
+        config.redisKeyPrefix,
+        config.gameTokenSecret
+    );
     const flushPublisher = new RedisGatewayFlushPublisher(redis.client, config.flushChannel);
+    try {
+        await flushPublisher.initialize();
+    } catch {
+        await Promise.allSettled([
+            Promise.resolve().then(() => {
+                if (redis.client.isOpen) redis.client.destroy();
+            }),
+            postgres.disconnect(),
+        ]);
+        throw new Error('Gateway session revocation initialization failed.');
+    }
     const kakaoClient = new KakaoOAuthClient({
         restKey: config.kakaoRestKey,
         adminKey: config.kakaoAdminKey,
@@ -89,9 +107,12 @@ export const createGatewayApiServer = async () => {
         config.defaultNavigationConfigFile
     );
     const app = fastify({
-        logger: true,
+        logger: safeHttpLoggerOptions,
+        // Count the actual peer; forwarded headers are untrusted without an explicit proxy policy.
+        trustProxy: false,
         routerOptions: gatewayFastifyRouterOptions,
     });
+    app.setErrorHandler(safeHttpErrorHandler);
     const webPush = new WebPushCoordinator(
         postgres.prisma as GatewayPrismaClient,
         {
@@ -104,8 +125,9 @@ export const createGatewayApiServer = async () => {
         (error) => app.log.error({ err: error }, 'web push delivery failed')
     );
 
+    app.addHook('onRequest', createApiOriginGuard(config.corsAllowedOrigins));
     await app.register(cors, {
-        origin: true,
+        origin: config.corsAllowedOrigins,
         credentials: true,
     });
     await fs.mkdir(path.resolve(process.cwd(), config.userIconDir), { recursive: true });
@@ -152,6 +174,8 @@ export const createGatewayApiServer = async () => {
                     releases,
                     orchestrator,
                     profileStatus,
+                    authBudget,
+                    requestIp: req.ip,
                     requestHeaders: req.headers,
                     prisma: postgres.prisma as GatewayPrismaClient,
                     navigationConfig,

@@ -1,4 +1,4 @@
-import { parseNumberWithFallback } from '@sammo-ts/common';
+import { parseNumberWithFallback, resolveApiAllowedOrigins } from '@sammo-ts/common';
 
 const parseReconcileInterval = (value: string | undefined): number => {
     const parsed = parseNumberWithFallback(value, 30_000, 'ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS');
@@ -10,6 +10,7 @@ const parseReconcileInterval = (value: string | undefined): number => {
 
 export interface GameApiConfig {
     host: string;
+    corsAllowedOrigins: string[];
     port: number;
     trpcPath: string;
     eventsPath: string;
@@ -48,6 +49,10 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
 
     return {
         host: env.GAME_API_HOST ?? '0.0.0.0',
+        corsAllowedOrigins: resolveApiAllowedOrigins(env.API_ALLOWED_ORIGINS, [
+            env.GATEWAY_PUBLIC_URL,
+            env.GAME_PUBLIC_URL,
+        ]),
         port: parseNumberWithFallback(env.GAME_API_PORT, 14000, 'GAME_API_PORT'),
         trpcPath: env.GAME_TRPC_PATH ?? env.TRPC_PATH ?? '/trpc',
         eventsPath: env.GAME_API_EVENTS_PATH ?? '/events',

@@ -76,34 +76,20 @@ class TournamentTransport implements TurnDaemonTransport {
 
     async requestCommand(command: TurnDaemonCommand): Promise<TurnDaemonCommandResult | null> {
         this.commands.push(command);
-        if (command.type === 'adjustGeneralResources') {
-            const adjustment = command.adjustments[0];
-            if (!adjustment) {
-                return { type: 'adjustGeneralResources', ok: false, reason: '조정 대상이 없습니다.' };
+        if (command.type === 'tournamentAdjustGeneral') {
+            if (command.betGoldDelta !== undefined && this.failNextRankUpdate) {
+                this.failNextRankUpdate = false;
+                return { type: command.type, ok: false, code: 'BAD_REQUEST', reason: 'rank update failed' };
             }
-            const nextGold = (this.gold.get(adjustment.generalId) ?? 0) + (adjustment.goldDelta ?? 0);
-            if (nextGold < (adjustment.minGoldAfter ?? 0)) {
-                return { type: 'adjustGeneralResources', ok: false, reason: '자원이 부족합니다.' };
+            const nextGold = (this.gold.get(command.generalId) ?? 0) + command.goldDelta;
+            if (nextGold < command.minGoldAfter) {
+                return { type: command.type, ok: false, code: 'BAD_REQUEST', reason: '자원이 부족합니다.' };
             }
-            this.gold.set(adjustment.generalId, nextGold);
-            return {
-                type: 'adjustGeneralResources',
-                ok: true,
-                processed: 1,
-                missing: 0,
-                totalGoldDelta: adjustment.goldDelta ?? 0,
-                totalRiceDelta: 0,
-            };
+            this.gold.set(command.generalId, nextGold);
+            return { type: command.type, ok: true, generalId: command.generalId };
         }
         if (command.type === 'setMySetting') {
             return { type: 'setMySetting', ok: true, generalId: command.generalId };
-        }
-        if (command.type === 'adjustGeneralMeta') {
-            if (this.failNextRankUpdate) {
-                this.failNextRankUpdate = false;
-                return { type: 'adjustGeneralMeta', ok: false, reason: 'rank update failed' };
-            }
-            return { type: 'adjustGeneralMeta', ok: true, processed: 1, missing: 0 };
         }
         return null;
     }
@@ -404,12 +390,12 @@ describe('tournament router permissions and mutations', () => {
         await expect(caller.tournament.join()).resolves.toEqual({ ok: true, count: 1 });
 
         expect(transport.gold.get(general.id)).toBe(1_800);
-        expect(transport.commands.filter((command) => command.type === 'adjustGeneralResources')).toHaveLength(1);
+        expect(transport.commands.filter((command) => command.type === 'tournamentAdjustGeneral')).toHaveLength(1);
         expect(transport.commands).toContainEqual(
             expect.objectContaining({
-                type: 'adjustGeneralResources',
+                type: 'tournamentAdjustGeneral',
                 requestId: 'http:tournament-join:tournamentJoin:resources',
-                reason: 'tournamentJoin',
+                userId: 'user-1',
             })
         );
         expect(outerApiTransaction).not.toHaveBeenCalled();
@@ -459,9 +445,12 @@ describe('tournament router permissions and mutations', () => {
         await expect(caller.tournament.join()).resolves.toEqual({ ok: true, count: 1 });
         expect(transport.gold.get(general.id)).toBe(1_936);
         expect(transport.commands).toContainEqual({
-            type: 'adjustGeneralResources',
+            type: 'tournamentAdjustGeneral',
+            userId: 'user-1',
             reason: 'tournamentJoin',
-            adjustments: [{ generalId: general.id, goldDelta: -64, minGoldAfter: 0 }],
+            generalId: general.id,
+            goldDelta: -64,
+            minGoldAfter: 0,
         });
     });
 
@@ -534,19 +523,94 @@ describe('tournament router permissions and mutations', () => {
         expect((await caller.tournament.getBettingSummary()).myAmount).toBe(600);
         expect(transport.commands).toContainEqual(
             expect.objectContaining({
-                type: 'adjustGeneralResources',
+                type: 'tournamentAdjustGeneral',
                 requestId: 'http:suspended-tournament-bet:tournamentBet:resources',
-                reason: 'tournamentBet',
+                userId: 'user-1',
             })
         );
         expect(outerApiTransaction).not.toHaveBeenCalled();
         expect(transport.commands).toContainEqual(
             expect.objectContaining({
-                type: 'adjustGeneralMeta',
-                requestId: 'http:suspended-tournament-bet:tournamentBet:rank',
-                reason: 'tournamentBet',
+                type: 'tournamentAdjustGeneral',
+                userId: 'user-1',
+                betGoldDelta: 600,
             })
         );
+    });
+
+    it("keeps the per-user cap across possession and separates a previous owner's bets", async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-2', 3_000);
+        transport.gold.set(general.id, general.gold);
+        await setTournamentFixture(redis, {
+            stage: 6,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+            bettingCloseAt: '2099-01-01T00:00:00.000Z',
+        });
+        await redis.set(
+            'sammo:che:default:tournament:betting',
+            JSON.stringify([
+                { generalId: 1, userId: 'user-1', targetId: 11, amount: 900 },
+                { generalId: 99, userId: 'user-2', targetId: 12, amount: 800 },
+                { generalId: 98, userId: null, targetId: 11, amount: 100 },
+            ])
+        );
+        const caller = appRouter.createCaller(
+            buildContext({ redis, transport, generals: [general], userId: 'user-2' })
+        );
+        expect(await caller.tournament.getBettingSummary()).toMatchObject({
+            myAmount: 800,
+            myTotals: { 12: 800 },
+            totalAmount: 1_800,
+        });
+        await expect(caller.tournament.placeBet({ targetId: 11, amount: 300 })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(transport.commands).toHaveLength(0);
+        await expect(caller.tournament.placeBet({ targetId: 11, amount: 200 })).resolves.toEqual({ ok: true });
+        expect(await caller.tournament.getBettingSummary()).toMatchObject({
+            myAmount: 1_000,
+            myTotals: { 11: 200, 12: 800 },
+        });
+        expect(transport.gold.get(1)).toBe(2_800);
+    });
+
+    it('does not infer a legacy bet actor from the current general owner', async () => {
+        const redis = new MemoryRedis();
+        const transport = new TournamentTransport();
+        const general = buildGeneral(1, 'user-2', 3_000);
+        transport.gold.set(1, 3_000);
+        await setTournamentFixture(redis, {
+            stage: 6,
+            phase: 0,
+            type: 0,
+            auto: true,
+            openYear: 193,
+            openMonth: 1,
+            termSeconds: 60,
+            nextAt: '2026-07-26T01:00:00.000Z',
+            bettingCloseAt: '2099-01-01T00:00:00.000Z',
+        });
+        await redis.set(
+            'sammo:che:default:tournament:betting',
+            JSON.stringify([{ generalId: 1, targetId: 11, amount: 900 }])
+        );
+        const caller = appRouter.createCaller(
+            buildContext({ redis, transport, generals: [general], userId: 'user-2' })
+        );
+        expect(await caller.tournament.getBettingSummary()).toMatchObject({ myAmount: 0, totalAmount: 900 });
+        await expect(caller.tournament.placeBet({ targetId: 11, amount: 10 })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(transport.commands).toHaveLength(0);
+        expect(transport.gold.get(1)).toBe(3_000);
     });
 
     it('rejects a tournament bet during reconciliation without debiting gold', async () => {
@@ -796,7 +860,7 @@ describe('tournament router permissions and mutations', () => {
         expect(snapshot.sourceRevision).toBe('41');
     });
 
-    it('refunds gold when the tournament bet rank update fails', async () => {
+    it('does not debit gold when the atomic tournament adjustment is rejected', async () => {
         const redis = new MemoryRedis();
         const transport = new TournamentTransport();
         const general = buildGeneral(1, 'user-1', 2_000);
@@ -818,7 +882,7 @@ describe('tournament router permissions and mutations', () => {
         );
 
         await expect(caller.tournament.placeBet({ targetId: 11, amount: 100 })).rejects.toMatchObject({
-            code: 'INTERNAL_SERVER_ERROR',
+            code: 'BAD_REQUEST',
         });
         expect(transport.gold.get(general.id)).toBe(2_000);
         await expect(caller.tournament.getBettingSummary()).resolves.toMatchObject({

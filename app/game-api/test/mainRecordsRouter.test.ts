@@ -36,6 +36,7 @@ type LogQuery = {
 const buildContext = (findMany: (query: LogQuery) => Promise<Array<{ id: number; text: string }>>) =>
     ({
         auth,
+        profile: { id: 'che', name: 'che:default', scenario: 'default' },
         db: {
             general: {
                 findFirst: vi.fn(async ({ where }: { where: { userId: string } }) => ({

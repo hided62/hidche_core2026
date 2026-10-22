@@ -1,3 +1,5 @@
+import sharp from 'sharp';
+import { buildGameEventChannel } from '@sammo-ts/common';
 import { createHash } from 'node:crypto';
 import { projectCurrentGeneral } from '../src/router/playAudit/projection.js';
 import { asRecord } from '@sammo-ts/common';
@@ -68,6 +70,7 @@ const envKeys = [
     'GATEWAY_REDIS_PREFIX',
     'GATEWAY_INTERNAL_API_URL',
     'GAME_UPLOAD_DIR',
+    'API_ALLOWED_ORIGINS',
 ] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 
@@ -172,7 +175,7 @@ const deleteProfileRedisKeys = async (): Promise<void> => {
     if (!redis) {
         return;
     }
-    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`]) {
+    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`, `${redisPrefix}:*`]) {
         for await (const keys of redis.client.scanIterator({
             MATCH: pattern,
             COUNT: 100,
@@ -416,7 +419,7 @@ const readAccessTelemetryState = async () => ({
 const readRealtimeRedisState = async (): Promise<Array<[string, string | null]>> => {
     if (!redis) return [];
     const keys = new Set<string>();
-    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`]) {
+    for (const pattern of [`sammo:game:*:${profileName}:*`, `sammo:${profileName}:*`, `${redisPrefix}:*`]) {
         for await (const batch of redis.client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
             for (const key of batch) keys.add(key);
         }
@@ -640,6 +643,7 @@ integration('game API security over HTTP transport', () => {
         process.env.GATEWAY_REDIS_PREFIX = redisPrefix;
         process.env.GATEWAY_INTERNAL_API_URL = await listenGatewayStatusStub();
         process.env.GAME_UPLOAD_DIR = uploadDir;
+        process.env.API_ALLOWED_ORIGINS = 'https://sam.hided.net';
 
         const connector = createGamePostgresConnector({ url: dedicatedTarget.databaseUrl });
         await connector.connect();
@@ -742,6 +746,8 @@ integration('game API security over HTTP transport', () => {
         await redis.connect();
         accessTokenStore = new RedisAccessTokenStore(redis.client, profileName);
 
+        // 이 격리 fixture는 이미 전환된 Gateway namespace를 합성 cutoff 0으로 준비한다.
+        await redis!.client.set(`${redisPrefix}:flush:revocation:v1:baseline`, '0', { NX: true });
         server = await createGameApiServer();
         baseUrl = await server.app.listen({
             host: server.config.host,
@@ -816,6 +822,28 @@ integration('game API security over HTTP transport', () => {
         if (redis) {
             await redis.client.del(`sammo:${profileName}:read-model:revision`);
         }
+    });
+
+    it('image upload enforces real HTTP authentication, officer authority and decoded pixel limits', async () => {
+        const input = { dataUrl: 'data:image/png;base64,AA==' };
+        const unauthenticated = await requestTrpc('board.uploadImage', { method: 'POST', input });
+        expect(unauthenticated.response.status).toBe(401);
+        const ordinary = await createAccessToken('image-ordinary', {}, ordinaryUserId);
+        const denied = await requestTrpc('board.uploadImage', { method: 'POST', input, accessToken: ordinary });
+        expect(denied.response.status).toBe(403);
+        const officer = await createAccessToken('image-officer', {});
+        const malformed = await requestTrpc('board.uploadImage', { method: 'POST', input, accessToken: officer });
+        expect(malformed.response.status).toBe(400);
+        const png = await sharp({ create: { width: 4096, height: 4097, channels: 3, background: '#224466' } })
+            .png()
+            .toBuffer();
+        const oversized = await requestTrpc('board.uploadImage', {
+            method: 'POST',
+            accessToken: officer,
+            input: { dataUrl: `data:image/png;base64,${png.toString('base64')}` },
+        });
+        expect(oversized.response.status).toBe(400);
+        expect(oversized.body).toMatchObject({ error: { data: { code: 'BAD_REQUEST' } } });
     });
 
     it('accepts an authenticated query from a POST JSON body', async () => {
@@ -2317,9 +2345,51 @@ integration('game API security over HTTP transport', () => {
                     {
                         decisionId: decisionIds[0]!,
                         ordinal: 0,
-                        steps: Array.from({ length: 128 }, (_, sequence) => sequence === 127
-                            ? { ...step, sequence, kind: 'DECISION_START', reservedAction: '휴식', effectivePolicy: {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5],"secret":"decision-secret"},"secret":"decision-secret"} }
-                            : ({ ...step, sequence })),
+                        steps: Array.from({ length: 128 }, (_, sequence) =>
+                            sequence === 127
+                                ? {
+                                      ...step,
+                                      sequence,
+                                      kind: 'DECISION_START',
+                                      reservedAction: '휴식',
+                                      effectivePolicy: {
+                                          schemaVersion: 1,
+                                          general: { priority: ['징병'], flags: { 징병: true, 출병: false } },
+                                          nation: {
+                                              priority: ['천도'],
+                                              flags: { 천도: true },
+                                              values: {
+                                                  reqNationGold: 4321,
+                                                  reqNationRice: 100,
+                                                  reqHumanWarUrgentGold: 100,
+                                                  reqHumanWarUrgentRice: 100,
+                                                  reqHumanWarRecommandGold: 100,
+                                                  reqHumanWarRecommandRice: 100,
+                                                  reqHumanDevelGold: 100,
+                                                  reqHumanDevelRice: 100,
+                                                  reqNpcWarGold: 100,
+                                                  reqNpcWarRice: 100,
+                                                  reqNpcDevelGold: 100,
+                                                  reqNpcDevelRice: 100,
+                                                  minimumResourceActionAmount: 100,
+                                                  maximumResourceActionAmount: 100,
+                                                  minNpcWarLeadership: 100,
+                                                  minWarCrew: 100,
+                                                  minNpcRecruitCityPopulation: 100,
+                                                  safeRecruitCityPopulationRatio: 100,
+                                                  properWarTrainAtmos: 100,
+                                                  cureThreshold: 100,
+                                              },
+                                              combatForce: { '1': [2, 3] },
+                                              supportForce: [4],
+                                              developForce: [5],
+                                              secret: 'decision-secret',
+                                          },
+                                          secret: 'decision-secret',
+                                      },
+                                  }
+                                : { ...step, sequence }
+                        ),
                     },
                     {
                         decisionId: decisionIds[0]!,
@@ -3527,6 +3597,414 @@ integration('game API security over HTTP transport', () => {
                     currentMonth: originalWorld.currentMonth,
                 },
             });
+        }
+    });
+
+    const openRealtime = async (accessToken: string) => {
+        const abort = new AbortController();
+        const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+            headers: { authorization: `Bearer ${accessToken}` },
+            signal: abort.signal,
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe('text/event-stream');
+        const reader = response.body!.getReader();
+        const ready = await reader.read();
+        expect(new TextDecoder().decode(ready.value)).toContain('event: ready');
+        return { abort, reader };
+    };
+
+    it('SSE limits simultaneous openings for one authenticated user', async () => {
+        const actor = `security-http-sse-concurrent-${process.pid}`;
+        const token = await createAccessToken('sse-concurrent', {}, actor);
+        const aborts = Array.from({ length: 10 }, () => new AbortController());
+        try {
+            const responses = await Promise.all(
+                aborts.map((abort) =>
+                    fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                        headers: { authorization: `Bearer ${token}` },
+                        signal: abort.signal,
+                    })
+                )
+            );
+            expect(responses.filter((response) => response.status === 200)).toHaveLength(8);
+            expect(responses.filter((response) => response.status === 429)).toHaveLength(2);
+            for (const response of responses.filter((item) => item.status === 429)) {
+                expect(response.headers.get('retry-after')).toBe('15');
+                expect(response.headers.get('content-type')).not.toBe('text/event-stream');
+                expect(await response.json()).toEqual({ ok: false, error: 'realtime_connection_limit' });
+            }
+        } finally {
+            for (const abort of aborts) abort.abort();
+            await accessTokenStore.revoke(token);
+        }
+    });
+
+    it('SSE limits the same user across tokens and scopes and recovers after disconnect', async () => {
+        const actor = `security-http-sse-shared-${process.pid}`;
+        const token = await createAccessToken('sse-shared-a', {}, actor);
+        const otherToken = await createAccessToken('sse-shared-b', {}, actor);
+        const otherActorToken = await createAccessToken('sse-independent', {}, `${actor}-other`);
+        const streams: Awaited<ReturnType<typeof openRealtime>>[] = [];
+        const replacementAbort = new AbortController();
+        try {
+            for (let index = 0; index < 8; index += 1) streams.push(await openRealtime(token));
+            const rejected = await fetch(`${baseUrl}${server!.config.eventsPath}?scope=tournament`, {
+                headers: { authorization: `Bearer ${otherToken}` },
+            });
+            expect(rejected.status).toBe(429);
+            expect(await rejected.json()).toEqual({ ok: false, error: 'realtime_connection_limit' });
+            streams.push(await openRealtime(otherActorToken));
+            await streams[0]!.reader.cancel();
+            streams[0]!.abort.abort();
+            let replacement: Response | undefined;
+            await expect
+                .poll(async () => {
+                    const response = await fetch(`${baseUrl}${server!.config.eventsPath}?scope=tournament`, {
+                        headers: { authorization: `Bearer ${otherToken}` },
+                        signal: replacementAbort.signal,
+                    });
+                    if (response.status === 200) replacement = response;
+                    else await response.arrayBuffer();
+                    return response.status;
+                })
+                .toBe(200);
+            const ready = await replacement!.body!.getReader().read();
+            expect(new TextDecoder().decode(ready.value)).toContain('event: ready');
+        } finally {
+            replacementAbort.abort();
+            for (const stream of streams) stream.abort.abort();
+            await Promise.all([token, otherToken, otherActorToken].map((value) => accessTokenStore.revoke(value)));
+        }
+    });
+
+    it('SSE bounds pending openings after disconnect and backend deadline until real SQL work settles', async () => {
+        if (!/^[A-Za-z0-9_]+$/.test(profileId)) throw new Error('Invalid isolated schema identifier');
+        const actor = `security-http-sse-pending-${process.pid}`;
+        const tokens = await Promise.all(
+            Array.from({ length: 33 }, (_, index) => createAccessToken(`sse-pending-${index}`, {}, `${actor}-${index}`))
+        );
+        const aborts = Array.from({ length: 33 }, () => new AbortController());
+        let unlock!: () => void;
+        const release = new Promise<void>((resolve) => {
+            unlock = resolve;
+        });
+        let ready!: (tx: GamePrisma.TransactionClient) => void;
+        let lockError!: (error: unknown) => void;
+        const locked = new Promise<GamePrisma.TransactionClient>((resolve, reject) => {
+            ready = resolve;
+            lockError = reject;
+        });
+        // Only the guarded, dedicated fixture schema is locked. No runtime or Ref table is touched.
+        const locking = db.$transaction(
+            async (tx) => {
+                await tx.$executeRawUnsafe(`LOCK TABLE "${profileId}"."general" IN ACCESS EXCLUSIVE MODE`);
+                ready(tx);
+                await release;
+            },
+            { timeout: 20_000 }
+        );
+        void locking.catch(lockError);
+        try {
+            const tx = await locked;
+            const first = fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${tokens[0]!}` },
+                signal: aborts[0]!.signal,
+            }).then(
+                () => false,
+                () => true
+            );
+            await expect
+                .poll(
+                    async () => {
+                        const rows = await tx.$queryRaw<Array<{ count: number }>>`
+                    SELECT COUNT(*)::int AS count FROM pg_locks
+                    WHERE NOT granted AND relation = ${`${profileId}.general`}::regclass
+                        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                `;
+                        return rows[0]!.count;
+                    },
+                    { timeout: 3000 }
+                )
+                .toBeGreaterThan(0);
+            const startedAt = Date.now();
+            const waiting = tokens.slice(1, 32).map((token, index) =>
+                fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                    headers: { authorization: `Bearer ${token}` },
+                    signal: aborts[index + 1]!.signal,
+                })
+            );
+            aborts[0]!.abort();
+            expect(await first).toBe(true);
+            const responses = await Promise.all(waiting);
+            expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4500);
+            expect(Date.now() - startedAt).toBeLessThan(8500);
+            for (const response of responses) {
+                expect(response.status).toBe(503);
+                expect(await response.json()).toEqual({ ok: false, error: 'realtime_unavailable' });
+            }
+            const refusedAt = Date.now();
+            const refused = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${tokens[32]!}` },
+                signal: aborts[32]!.signal,
+            });
+            expect(refused.status).toBe(503);
+            expect(refused.headers.get('retry-after')).toBe('15');
+            expect(Date.now() - refusedAt).toBeLessThan(2000);
+            await refused.arrayBuffer();
+            unlock();
+            await locking;
+            let recovered: Response | undefined;
+            await expect
+                .poll(async () => {
+                    const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                        headers: { authorization: `Bearer ${tokens[32]!}` },
+                        signal: aborts[32]!.signal,
+                    });
+                    if (response.status === 200) recovered = response;
+                    else await response.arrayBuffer();
+                    return response.status;
+                })
+                .toBe(200);
+            const frame = await recovered!.body!.getReader().read();
+            expect(new TextDecoder().decode(frame.value)).toContain('event: ready');
+        } finally {
+            unlock();
+            for (const abort of aborts) abort.abort();
+            await locking;
+            await Promise.all(tokens.map((token) => accessTokenStore.revoke(token)));
+        }
+    }, 15_000);
+
+    it('rejects an untrusted browser Origin before an authenticated logout mutation', async () => {
+        const token = await createAccessToken('origin-mutation', {});
+        const response = await fetch(`${baseUrl}/trpc/auth.logout`, {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${token}`,
+                origin: 'https://untrusted.example',
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({}),
+        });
+        expect(response.status).toBe(403);
+        expect(response.headers.get('access-control-allow-origin')).toBeNull();
+        expect(await accessTokenStore.get(token)).not.toBeNull();
+        for (const origin of ['https://sam.hided.net', 'https://untrusted.example', 'null']) {
+            const preflight = await fetch(`${baseUrl}/trpc/auth.logout`, {
+                method: 'OPTIONS',
+                headers: {
+                    origin,
+                    'access-control-request-method': 'POST',
+                    'access-control-request-headers': 'authorization,content-type',
+                },
+            });
+            expect(preflight.status).toBe(origin === 'https://sam.hided.net' ? 204 : 403);
+            expect(preflight.headers.get('access-control-allow-origin')).toBe(
+                origin === 'https://sam.hided.net' ? origin : null
+            );
+        }
+        await accessTokenStore.revoke(token);
+    });
+
+    it('rejects a same-namespace foreign-profile token over tRPC before any DB mutation', async () => {
+        const foreign = await accessTokenStore.create({
+            ...buildPayload('trpc-foreign', {}),
+            profile: 'other:default',
+        });
+        if (!foreign) throw new Error('Foreign token fixture failed');
+        const before = await readReservedMutationState();
+        try {
+            const response = await fetch(
+                `${baseUrl}/trpc/turns.reserved.getGeneral?input=${encodeURIComponent(JSON.stringify({ generalId }))}`,
+                {
+                    headers: { authorization: `Bearer ${foreign.accessToken}` },
+                }
+            );
+            expect(response.status).toBe(401);
+            expect(await readReservedMutationState()).toEqual(before);
+        } finally {
+            await accessTokenStore.revoke(foreign.accessToken);
+        }
+    });
+
+    it('SSE accepts header auth and rejects query or cross-profile credentials', async () => {
+        const token = await createAccessToken('sse-query', {});
+        const queryOnly = await fetch(`${baseUrl}${server!.config.eventsPath}?token=${encodeURIComponent(token)}`);
+        expect(queryOnly.status).toBe(401);
+        const foreign = await accessTokenStore.create({ ...buildPayload('sse-foreign', {}), profile: 'other:default' });
+        if (!foreign) throw new Error('SSE foreign token fixture failed');
+        try {
+            const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${foreign.accessToken}` },
+            });
+            expect(response.status).toBe(401);
+            const stream = await openRealtime(token);
+            stream.abort.abort();
+        } finally {
+            await accessTokenStore.revoke(token);
+            await accessTokenStore.revoke(foreign.accessToken);
+        }
+    });
+
+    it.each([
+        { label: 'ban', sanctions: { bannedUntil: '2099-01-01T00:00:00.000Z' } },
+        { label: 'suspension', sanctions: { suspendedUntil: '2099-01-01T00:00:00.000Z' } },
+        {
+            label: 'profile game restriction',
+            sanctions: { serverRestrictions: { [profileName]: { blockedFeatures: ['game'] } } },
+        },
+    ])('SSE rejects $label before opening a stream', async ({ label, sanctions }) => {
+        const token = await createAccessToken(`sse-${label}`, sanctions);
+        try {
+            const response = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${token}` },
+            });
+            expect(response.status).toBe(401);
+            expect(response.headers.get('content-type')).not.toBe('text/event-stream');
+        } finally {
+            await accessTokenStore.revoke(token);
+        }
+    });
+
+    it('SSE closes on idle expiry without forwarding another frame', async () => {
+        const auth = { ...buildPayload('sse-expiry', {}), expiresAt: new Date(Date.now() + 3500).toISOString() };
+        const created = await accessTokenStore.create(auth);
+        if (!created) throw new Error('SSE expiry token fixture failed');
+        const stream = await openRealtime(created.accessToken);
+        try {
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+            expect((await requestTrpc('general.me', { accessToken: created.accessToken })).response.status).toBe(401);
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(created.accessToken);
+        }
+    });
+
+    it('SSE rechecks a revoked token before forwarding a relevant event or refresh grant', async () => {
+        const accessToken = await createAccessToken('sse-revoke', {});
+        const stream = await openRealtime(accessToken);
+        const channel = server!.config.profileName;
+        try {
+            const event = JSON.stringify({ type: 'tournamentChanged' });
+            await redis!.client.publish(buildGameEventChannel(channel), event);
+            const valid = await stream.reader.read();
+            expect(new TextDecoder().decode(valid.value)).toContain('refreshGrant');
+            expect(await accessTokenStore.revoke(accessToken)).toBe(true);
+            await redis!.client.publish(buildGameEventChannel(channel), event);
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('SSE closes an idle flushed user immediately without waiting for heartbeat', async () => {
+        const sseUser = `security-http-sse-flush-${process.pid}`;
+        const created = await accessTokenStore.create(buildPayload('sse-flush', {}, sseUser));
+        if (!created) throw new Error('SSE flush fixture failed');
+        const stream = await openRealtime(created.accessToken);
+        try {
+            await redis!.client.publish(
+                `${redisPrefix}:flush`,
+                JSON.stringify({ userId: sseUser, flushedAt: new Date().toISOString() })
+            );
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(created.accessToken);
+        }
+    });
+
+    it('rejects access using persisted revocation state without any pubsub delivery', async () => {
+        const actor = `security-http-durable-missed-${process.pid}`;
+        const accessToken = await createAccessToken('durable-missed', {}, actor);
+        try {
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(200);
+            await redis!.client.set(`${redisPrefix}:flush:revocation:v1:user:${actor}`, String(Date.now()));
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(401);
+        } finally {
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('retains persisted revocation state across an actual API restart', async () => {
+        const actor = `security-http-durable-restart-${process.pid}`;
+        const accessToken = await createAccessToken('durable-restart', {}, actor);
+        try {
+            const gatewayToken = encryptGameSessionToken(buildPayload('unused-durable-restart', {}, actor), secret);
+            await redis!.client.set(`${redisPrefix}:flush:revocation:v1:user:${actor}`, String(Date.now()));
+            await server!.app.close();
+            server = await createGameApiServer();
+            baseUrl = await server.app.listen({ host: '127.0.0.1', port: 0 });
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(401);
+            const exchanged = await requestTrpc('auth.exchangeGatewayToken', {
+                method: 'POST',
+                input: { gatewayToken },
+            });
+            expect(exchanged.response.status).toBe(401);
+        } finally {
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('SSE closes after persisted revocation even when the flush notification was missed', async () => {
+        const actor = `security-http-durable-sse-${process.pid}`;
+        const accessToken = await createAccessToken('durable-sse', {}, actor);
+        const stream = await openRealtime(accessToken);
+        try {
+            await redis!.client.set(`${redisPrefix}:flush:revocation:v1:user:${actor}`, String(Date.now()));
+            await redis!.client.publish(
+                buildGameEventChannel(profileName),
+                JSON.stringify({ type: 'tournamentChanged' })
+            );
+            expect(await stream.reader.read()).toMatchObject({ done: true });
+        } finally {
+            stream.abort.abort();
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('denies legacy credentials before the initial cutoff and admits a fresh one afterwards', async () => {
+        const actor = `security-http-durable-cutoff-${process.pid}`;
+        const accessToken = await createAccessToken('durable-cutoff', {}, actor);
+        const key = `${redisPrefix}:flush:revocation:v1:baseline`;
+        try {
+            await redis!.client.set(key, String(Date.now()));
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(401);
+            const fresh = await accessTokenStore.create({
+                ...buildPayload('fresh-cutoff', {}, actor),
+                issuedAt: new Date(Date.now() + 1).toISOString(),
+            });
+            expect(fresh).not.toBeNull();
+            try {
+                expect((await requestTrpc('auth.status', { accessToken: fresh!.accessToken })).response.status).toBe(
+                    200
+                );
+            } finally {
+                await accessTokenStore.revoke(fresh!.accessToken);
+            }
+        } finally {
+            await redis!.client.set(key, '0');
+            await accessTokenStore.revoke(accessToken);
+        }
+    });
+
+    it('fails closed for missing initialization in HTTP, SSE and API startup', async () => {
+        const actor = `security-http-durable-missing-${process.pid}`;
+        const accessToken = await createAccessToken('durable-missing', {}, actor);
+        const key = `${redisPrefix}:flush:revocation:v1:baseline`;
+        try {
+            await redis!.client.del(key);
+            expect((await requestTrpc('auth.status', { accessToken })).response.status).toBe(503);
+            const sse = await fetch(`${baseUrl}${server!.config.eventsPath}`, {
+                headers: { authorization: `Bearer ${accessToken}` },
+            });
+            expect(sse.status).toBe(503);
+            await expect(createGameApiServer()).rejects.toThrow('startup refused');
+        } finally {
+            await redis!.client.set(key, '0');
+            await accessTokenStore.revoke(accessToken);
         }
     });
 

@@ -74,6 +74,8 @@ export interface TournamentMatchEntry {
 
 export interface TournamentBetEntry {
     generalId: number;
+    // 로그인 actor는 장수 빙의와 독립적이다. null은 서버가 만든 NPC, 생략은 구형 row다.
+    userId?: string | null;
     targetId: number;
     amount: number;
 }

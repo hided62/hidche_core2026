@@ -160,7 +160,12 @@ export class GatewayReleaseController {
         private readonly now: () => Date = () => new Date(),
         private readonly fetchImpl: typeof fetch = fetch
     ) {
-        this.releaseBuildRunner = createReleaseBuildRunner(config.releaseBuilderUrl, migrationRunner, fetchImpl);
+        this.releaseBuildRunner = createReleaseBuildRunner(
+            config.releaseBuilderUrl,
+            migrationRunner,
+            fetchImpl,
+            config.baseEnv.RELEASE_BUILDER_TOKEN_FILE
+        );
         this.artifactManager = new FrontendArtifactManager(config.frontendArtifactRoot ?? '/srv/frontend-artifacts');
     }
 
@@ -509,7 +514,11 @@ export class GatewayReleaseController {
     }
 
     private async waitForReadiness(operationId: string): Promise<void> {
-        await this.appendLog(operationId, 'readiness', 'Gateway API, 정적 frontend와 PM2 process readiness를 확인합니다.');
+        await this.appendLog(
+            operationId,
+            'readiness',
+            'Gateway API, 정적 frontend와 PM2 process readiness를 확인합니다.'
+        );
         const deadline = performance.now() + this.config.readinessTimeoutMs;
         const apiUrl = `http://127.0.0.1:${this.config.gatewayApiPort}/healthz`;
         const frontendUrl =
@@ -524,10 +533,7 @@ export class GatewayReleaseController {
         );
         while (performance.now() < deadline) {
             try {
-                const [api, frontend] = await Promise.all([
-                    this.fetchImpl(apiUrl),
-                    this.fetchImpl(frontendUrl),
-                ]);
+                const [api, frontend] = await Promise.all([this.fetchImpl(apiUrl), this.fetchImpl(frontendUrl)]);
                 const processes = await this.processManager.list();
                 const expected = processes.filter((process) => expectedNames.includes(process.name));
                 const safe = expected.filter(

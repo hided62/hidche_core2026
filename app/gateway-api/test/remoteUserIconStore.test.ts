@@ -40,9 +40,7 @@ describe('remote user icon store', () => {
         const pathname = `/v1/uploads/user-icons/core2026/${'a'.repeat(32)}.png`;
         const digest = createHash('sha256').update(body).digest('hex');
         const expected = createHmac('sha256', secret)
-            .update(
-                `${headers['x-image-expires']}.${headers['x-image-request-id']}.${pathname}.image/png.${digest}`
-            )
+            .update(`${headers['x-image-expires']}.${headers['x-image-request-id']}.${pathname}.image/png.${digest}`)
             .digest('hex');
         expect(headers['x-image-signature']).toBe(expected);
     });
@@ -57,5 +55,16 @@ describe('remote user icon store', () => {
         await expect(
             store.upload({ filename: `${'b'.repeat(32)}.png`, contentType: 'image/png', body: Buffer.from('x') })
         ).rejects.toThrow('HTTP 401');
+    });
+    it('rejects oversized upload response JSON before trusting its path', async () => {
+        const filename = `${'d'.repeat(32)}.png`;
+        const store = new RemoteUserIconStore(
+            'https://image.example',
+            'https://image.example/public',
+            'synthetic-secret',
+            async () =>
+                new Response(JSON.stringify({ path: `icons/users/core2026/${filename}`, extra: 'x'.repeat(20_000) }))
+        );
+        await expect(store.upload({ filename, contentType: 'image/png', body: Buffer.from('x') })).rejects.toThrow();
     });
 });

@@ -308,6 +308,21 @@ export type TurnDaemonCommand =
               | { kind: 'generalPriority'; priority: string[] };
       }
     | {
+          type: 'tournamentAdjustGeneral';
+          requestId?: string;
+          reason: 'tournamentJoin' | 'tournamentJoinRollback' | 'tournamentBet' | 'tournamentBetRollback';
+          userId: string;
+          generalId: number;
+          goldDelta: number;
+          betGoldDelta?: number;
+          minGoldAfter: number;
+      }
+    | {
+          type: 'tournamentSeedNpcBets';
+          requestId?: string;
+          bets: Array<{ generalId: number; amount: number }>;
+      }
+    | {
           type: 'adjustGeneralResources';
           requestId?: string;
           reason?: string;
@@ -700,6 +715,28 @@ export type TurnDaemonCommandResult =
           reason: string;
           nationId?: number;
           currentUpdatedAt?: string | null;
+      }
+    | {
+          type: 'tournamentAdjustGeneral';
+          ok: true;
+          generalId: number;
+      }
+    | {
+          type: 'tournamentAdjustGeneral';
+          ok: false;
+          code: 'FORBIDDEN' | 'BAD_REQUEST';
+          reason: string;
+      }
+    | {
+          type: 'tournamentSeedNpcBets';
+          ok: true;
+          processedGeneralIds: number[];
+          skippedGeneralIds: number[];
+      }
+    | {
+          type: 'tournamentSeedNpcBets';
+          ok: false;
+          reason: string;
       }
     | {
           type: 'adjustGeneralResources';

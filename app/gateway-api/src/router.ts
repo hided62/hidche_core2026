@@ -22,6 +22,7 @@ import {
 import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 import { isGatewaySessionCurrent } from './auth/sessionValidity.js';
+import { GameSessionLimitError } from './auth/sessionService.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 import type { GatewayApiContext } from './context.js';
 import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
@@ -1048,11 +1049,13 @@ export const appRouter = router({
         issueGameSession: procedure
             .input(
                 z.object({
-                    sessionToken: z.string().min(1),
+                    sessionToken: z.string().min(1).max(256),
                     profile: zProfile,
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                // 권한 snapshot보다 이후에 발생한 flush도 이 발급을 회수해야 한다.
+                const authorizationStartedAt = Date.now();
                 const gatewaySession = await ctx.sessions.getSession(input.sessionToken);
                 if (!gatewaySession) {
                     throw new TRPCError({
@@ -1089,14 +1092,23 @@ export const appRouter = router({
                         message: '카카오 인증 유예기간이 만료되었습니다. 인증 후 계속 이용할 수 있습니다.',
                     });
                 }
-                const gameSession = await ctx.sessions.createGameSession(input.sessionToken, input.profile);
+                const gameSession = await ctx.sessions
+                    .createGameSession(input.sessionToken, input.profile)
+                    .catch((error: unknown) => {
+                        if (!(error instanceof GameSessionLimitError)) throw error;
+                        throw new TRPCError({
+                            code: 'TOO_MANY_REQUESTS',
+                            message: '게임 세션이 많습니다. 기존 세션이 만료된 뒤 다시 시도해 주세요.',
+                        });
+                    });
                 if (!gameSession) {
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',
                         message: 'Session is not valid.',
                     });
                 }
-                const now = new Date();
+                // 발급 뒤 logout/flush가 겹쳐도 issuedAt을 나중 시각으로 다시 쓰지 않는다.
+                const now = new Date(Math.min(authorizationStartedAt, Date.parse(gameSession.issuedAt)));
                 const accountIcon = resolveEffectiveAccountIcon(user);
                 const accountIcons = await ctx.users.listIcons(user.id);
                 const payload = {

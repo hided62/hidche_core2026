@@ -36,4 +36,15 @@ describe('remote content image store', () => {
         expect(String(captured?.input)).toBe(`https://sam-image.hided.net${pathname}`);
         expect(Object.values(headers)).not.toContain(secret);
     });
+    it('rejects oversized upload response JSON before trusting its path', async () => {
+        const filename = `${'d'.repeat(32)}.png`;
+        const store = new RemoteContentImageStore(
+            'https://image.example',
+            'https://image.example/public',
+            'synthetic-secret',
+            async () =>
+                new Response(JSON.stringify({ path: `uploads/core2026/${filename}`, extra: 'x'.repeat(20_000) }))
+        );
+        await expect(store.upload({ filename, contentType: 'image/png', body: Buffer.from('x') })).rejects.toThrow();
+    });
 });

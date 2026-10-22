@@ -1,3 +1,4 @@
+import * as pushSender from '../src/webPush/sendNotification.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import webPush from 'web-push';
 
@@ -214,7 +215,7 @@ integration('web push Gateway persistence boundary', () => {
                 notificationId: notification.id,
             },
         });
-        const sender = vi.spyOn(webPush, 'sendNotification').mockRejectedValue({ statusCode: 410 });
+        const sender = vi.spyOn(pushSender, 'sendBoundedNotification').mockRejectedValue({ statusCode: 410 });
         try {
             coordinator.start();
             await vi.waitFor(

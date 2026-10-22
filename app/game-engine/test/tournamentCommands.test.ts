@@ -79,6 +79,83 @@ const buildWorld = (
     return new InMemoryTurnWorld(state, snapshot, { schedule });
 };
 
+describe('tournament mutation ownership', () => {
+    it('checks the current owner and commits gold plus bet statistics together', async () => {
+        const general = { ...buildGeneral(1), userId: 'owner' };
+        const world = buildWorld([general]);
+        const handler = createTurnDaemonCommandHandler({ world });
+        const command = {
+            type: 'tournamentAdjustGeneral' as const,
+            reason: 'tournamentBet' as const,
+            userId: 'owner',
+            generalId: 1,
+            goldDelta: -100,
+            betGoldDelta: 100,
+            minGoldAfter: 500,
+        };
+        await expect(handler.handle(command)).resolves.toEqual({ type: command.type, ok: true, generalId: 1 });
+        expect(world.getGeneralById(1)).toMatchObject({ gold: 900, meta: { betgold: 100 } });
+        const before = structuredClone(world.getGeneralById(1));
+        await expect(handler.handle({ ...command, goldDelta: -500 })).resolves.toMatchObject({
+            ok: false,
+            code: 'BAD_REQUEST',
+        });
+        expect(world.getGeneralById(1)).toEqual(before);
+        world.updateGeneral(1, { userId: 'new-owner' });
+        const transferred = structuredClone(world.getGeneralById(1));
+        for (const goldDelta of [-100, 100]) {
+            await expect(handler.handle({ ...command, goldDelta })).resolves.toMatchObject({
+                ok: false,
+                code: 'FORBIDDEN',
+            });
+            expect(world.getGeneralById(1)).toEqual(transferred);
+        }
+    });
+
+    it('skips possessed NPCs and commits only eligible NPC fees and statistics', async () => {
+        const world = buildWorld([
+            { ...buildGeneral(1, {}, 1), userId: 'new-owner' },
+            buildGeneral(2, {}, 2),
+            { ...buildGeneral(3, {}, 2), gold: 509 },
+        ]);
+        const handler = createTurnDaemonCommandHandler({ world });
+        const possessed = structuredClone(world.getGeneralById(1));
+        await expect(
+            handler.handle({
+                type: 'tournamentSeedNpcBets',
+                bets: [1, 2, 3].map((generalId) => ({ generalId, amount: 10 })),
+            })
+        ).resolves.toEqual({
+            type: 'tournamentSeedNpcBets',
+            ok: true,
+            processedGeneralIds: [2],
+            skippedGeneralIds: [1, 3],
+        });
+        expect(world.getGeneralById(1)).toEqual(possessed);
+        expect(world.getGeneralById(2)).toMatchObject({ gold: 990, meta: { betgold: 10 } });
+        expect(world.getGeneralById(3)).toMatchObject({ gold: 509, meta: { killturn: 24 } });
+    });
+
+    it.each(['tournamentJoin', 'tournamentJoinRollback', 'tournamentBet', 'tournamentBetRollback', 'tournamentNpcBet'])(
+        'rejects actorless legacy %s commands before mutation',
+        async (reason) => {
+            const world = buildWorld([{ ...buildGeneral(1), userId: 'new-owner' }]);
+            const before = structuredClone(world.getGeneralById(1));
+            const handler = createTurnDaemonCommandHandler({ world });
+            for (const command of [
+                { type: 'adjustGeneralResources' as const, reason, adjustments: [{ generalId: 1, goldDelta: -100 }] },
+                {
+                    type: 'adjustGeneralMeta' as const,
+                    reason,
+                    adjustments: [{ generalId: 1, metaDelta: { betgold: 100 } }],
+                },
+            ])
+                await expect(handler.handle(command)).resolves.toMatchObject({ ok: false });
+            expect(world.getGeneralById(1)).toEqual(before);
+        }
+    );
+});
+
 describe('tournament world commands', () => {
     it('uses the current world develcost for Ref-compatible tournament prizes', () => {
         const currentWorld = buildWorld([], {
@@ -187,7 +264,7 @@ describe('tournament world commands', () => {
     });
 
     it('records all four tournament types and NPC betting for at least ten generals', async () => {
-        const generals = Array.from({ length: 12 }, (_, index) => buildGeneral(index + 1));
+        const generals = Array.from({ length: 12 }, (_, index) => ({ ...buildGeneral(index + 1, {}, 2), gold: 2_000 }));
         const world = buildWorld(generals);
         const handler = createTurnDaemonCommandHandler({ world });
 
@@ -204,13 +281,11 @@ describe('tournament world commands', () => {
             }
         }
         await handler.handle({
-            type: 'adjustGeneralMeta',
-            reason: 'tournamentNpcBet',
-            adjustments: generals.map((general) => ({
-                generalId: general.id,
-                metaDelta: { betgold: 1_000 },
-            })),
+            type: 'tournamentSeedNpcBets',
+            bets: generals.map((general) => ({ generalId: general.id, amount: 1_000 })),
         });
+        // Ref의 betwin 통계 대상은 npcState <= 1이다. 개방 시 NPC 비용 검증과 분리한다.
+        for (const general of generals) world.updateGeneral(general.id, { npcState: 0 });
         await handler.handle({
             type: 'tournamentBettingPayout',
             bettingId: 1,

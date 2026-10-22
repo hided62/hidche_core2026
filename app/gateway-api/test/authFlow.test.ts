@@ -1242,6 +1242,59 @@ describe('gateway auth flow', () => {
         expect(validated?.user.username).toBe('tester');
     });
 
+    it('starts token age before the user snapshot so a concurrent role flush can revoke stale identity', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({ username: 'role-snapshot-race', password: 'synthetic-password' });
+        const parent = await sessions.createSession(user);
+        const issuedAt = new Date().toISOString();
+        vi.useFakeTimers({ now: new Date(issuedAt) });
+        const original = users.findById.bind(users);
+        const find = vi.spyOn(users, 'findById').mockImplementationOnce(async (id) => {
+            const snapshot = await original(id);
+            vi.advanceTimersByTime(5000); // admin mutation/flush arrives after the snapshot.
+            return snapshot;
+        });
+        try {
+            const result = await caller.auth.issueGameSession({
+                sessionToken: parent.sessionToken,
+                profile: 'che:default',
+            });
+            expect(decryptGameSessionToken(result.gameToken, 'test-secret')?.issuedAt).toBe(issuedAt);
+        } finally {
+            find.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
+    it('retains the original issuance instant when logout flush overlaps later identity reads', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({ username: 'issue-flush-race', password: 'synthetic-password' });
+        const parent = await sessions.createSession(user);
+        const issuedAt = new Date().toISOString();
+        vi.useFakeTimers({ now: new Date(issuedAt) });
+        const create = vi.spyOn(sessions, 'createGameSession');
+        const original = sessions.createGameSession.bind(sessions);
+        create.mockImplementationOnce(async (...args) => {
+            // Snapshot admitted before the subsequent logout/flush instant.
+            const game = await original(...args);
+            vi.advanceTimersByTime(5_000);
+            await sessions.revokeSession(parent.sessionToken);
+            return game;
+        });
+        try {
+            const issued = await caller.auth.issueGameSession({
+                sessionToken: parent.sessionToken,
+                profile: 'che:default',
+            });
+            const payload = decryptGameSessionToken(issued.gameToken, 'test-secret');
+            expect(payload?.issuedAt).toBe(issuedAt);
+            expect(payload?.expiresAt).toBe(new Date(Date.parse(issuedAt) + 600_000).toISOString());
+        } finally {
+            create.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
     it('keeps the migrated member number inside the encrypted game identity', async () => {
         const { caller, users, sessions } = buildCaller();
         const user = await users.createUser({
@@ -1472,6 +1525,46 @@ describe('account self service', () => {
         } finally {
             await fs.rm(iconDir, { recursive: true, force: true });
         }
+    });
+
+    it('bounds pending icon uploads without changing the owned library limit', async () => {
+        const { caller, users, sessions, userIconUpload } = buildCaller();
+        const user = await users.createUser({ username: 'icon-budget', password: 'current-password' });
+        const session = await sessions.createSession(user);
+        const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#224466' } })
+            .png()
+            .toBuffer();
+        const input = {
+            sessionToken: session.sessionToken,
+            imageData: `data:image/png;base64,${png.toString('base64')}`,
+        };
+        const pending: Array<() => void> = [];
+        userIconUpload.upload.mockImplementation(
+            ({ filename }) =>
+                new Promise((resolve) => {
+                    pending.push(() =>
+                        resolve({
+                            picture: `users/core2026/${filename}`,
+                            publicUrl: `https://image.example/${filename}`,
+                        })
+                    );
+                })
+        );
+        const admitted = Array.from({ length: 4 }, () => caller.account.changeIcon(input));
+        try {
+            await vi.waitFor(() => expect(userIconUpload.upload).toHaveBeenCalledTimes(4));
+            await expect(caller.account.changeIcon(input)).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+        } finally {
+            pending.forEach((done) => done());
+            await Promise.all(admitted);
+        }
+        expect(await users.listIcons(user.id)).toHaveLength(4);
+        userIconUpload.upload.mockImplementation(async ({ filename }) => ({
+            picture: `users/core2026/${filename}`,
+            publicUrl: `https://image.example/${filename}`,
+        }));
+        await expect(caller.account.changeIcon(input)).resolves.toMatchObject({ ok: true });
+        expect(await users.listIcons(user.id)).toHaveLength(5);
     });
 
     it('accepts concurrent uploads until the five-icon limit is reached', async () => {

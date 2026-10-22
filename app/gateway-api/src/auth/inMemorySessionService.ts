@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { GameSessionLimitError, MAX_GAME_SESSIONS_PER_SESSION } from './sessionService.js';
 
 import type {
     GameSessionInfo,
@@ -60,7 +61,7 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
         if (!stored) {
             return null;
         }
-        if (Date.now() > stored.expiresAt) {
+        if (Date.now() >= stored.expiresAt) {
             this.sessions.delete(sessionToken);
             this.sessionGames.delete(sessionToken);
             return null;
@@ -86,9 +87,19 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
 
     async createGameSession(sessionToken: string, profile: string): Promise<GameSessionInfo | null> {
         const session = await this.getSession(sessionToken);
-        if (!session) {
+        const parent = this.sessions.get(sessionToken);
+        if (!session || !parent || parent.info !== session || parent.expiresAt <= Date.now()) {
             return null;
         }
+        const set = this.sessionGames.get(sessionToken) ?? new Set<string>();
+        for (const key of set) {
+            const stored = this.gameSessions.get(key);
+            if (!stored || stored.expiresAt <= Date.now()) {
+                this.gameSessions.delete(key);
+                set.delete(key);
+            }
+        }
+        if (set.size >= MAX_GAME_SESSIONS_PER_SESSION) throw new GameSessionLimitError();
         const gameToken = randomUUID();
         const info: GameSessionInfo = {
             profile,
@@ -109,7 +120,6 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
             info,
             expiresAt: Date.now() + this.gameSessionTtlMs,
         });
-        const set = this.sessionGames.get(sessionToken) ?? new Set<string>();
         set.add(key);
         this.sessionGames.set(sessionToken, set);
         return info;
@@ -121,7 +131,7 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
         if (!stored) {
             return null;
         }
-        if (Date.now() > stored.expiresAt) {
+        if (Date.now() >= stored.expiresAt) {
             this.gameSessions.delete(key);
             return null;
         }

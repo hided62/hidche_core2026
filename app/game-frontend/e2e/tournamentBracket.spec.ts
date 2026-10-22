@@ -371,37 +371,57 @@ const installFixture = async (
 
 const installFakeEventSource = async (page: Page) => {
     await page.addInitScript(() => {
-        class FakeEventSource extends EventTarget {
-            static instances: FakeEventSource[] = [];
-            readonly url: string;
-            closed = false;
-
-            constructor(url: string | URL) {
-                super();
-                this.url = String(url);
-                FakeEventSource.instances.push(this);
-                queueMicrotask(() => {
-                    if (!this.closed) this.dispatchEvent(new Event('open'));
-                });
-            }
-
-            close() {
-                this.closed = true;
-            }
-
-            emit(type: string, payload: unknown) {
-                if (this.closed) return;
-                this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(payload) }));
-            }
-        }
-
-        Object.defineProperty(window, 'EventSource', { configurable: true, value: FakeEventSource });
+        const originalFetch = window.fetch.bind(window);
+        const sources: Array<{
+            url: string;
+            closed: boolean;
+            authenticated: boolean;
+            emit: (type: string, payload: unknown) => void;
+        }> = [];
+        window.fetch = (input, init) => {
+            const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+            if (!url.pathname.endsWith('/events')) return originalFetch(input, init);
+            if (init?.signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+            let controller!: ReadableStreamDefaultController<Uint8Array>;
+            const source = {
+                url: url.href,
+                closed: false,
+                authenticated: new Headers(init?.headers).get('authorization')?.startsWith('Bearer ga_') ?? false,
+                emit: (type: string, payload: unknown) => {
+                    if (!source.closed)
+                        controller.enqueue(
+                            new TextEncoder().encode(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`)
+                        );
+                },
+            };
+            const body = new ReadableStream<Uint8Array>({
+                start: (next) => {
+                    controller = next;
+                },
+                cancel: () => {
+                    source.closed = true;
+                },
+            });
+            sources.push(source);
+            init?.signal?.addEventListener(
+                'abort',
+                () => {
+                    if (!source.closed) {
+                        source.closed = true;
+                        controller.close();
+                    }
+                },
+                { once: true }
+            );
+            return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }));
+        };
         Object.assign(window, {
-            __tournamentEventSourceCount: () => FakeEventSource.instances.filter((source) => !source.closed).length,
-            __tournamentEventSourceUrls: () =>
-                FakeEventSource.instances.filter((source) => !source.closed).map((source) => source.url),
+            __tournamentEventSourceCount: () => sources.filter((source) => !source.closed).length,
+            __tournamentEventSourceUrls: () => sources.filter((source) => !source.closed).map((source) => source.url),
+            __tournamentEventSourceAuthenticated: () =>
+                sources.filter((source) => !source.closed).every((source) => source.authenticated),
             __emitTournamentEvent: (type: string, payload: unknown) => {
-                for (const source of FakeEventSource.instances) source.emit(type, payload);
+                for (const source of sources) source.emit(type, payload);
             },
         });
     });
@@ -885,6 +905,18 @@ test('betting realtime refresh is shared across tabs and preserves local interac
     ).flat();
     expect(activeSourceUrls).toHaveLength(1);
     expect(new URL(activeSourceUrls[0]!).searchParams.get('scope')).toBe('tournament');
+    expect(new URL(activeSourceUrls[0]!).searchParams.has('token')).toBe(false);
+    for (const candidate of [page, follower]) {
+        expect(
+            await candidate.evaluate(() =>
+                (
+                    window as unknown as {
+                        __tournamentEventSourceAuthenticated: () => boolean;
+                    }
+                ).__tournamentEventSourceAuthenticated()
+            )
+        ).toBe(true);
+    }
 
     const before = {
         snapshot: operations.filter(({ operation }) => operation === 'tournament.getSnapshot').length,

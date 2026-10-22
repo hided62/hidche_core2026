@@ -1,3 +1,9 @@
+import {
+    ImageWorkBudget,
+    ImageWorkBusyError,
+    ImageUploadError,
+    isRasterImage,
+} from '@sammo-ts/common/images/imageUpload';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
@@ -6,6 +12,9 @@ import sharp, { type WebpOptions } from 'sharp';
 import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
+
+const boardImageBudget = new ImageWorkBudget();
+const MAX_IMAGE_PIXELS = 16 * 1024 * 1024;
 
 const MAX_UPLOAD_BYTES = 1024 * 1024;
 const MAX_LONG_EDGE = 2048;
@@ -57,7 +66,7 @@ const buildWebpBuffer = async (
     buffer: Buffer,
     { animated, resize }: { animated: boolean; resize: boolean }
 ): Promise<Buffer> => {
-    let pipeline = sharp(buffer, { animated: true });
+    let pipeline = sharp(buffer, { animated: true, limitInputPixels: MAX_IMAGE_PIXELS }).timeout({ seconds: 10 });
     if (resize) {
         pipeline = pipeline.resize({
             width: MAX_LONG_EDGE,
@@ -74,11 +83,16 @@ const buildWebpBuffer = async (
         ...(animated ? { animated: true } : {}),
     };
 
-    return pipeline.webp(webpOptions).toBuffer();
+    return pipeline
+        .webp(webpOptions)
+        .toBuffer()
+        .catch(() => {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지를 변환할 수 없습니다.' });
+        });
 };
 
 const buildAvifBuffer = async (buffer: Buffer, resize: boolean): Promise<Buffer> => {
-    let pipeline = sharp(buffer, { animated: true });
+    let pipeline = sharp(buffer, { animated: true, limitInputPixels: MAX_IMAGE_PIXELS }).timeout({ seconds: 10 });
     if (resize) {
         pipeline = pipeline.resize({
             width: MAX_LONG_EDGE,
@@ -87,7 +101,12 @@ const buildAvifBuffer = async (buffer: Buffer, resize: boolean): Promise<Buffer>
             withoutEnlargement: true,
         });
     }
-    return pipeline.avif({ quality: 60, effort: 4 }).toBuffer();
+    return pipeline
+        .avif({ quality: 60, effort: 4 })
+        .toBuffer()
+        .catch(() => {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지를 변환할 수 없습니다.' });
+        });
 };
 
 export const boardRouter = router({
@@ -213,70 +232,116 @@ export const boardRouter = router({
 
         return { id: comment.id };
     }),
-    uploadImage: authedProcedure.input(z.object({ dataUrl: z.string().min(1) })).mutation(async ({ ctx, input }) => {
-        const { permission } = await getBoardActor(ctx);
-        assertBoardAccess(permission, true);
+    uploadImage: authedProcedure
+        .input(
+            z.object({
+                dataUrl: z
+                    .string()
+                    .min(1)
+                    .max(Math.ceil(MAX_UPLOAD_BYTES / 3) * 4 + 128),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const { permission } = await getBoardActor(ctx);
+            assertBoardAccess(permission, true);
 
-        const buffer = parseDataUrl(input.dataUrl);
-        if (buffer.length > MAX_UPLOAD_BYTES) {
-            throw new TRPCError({ code: 'PAYLOAD_TOO_LARGE', message: '이미지 용량 제한(1MB)을 초과했습니다.' });
-        }
+            try {
+                return await boardImageBudget.run(async () => {
+                    const buffer = parseDataUrl(input.dataUrl);
+                    if (buffer.length > MAX_UPLOAD_BYTES) {
+                        throw new TRPCError({
+                            code: 'PAYLOAD_TOO_LARGE',
+                            message: '이미지 용량 제한(1MB)을 초과했습니다.',
+                        });
+                    }
 
-        const metadata = await sharp(buffer, { animated: true }).metadata();
-        if (!metadata.format || !metadata.width || !metadata.height) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 정보를 확인할 수 없습니다.' });
-        }
+                    if (!isRasterImage(buffer))
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이미지 형식입니다.' });
+                    const metadata = await sharp(buffer, { animated: true, limitInputPixels: MAX_IMAGE_PIXELS })
+                        .timeout({ seconds: 10 })
+                        .metadata()
+                        .catch(() => {
+                            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 정보를 확인할 수 없습니다.' });
+                        });
+                    if ((metadata.pages ?? 1) > 256)
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 프레임 제한을 초과했습니다.' });
+                    if (!metadata.format || !metadata.width || !metadata.height) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 정보를 확인할 수 없습니다.' });
+                    }
 
-        const format = metadata.format;
-        const isAvif = metadata.mediaType === 'image/avif';
-        const isAnimated = (metadata.pages ?? 1) > 1;
-        const needsResize = Math.max(metadata.width, metadata.height) > MAX_LONG_EDGE;
+                    const format = metadata.format;
+                    const isAvif = metadata.mediaType === 'image/avif';
+                    const isAnimated = (metadata.pages ?? 1) > 1;
+                    const needsResize = Math.max(metadata.width, metadata.height) > MAX_LONG_EDGE;
 
-        const allowed = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif', 'heif', 'tiff', 'bmp']);
-        if (!allowed.has(format)) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이미지 형식입니다.' });
-        }
+                    const allowed = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif', 'heif', 'tiff', 'bmp']);
+                    if (!allowed.has(format)) {
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이미지 형식입니다.' });
+                    }
 
-        let outputBuffer = buffer;
-        let outputFormat = isAvif ? 'avif' : 'webp';
+                    let outputBuffer = buffer;
+                    let outputFormat = isAvif ? 'avif' : 'webp';
 
-        if (isAvif) {
-            if (needsResize) {
-                outputBuffer = await buildAvifBuffer(buffer, true);
+                    if (isAvif) {
+                        if (needsResize) {
+                            outputBuffer = await buildAvifBuffer(buffer, true);
+                        }
+                    } else {
+                        const webpBuffer = await buildWebpBuffer(buffer, {
+                            animated: isAnimated || format === 'gif',
+                            resize: needsResize,
+                        });
+                        if (
+                            format === 'webp' &&
+                            !needsResize &&
+                            webpBuffer.length >= buffer.length * WEBP_MIN_SAVING_RATIO
+                        ) {
+                            outputBuffer = buffer;
+                            outputFormat = 'webp';
+                        } else {
+                            outputBuffer = webpBuffer;
+                            outputFormat = 'webp';
+                        }
+                    }
+
+                    if (!ctx.contentImageUpload) {
+                        throw new TRPCError({
+                            code: 'INTERNAL_SERVER_ERROR',
+                            message: '이미지 저장소가 설정되지 않았습니다.',
+                        });
+                    }
+                    const filename = `${randomBytes(16).toString('hex')}.${outputFormat}`;
+                    const uploaded = await ctx.contentImageUpload.upload({
+                        filename,
+                        contentType: outputFormat === 'avif' ? 'image/avif' : 'image/webp',
+                        body: outputBuffer,
+                    });
+
+                    const outputMeta = await sharp(outputBuffer, { animated: true, limitInputPixels: MAX_IMAGE_PIXELS })
+                        .timeout({ seconds: 10 })
+                        .metadata();
+
+                    return {
+                        url: uploaded.publicUrl,
+                        width: outputMeta.width ?? metadata.width,
+                        height: outputMeta.height ?? metadata.height,
+                        format: outputFormat,
+                        animated: isAnimated,
+                        size: outputBuffer.length,
+                    };
+                });
+            } catch (error) {
+                if (error instanceof ImageWorkBusyError)
+                    throw new TRPCError({
+                        code: 'TOO_MANY_REQUESTS',
+                        message: '이미지 처리 중입니다. 잠시 후 다시 시도해주세요.',
+                    });
+                if (error instanceof ImageUploadError)
+                    throw new TRPCError({
+                        code: 'SERVICE_UNAVAILABLE',
+                        message: '이미지 저장소에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
+                    });
+                throw error;
             }
-        } else {
-            const webpBuffer = await buildWebpBuffer(buffer, {
-                animated: isAnimated || format === 'gif',
-                resize: needsResize,
-            });
-            if (format === 'webp' && !needsResize && webpBuffer.length >= buffer.length * WEBP_MIN_SAVING_RATIO) {
-                outputBuffer = buffer;
-                outputFormat = 'webp';
-            } else {
-                outputBuffer = webpBuffer;
-                outputFormat = 'webp';
-            }
-        }
-
-        if (!ctx.contentImageUpload) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '이미지 저장소가 설정되지 않았습니다.' });
-        }
-        const filename = `${randomBytes(16).toString('hex')}.${outputFormat}`;
-        const uploaded = await ctx.contentImageUpload.upload({
-            filename,
-            contentType: outputFormat === 'avif' ? 'image/avif' : 'image/webp',
-            body: outputBuffer,
-        });
-
-        const outputMeta = await sharp(outputBuffer, { animated: true }).metadata();
-
-        return {
-            url: uploaded.publicUrl,
-            width: outputMeta.width ?? metadata.width,
-            height: outputMeta.height ?? metadata.height,
-            format: outputFormat,
-            animated: isAnimated,
-            size: outputBuffer.length,
-        };
-    }),
+        }),
 });

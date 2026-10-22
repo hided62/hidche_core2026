@@ -1,3 +1,9 @@
+import {
+    ImageWorkBudget,
+    ImageWorkBusyError,
+    ImageUploadError,
+    isRasterImage,
+} from '@sammo-ts/common/images/imageUpload';
 import { randomBytes } from 'node:crypto';
 
 import { TRPCError } from '@trpc/server';
@@ -13,6 +19,9 @@ import { isGatewaySessionCurrent } from '../auth/sessionValidity.js';
 import { WEB_PUSH_EVENT_TYPES } from '@sammo-ts/common';
 
 const zSessionToken = z.string().min(1);
+const iconImageBudget = new ImageWorkBudget();
+const MAX_IMAGE_PIXELS = 128 * 128 * 256;
+
 const MAX_ICON_BYTES = 50 * 1024;
 const MAX_ACTIVE_ICONS = 5;
 const ICON_RETIRE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -265,52 +274,91 @@ export const accountRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
             const user = await requireSessionUser(ctx, input.sessionToken);
-            const now = new Date();
-            const profiles = await listIconSyncProfiles(ctx, user.id);
-            const buffer = decodeImage(input.imageData);
-            const metadata = await sharp(buffer, { animated: true }).metadata();
-            const detectedFormat = metadata.mediaType === 'image/avif' ? 'avif' : metadata.format;
-            if (!detectedFormat || !ALLOWED_ICON_FORMATS.has(detectedFormat)) {
-                throw new TRPCError({
-                    code: 'BAD_REQUEST',
-                    message: 'avif, webp, jpg, gif, png 아이콘만 사용할 수 있습니다.',
-                });
-            }
-            if (!metadata.width || metadata.width < 64 || metadata.width > 128 || metadata.height !== metadata.width) {
-                throw new TRPCError({
-                    code: 'BAD_REQUEST',
-                    message: '아이콘은 64x64~128x128 범위의 정사각형이어야 합니다.',
-                });
-            }
-            const extension = detectedFormat === 'jpeg' ? 'jpg' : detectedFormat;
-            const filename = `${randomBytes(16).toString('hex')}.${extension}`;
-            if (!ctx.userIconUpload) {
-                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '이미지 저장소가 설정되지 않았습니다.' });
-            }
-            const uploaded = await ctx.userIconUpload.upload({
-                filename,
-                contentType: ICON_CONTENT_TYPES[extension]!,
-                body: buffer,
-            });
-            const stored = await ctx.users.addIconForWindow(user.id, uploaded.picture, 0, now, MAX_ACTIVE_ICONS);
-            if (!stored.ok) {
-                if (stored.reason === 'LIMIT') {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: '전용 아이콘은 최대 5개까지 등록할 수 있습니다.',
+            try {
+                return await iconImageBudget.run(async () => {
+                    const now = new Date();
+                    const profiles = await listIconSyncProfiles(ctx, user.id);
+                    const buffer = decodeImage(input.imageData);
+                    if (!isRasterImage(buffer))
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이미지 형식입니다.' });
+                    const metadata = await sharp(buffer, { animated: true, limitInputPixels: MAX_IMAGE_PIXELS })
+                        .timeout({ seconds: 10 })
+                        .metadata()
+                        .catch(() => {
+                            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 정보를 확인할 수 없습니다.' });
+                        });
+                    if ((metadata.pages ?? 1) > 256)
+                        throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 프레임 제한을 초과했습니다.' });
+                    const detectedFormat = metadata.mediaType === 'image/avif' ? 'avif' : metadata.format;
+                    if (!detectedFormat || !ALLOWED_ICON_FORMATS.has(detectedFormat)) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'avif, webp, jpg, gif, png 아이콘만 사용할 수 있습니다.',
+                        });
+                    }
+                    if (
+                        !metadata.width ||
+                        metadata.width < 64 ||
+                        metadata.width > 128 ||
+                        metadata.height !== metadata.width
+                    ) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: '아이콘은 64x64~128x128 범위의 정사각형이어야 합니다.',
+                        });
+                    }
+                    const extension = detectedFormat === 'jpeg' ? 'jpg' : detectedFormat;
+                    const filename = `${randomBytes(16).toString('hex')}.${extension}`;
+                    if (!ctx.userIconUpload) {
+                        throw new TRPCError({
+                            code: 'INTERNAL_SERVER_ERROR',
+                            message: '이미지 저장소가 설정되지 않았습니다.',
+                        });
+                    }
+                    const uploaded = await ctx.userIconUpload.upload({
+                        filename,
+                        contentType: ICON_CONTENT_TYPES[extension]!,
+                        body: buffer,
                     });
-                }
-                throw new TRPCError({ code: 'NOT_FOUND', message: '계정을 찾을 수 없습니다.' });
+                    const stored = await ctx.users.addIconForWindow(
+                        user.id,
+                        uploaded.picture,
+                        0,
+                        now,
+                        MAX_ACTIVE_ICONS
+                    );
+                    if (!stored.ok) {
+                        if (stored.reason === 'LIMIT') {
+                            throw new TRPCError({
+                                code: 'PRECONDITION_FAILED',
+                                message: '전용 아이콘은 최대 5개까지 등록할 수 있습니다.',
+                            });
+                        }
+                        throw new TRPCError({ code: 'NOT_FOUND', message: '계정을 찾을 수 없습니다.' });
+                    }
+                    const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
+                    return {
+                        ok: true,
+                        iconUrl: uploaded.publicUrl,
+                        revision: stored.revision,
+                        icon: buildLibraryIcon(ctx, stored.icon),
+                        profiles,
+                        flushPublished,
+                    };
+                });
+            } catch (error) {
+                if (error instanceof ImageWorkBusyError)
+                    throw new TRPCError({
+                        code: 'TOO_MANY_REQUESTS',
+                        message: '이미지 처리 중입니다. 잠시 후 다시 시도해주세요.',
+                    });
+                if (error instanceof ImageUploadError)
+                    throw new TRPCError({
+                        code: 'SERVICE_UNAVAILABLE',
+                        message: '이미지 저장소에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
+                    });
+                throw error;
             }
-            const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
-            return {
-                ok: true,
-                iconUrl: uploaded.publicUrl,
-                revision: stored.revision,
-                icon: buildLibraryIcon(ctx, stored.icon),
-                profiles,
-                flushPublished,
-            };
         }),
     setPreferredIcon: procedure
         .input(z.object({ sessionToken: zSessionToken, iconId: z.string().uuid() }))

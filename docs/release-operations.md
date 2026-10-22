@@ -546,3 +546,235 @@ schema head·component 검사는 그대로 수행합니다.
 Local unit, 격리 DB integration과 fixture Chromium 통과는 운영 PM2, 외부
 Caddy/HTTPS, 방화벽과 실제 운영 DB 전환을 증명하지 않습니다. 운영 배포에서는
 위 확인 목록을 실제 서비스 경로에서 다시 수행해 주세요.
+
+## SSE 인증 전송과 API 진단 보안 (2026-10-09)
+
+게임 frontend의 SSE는 `eventsource@5.1.2`의 fetch adapter로
+`Authorization: Bearer`를 전달한다. URL에는 `scope=tournament` 같은 구독 선택만
+남기며 token, URL credential, ambient cookie, redirect 전달을 허용하지 않는다.
+기존 native EventSource를 사용하는 열린 탭은 새 game API에서 401을 받으므로
+배포 후 새로고침해야 한다. 독립 배포라면 새 frontend를 먼저 게시하고 game API를
+갱신한다. 새 frontend의 헤더 인증은 이전 game API도 지원한다. API만 먼저
+갱신하면 구형 탭의 실시간 갱신이 중단될 수 있다.
+
+SSE는 최초 요청과 매 frame 작업 전·전송 전에 Redis token, flush watermark,
+user/session/profile과 게임 접근 제재를 확인한다. flush watermark는 아래 지속 회수
+계약에 따라 Redis에서 읽으며 메모리에만 의존하지 않는다. 만료 타이머와 Gateway flush가
+대기 중인 연결을 닫고 Redis 장애는 fail closed로 처리한다. 연결별 대기 작업은
+32개, frame과 socket buffer는 64 KiB로 제한하고 slow consumer를 닫는다.
+재연결 뒤 메인은 기존 갱신 큐로 snapshot을 복구한다. 게임 계산·RNG·DB schema와
+read-model invalidation/grant의 사용자 범위는 변경하지 않는다. 전체 연결 admission은
+아래 별도 계약을 따르며, 일반 게임 HTTP 인증의 전역 rate limit 증거로 확대하지 않는다.
+
+### SSE 연결과 준비 작업 상한 (2026-10-09)
+
+game API의 `RealtimeConnectionAdmission`은 프로세스별로 다음 용량을 소유한다.
+
+| 범위                                                            | 상한  |
+| --------------------------------------------------------------- | ----- |
+| 같은 인증 사용자: token·session·scope를 바꾸어도 공유           | 8개   |
+| 인증 중/준비 중, 열린 연결, 닫힌 연결의 미완료 작업을 합친 전체 | 512개 |
+| 인증·viewer 조회가 아직 끝나지 않은 연결 준비                   | 32개  |
+
+인증 actor는 검증한 token의 user ID로 결정하며 client query/user ID를 신뢰하지 않는다.
+전체/준비 용량은 첫 async 인증 조회 전에 예약하고 사용자 용량은 viewer DB 조회 전에
+예약한다. 대기 큐를 만들지 않고 사용자 초과는 429 `realtime_connection_limit`,
+전체/준비 초과는 503 `realtime_unavailable`과 `Retry-After: 15`를 반환한다.
+이미 열린 정상 연결은 새 요청의 초과 때문에 닫지 않는다.
+
+연결 준비는 5초 뒤 503으로 실패한다. 호출자 timeout/client disconnect가 실제 Redis/SQL
+완료를 뜻하지 않으므로 해당 준비 용량은 작업이 settle할 때까지 유지한다. 늦게 완료한
+작업이 이미 끝난 HTTP 요청에서 SSE를 새로 열지 못한다. 열린 socket의 종료도 구독과
+heartbeat를 즉시 정리하지만 미완료 frame 작업이 끝날 때까지 사용자/전체 용량을
+보유한다. app shutdown은 새 admission과 늦은 준비를 거절하고 기존 stream을 닫는다.
+
+이는 한 game API process/profile의 자원 상한이며 DB pool connection 수를 사용자 수로
+환산한 값이나 다중 replica/모든 profile에 걸친 전역 제한이 아니다. 일반 request RPS와
+backend의 모든 장애 복구를 보장하지 않는다. 기존 header auth, 만료/회수·개인정보
+필터와 refresh grant는 유지한다. 비활성화 env key와 credential은 추가하지 않는다.
+
+Game/Gateway HTTP logger는 raw URL/query/header/body와 error message/cause/stack
+대신 static route, request ID, status와 허용된 error code만 남긴다. Fastify의
+기본 404/오류 message도 정화한다. 공개 tRPC 오류의 stack을 제거하고 내부 500의
+message는 일반 문구로 치환한다. 4xx의 사용자용 검증/권한 문구는 유지한다.
+이 정책은 HTTP API 로그의 범위이며 release builder의 관리자 build log를
+일괄 숨기지 않는다. 장애 조사 시 request ID·route·status·code와 별도 격리 재현을
+사용하며 운영 HTTP 로그에 credential이나 raw error payload를 다시 추가하지 않는다.
+
+## 온라인 인증 시도와 비용 제한 (2026-10-09)
+
+Gateway HTTP server는 기존 전용 Redis와 `GATEWAY_REDIS_PREFIX`에 인증 counter를
+공유한다. 별도 credential이나 비활성화 env key는 추가하지 않는다. 각 procedure
+실행 전에 원자적으로 모든 counter를 검사하고 허용된 요청만 차감한다. 같은 tRPC
+batch의 항목도 각각 차감한다. 기본 창은 최초 허용 요청부터 60초이며 다음과 같다.
+
+| 경계                                                                    | 기본 상한              |
+| ----------------------------------------------------------------------- | ---------------------- |
+| 정규화한 로그인 계정명, peer와 무관                                     | 10회/60초              |
+| 같은 인증 actor의 비밀번호 변경·탈퇴, session을 바꿔도 공유             | 10회/60초              |
+| 같은 계정의 게임 세션 발급, 로그인 session/profile을 바꿔도 공유        | 32회/60초              |
+| 인증 시작·등록·자격 증명·OTP와 public key/가입 필드 검사, socket peer별 | 600회/60초             |
+| 위 인증 procedure 전체, 같은 Gateway Redis namespace                    | 1200회/60초            |
+| RSA/Argon2/provider 호출이 있는 인증 작업, API 프로세스별               | 동시 4개, 대기 큐 없음 |
+
+계정 counter는 존재하지 않는 이름과 성공/실패를 동일하게 차감하고 성공 직후에도
+초기화하지 않는다. 거절된 시도는 TTL이나 다른 counter를 갱신하지 않으므로 공격자가
+고정된 창을 연장할 수 없다. 계정 자체를 DB에서 잠그거나 sanction을 만들지 않으며
+기존 session·OAuth 시작/복구·logout은 계정명 counter와 별도다. 계속되는 공격이
+매 새 창의 예산을 소진하면 password login은 일시 제한될 수 있다. account 중심
+제한의 가용성 tradeoff로 기록하고 운영자는 인증 정책을 지워서 해결하지 않는다.
+
+Fastify `trustProxy:false`를 유지해 임의 `X-Forwarded-For`로 peer counter를 바꿀 수
+없다. 현재 Docker의 Caddy 뒤에서는 이 counter가 해당 proxy를 공유하는 사용자들의
+합계다. 이를 인터넷 client별 제한이라고 보고하지 않는다. 원래 client IP를 써야
+한다면 실제 두 proxy 경계와 덮어쓰기 규칙, 좁은 trusted proxy allowlist를 먼저
+결정해야 하며 `trustProxy:true`나 단순 hop 수를 켜지 않는다. global/account counter와
+동시 비용 상한은 forwarded header에 의존하지 않는다.
+
+아직 끝나지 않은 counter/actor 확인은 프로세스당 32개로 제한한다. 요청의 2초
+시간 초과 뒤에도 이 자리는 실제 확인 Promise가 끝날 때까지 유지한다. backend가
+멈춘 동안 대기하는 payload가 계속 늘어나지 않게 하며 확인이 끝나면 정상 복구한다.
+
+Redis 확인은 2초 안에 끝나야 하고 unready/error/잘못된 counter는 503으로 fail
+closed 처리한다. 한도를 넘으면 429와 재시도 초를 포함한 메시지를 보낸다.
+Redis namespace 내 key는 purpose를 나눈 HMAC으로 식별해 계정명/IP 원문을 저장하지
+않으며 모두 TTL이 있다. key namespace 때문에 secret rotation은 남은 최대 60초의
+시도 counter의 key 식별자를 전환한다. 내부 직접 caller/test의 기본 context는
+bounded memory store를 사용하지만 실제 HTTP server는 공유 Redis budget을 주입한다.
+
+Kakao transport는 각 HTTP 요청의 header와 body 전체에 10초 deadline, decoded JSON
+응답 64 KiB 상한과 redirect 거절을 적용한다. provider payload·token·account 정보를
+오류 문구에 넣지 않는다. `-102 already registered`의 명시적 복구 분기는 유지한다.
+여러 요청을 순차 수행하는 OAuth flow의 전체 시간이 10초라는 뜻은 아니다. 상한은
+게임 시간·OTP 만료·기존 session lifetime·Argon2 강도와 무관하다.
+
+이 단계는 온라인 자격 증명/가입 비용을 보호하며 established session의 일반 조회,
+logout은 이 budget에서 제외한다. 게임 세션 발급은 별도 계정 counter 32회/60초를
+사용하고 peer/global counter와 확인 대기 상한을 공유하며 RSA/Argon2 동시 자리에는
+들어가지 않는다.
+임시 운영 stack과 공개 운영/개발 stack은 Redis와 prefix를 공유하지 않으며 새 코드의
+검증 결과를 실제 공개 배포 근거로 사용하지 않는다.
+
+### 게임 세션 발급·추적 수명 (2026-10-09)
+
+Gateway 로그인 하나가 추적하는 살아 있는 게임 세션은 모든 profile을 합쳐 256개까지
+허용한다. 기존 게임 토큰을 강제로 폐기하지 않으며 초과 발급은 HTTP 429다.
+발급 전에 만료된 Redis key를 추적 set에서 제거한다. 로그인별 추적 set이 이전
+버전에서 이미 256개보다 크다면 전부 펼치지 않고 새 발급을 거절하며, 로그아웃 뒤
+다시 로그인하거나 기존 index가 만료된 뒤 복구한다. 정상 다중 탭/여러 profile을
+지원하되 발급 자료의 무제한 누적을 허용하지 않는 Core 보안 정책이다.
+
+Redis Lua가 부모 session의 존재·snapshot 일치·만료, 정리·상한과 새 저장을 한 번에
+검사한다. 로그아웃은 부모 제거와 최대 64개 게임 key/index 삭제를 원자적으로
+반복하여, 발급 경합과 큰 기존 index의 일괄 응답을 방지한다. 부모만 회수하는
+`revokeGames:false`는 독립 게임 TTL을 유지한다. 게임 token TTL은 여전히 발급 시점부터
+`GAME_SESSION_TTL_SECONDS`이고 부모 로그인 만료가 이미 발급된 게임 token의 만료를
+앞당기지는 않는다. index TTL은 남은 부모 TTL과 게임 TTL 중 큰 값이며 새 부모 TTL로
+매번 초기화하지 않는다. 새로운 env key와 DB migration은 필요 없다.
+
+암호화 게임 token의 issuedAt/expiresAt은 권한 조회 시작과 추적 항목 생성 중 더
+이른 시각에서 계산한다.
+이후 icon/identity 조회 중 logout/flush가 겹쳐도 issuedAt을 더 늦은 시각으로
+바꿔 이전 flush를 피하지 않는다. user snapshot 이후 role/sanction 변경과 겹친 발급도
+그 flush보다 오래된 credential로 취급한다. 회수 지속성은 아래 별도 Redis 계약을 따른다.
+
+### 게임 token 회수의 지속성 (2026-10-09)
+
+Gateway는 기존 `GATEWAY_REDIS_PREFIX`의 flush channel 아래 `revocation:v1` namespace에
+최초 전환 cutoff와 사용자별 마지막 회수 시각을 저장한다. 사용자당 한 값이며
+DB/Redis credential, 게임 actor와 profile 경계는 바꾸지 않는다. Lua가 최신 watermark를
+보존하고 저장한 뒤 pub/sub을 보내므로 구독자 0명이나 알림 누락도 회수를 되돌리지
+않는다. HTTP 인증, 미사용 Gateway token 교환과 SSE 작업 전/쓰기 전이 매번 동일한
+Redis watermark와 최초 cutoff를 읽는다. allow 결과를 캐시하지 않고 Redis 조회는
+2초 deadline/연결 준비 상태 검사 후 fail closed다. pub/sub은 즉시 연결 종료와
+기존 identity/icon durable 동기화를 빠르게 하는 경로다.
+
+진행 중인 회수 Redis 명령은 Gateway publisher당 32개, game API store당 64개로
+제한한다. 2초 뒤 호출자가 실패해도 이미 전송된 명령은 실제 완료/연결 실패까지
+그 용량을 점유한다. 응답하지 않는 Redis가 caller timeout 뒤에도 계속 명령을
+쌓게 하지 않는다. startup 실패는 이 프로세스가 소유한 Redis 연결을 강제 종료한다.
+
+최초 Gateway 활성화 시 `SET NX`로 이전 게임 credential 전체를 회수하는 cutoff를
+한 번 만든다. 일반 Gateway session은 유지하므로 사용자는 Gateway에서 새 game token을
+받아 재접속한다. 반복 기동은 cutoff를 보존한다. 이 전환은 이전 메모리에서만 알고
+있던 회수 이력을 추측하여 이관하지 않고 기존 credential을 폐기하는 보안 정책이다.
+Gateway publisher를 먼저 갱신한 뒤 모든 game API를 갱신한다. 새 game API는 초기화
+marker가 없거나 잘못됐으면 기동을 거절하며 실행 중 조회 장애/marker 누락도 인증을
+허용하지 않는다. 여러 Gateway writer가 있으면 모두 새 publisher 계약을 적용해야 한다.
+
+cutoff/watermark는 TTL로 삭제하지 않는다. game TTL 설정을 줄인 뒤 과거의 더 긴
+token이 다시 살아나는 것을 막는다. 저장량은 회수한 사용자 수에 비례하는 작은
+metadata이며 Redis의 기존 persistence/volume에 보존한다. 회수 key 수명 정리는
+모든 기존 credential의 만료를 증명한 별도 유지보수 작업이다. watermark 삭제,
+Redis 복원/namespace 변경을 일반 restart와 같은 것으로 처리하지 않는다.
+
+Gateway DB 변경과 Redis 회수는 하나의 분산 transaction이 아니다. DB 변경 뒤 회수
+저장이 실패하면 API는 성공을 반환하지 않으며 운영자는 partial progress와 재시도를
+확인해야 한다. 이 계약은 성공한 회수의 pub/sub 누락·API 재시작 내구성을 보장하며,
+DB/Redis backup의 시점 불일치나 이미 허용된 in-flight mutation을 자동 취소하는
+정책으로 확대하지 않는다. 기존 대기 frame/identity 동기화는 별도 기존 경계를 유지한다.
+
+### Builder 요청 인증과 자원 경계 (2026-10-09)
+
+`RELEASE_BUILDER_URL`을 설정한 원격 build는 전용 `RELEASE_BUILDER_TOKEN_FILE`이
+필요합니다. 파일의 무작위 token은 `x-release-builder-token` 헤더로만 전달하며
+명령·progress event·`VITE_*`에 넣지 않습니다. 파일 누락/오류는 build 실패이며
+로컬 runner로 우회하지 않습니다. HTTP redirect를 따라가지 않고 오류 response의
+원문 body도 릴리스 로그에 복사하지 않습니다.
+
+Docker builder와 runtime에 같은 파일을 read-only mount합니다. host 파일은 Git
+제외·mode 0600으로 보존하고 DB/Redis/OAuth/bootstrap token과 공유하지 않습니다.
+이 경계는 신뢰하는 Core repository와 dependency의 build script를 실행하기 위한
+인증입니다. 악의적인 repository code를 OS 수준으로 격리하는 sandbox가 아니며
+builder 파일 시스템에 있는 builder 전용 token은 신뢰하는 build code가 읽을 수
+있습니다. 다른 운영 credential은 builder에 mount하거나 child env로 전달하지 않습니다.
+
+Builder는 허용된 package의 frozen install·build·Prisma generate·frontend materialize만
+실행하며 임의 task/flag, cwd/cache의 탈출 symlink와 Node preload 옵션을 거부합니다.
+동시에 실행하는 job은 하나이며 실행·대기·body 읽기를 합쳐 3개까지만 받습니다.
+초과 요청은 429이고, byte 기준 body 256 KiB/읽기 5초, job 전체 30분,
+NDJSON frame 512 KiB/stream 64 MiB, 느린 소비자의 write buffer 1 MiB를 상한으로 둡니다.
+취소·deadline·response 중단은 자식 process group을 TERM/KILL하며 실제 종료까지
+대기 자리를 보존합니다. Core client도 30분 deadline과 같은 frame/stream 상한을
+적용하고 progress/result의 실제 type과 길이를 검사합니다.
+
+기존 무인증 builder에서 전환할 때는 다음 순서로 작업합니다.
+
+1. 전용 token 파일을 준비하고 현재 이미지에 mount·환경 경로만 추가합니다.
+2. 기존 builder를 유지한 채 새 Core controller self-upgrade와 Gateway UPDATE를
+   수행해 새 인증 client를 활성화합니다. 기존 builder는 추가 헤더를 허용합니다.
+3. 인증을 강제하는 새 Docker builder와 bootstrap client를 함께 build·재생성합니다.
+4. 인증 없는 POST가 401이고 정상 bootstrap/release가 성공하는지 확인합니다.
+
+새 builder를 먼저 적용하면 구형 Core/구형 Docker bootstrap client의 요청이 401로
+실패합니다. 해당 host의 wrapper와 정확한 project를 사용하고 기존 volume·active
+release를 보존합니다. 외부 공개 stack과 임시 localhost stack의 token 파일은
+공유하지 않습니다. 임시 host의 절차는 상위 local-runtime README를 따릅니다.
+
+
+### 이미지 업로드와 WebPush 전송 경계
+
+게시판 이미지의 기존 1 MiB 입력·2048px 변환 정책, AVIF 원본 보존과 WebP 변환,
+계정 아이콘의 50 KiB·64~128px 정사각형·활성 5개 정책은 유지한다.
+서버 자원 보호를 위해 게시판은 총 16,777,216 입력 픽셀, 아이콘은 총 4,194,304
+입력 픽셀, 양쪽은 최대 256 프레임을 허용한다. raster signature를 먼저 확인하고
+Sharp의 `limitInputPixels`와 처리 timeout 10초를 적용한다. 각 API 프로세스의
+이미지 작업은 최대 4개이며 대기열 없이 초과 요청을 `TOO_MANY_REQUESTS`로 거절한다.
+실제 작업이 끝나기 전에는 슬롯을 반환하지 않는다. 이 제한은 일일 업로드 횟수나
+아이콘 소유권 정책을 변경하지 않는다. 기존 Fastify HTTP body limit도 유지한다.
+
+공통 server 전용 `@sammo-ts/common/images/imageUpload`가 두 이미지 저장 adapter의
+서명 PUT 전송을 처리한다. 기존 60초 HMAC·path/body binding을 유지하며 redirect를
+거부하고, 요청부터 응답 완료까지 10초, JSON 응답 16 KiB, 전송 body 16 MiB를
+제한한다. 실제 streaming bytes를 세므로 Content-Length가 없거나 부정확해도 제한이
+적용된다. 응답 path만 검증하고 공개 URL은 설정한 public base에서 생성한다.
+abort를 무시하는 작업도 실제 종료까지 최대 4개 전송 슬롯을 점유한다.
+저장소 실패는 API에서 `SERVICE_UNAVAILABLE`, 작업 포화는 `TOO_MANY_REQUESTS`이다.
+
+WebPush는 `web-push.generateRequestDetails`의 암호화·VAPID·TTL을 유지하면서
+`sendNotification.ts`에서 HTTPS 전송을 직접 수행한다. 기존 public DNS/socket lookup
+정책을 유지하고 redirect를 따르지 않는다. 전체 요청 10초와 실제 응답 16 KiB를
+제한하며 응답 body를 저장하지 않는다. HTTP status는 기존 404/410 subscription
+비활성화와 재시도 판단에 전달된다. 일반 전송 오류는 일시 재시도 대상으로 유지한다.
+이 값에는 추가 `.env`나 credential이 필요 없다. VAPID가 없는 설치의 WebPush는
+기존대로 비활성 상태이며, 이 경우 실제 외부 push 성공 검증을 대신하지 않는다.

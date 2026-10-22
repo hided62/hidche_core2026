@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
     RemoteBuildRunner,
@@ -34,12 +37,24 @@ describe('sanitizeReleaseBuildEnv', () => {
 });
 
 describe('RemoteBuildRunner', () => {
+    let directory: string;
+    let tokenFile: string;
+    beforeAll(async () => {
+        directory = await fs.mkdtemp(path.join(os.tmpdir(), 'builder-token-test-'));
+        tokenFile = path.join(directory, 'token');
+        await fs.writeFile(tokenFile, 't'.repeat(64), { mode: 0o600 });
+    });
+    afterAll(async () => {
+        await fs.rm(directory, { recursive: true, force: true });
+    });
     it('streams progress and returns the builder result without sending secrets', async () => {
         const messages = [
             { event: { type: 'OUTPUT', stream: 'stdout', message: 'building' } },
             { result: { ok: true, exitCode: 0, output: 'building' } },
         ];
         const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+            expect(new Headers(init?.headers).get('x-release-builder-token')).toBe('t'.repeat(64));
+            expect(init?.redirect).toBe('error');
             const request = JSON.parse(String(init?.body)) as {
                 commands: Array<{ env: Record<string, string> }>;
             };
@@ -49,7 +64,7 @@ describe('RemoteBuildRunner', () => {
             });
         }) as unknown as typeof fetch;
         const progress: BuildProgressEvent[] = [];
-        const result = await new RemoteBuildRunner('http://builder:15100', fetchImpl).run(
+        const result = await new RemoteBuildRunner('http://builder:15100', fetchImpl, { tokenFile }).run(
             [
                 {
                     command: 'pnpm',

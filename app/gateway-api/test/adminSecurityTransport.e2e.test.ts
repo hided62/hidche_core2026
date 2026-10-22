@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
 import fastify, { type FastifyRequest } from 'fastify';
+import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { trpcJsonBodyHttpServerOptions } from '@sammo-ts/common';
+import { trpcJsonBodyHttpServerOptions, createApiOriginGuard, resolveApiAllowedOrigins } from '@sammo-ts/common';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionService.js';
@@ -93,6 +94,9 @@ const createHarness = async (adminRoles = ['user', 'admin.users.manage', 'admin.
     const targetSession = await sessions.createSession(target);
     const flushes: Array<{ userId: string; reason?: string }> = [];
     const app = fastify({ logger: false });
+    const origins = resolveApiAllowedOrigins(undefined, ['https://sam.hided.net/gateway/']);
+    app.addHook('onRequest', createApiOriginGuard(origins));
+    await app.register(cors, { origin: origins, credentials: true });
     await app.register(fastifyTRPCPlugin, {
         prefix: '/trpc',
         trpcOptions: {
@@ -176,6 +180,29 @@ const postTrpc = async (
 };
 
 describe('admin security over HTTP transport', () => {
+    it('rejects an untrusted browser origin before a valid session can log out', async () => {
+        const harness = await createHarness();
+        for (const origin of ['https://untrusted.example', 'null']) {
+            const response = await fetch(`${harness.baseUrl}/trpc/auth.logout`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', 'x-session-token': harness.adminSessionToken, origin },
+                body: JSON.stringify({ sessionToken: harness.adminSessionToken }),
+            });
+            expect(response.status).toBe(403);
+            expect(response.headers.get('access-control-allow-origin')).toBeNull();
+            expect((await postTrpc(harness.baseUrl, 'me', null, harness.adminSessionToken)).response.status).toBe(200);
+        }
+        const allowed = await fetch(`${harness.baseUrl}/trpc/auth.logout`, {
+            method: 'OPTIONS',
+            headers: {
+                origin: 'https://sam.hided.net',
+                'access-control-request-method': 'POST',
+                'access-control-request-headers': 'x-session-token,content-type',
+            },
+        });
+        expect(allowed.status).toBe(204);
+        expect(allowed.headers.get('access-control-allow-origin')).toBe('https://sam.hided.net');
+    });
     it('protects runtime diagnostics at the HTTP authentication and profile scope boundaries', async () => {
         const harness = await createHarness(['admin.profiles.runtime:che:default']);
         const input = { profileName: 'che:default' };

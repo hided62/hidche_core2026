@@ -760,7 +760,7 @@ const buildNpcBettingPlan = async (options: {
     for (const npc of npcBetList) {
         const targetId = rng.choice(candidateIds);
         if (!existingBettors.has(npc.id as number)) {
-            entries.push({ generalId: npc.id as number, targetId, amount: betGold });
+            entries.push({ generalId: npc.id as number, userId: null, targetId, amount: betGold });
         }
     }
     return entries;
@@ -789,19 +789,24 @@ export const seedNpcBets = async (options: {
     }
 
     const requestPrefix = `tournament:${state.bettingId ?? `${state.openYear}:${state.openMonth}:${state.type}`}:npc-bet`;
-    await daemonTransport.sendCommand({
-        type: 'adjustGeneralResources',
-        requestId: `${requestPrefix}:resources`,
-        reason: 'tournamentNpcBet',
-        adjustments: plan.map((entry) => ({ generalId: entry.generalId, goldDelta: -entry.amount })),
+    // Wait for one durable ENGINE result before publishing entries or opening stage 6.
+    // The engine skips NPCs whose owner changed after this deterministic plan was stored.
+    const result = await daemonTransport.requestCommand({
+        type: 'tournamentSeedNpcBets',
+        requestId: `${requestPrefix}:atomic`,
+        bets: plan.map((entry) => ({ generalId: entry.generalId, amount: entry.amount })),
     });
-    await daemonTransport.sendCommand({
-        type: 'adjustGeneralMeta',
-        requestId: `${requestPrefix}:meta`,
-        reason: 'tournamentNpcBet',
-        adjustments: plan.map((entry) => ({ generalId: entry.generalId, metaDelta: { betgold: entry.amount } })),
-    });
+    if (!result || result.type !== 'tournamentSeedNpcBets' || !result.ok) {
+        throw new Error('NPC tournament betting did not commit.');
+    }
+    const processed = new Set(result.processedGeneralIds);
     const existing = await store.getBettingEntries();
     const existingBettors = new Set(existing.map((entry) => entry.generalId));
-    await store.setBettingEntries(existing.concat(plan.filter((entry) => !existingBettors.has(entry.generalId))));
+    await store.setBettingEntries(
+        existing.concat(
+            plan
+                .filter((entry) => processed.has(entry.generalId) && !existingBettors.has(entry.generalId))
+                .map((entry) => ({ ...entry, userId: null }))
+        )
+    );
 };
