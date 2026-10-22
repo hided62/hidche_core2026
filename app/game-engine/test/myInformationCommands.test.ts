@@ -87,7 +87,11 @@ const buildGeneral = (overrides: Partial<TurnGeneral> = {}): TurnGeneral => ({
 
 const buildWorld = (
     general = buildGeneral(),
-    options: { autorunLimit?: boolean; scenarioEffect?: ScenarioEffectKey | null } = {}
+    options: {
+        autorunLimit?: boolean;
+        scenarioEffect?: ScenarioEffectKey | null;
+        scenarioConst?: Record<string, unknown>;
+    } = {}
 ) => {
     const state: TurnWorldState = {
         id: 1,
@@ -126,7 +130,7 @@ const buildWorld = (
             stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 65 },
             iconPath: '',
             map: {},
-            const: { maxTrainByWar: 100, maxAtmosByWar: 100 },
+            const: options.scenarioConst ?? {},
             environment: {
                 mapName: 'test',
                 unitSet: 'test',
@@ -278,20 +282,71 @@ describe('my information world commands', () => {
     });
 
     it.each([
+        { train: 110, atmos: 150, expectedTrain: 107, expectedAtmos: 144 },
+        { train: 104, atmos: 107, expectedTrain: 101, expectedAtmos: 101 },
+        { train: 90, atmos: 90, expectedTrain: 87, expectedAtmos: 84 },
+        { train: 21, atmos: 25, expectedTrain: 20, expectedAtmos: 20 },
+        {
+            train: 140,
+            atmos: 180,
+            scenarioConst: { maxTrainByWar: 120, maxAtmosByWar: 160 },
+            expectedTrain: 120,
+            expectedAtmos: 160,
+        },
+        {
+            train: 110,
+            atmos: 150,
+            scenarioConst: { maxTrainByWar: 100, maxAtmosByWar: 100 },
+            expectedTrain: 100,
+            expectedAtmos: 100,
+        },
+    ])('applies war caps to no-defence penalties: $train/$atmos', async (testCase) => {
+        const fixture = buildWorld(buildGeneral({ train: testCase.train, atmos: testCase.atmos }), {
+            scenarioConst: testCase.scenarioConst,
+        });
+        const command = {
+            type: 'setMySetting' as const,
+            userId: 'user-7',
+            generalId: 7,
+            settings: { defence_train: 999 },
+        };
+        await expect(fixture.handler.handle(command)).resolves.toMatchObject({ ok: true });
+        const expected = {
+            train: testCase.expectedTrain,
+            atmos: testCase.expectedAtmos,
+            meta: { defence_train: 999, myset: 2 },
+        };
+        expect(fixture.world.getGeneralById(7)).toMatchObject(expected);
+
+        // 같은 설정의 재저장과 수비 재개는 훈련·사기를 다시 차감하지 않는다.
+        await fixture.handler.handle(command);
+        expect(fixture.world.getGeneralById(7)).toMatchObject(expected);
+        await fixture.handler.handle({ ...command, settings: { defence_train: 90 } });
+        expect(fixture.world.getGeneralById(7)).toMatchObject({
+            ...expected,
+            meta: { defence_train: 90, myset: 1 },
+        });
+    });
+
+    it.each([
         'event_UnlimitedDefenceThresholdChange',
         'event_StrongAttacker',
         'event_MoreEffect',
     ] satisfies ScenarioEffectKey[])(
         'preserves the %s scenario that waives the no-defence penalty',
         async (scenarioEffect) => {
-            const fixture = buildWorld(buildGeneral(), { scenarioEffect });
+            const fixture = buildWorld(buildGeneral({ train: 110, atmos: 150 }), { scenarioEffect });
             await fixture.handler.handle({
                 type: 'setMySetting',
                 userId: 'user-7',
                 generalId: 7,
                 settings: { defence_train: 999 },
             });
-            expect(fixture.world.getGeneralById(7)).toMatchObject({ train: 90, atmos: 90 });
+            expect(fixture.world.getGeneralById(7)).toMatchObject({
+                train: 110,
+                atmos: 150,
+                meta: { defence_train: 999, myset: 2 },
+            });
         }
     );
 

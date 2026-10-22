@@ -2004,8 +2004,10 @@ async function handleSetMySetting(
             const scenarioEffect = world.getScenarioConfig().environment.scenarioEffect;
             const ignoresPenalty = isDefenceTrainPenaltyWaivedByScenarioEffect(scenarioEffect);
             const constValues = asRecord(world.getScenarioConfig().const);
-            const maxTrain = readMetaNumber(constValues, 'maxTrainByWar', 100);
-            const maxAtmos = readMetaNumber(constValues, 'maxAtmosByWar', 100);
+            // Ref GameConstBase의 전투 상한을 사용한다. 명령 상한(100)으로 제한하면
+            // 전투에서 오른 훈련·사기가 수비끔 전환 한 번에 소실된다.
+            const maxTrain = readMetaNumber(constValues, 'maxTrainByWar', 110);
+            const maxAtmos = readMetaNumber(constValues, 'maxAtmosByWar', 150);
             const trainDelta = ignoresPenalty ? 0 : -3;
             const atmosDelta = ignoresPenalty ? 0 : -6;
             nextTrain = Math.max(20, Math.min(maxTrain, general.train + trainDelta));
