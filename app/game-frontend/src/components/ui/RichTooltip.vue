@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
+import { splitLegacyLineBreaks } from '../../utils/legacyDescription';
 import tippy, { type Instance, type Placement } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 
@@ -28,7 +29,7 @@ let instance: Instance | null = null;
 const descriptionLines = computed(() => {
     const source = Array.isArray(props.description) ? props.description : [props.description ?? ''];
     return source
-        .flatMap((line) => line.split(/<br\s*\/?\s*>|\r?\n/giu))
+        .flatMap(splitLegacyLineBreaks)
         .map((line) => line.trim())
         .filter(Boolean);
 });

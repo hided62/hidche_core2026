@@ -710,6 +710,106 @@ test('trait and injury explanations appear on pointer hover and keyboard focus',
     await page.screenshot({ path: testInfo.outputPath('directory-trait-injury-tooltips.png'), fullPage: true });
 });
 
+for (const width of [1200, 500]) {
+    test(`catalog description line breaks stay safe on hover and focus at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        const warInfo =
+            '[계략] 화계·탈취·파괴·선동 : 성공률 +10%p<br>[전투] 계략 시도 확률 +20%p, 계략 성공 확률 +20%p';
+        const literalMarkup = '<img src=x onerror="alert(1)"><b>설명</b>';
+        const directoryRows = generals.map((general) =>
+            general.id === 10
+                ? {
+                      ...general,
+                      specialDomestic: {
+                          ...general.specialDomestic,
+                          info: `상업 특기<br/>수익 증가<BR />매매 효율\r\n${literalMarkup}`,
+                      },
+                      specialWar: { key: 'che_신산', name: '신산', info: warInfo },
+                  }
+                : general
+        );
+        await install(page, 'general', [], [], directoryRows);
+        await page.goto('general-list');
+        await page.reload();
+        const prefix = width <= 600 ? 'card-' : '';
+        const container = page
+            .locator(width <= 600 ? '[data-general-card-id="10"]' : 'tr[data-general-id="10"]')
+            .first();
+        await expect(container).toBeVisible();
+        await expect(page.getByRole('button', { name: '갱 신' })).not.toHaveAttribute('aria-busy');
+        await page.evaluate(async () => {
+            await document.fonts.ready;
+            await Promise.all(Array.from(document.images, (image) => image.decode().catch(() => undefined)));
+        });
+        const before = await container.boundingBox();
+        const evidence: Record<string, unknown> = { width, url: page.url(), before };
+        for (const [kind, expected] of [
+            ['special-domestic', ['상업 특기', '수익 증가', '매매 효율', literalMarkup]],
+            ['special-war', warInfo.split('<br>')],
+        ] as const) {
+            const trigger = page.locator(`[data-directory-tooltip="${prefix}${kind}-10"]`);
+            const tooltip = trigger.getByRole('tooltip');
+            await page.mouse.move(0, 0);
+            await trigger.hover();
+            await expect(tooltip).toBeVisible();
+            await trigger.focus();
+            await expect(tooltip).toBeVisible();
+            await expect(trigger).toHaveCSS('text-decoration-line', 'none');
+            await expect(trigger).toHaveCSS('outline-style', 'solid');
+            const description = tooltip.locator('.directory-tooltip__description');
+            await expect(description.locator('br')).toHaveCount(expected.length - 1);
+            await expect(description.locator('img, b, script')).toHaveCount(0);
+            expect(await description.innerText()).not.toMatch(/<br\s*\/?\s*>/iu);
+            const metrics = await description.evaluate((element) => {
+                const lines = Array.from(element.childNodes).filter(
+                    (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()
+                );
+                return {
+                    lines: lines.map((node) => {
+                        const range = document.createRange();
+                        range.selectNodeContents(node);
+                        return { text: node.textContent?.trim(), top: range.getBoundingClientRect().top };
+                    }),
+                    html: element.outerHTML,
+                };
+            });
+            expect(metrics.lines.map((line) => line.text)).toEqual(expected);
+            for (let index = 1; index < metrics.lines.length; index += 1) {
+                expect(metrics.lines[index]!.top).toBeGreaterThan(metrics.lines[index - 1]!.top);
+            }
+            const geometry = await tooltip.evaluate((element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    left: rect.left,
+                    right: rect.right,
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    font: style.font,
+                    background: style.backgroundColor,
+                    position: style.position,
+                };
+            });
+            expect(geometry.left).toBeGreaterThanOrEqual(8);
+            expect(geometry.right).toBeLessThanOrEqual(width - 8);
+            expect(geometry.top).toBeGreaterThanOrEqual(0);
+            expect(geometry.bottom).toBeLessThanOrEqual(900);
+            expect(await container.boundingBox()).toEqual(before);
+            evidence[kind] = { ...metrics, geometry };
+            await page.screenshot({ path: testInfo.outputPath(`catalog-${kind}-${width}.png`), fullPage: true });
+            await trigger.blur();
+        }
+        const empty = page.locator(`[data-directory-tooltip="${prefix}special-war-20"]`);
+        await expect(empty).not.toHaveAttribute('tabindex');
+        await expect(empty.getByRole('tooltip')).toHaveCount(0);
+        await writeFile(testInfo.outputPath('catalog-description.json'), JSON.stringify(evidence, null, 2));
+        await writeFile(
+            testInfo.outputPath('catalog-description.html'),
+            await page.locator('main').evaluate((element) => element.outerHTML)
+        );
+    });
+}
+
 test('npc directory reuses the dark sort controls and sorts from a table header', async ({ page }, testInfo) => {
     await install(page);
     await page.goto('npc-list');

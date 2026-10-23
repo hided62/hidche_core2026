@@ -41,6 +41,14 @@ tooltip trigger는 hover/focus 동작과 `cursor: help`를 유지하되, tooltip
 텍스트에 점선 밑줄을 반복하지 않습니다. keyboard `focus-visible` outline은 별도의
 접근성 상태로 유지합니다.
 
+카탈로그 설명의 줄바꿈은 `src/utils/legacyDescription.ts`의
+`splitLegacyLineBreaks()`가 해석합니다. `DirectoryTooltip`, `RichTooltip`, 유산의
+특기·유니크 설명은 `<br>`, `<br/>`, `<br />`(대소문자 무관)와 실제 개행을 이 함수로
+나누고 각 줄을 Vue text interpolation으로 렌더링합니다. 다른 HTML이나 entity는
+텍스트로 유지합니다. 일람·유산은 빈 줄을 보존하며, `RichTooltip`은 기존대로 각 줄의
+앞뒤 공백과 빈 줄을 제거합니다. 일람의 표와 모바일 카드에는 같은 tooltip을 쓰며
+줄바꿈 때문에 trigger의 geometry나 많은 행을 위한 lazy 구조를 바꾸지 않습니다.
+
 ## Button composition
 
 Choose the Ref visual family before choosing a semantic color. Buttons from

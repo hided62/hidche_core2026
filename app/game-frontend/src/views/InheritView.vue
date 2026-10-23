@@ -4,6 +4,7 @@ import { usePageExit } from '../composables/usePageExit';
 import { formatServerDateTime } from '@sammo-ts/common/time/ServerDateTime';
 import { JosaUtil } from '@sammo-ts/common/util/JosaUtil';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { splitLegacyLineBreaks } from '../utils/legacyDescription';
 import { trpc } from '../utils/trpc';
 import { useGameFeedback } from '../composables/useGameFeedback';
 
@@ -207,7 +208,6 @@ const specialNameMap = computed(() => {
     }
     return map;
 });
-const splitLegacyLineBreaks = (value: string): string[] => value.split(/<br\s*\/?\s*>|\r?\n/giu);
 const selectedSpecialWarInfo = computed(
     () => status.value?.availableSpecialWar.find((entry) => entry.key === nextSpecialKey.value)?.info ?? ''
 );

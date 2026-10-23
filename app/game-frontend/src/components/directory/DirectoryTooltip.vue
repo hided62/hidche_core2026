@@ -1,9 +1,14 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import { splitLegacyLineBreaks } from '../../utils/legacyDescription';
+
+const props = defineProps<{
     title: string;
     description?: string | null;
     testId?: string;
 }>();
+
+const descriptionLines = computed(() => splitLegacyLineBreaks(props.description ?? ''));
 </script>
 
 <template>
@@ -16,7 +21,10 @@ defineProps<{
         <slot />
         <span v-if="description" class="directory-tooltip__content" role="tooltip">
             <strong>{{ title }}</strong>
-            <span>{{ description }}</span>
+            <span class="directory-tooltip__description"
+                ><template v-for="(line, index) in descriptionLines" :key="index"
+                    >{{ line }}<br v-if="index < descriptionLines.length - 1" /></template
+            ></span>
         </span>
     </span>
 </template>
