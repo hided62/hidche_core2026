@@ -1079,6 +1079,7 @@ export const createDatabaseTurnHooks = async (
         profileName?: string;
         reservedTurns?: InMemoryReservedTurnStore;
         turnDaemonLease?: DatabaseTurnDaemonLease;
+        transactionMaxWaitMs?: number;
         transactionTimeoutMs?: number;
     }
 ): Promise<DatabaseTurnHooks> => {
@@ -1089,7 +1090,13 @@ export const createDatabaseTurnHooks = async (
     // Prisma's 5-second default matches the normal turn execution budget too
     // closely. A populated season can finish the turn but expire while flushing
     // it, which rolls the transaction back and marks the profile PAUSED.
-    const transactionOptions = { timeout: options?.transactionTimeoutMs ?? 30_000 };
+    // 실행 timeout과 연결 획득 대기는 별도 제한이다. 기본 maxWait 2초는
+    // 일시적인 DB 지연에도 callback 시작 전에 턴을 영구 PAUSED로 만들었다.
+    // 대기를 유한하게 늘리되 callback 재실행이나 lease/fencing 우회는 하지 않는다.
+    const transactionOptions = {
+        maxWait: options?.transactionMaxWaitMs ?? 10_000,
+        timeout: options?.transactionTimeoutMs ?? 30_000,
+    };
     const readModelBaseline = createRealtimeReadModelBaseline(world);
     let worldReadModelBaseline = createWorldReadModelSignature(world);
     let persistedTickSeconds = world.getState().tickSeconds;

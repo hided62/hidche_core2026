@@ -135,3 +135,106 @@ integration('turn failure personal-record persistence', () => {
         ]);
     });
 });
+
+integration('turn persistence connection acquisition', () => {
+    let connector: ReturnType<typeof createGamePostgresConnector>;
+    let hooks: DatabaseTurnHooks;
+    const fixtureWorldId = worldId + 10;
+
+    beforeAll(async () => {
+        connector = createGamePostgresConnector({ url: databaseUrl! });
+        await connector.connect();
+        await connector.prisma.worldState.create({
+            data: {
+                id: fixtureWorldId,
+                scenarioCode: 'transaction-acquisition',
+                currentYear: state.currentYear,
+                currentMonth: state.currentMonth,
+                tickSeconds: state.tickSeconds,
+                clockBaseTime: turnTime,
+                clockWallAnchor: turnTime,
+                clockMode: 'manual',
+                clockPhase: 'MANUAL',
+                clockTick: 0n,
+                lastTurnTick: 0n,
+            },
+        });
+        hooks = await createDatabaseTurnHooks(
+            databaseUrl!,
+            new InMemoryTurnWorld({ ...state, id: fixtureWorldId }, snapshot, { schedule }),
+            { transactionTimeoutMs: 1_000 }
+        );
+    });
+
+    afterAll(async () => {
+        await hooks?.close();
+        await connector?.prisma.worldState.deleteMany({ where: { id: fixtureWorldId } });
+        await connector?.disconnect();
+    });
+
+    const occupyPool = async () => {
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const started: Promise<void>[] = [];
+        const blockers = Array.from({ length: connector.getPoolStats().max }, () => {
+            let markStarted!: () => void;
+            started.push(new Promise<void>((resolve) => (markStarted = resolve)));
+            return connector.prisma.$transaction(
+                async (tx) => {
+                    await tx.$queryRaw`SELECT 1`;
+                    markStarted();
+                    await held;
+                },
+                { maxWait: 10_000, timeout: 20_000 }
+            );
+        });
+        // Attach handlers immediately so a setup failure cannot leak transactions.
+        const settled = Promise.allSettled(blockers);
+        try {
+            await Promise.all(started);
+        } catch (error) {
+            release();
+            await settled;
+            throw error;
+        }
+        return { release, settled };
+    };
+
+    it('waits beyond Prisma default without spending the callback execution budget', async () => {
+        const held = await occupyPool();
+        const sync = hooks.synchronizeClockAuthority();
+        // Observe the result immediately; the old 2-second default rejects here.
+        const outcome = sync.then(
+            (value) => ({ ok: true, value }),
+            (error: unknown) => ({ ok: false, error })
+        );
+        try {
+            const deadline = Date.now() + 1_000;
+            while (!connector.getPoolStats().waiting && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            expect(connector.getPoolStats().waiting).toBeGreaterThan(0);
+            await new Promise((resolve) => setTimeout(resolve, 2_500));
+            held.release();
+            expect(await outcome).toMatchObject({ ok: true });
+        } finally {
+            held.release();
+            await held.settled;
+            await outcome;
+        }
+    }, 15_000);
+
+    it('still rejects sustained connection exhaustion at the finite acquisition limit', async () => {
+        const held = await occupyPool();
+        try {
+            await expect(hooks.synchronizeClockAuthority()).rejects.toMatchObject({ code: 'P2028' });
+        } finally {
+            held.release();
+            await held.settled;
+        }
+        // Timed-out acquisition must not prevent the next normal operation.
+        await expect(hooks.synchronizeClockAuthority()).resolves.toBeTypeOf('boolean');
+    }, 15_000);
+});

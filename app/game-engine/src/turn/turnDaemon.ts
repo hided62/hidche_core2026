@@ -139,6 +139,7 @@ export interface TurnDaemonRuntimeOptions {
      * loaded once and no concurrent API writer may touch this database.
      */
     exclusiveFastForward?: boolean;
+    databaseTransactionMaxWaitMs?: number;
     databaseTransactionTimeoutMs?: number;
     onActionResolved?: NonNullable<Parameters<typeof createReservedTurnHandler>[0]['onActionResolved']>;
 }
@@ -933,6 +934,7 @@ const createTurnDaemonRuntimeWithLease = async (
             profileName: options.profileName ?? options.profile,
             reservedTurns: reservedTurnStoreHandle?.store,
             turnDaemonLease: turnDaemonLease ?? undefined,
+            transactionMaxWaitMs: options.databaseTransactionMaxWaitMs,
             transactionTimeoutMs: options.databaseTransactionTimeoutMs,
         });
         try {

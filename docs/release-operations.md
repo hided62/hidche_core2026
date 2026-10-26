@@ -363,7 +363,13 @@ Hyper-V의 VM 정지/재개, 체크포인트 또는 host 시간 보정은 게스
 NTP 로그와 Windows Hyper-V/백업 작업 이력을 대조합니다. lease 기간을 늘리거나
 시간 동기화를 임의로 끄는 것으로 해결하지 않습니다.
 
-Turn daemon의 DB persistence interactive transaction은 기본 30초입니다. 정상 turn
+Turn daemon의 DB persistence interactive transaction은 연결 획득 대기(`maxWait`)
+10초와 callback 실행(`timeout`) 30초를 각각 제한합니다. Prisma 기본 연결 대기
+2초는 일시적인 DB 지연에도 callback 시작 전 `P2028`로 서버를 PAUSED로 만들 수
+있습니다. 대기 상한을 넘거나 실행·lease 검증이 실패하면 기존 오류 처리를 유지하며,
+callback을 자동 재실행하지 않습니다. 내부 runtime 설정의
+`databaseTransactionMaxWaitMs`와 `databaseTransactionTimeoutMs`로 각각 조정합니다.
+정상 turn
 budget과 같은 Prisma 기본 5초를 그대로 쓰면 populated season의 flush가 경계에서
 rollback되고 profile이 `PAUSED`로 전환될 수 있습니다. timeout을 늘려도 한
 transaction의 계산·RNG·write 순서는 바뀌지 않지만 lock 보유 상한도 함께 늘어나므로
@@ -750,7 +756,6 @@ NDJSON frame 512 KiB/stream 64 MiB, 느린 소비자의 write buffer 1 MiB를 �
 실패합니다. 해당 host의 wrapper와 정확한 project를 사용하고 기존 volume·active
 release를 보존합니다. 외부 공개 stack과 임시 localhost stack의 token 파일은
 공유하지 않습니다. 임시 host의 절차는 상위 local-runtime README를 따릅니다.
-
 
 ### 이미지 업로드와 WebPush 전송 경계
 
