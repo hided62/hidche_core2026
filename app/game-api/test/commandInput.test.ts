@@ -152,7 +152,29 @@ describe('turn command argument input', () => {
         );
     });
 
-    it('recursively sanitizes reserved command strings like Ref before command parsing', async () => {
+    it('preserves ampersands through reservation parsing and repeated sanitization', async () => {
+        const args = { nationName: '풍년F&B', nested: ['A&B', '&amp;', '&lt;img&gt;'] };
+        expect(sanitizeReservedTurnArgs(args)).toEqual(args);
+        expect(sanitizeReservedTurnArgs(sanitizeReservedTurnArgs(args))).toEqual(args);
+        await expect(parseReservedTurnArgs('nation', 'che_국호변경', args)).resolves.toEqual({
+            nationName: '풍년F&B',
+        });
+        await expect(
+            parseReservedTurnArgs('general', 'che_건국', {
+                nationName: '풍년F&B',
+                nationType: 'che_도적',
+                colorType: 0,
+            })
+        ).resolves.toMatchObject({ nationName: '풍년F&B' });
+        // 반각 18자 판정에 &amp;의 저장 길이가 끼어들지 않는다.
+        const maxWidthName = '가나다라마바사아&B';
+        expect(() => assertReservedTurnArgsPassLegacyBasicValidation({ nationName: maxWidthName })).not.toThrow();
+        await expect(parseReservedTurnArgs('nation', 'che_국호변경', { nationName: maxWidthName })).resolves.toEqual({
+            nationName: maxWidthName,
+        });
+    });
+
+    it('retains Ref character removal and angle-bracket neutralization before command parsing', async () => {
         expect(
             sanitizeReservedTurnArgs({
                 nationName: '  <신-국>#  ',

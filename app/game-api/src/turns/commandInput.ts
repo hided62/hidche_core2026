@@ -472,8 +472,10 @@ const sanitizeLegacyTurnArgString = (value: string): string => {
     if (stripped === '' || stripped === '0') {
         return '';
     }
+    // Core의 Vue text와 formatLegacyLogHtml이 출력 시 &를 escape한다.
+    // Ref의 입력 단계 & 변환까지 적용하면 국호/예약 인자에 entity가 저장된다.
+    // <, > 중화는 로그의 legacy markup과 사용자 입력을 구분하기 위해 유지한다.
     return stripped
-        .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replace(/^[\p{Z}\p{C}]+|[\p{Z}\p{C}]+$/gu, '');

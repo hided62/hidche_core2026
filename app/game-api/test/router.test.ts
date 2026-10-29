@@ -1110,7 +1110,10 @@ describe('appRouter', () => {
         expect(nationWrites).toHaveLength(2);
     });
 
-    it('stores Ref-sanitized nation command strings in the reserved queue', async () => {
+    it.each([
+        ['  <신-국>#  ', '&lt;신국&gt;'],
+        ['풍년F&B', '풍년F&B'],
+    ])('stores the sanitized nation name %s in the reserved queue as %s', async (input, stored) => {
         const general = buildGeneralRow({ id: 19, nationId: 3, officerLevel: 12 });
         const nationWrites: unknown[] = [];
         const caller = appRouter.createCaller(
@@ -1121,16 +1124,14 @@ describe('appRouter', () => {
             generalId: general.id,
             turnIndex: 0,
             action: 'che_국호변경',
-            args: { nationName: '  <신-국>#  ' },
+            args: { nationName: input },
             expectedRevision: 0,
         });
 
-        expect(response.turns[0]?.args).toEqual({ nationName: '&lt;신국&gt;' });
+        expect(response.turns[0]?.args).toEqual({ nationName: stored });
         expect(nationWrites).toHaveLength(1);
         expect(nationWrites[0]).toMatchObject({
-            data: expect.arrayContaining([
-                expect.objectContaining({ turnIdx: 0, arg: { nationName: '&lt;신국&gt;' } }),
-            ]),
+            data: expect.arrayContaining([expect.objectContaining({ turnIdx: 0, arg: { nationName: stored } })]),
         });
     });
 

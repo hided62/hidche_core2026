@@ -27,6 +27,10 @@ const history = [
         id: 3,
         text: '이번 수입은 금 <C>158</>입니다.',
     },
+    {
+        id: 4,
+        text: '<D><b>풍년F&B</b></> &#60;img src=x onerror=globalThis.__legacyLogXss=4&#62;',
+    },
 ];
 
 const publicResponse = (operation: string): unknown => {
@@ -36,7 +40,12 @@ const publicResponse = (operation: string): unknown => {
         return response({ year: 200, month: 1, cityList: [], nationList: [], history });
     }
     if (operation === 'public.getWorldTrend') return response({ year: 200, month: 1, turnTerm: 10 });
-    if (operation === 'public.getNationList' || operation === 'public.getGeneralList') return response([]);
+    if (operation === 'public.getNationList') {
+        return response([
+            { id: 13, name: '풍년F&B', color: '#330000', level: 1, capitalCityId: 0, generalCount: 1, cityCount: 0 },
+        ]);
+    }
+    if (operation === 'public.getGeneralList') return response([]);
     throw new Error(`Unhandled legacy log fixture operation: ${operation}`);
 };
 
@@ -64,12 +73,15 @@ for (const viewport of [
         await page.goto('public');
 
         const lines = page.locator('.recent-log-line');
-        await expect(lines).toHaveCount(3);
+        await expect(lines).toHaveCount(4);
         await expect(lines.nth(0).locator('b')).toHaveText('안전 강조');
         await expect(lines.nth(1).locator('.small_war_log .war_type_attack')).toHaveText('→');
         await expect(lines.nth(1).locator('.ev_highlight')).toHaveText('강조');
         await expect(lines.nth(2)).toHaveText('이번 수입은 금 158입니다.');
         await expect(lines.nth(2)).not.toContainText('157.5');
+        await expect(lines.nth(3).locator('b')).toHaveText('풍년F&B');
+        await expect(lines.nth(3)).toContainText('&#60;img');
+        await expect(page.getByRole('cell', { name: '풍년F&B', exact: true })).toBeVisible();
         await expect(lines.locator('script, img, svg, a, [onerror], [onclick], [style*="url"]')).toHaveCount(0);
         await expect(lines.nth(0)).toContainText('<img src=x onerror=');
         await expect(lines.nth(1)).toContainText('<span class="name" onclick=');

@@ -396,7 +396,7 @@ describe('Nation Actions', () => {
             expect(changeNationNameArgsSchema.safeParse({ nationName: '가나다라마바사아자차' }).success).toBe(false);
         });
 
-        it('changes nation name', () => {
+        it.each(['NewName', '풍년F&B'])('changes nation name to %s without HTML encoding', (name) => {
             const nation = buildNation(1, 'OldName');
             const general = buildGeneral(1, 1, 1);
             const definition = new ChangeNationNameAction();
@@ -408,12 +408,12 @@ describe('Nation Actions', () => {
                 addLog: () => {},
             };
 
-            const resolution = definition.resolve(context as any, { nationName: 'NewName' });
+            const resolution = definition.resolve(context as any, { nationName: name });
 
             expect(resolution.effects).toContainEqual(
                 expect.objectContaining({
                     type: 'nation:patch',
-                    patch: expect.objectContaining({ name: 'NewName' }),
+                    patch: expect.objectContaining({ name }),
                 })
             );
         });
