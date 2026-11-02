@@ -34,8 +34,8 @@ const integrationError = ref('');
 const secretLoading = ref(false);
 const personnelLoading = ref(false);
 const pendingAppointment = ref('');
-const sort = ref<Sort>(10);
-const selectedSort = ref<Sort>(10);
+const sort = ref<Sort>(1);
+const selectedSort = ref<Sort>(1);
 const extraSort = ref<
     | 'name'
     | 'populationRate'
@@ -95,7 +95,7 @@ const cities = computed(() => {
     }
     return values.sort((a, b) => {
         const key = sort.value;
-        if (key === 1) return a.id - b.id;
+        if (key === 1 || key === 11) return a.region - b.region || b.level - a.level;
         if (key === 2) return b.population - a.population;
         if (key === 3) return b.population / b.populationMax - a.population / a.populationMax;
         if (key === 4) return b.trust - a.trust;
@@ -105,7 +105,6 @@ const cities = computed(() => {
         if (key === 8) return b.defence - a.defence;
         if (key === 9) return b.wall - a.wall;
         if (key === 10) return (b.trade ?? -1) - (a.trade ?? -1);
-        if (key === 11) return a.region - b.region || b.level - a.level;
         return b.level - a.level || a.region - b.region;
     });
 });
@@ -148,7 +147,9 @@ const developmentClass = (
     return ratio > 0.8 ? 'development-high' : ratio > 0.4 ? 'development-mid' : 'development-low';
 };
 const isRegionBreak = (city: City, index: number) =>
-    sort.value === 10 && extraSort.value === null && (index === 0 || cities.value[index - 1]?.region !== city.region);
+    (sort.value === 1 || sort.value === 11) &&
+    extraSort.value === null &&
+    (index === 0 || cities.value[index - 1]?.region !== city.region);
 const officer = (city: City, level: 2 | 3 | 4) => city.officers[level]?.name ?? '-';
 const officerIsStationed = (city: City, level: OfficerLevel): boolean =>
     secretData.value !== null && city.officers[level]?.cityId === city.id;

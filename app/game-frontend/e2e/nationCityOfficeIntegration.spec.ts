@@ -1,4 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+
+import type { trpc } from '../src/utils/trpc.js';
 
 import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 import { expectLumenButtonStates } from './lumenButton.js';
@@ -306,7 +309,11 @@ const personnelFixture = (state: FixtureState) => {
     };
 };
 
-const install = async (page: Page, state: FixtureState): Promise<void> => {
+const install = async (
+    page: Page,
+    state: FixtureState,
+    overviewCities?: Awaited<ReturnType<typeof trpc.nation.getCityOverview.query>>['cities']
+): Promise<void> => {
     await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_city_office');
         localStorage.setItem('sammo-game-profile', profile);
@@ -316,7 +323,10 @@ const install = async (page: Page, state: FixtureState): Promise<void> => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 20, name: '순욱' } });
             if (operation === 'join.getConfig') return response({});
-            if (operation === 'nation.getCityOverview') return response(overviewFixture(state));
+            if (operation === 'nation.getCityOverview') {
+                const overview = overviewFixture(state);
+                return response({ ...overview, cities: overviewCities ?? overview.cities });
+            }
             if (operation === 'nation.getSecretGeneralList') {
                 return state.secretForbidden
                     ? errorResponse(
@@ -491,3 +501,88 @@ test('NPC prefixes stay single in city names and linked secret rows', async ({ p
         await page.screenshot({ path: testInfo.outputPath(`npc-city-prefix-${width}.png`), fullPage: true });
     }
 });
+
+for (const width of [1200, 500]) {
+    test(`세력도시 기본 정렬은 지역별로 묶고 같은 지역 안에서 규모순으로 표시한다 (${width}px)`, async ({
+        page,
+    }, testInfo) => {
+        const state: FixtureState = { role: 'head', appointed: false, appointmentInputs: [] };
+        const baseCity = overviewFixture(state).cities[0]!;
+        // ID·시세·규모순이 지역 우선 정렬과 서로 다르게 되는 입력이다.
+        const overviewCities = [
+            { id: 10, name: '허창', region: 2, level: 8, trade: 60 },
+            { id: 20, name: '상당', region: 1, level: 5, trade: 130 },
+            { id: 30, name: '진류', region: 2, level: 5, trade: 110 },
+            { id: 40, name: '업', region: 1, level: 8, trade: 80 },
+            { id: 50, name: '북평', region: 1, level: 8, trade: 90 },
+        ].map((city) => ({ ...baseCity, ...city }));
+        await install(page, state, overviewCities);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('nation/cities');
+        const tables = page.locator('.city');
+        await expect(tables).toHaveCount(5);
+        await page.evaluate(() => document.fonts.ready);
+        const cityOrder = () => tables.evaluateAll((elements) => elements.map((el) => Number(el.dataset.cityId)));
+        const regionStarts = () =>
+            page
+                .locator('.city.region-break')
+                .evaluateAll((elements) => elements.map((el) => Number(el.dataset.cityId)));
+        const expectedOrder = [40, 50, 20, 10, 30];
+        const select = page.locator('#nation-city-sort');
+        const submit = page.getByRole('button', { name: '정렬하기' });
+
+        await page.screenshot({ path: testInfo.outputPath('default-region-order.png'), fullPage: true });
+        await writeFile(
+            testInfo.outputPath('default-region-order.html'),
+            await page.locator('main').evaluate((el) => el.outerHTML)
+        );
+        const geometry = await tables.evaluateAll((elements) =>
+            elements.map((el) => {
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                return {
+                    id: Number(el.dataset.cityId),
+                    title: el.querySelector('.city-title')?.textContent?.trim(),
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    marginTop: style.marginTop,
+                    fontSize: style.fontSize,
+                    borderCollapse: style.borderCollapse,
+                };
+            })
+        );
+        await writeFile(
+            testInfo.outputPath('default-region-order.json'),
+            JSON.stringify({ url: page.url(), width, geometry }, null, 2)
+        );
+        await expect(select).toHaveValue('1');
+        expect(await cityOrder()).toEqual(expectedOrder);
+        expect(await regionStarts()).toEqual([40, 10]);
+        expect(geometry.map((city) => city.marginTop)).toEqual(['18px', '0px', '0px', '18px', '0px']);
+        await expect(tables.locator('.city-title')).toContainText(['하북', '하북', '하북', '중원', '중원']);
+
+        // 선택만으로는 적용하지 않고 submit 뒤에만 기존 명시적 정렬을 적용한다.
+        await select.selectOption('12');
+        expect(await cityOrder()).toEqual(expectedOrder);
+        await submit.click();
+        expect(await cityOrder()).toEqual([40, 50, 10, 20, 30]);
+        expect(await regionStarts()).toEqual([]);
+        await page.getByRole('button', { name: '시세 기준 정렬' }).first().click();
+        await expect(select).toHaveValue('10');
+        expect(await cityOrder()).toEqual([20, 30, 50, 40, 10]);
+        expect(await regionStarts()).toEqual([]);
+        for (const sort of ['11', '1']) {
+            await select.selectOption(sort);
+            await submit.click();
+            expect(await cityOrder()).toEqual(expectedOrder);
+            expect(await regionStarts()).toEqual([40, 10]);
+        }
+        await page.reload();
+        await expect(select).toHaveValue('1');
+        await expect(tables).toHaveCount(5);
+        expect(await cityOrder()).toEqual(expectedOrder);
+        expect(state.appointmentInputs).toEqual([]);
+    });
+}
