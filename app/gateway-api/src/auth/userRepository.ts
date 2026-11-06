@@ -249,6 +249,7 @@ export interface UserRepository {
     resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null>;
     setThirdPartyUse(userId: string, allowed: boolean): Promise<void>;
     scheduleDeletion(userId: string, deleteAfter: Date): Promise<void>;
+    cancelDeletion(userId: string, deleteAfter: string, authRevision: number): Promise<boolean>;
     deleteUser(userId: string): Promise<void>;
 }
 

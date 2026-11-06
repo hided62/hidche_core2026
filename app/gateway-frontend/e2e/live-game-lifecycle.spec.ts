@@ -60,8 +60,8 @@ const loginGame = async (username: string, password: string) => {
         ).toString('base64'),
     };
     const login = await gateway.auth.login.mutate({ username, credential });
-    if (login.status === 'otp') {
-        throw new Error('Live lifecycle fixture requires a currently verified KakaoTalk login.');
+    if (login.status !== 'login') {
+        throw new Error(`Live lifecycle fixture requires login; received ${login.status}.`);
     }
     gatewaySession.token = login.sessionToken;
     const issued = await gateway.auth.issueGameSession.mutate({

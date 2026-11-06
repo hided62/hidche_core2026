@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 
+import type { DeletionPending } from './DeletionRecoveryPanel.vue';
+
 import { trpc } from '../utils/trpc';
 
 const props = defineProps<{
@@ -10,6 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     verified: [sessionToken: string, validUntil: string];
     cancel: [];
+    deletionPending: [recovery: DeletionPending];
 }>();
 
 const code = ref('');
@@ -36,6 +39,10 @@ const submit = async (): Promise<void> => {
             challengeId: props.challengeId,
             code: code.value,
         });
+        if (result.status === 'deletion_pending') {
+            emit('deletionPending', result);
+            return;
+        }
         emit('verified', result.sessionToken, result.validUntil);
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '인증 코드를 확인하지 못했습니다.';

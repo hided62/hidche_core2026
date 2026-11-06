@@ -82,6 +82,28 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
         });
     });
 
+    it('consumes an isolated deletion proof once with a five-minute TTL', async () => {
+        const recovery = await store.createDeletionRecovery({
+            userId: randomUUID(),
+            deleteAfter: new Date().toISOString(),
+            authRevision: 2,
+            expiresAt: new Date(Date.now() + 300000).toISOString(),
+        });
+        const key = `${prefix}:deletion-recovery:${recovery.id}`;
+        try {
+            expect(await client.ttl(key)).toBeGreaterThan(0);
+            expect(await client.ttl(key)).toBeLessThanOrEqual(300);
+            const results = await Promise.all([
+                store.consumeDeletionRecovery(recovery.id),
+                store.consumeDeletionRecovery(recovery.id),
+            ]);
+            expect(results.filter(Boolean)).toEqual([recovery]);
+            expect(await store.consumeSession(recovery.id)).toBeNull();
+        } finally {
+            await client.del(key);
+        }
+    });
+
     it('atomically consumes a successful code once', async () => {
         const challenge = await createChallenge();
 

@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import fastify from 'fastify';
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import { trpcJsonBodyHttpServerOptions } from '@sammo-ts/common';
+import { canCancelDeletion } from '../src/auth/deletionRecovery.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -228,36 +232,36 @@ const buildCaller = (
             ).toString('base64'),
         };
     };
-    const caller = appRouter.createCaller(
-        createGatewayApiContext({
-            users,
-            sessions,
-            flushPublisher,
-            gameTokenSecret: 'test-secret',
-            gameSessionTtlSeconds: 600,
-            kakaoClient: kakaoClient as unknown as KakaoOAuthClient,
-            oauthSessions,
-            publicBaseUrl: 'http://localhost',
-            userIconDir: options.userIconDir,
-            userIconPublicUrl: 'http://localhost/user-icons',
-            sharedIconPublicUrl: 'https://sam-image.hided.net/icons',
-            userIconUpload,
-            adminLocalAccountEnabled: false,
-            localRegistrationEnabled: true,
-            localAccountGraceDays: options.localAccountGraceDays ?? 7,
-            passwordEnvelope,
-            profiles,
-            orchestrator,
-            profileStatus,
-            requestHeaders,
-            prisma: {
-                appUser: {
-                    findFirst: async () => null,
-                },
-            } as unknown as GatewayPrismaClient,
-        })
-    );
+    const context = createGatewayApiContext({
+        users,
+        sessions,
+        flushPublisher,
+        gameTokenSecret: 'test-secret',
+        gameSessionTtlSeconds: 600,
+        kakaoClient: kakaoClient as unknown as KakaoOAuthClient,
+        oauthSessions,
+        publicBaseUrl: 'http://localhost',
+        userIconDir: options.userIconDir,
+        userIconPublicUrl: 'http://localhost/user-icons',
+        sharedIconPublicUrl: 'https://sam-image.hided.net/icons',
+        userIconUpload,
+        adminLocalAccountEnabled: false,
+        localRegistrationEnabled: true,
+        localAccountGraceDays: options.localAccountGraceDays ?? 7,
+        passwordEnvelope,
+        profiles,
+        orchestrator,
+        profileStatus,
+        requestHeaders,
+        prisma: {
+            appUser: {
+                findFirst: async () => null,
+            },
+        } as unknown as GatewayPrismaClient,
+    });
+    const caller = appRouter.createCaller(context);
     return {
+        context,
         caller,
         oauthSessions,
         users,
@@ -648,6 +652,7 @@ describe('gateway auth flow', () => {
         const code = sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
         expect(code).toBeTruthy();
         const completed = await caller.auth.kakaoOtp({ challengeId: verified.challengeId, code: code! });
+        if (completed.status !== 'login') throw new Error('Expected login.');
         expect(completed.user.kakaoVerified).toBe(true);
         const stored = await users.findByUsername('verify-user');
         expect(stored).toMatchObject({
@@ -1223,6 +1228,7 @@ describe('gateway auth flow', () => {
         const code = sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
         expect(code).toBeTruthy();
         const completed = await caller.auth.kakaoOtp({ challengeId: register.challengeId, code: code! });
+        if (completed.status !== 'login') throw new Error('Expected login.');
         expect(completed.user.username).toBe('tester');
         expect(completed.sessionToken).toBeTruthy();
 
@@ -1783,5 +1789,162 @@ describe('account self service', () => {
         } finally {
             await fs.rm(iconDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('account deletion cancellation', () => {
+    const pendingLogin = async () => {
+        const f = buildCaller();
+        const user = await f.users.createUser({ username: 'recover-user', password: 'secretpass' });
+        const other = await f.users.createUser({ username: 'other-recover-user', password: 'secretpass' });
+        const oldSession = await f.sessions.createSession(user);
+        const deadline = new Date(Date.now() + 30 * 86400000);
+        await f.caller.account.scheduleDeletion({
+            sessionToken: oldSession.sessionToken,
+            currentCredential: f.sealPassword('secretpass'),
+        });
+        const result = await f.caller.auth.login({ username: user.username, credential: f.sealPassword('secretpass') });
+        if (result.status !== 'deletion_pending') throw new Error('Expected deletion confirmation.');
+        return { ...f, user, other, oldSession, deadline, result };
+    };
+
+    it('authenticates before offering cancellation and restores only the proved account once', async () => {
+        const f = await pendingLogin();
+        await expect(
+            f.caller.auth.login({ username: f.user.username, credential: f.sealPassword('wrongpass') })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        expect(f.result).not.toHaveProperty('sessionToken');
+        expect(await f.sessions.getSession(f.oldSession.sessionToken)).toBeNull();
+        const restored = await f.caller.auth.cancelDeletion({ recoveryId: f.result.recoveryId });
+        expect(restored.status).toBe('login');
+        if (restored.status !== 'login') throw new Error('Expected login.');
+        expect((await f.users.findById(f.user.id))?.deleteAfter).toBeUndefined();
+        expect((await f.users.findById(f.user.id))?.authRevision).toBe(1);
+        expect((await f.sessions.getSession(restored.sessionToken))?.userId).toBe(f.user.id);
+        expect((await f.users.findById(f.other.id))?.authRevision).toBe(0);
+        expect(f.flushPublisher.publishUserFlush).toHaveBeenCalledWith(f.user.id, 'account-deletion-cancelled');
+        await expect(f.caller.auth.cancelDeletion({ recoveryId: f.result.recoveryId })).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
+    });
+
+    it.each(['rescheduled', 'expired-proof', 'sanctioned', 'deleted'] as const)(
+        'rejects a %s recovery without clearing deletion',
+        async (kind) => {
+            const f = await pendingLogin();
+            if (kind === 'rescheduled') await f.users.scheduleDeletion(f.user.id, new Date(Date.now() + 60 * 86400000));
+            if (kind === 'sanctioned')
+                await f.users.updateSanctions(f.user.id, {
+                    bannedUntil: new Date(Date.now() + 86400000).toISOString(),
+                });
+            if (kind === 'deleted') await f.users.deleteUser(f.user.id);
+            if (kind === 'expired-proof') vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 301000);
+            try {
+                await expect(f.caller.auth.cancelDeletion({ recoveryId: f.result.recoveryId })).rejects.toBeDefined();
+            } finally {
+                vi.restoreAllMocks();
+            }
+            if (kind !== 'deleted') expect((await f.users.findById(f.user.id))?.deleteAfter).toBeDefined();
+            expect(f.flushPublisher.publishUserFlush).not.toHaveBeenCalledWith(f.user.id, 'account-deletion-cancelled');
+        }
+    );
+
+    it('requires a proof, rejects actor injection and verifies actual HTTP transport', async () => {
+        const f = await pendingLogin();
+        const app = fastify();
+        await app.register(fastifyTRPCPlugin, {
+            prefix: '/gateway/api/trpc',
+            trpcOptions: { router: appRouter, ...trpcJsonBodyHttpServerOptions, createContext: () => f.context },
+        });
+        try {
+            const address = await app.listen({ host: '127.0.0.1', port: 0 });
+            const post = (input: object) =>
+                fetch(`${address}/gateway/api/trpc/auth.cancelDeletion`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(input),
+                });
+            expect((await post({})).status).toBe(400);
+            expect((await post({ recoveryId: 'not-a-uuid' })).status).toBe(400);
+            expect((await post({ recoveryId: '11111111-1111-4111-8111-111111111111' })).status).toBe(401);
+            expect((await post({ recoveryId: f.result.recoveryId, userId: f.other.id })).status).toBe(400);
+            expect((await post({ recoveryId: f.result.recoveryId })).status).toBe(200);
+            expect((await post({ recoveryId: f.result.recoveryId })).status).toBe(401);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it.each([
+        [false, false],
+        [true, false],
+        [false, true],
+        [true, true],
+    ])(
+        'supports pending Kakao accounts after existing-email linking=%s, legacy=%s and OTP proof',
+        async (linkByEmail, legacy) => {
+            const f = buildCaller();
+            const user = await f.users.createUser({
+                username: 'kakao-recover',
+                password: 'secretpass',
+                oauth: { type: 'KAKAO', id: linkByEmail ? 'former-id' : '1', email: 'tester@example.com', info: {} },
+            });
+            if (linkByEmail)
+                await f.users.setKakaoReplacementApproval(user.id, {
+                    until: new Date(Date.now() + 60000),
+                    approvedByUserId: 'operator',
+                    reason: '본인 확인 완료',
+                });
+            if (legacy) {
+                user.legacyMemberNo = 42;
+                user.passwordResetRequired = true;
+            }
+            await f.users.scheduleDeletion(
+                user.id,
+                legacy ? new Date('2026-07-30T14:59:59.999Z') : new Date(Date.now() + 86400000)
+            );
+            const start = await f.caller.auth.kakaoStart({ mode: 'login' });
+            let result = await f.caller.auth.kakaoExchange({ code: 'test-code', state: start.state });
+            if (linkByEmail) {
+                if (result.status !== 'account_recovery') throw new Error('Expected account link confirmation.');
+                result = await f.caller.auth.kakaoResolveAccount({
+                    oauthSessionId: result.oauthSessionId,
+                    action: 'link_existing',
+                });
+            }
+            if (legacy) {
+                if (result.status !== 'password_setup') throw new Error('Expected migrated password setup.');
+                result = await f.caller.auth.kakaoSetPassword({
+                    oauthSessionId: result.oauthSessionId,
+                    credential: f.sealPassword('restoredpass'),
+                });
+            }
+            if (result.status !== 'otp') throw new Error('Expected OTP proof.');
+            expect((await f.users.findById(user.id))?.deleteAfter).toBeDefined();
+            const code = f.sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
+            const verified = await f.caller.auth.kakaoOtp({ challengeId: result.challengeId, code: code! });
+            if (verified.status !== 'deletion_pending') throw new Error('Expected deletion confirmation.');
+            expect(verified).not.toHaveProperty('sessionToken');
+            expect((await f.users.findById(user.id))?.deleteAfter).toBeDefined();
+            expect((await f.caller.auth.cancelDeletion({ recoveryId: verified.recoveryId })).status).toBe('login');
+        }
+    );
+
+    it('applies the pre-July legacy request exception at the exact Korean-time boundary', async () => {
+        const f = buildCaller();
+        const user = await f.users.createUser({ username: 'legacy-recover', password: 'secretpass' });
+        user.legacyMemberNo = 42;
+        const cutoffDeadline = new Date('2026-07-31T00:00:00+09:00');
+        await f.users.scheduleDeletion(user.id, new Date(cutoffDeadline.getTime() - 1));
+        const legacy = await f.users.findById(user.id);
+        expect(canCancelDeletion(legacy!, new Date('2026-11-07'))).toBe(true);
+        const result = await f.caller.auth.login({ username: user.username, credential: f.sealPassword('secretpass') });
+        if (result.status !== 'deletion_pending') throw new Error('Expected legacy restoration.');
+        await f.caller.auth.cancelDeletion({ recoveryId: result.recoveryId });
+        await f.users.scheduleDeletion(user.id, cutoffDeadline);
+        await expect(
+            f.caller.auth.login({ username: user.username, credential: f.sealPassword('secretpass') })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        expect(canCancelDeletion({ ...legacy!, legacyMemberNo: undefined }, new Date('2026-11-07'))).toBe(false);
     });
 });

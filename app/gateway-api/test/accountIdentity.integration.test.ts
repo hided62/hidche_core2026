@@ -139,4 +139,25 @@ integration('account identity PostgreSQL transaction', () => {
             })
         ).rejects.toThrow();
     });
+    it('cancels only the authenticated deletion snapshot once and persists the new auth revision', async () => {
+        const users = createPostgresUserRepository(db);
+        const deadline = new Date(Date.now() + 86400000);
+        await users.scheduleDeletion(firstUserId, deadline);
+        const before = await users.findById(firstUserId);
+        const revision = before?.authRevision ?? 0;
+        expect(await users.cancelDeletion(firstUserId, new Date(deadline.getTime() - 1).toISOString(), revision)).toBe(
+            false
+        );
+        expect(await users.cancelDeletion(firstUserId, deadline.toISOString(), revision + 1)).toBe(false);
+        const results = await Promise.all([
+            users.cancelDeletion(firstUserId, deadline.toISOString(), revision),
+            users.cancelDeletion(firstUserId, deadline.toISOString(), revision),
+        ]);
+        expect(results.filter(Boolean)).toHaveLength(1);
+        const restored = await users.findById(firstUserId);
+        expect(restored?.deleteAfter).toBeUndefined();
+        expect(restored?.authRevision).toBe(revision + 1);
+        expect(restored?.oauthId).toBe(before?.oauthId);
+        expect(restored?.sanctions).toEqual(before?.sanctions);
+    });
 });

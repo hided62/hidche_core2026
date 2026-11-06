@@ -21,6 +21,7 @@ export default defineConfig({
         'gateway-notice-html.spec.ts',
         'kakao-otp.spec.ts',
         'kakao-account-recovery.spec.ts',
+        'account-deletion-recovery.spec.ts',
         'public-map-tabs.spec.ts',
         'runtime-navigation.spec.ts',
         'open-suggestion.spec.ts',

@@ -789,6 +789,14 @@ export const createPostgresUserRepository = (
                 data: { deleteAfter },
             });
         },
+        async cancelDeletion(userId: string, deleteAfter: string, authRevision: number): Promise<boolean> {
+            // 인증한 탈퇴 예약만 취소하고, 이전 session과 복구 증명은 revision으로 무효화한다.
+            const result = await prisma.appUser.updateMany({
+                where: { id: userId, deleteAfter: new Date(deleteAfter), authRevision },
+                data: { deleteAfter: null, authRevision: { increment: 1 } },
+            });
+            return result.count === 1;
+        },
         async deleteUser(userId: string): Promise<void> {
             await prisma.appUser.delete({
                 where: { id: userId },

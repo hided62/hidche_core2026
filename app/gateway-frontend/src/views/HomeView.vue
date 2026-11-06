@@ -7,6 +7,7 @@ import { gatewayProfileCapabilities } from '@sammo-ts/common/gateway/profileStat
 
 import MapPreview from '../components/MapPreview.vue';
 import KakaoOtpDialog from '../components/KakaoOtpDialog.vue';
+import DeletionRecoveryPanel, { type DeletionPending } from '../components/DeletionRecoveryPanel.vue';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { createGameTrpc, type GameRouter } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
@@ -27,6 +28,12 @@ const username = ref('');
 const password = ref('');
 const loginError = ref('');
 const loginLoading = ref(false);
+const deletionPending = ref<DeletionPending | null>(null);
+const handleDeletionPending = (recovery: DeletionPending): void => {
+    otpChallenge.value = null;
+    password.value = '';
+    deletionPending.value = recovery;
+};
 const otpChallenge = ref<{ challengeId: string; expiresAt: string; attemptsRemaining: number } | null>(null);
 const statusLoading = ref(false);
 const statusError = ref('');
@@ -101,6 +108,10 @@ const handleLogin = async (): Promise<void> => {
             username: username.value,
             credential,
         });
+        if (result.status === 'deletion_pending') {
+            handleDeletionPending(result);
+            return;
+        }
         if (result.status === 'otp') {
             otpChallenge.value = result;
             return;
@@ -148,7 +159,13 @@ const handlePasswordReset = async (): Promise<void> => {
 
             <section id="login_card" class="login-card">
                 <h3>로그인</h3>
-                <form id="main_form" @submit.prevent="handleLogin">
+                <DeletionRecoveryPanel
+                    v-if="deletionPending"
+                    :recovery="deletionPending"
+                    @restored="handleOtpVerified"
+                    @cancel="deletionPending = null"
+                />
+                <form v-else id="main_form" @submit.prevent="handleLogin">
                     <label for="username">계정명</label>
                     <input
                         id="username"
@@ -214,6 +231,7 @@ const handlePasswordReset = async (): Promise<void> => {
         v-if="otpChallenge"
         :challenge-id="otpChallenge.challengeId"
         @verified="handleOtpVerified"
+        @deletion-pending="handleDeletionPending"
         @cancel="otpChallenge = null"
     />
 </template>

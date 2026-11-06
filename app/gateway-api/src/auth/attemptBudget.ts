@@ -107,6 +107,7 @@ const EXPENSIVE_ACTIONS = new Set([
     'auth.register',
     'auth.registerLocal',
     'auth.login',
+    'auth.cancelDeletion',
     'auth.kakaoOtp',
     'account.changePassword',
     'account.scheduleDeletion',

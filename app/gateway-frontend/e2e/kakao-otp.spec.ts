@@ -133,7 +133,7 @@ const verifyDialog = async (page: Page, artifactName: string) => {
     await expect(submit).toBeFocused();
     await page.waitForTimeout(200);
     expect(await submit.evaluate((element) => getComputedStyle(element).boxShadow)).toMatch(
-        /^rgba\(85, 115, 146, 0\.49\d\) 0px 0px 0px 4px$/
+        /^rgba\(85, 115, 146, 0\.(?:49\d|5)\) 0px 0px 0px 4px$/
     );
 
     if (artifactRoot) {

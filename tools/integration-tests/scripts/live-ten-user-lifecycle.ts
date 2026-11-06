@@ -114,7 +114,7 @@ const loginAdminWithToken = async () => {
         username: requiredEnv('INITIAL_ADMIN_USERNAME'),
         credential,
     });
-    if (result.status === 'otp') throw new Error('Admin login unexpectedly requires OTP.');
+    if (result.status !== 'login') throw new Error(`Admin login requires ${result.status}.`);
     session.token = result.sessionToken;
     return { gateway, sessionToken: result.sessionToken };
 };

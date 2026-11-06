@@ -98,6 +98,7 @@ const verifyRecoveryChoice = async (page: Page, action: 'link_existing' | 'rejoi
     await expect(group).toContainText(
         action === 'link_existing' ? '이 계정에 카카오 로그인을 연결해드릴까요?' : '새 계정으로 재가입하시겠습니까?'
     );
+    await page.evaluate(() => document.fonts.ready);
     const geometry = await group.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);

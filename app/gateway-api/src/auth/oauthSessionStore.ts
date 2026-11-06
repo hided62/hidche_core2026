@@ -3,6 +3,14 @@ import { parseJson } from '@sammo-ts/common';
 
 export type OAuthMode = 'login' | 'change_pw' | 'verify';
 
+export interface DeletionRecovery {
+    id: string;
+    userId: string;
+    deleteAfter: string;
+    authRevision: number;
+    expiresAt: string;
+}
+
 export interface OAuthPendingState {
     state: string;
     mode: OAuthMode;
@@ -41,6 +49,8 @@ export type KakaoLoginChallengeResult =
     | { status: 'expired' };
 
 export interface OAuthSessionStore {
+    createDeletionRecovery(recovery: Omit<DeletionRecovery, 'id'>): Promise<DeletionRecovery>;
+    consumeDeletionRecovery(id: string): Promise<DeletionRecovery | null>;
     createPendingState(mode: OAuthMode, scopes: string[], userId?: string): Promise<OAuthPendingState>;
     consumePendingState(state: string): Promise<OAuthPendingState | null>;
     createSession(session: Omit<OAuthSession, 'id'>): Promise<OAuthSession>;
@@ -105,6 +115,20 @@ export class RedisOAuthSessionStore implements OAuthSessionStore {
     private readonly client: RedisClientLike;
     private readonly prefix: string;
     private readonly ttlSeconds: number;
+
+    async createDeletionRecovery(recovery: Omit<DeletionRecovery, 'id'>): Promise<DeletionRecovery> {
+        const stored = { ...recovery, id: randomUUID() };
+        await this.client.set(`${this.prefix}:deletion-recovery:${stored.id}`, JSON.stringify(stored), { EX: 300 });
+        return stored;
+    }
+
+    async consumeDeletionRecovery(id: string): Promise<DeletionRecovery | null> {
+        const raw = await this.client.eval(consumeOnceScript, {
+            keys: [`${this.prefix}:deletion-recovery:${id}`],
+            arguments: [],
+        });
+        return typeof raw === 'string' ? parseJson<DeletionRecovery>(raw) : null;
+    }
 
     constructor(client: RedisClientLike, prefix: string, ttlSeconds: number) {
         this.client = client;
@@ -225,6 +249,19 @@ export class RedisOAuthSessionStore implements OAuthSessionStore {
 
 // 테스트용 인메모리 OAuth 세션 저장소.
 export class InMemoryOAuthSessionStore implements OAuthSessionStore {
+    private readonly deletionRecoveries = new Map<string, DeletionRecovery>();
+
+    async createDeletionRecovery(recovery: Omit<DeletionRecovery, 'id'>): Promise<DeletionRecovery> {
+        const stored = { ...recovery, id: randomUUID() };
+        this.deletionRecoveries.set(stored.id, stored);
+        return stored;
+    }
+
+    async consumeDeletionRecovery(id: string): Promise<DeletionRecovery | null> {
+        const recovery = this.deletionRecoveries.get(id) ?? null;
+        this.deletionRecoveries.delete(id);
+        return recovery && new Date(recovery.expiresAt).getTime() > Date.now() ? recovery : null;
+    }
     private readonly pendingStates = new Map<string, OAuthPendingState>();
     private readonly sessions = new Map<string, OAuthSession>();
     private readonly loginChallenges = new Map<string, KakaoLoginChallenge>();

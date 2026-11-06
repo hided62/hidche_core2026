@@ -558,6 +558,20 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             }
             throw new Error('User not found.');
         },
+        async cancelDeletion(userId: string, deleteAfter: string, authRevision: number): Promise<boolean> {
+            for (const user of usersByName.values()) {
+                if (
+                    user.id === userId &&
+                    user.deleteAfter === deleteAfter &&
+                    (user.authRevision ?? 0) === authRevision
+                ) {
+                    user.deleteAfter = undefined;
+                    user.authRevision = authRevision + 1;
+                    return true;
+                }
+            }
+            return false;
+        },
         async deleteUser(userId: string): Promise<void> {
             for (const [username, user] of usersByName.entries()) {
                 if (user.id === userId) {

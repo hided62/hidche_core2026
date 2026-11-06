@@ -831,7 +831,9 @@ onBeforeUnmount(() => {
                                     현재 아이콘 서버 적용
                                 </button>
                             </p>
-                            <p class="warning">탈퇴시 1개월간 정보가 보존되며, 1개월간 재가입이 불가능합니다.</p>
+                            <p class="warning">
+                                탈퇴시 1개월간 정보가 보존되며, 보존 기간에는 로그인 후 탈퇴를 취소할 수 있습니다.
+                            </p>
                         </td>
                     </tr>
                 </tfoot>

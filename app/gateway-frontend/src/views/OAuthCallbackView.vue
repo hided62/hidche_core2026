@@ -4,12 +4,18 @@ import { useRoute, useRouter } from 'vue-router';
 
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import KakaoOtpDialog from '../components/KakaoOtpDialog.vue';
+import DeletionRecoveryPanel, { type DeletionPending } from '../components/DeletionRecoveryPanel.vue';
 import { trpc } from '../utils/trpc';
 import { sealPassword } from '../utils/passwordEnvelope';
 
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
+const deletionPending = ref<DeletionPending | null>(null);
+const handleDeletionPending = (recovery: DeletionPending): void => {
+    otpChallenge.value = null;
+    deletionPending.value = recovery;
+};
 const submitting = ref(false);
 const errorMessage = ref('');
 const infoMessage = ref('');
@@ -43,6 +49,10 @@ const completeExchange = async (): Promise<void> => {
     }
     try {
         const result = await trpc.auth.kakaoExchange.mutate({ code, state });
+        if (result.status === 'deletion_pending') {
+            handleDeletionPending(result);
+            return;
+        }
         if (result.status === 'otp') {
             otpChallenge.value = result;
             otpSuccessStatus.value = result.successStatus;
@@ -92,6 +102,10 @@ const resolveAccount = async (): Promise<void> => {
             action: accountRecovery.value.action,
         });
         accountRecovery.value = null;
+        if (result.status === 'deletion_pending') {
+            handleDeletionPending(result);
+            return;
+        }
         if (result.status === 'otp') {
             otpChallenge.value = result;
             otpSuccessStatus.value = result.successStatus;
@@ -133,6 +147,10 @@ const setMigratedPassword = async (): Promise<void> => {
         password.value = '';
         confirmPassword.value = '';
         passwordSetupSessionId.value = '';
+        if (result.status === 'deletion_pending') {
+            handleDeletionPending(result);
+            return;
+        }
         if (result.status === 'otp') {
             otpChallenge.value = result;
             otpSuccessStatus.value = passwordSetupSuccessStatus.value;
@@ -169,6 +187,10 @@ const register = async (): Promise<void> => {
             privacyAgreed: true,
             thirdPartyUse: thirdPartyUse.value,
         });
+        if (result.status === 'deletion_pending') {
+            handleDeletionPending(result);
+            return;
+        }
         if (result.status === 'otp') {
             otpChallenge.value = result;
             otpSuccessStatus.value = result.successStatus;
@@ -202,15 +224,23 @@ onMounted(() => {
             <section class="oauth-card">
                 <h2>
                     {{
-                        accountRecovery
-                            ? '카카오 계정 연결 확인'
-                            : passwordSetupSessionId
-                              ? '새 비밀번호 설정'
-                              : '회원가입'
+                        deletionPending
+                            ? '탈퇴 취소'
+                            : accountRecovery
+                              ? '카카오 계정 연결 확인'
+                              : passwordSetupSessionId
+                                ? '새 비밀번호 설정'
+                                : '회원가입'
                     }}
                 </h2>
                 <p v-if="loading" class="oauth-message">카카오 인증을 확인하는 중...</p>
                 <p v-else-if="infoMessage" class="oauth-message" role="status">{{ infoMessage }}</p>
+                <DeletionRecoveryPanel
+                    v-else-if="deletionPending"
+                    :recovery="deletionPending"
+                    @restored="handleOtpVerified"
+                    @cancel="router.replace('/')"
+                />
                 <div v-else-if="accountRecovery" class="recovery-panel" role="group" aria-label="카카오 계정 연결 확인">
                     <p v-if="accountRecovery.action === 'link_existing'">
                         <strong>{{ accountRecovery.email }}</strong> 이메일로 보존된 기존 계정이 있습니다. 이 계정에
@@ -329,7 +359,9 @@ onMounted(() => {
                     </button>
                 </form>
                 <p v-if="errorMessage" class="oauth-error" role="alert">{{ errorMessage }}</p>
-                <RouterLink v-if="!loading && !oauthSessionId" class="back-link" to="/">돌아가기</RouterLink>
+                <RouterLink v-if="!loading && !oauthSessionId && !deletionPending" class="back-link" to="/"
+                    >돌아가기</RouterLink
+                >
             </section>
         </main>
     </DefaultLayout>
@@ -337,6 +369,7 @@ onMounted(() => {
         v-if="otpChallenge"
         :challenge-id="otpChallenge.challengeId"
         @verified="handleOtpVerified"
+        @deletion-pending="handleDeletionPending"
         @cancel="otpChallenge = null"
     />
 </template>

@@ -23,6 +23,7 @@ import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } 
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 import { isGatewaySessionCurrent } from './auth/sessionValidity.js';
 import { GameSessionLimitError } from './auth/sessionService.js';
+import { assertLoginAllowed, canCancelDeletion, completeGatewayLogin } from './auth/deletionRecovery.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 import type { GatewayApiContext } from './context.js';
 import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
@@ -73,6 +74,7 @@ const finishKakaoLogin = async <T extends 'login' | 'verified'>(
     accessToken: string,
     successStatus: T
 ) => {
+    assertLoginAllowed(user);
     try {
         const challenge = await requireKakaoTalkProof({
             user,
@@ -87,13 +89,7 @@ const finishKakaoLogin = async <T extends 'login' | 'verified'>(
     } catch (error) {
         throwKakaoVerificationError(error);
     }
-    const session = await ctx.sessions.createSession(user);
-    return {
-        status: successStatus,
-        user: toPublicUser(user),
-        sessionToken: session.sessionToken,
-        issuedAt: session.issuedAt,
-    };
+    return completeGatewayLogin(ctx, user, successStatus);
 };
 
 const finishKakaoLoginOrRequestPasswordSetup = async <T extends 'login' | 'verified'>(
@@ -102,6 +98,7 @@ const finishKakaoLoginOrRequestPasswordSetup = async <T extends 'login' | 'verif
     accessToken: string,
     successStatus: T
 ) => {
+    assertLoginAllowed(user);
     if (!user.passwordResetRequired) {
         return finishKakaoLogin(ctx, user, accessToken, successStatus);
     }
@@ -627,18 +624,7 @@ export const appRouter = router({
                         message: '이미 다른 계정에 연결된 카카오 계정입니다.',
                     });
                 }
-                if (targetUser.deleteAfter) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: '탈퇴 처리 중인 계정에는 카카오 계정을 다시 연결할 수 없습니다.',
-                    });
-                }
-                if (isLoginBanned(targetUser.sanctions)) {
-                    throw new TRPCError({
-                        code: 'FORBIDDEN',
-                        message: 'Account login is blocked.',
-                    });
-                }
+                assertLoginAllowed(targetUser);
 
                 const oauthInfo: UserOAuthInfo = {
                     accessToken: oauthSession.accessToken,
@@ -710,12 +696,7 @@ export const appRouter = router({
                         message: '카카오 계정 연결 상태가 변경되었습니다. 처음부터 다시 진행해 주세요.',
                     });
                 }
-                if (user.deleteAfter) {
-                    throw new TRPCError({ code: 'FORBIDDEN', message: 'Account deletion is pending.' });
-                }
-                if (isLoginBanned(user.sanctions)) {
-                    throw new TRPCError({ code: 'FORBIDDEN', message: 'Account login is blocked.' });
-                }
+                assertLoginAllowed(user);
                 let verifiedProfile;
                 try {
                     verifiedProfile = readVerifiedKakaoProfile(await ctx.kakaoClient.getMe(oauthSession.accessToken));
@@ -931,12 +912,6 @@ export const appRouter = router({
                         message: 'Invalid username or password.',
                     });
                 }
-                if (user.deleteAfter) {
-                    throw new TRPCError({
-                        code: 'FORBIDDEN',
-                        message: 'Account deletion is pending.',
-                    });
-                }
                 const password = openPassword(ctx.passwordEnvelope, input.credential);
                 const ok = await ctx.users.verifyPassword(user, password);
                 if (!ok) {
@@ -945,22 +920,11 @@ export const appRouter = router({
                         message: 'Invalid username or password.',
                     });
                 }
-                if (isLoginBanned(user.sanctions)) {
-                    throw new TRPCError({
-                        code: 'FORBIDDEN',
-                        message: 'Account login is blocked.',
-                    });
-                }
+                assertLoginAllowed(user);
                 if (user.oauthType === 'KAKAO') {
                     const specialAccessGrants = await ctx.users.listSpecialAccessGrants(user.id);
                     if (hasOperatorSpecialAccess(user) || hasActiveSpecialAccountGrant(specialAccessGrants)) {
-                        const session = await ctx.sessions.createSession(user);
-                        return {
-                            status: 'login' as const,
-                            user: toPublicUser(user),
-                            sessionToken: session.sessionToken,
-                            issuedAt: session.issuedAt,
-                        };
+                        return completeGatewayLogin(ctx, user, 'login');
                     }
                     const ready = await verifyStoredKakaoIdentity({
                         user,
@@ -969,13 +933,34 @@ export const appRouter = router({
                     }).catch((error: unknown) => throwKakaoVerificationError(error));
                     return finishKakaoLogin(ctx, ready.user, ready.accessToken, 'login');
                 }
-                const session = await ctx.sessions.createSession(user);
-                return {
-                    status: 'login' as const,
-                    user: toPublicUser(user),
-                    sessionToken: session.sessionToken,
-                    issuedAt: session.issuedAt,
-                };
+                return completeGatewayLogin(ctx, user, 'login');
+            }),
+        cancelDeletion: procedure
+            .input(z.object({ recoveryId: z.string().uuid() }).strict())
+            .mutation(async ({ ctx, input }) => {
+                const recovery = await ctx.oauthSessions.consumeDeletionRecovery(input.recoveryId);
+                if (!recovery || new Date(recovery.expiresAt).getTime() <= Date.now()) {
+                    throw new TRPCError({
+                        code: 'UNAUTHORIZED',
+                        message: '복구 인증이 만료되었습니다. 다시 로그인해 주세요.',
+                    });
+                }
+                const user = await ctx.users.findById(recovery.userId);
+                if (!user) throw new TRPCError({ code: 'UNAUTHORIZED', message: '계정을 찾지 못했습니다.' });
+                assertLoginAllowed(user);
+                if (
+                    !canCancelDeletion(user) ||
+                    !(await ctx.users.cancelDeletion(user.id, recovery.deleteAfter, recovery.authRevision))
+                ) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '계정 상태가 변경되었습니다. 다시 로그인해 주세요.',
+                    });
+                }
+                await ctx.flushPublisher.publishUserFlush(user.id, 'account-deletion-cancelled');
+                const restored = await ctx.users.findById(user.id);
+                if (!restored) throw new TRPCError({ code: 'UNAUTHORIZED', message: '계정을 찾지 못했습니다.' });
+                return completeGatewayLogin(ctx, restored, 'login');
             }),
         kakaoOtp: procedure
             .input(
@@ -991,24 +976,8 @@ export const appRouter = router({
                     oauthSessions: ctx.oauthSessions,
                     users: ctx.users,
                 }).catch((error: unknown) => throwKakaoVerificationError(error));
-                if (verified.user.deleteAfter) {
-                    throw new TRPCError({
-                        code: 'FORBIDDEN',
-                        message: 'Account deletion is pending.',
-                    });
-                }
-                if (isLoginBanned(verified.user.sanctions)) {
-                    throw new TRPCError({
-                        code: 'FORBIDDEN',
-                        message: 'Account login is blocked.',
-                    });
-                }
-                const session = await ctx.sessions.createSession(verified.user);
                 return {
-                    status: 'login' as const,
-                    user: toPublicUser(verified.user),
-                    sessionToken: session.sessionToken,
-                    issuedAt: session.issuedAt,
+                    ...(await completeGatewayLogin(ctx, verified.user, 'login')),
                     validUntil: verified.validUntil,
                 };
             }),
