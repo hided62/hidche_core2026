@@ -7,6 +7,7 @@ import {
 import { gatewayProfileCapabilities, type GatewayProfileStatus } from '@sammo-ts/common/gateway/profileStatus';
 import { computed, onMounted, ref, watch } from 'vue';
 import ServerProfileTabs from '../components/ServerProfileTabs.vue';
+import RoleSummary from '../components/RoleSummary.vue';
 import ProfileRuntimeDiagnostics from '../components/ProfileRuntimeDiagnostics.vue';
 import AdminConsoleLayout from '../layouts/AdminConsoleLayout.vue';
 import { useToast } from '../composables/useToast';
@@ -603,6 +604,18 @@ const hasCapability = (permission: string, profileName?: string): boolean =>
     });
 const selectedCapability = ref('');
 const capabilityProfile = ref('');
+const selectedCapabilityDefinition = computed(() =>
+    capabilities.value.find((entry) => entry.permission === selectedCapability.value)
+);
+const canSelectAllServers = computed(() => selectedCapabilityDefinition.value?.scopes?.includes('*') ?? false);
+const capabilityProfiles = computed(() =>
+    kakaoPolicies.value.filter((policy) =>
+        selectedCapabilityDefinition.value?.scopes?.some((scope) => scope === '*' || scope === policy.profileName)
+    )
+);
+watch(selectedCapability, () => {
+    capabilityProfile.value = '';
+});
 const userActionReason = ref('');
 
 const banUntil = ref('');
@@ -1160,6 +1173,13 @@ const applyCapabilitySelection = () => {
         rolesStatus.value = '대상 서버를 선택하세요.';
         return;
     }
+    if (
+        capability.scope === 'PROFILE' &&
+        !capability.scopes?.some((scope) => scope === '*' || scope === capabilityProfile.value)
+    ) {
+        rolesStatus.value = '부여 가능한 서버 범위를 확인하세요.';
+        return;
+    }
     rolesInput.value =
         capability.scope === 'PROFILE'
             ? `${capability.permission}:${capabilityProfile.value.trim()}`
@@ -1574,7 +1594,7 @@ onMounted(() => {
             </section>
 
             <div class="space-y-8">
-                <section v-if="section === 'users'" class="grid min-w-0 items-start gap-6 xl:grid-cols-2">
+                <section v-if="section === 'users'" class="grid min-w-0 grid-cols-1 items-start gap-6 xl:grid-cols-2">
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4 xl:col-span-2">
                         <div class="flex flex-wrap items-end justify-between gap-2">
                             <div>
@@ -1700,7 +1720,7 @@ onMounted(() => {
                                 <div class="text-xs text-zinc-500">{{ userResult.id }}</div>
                             </div>
                             <div class="text-xs text-zinc-400">표시명: {{ userResult.displayName }}</div>
-                            <div class="text-xs text-zinc-400">권한: {{ userResult.roles.join(', ') || '-' }}</div>
+                            <div class="text-xs text-zinc-400">권한: <RoleSummary :roles="userResult.roles" /></div>
                             <div class="text-xs text-zinc-500">
                                 OAuth: {{ userResult.oauthType }} {{ userResult.email ?? '' }}
                             </div>
@@ -1913,6 +1933,7 @@ onMounted(() => {
                         <div class="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
                             <select
                                 v-model="selectedCapability"
+                                aria-label="관리 기능 권한"
                                 class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                 :disabled="!hasUser"
                             >
@@ -1925,14 +1946,16 @@ onMounted(() => {
                                 </option>
                             </select>
                             <select
+                                v-if="selectedCapabilityDefinition?.scope === 'PROFILE'"
                                 v-model="capabilityProfile"
                                 class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                :disabled="!hasUser || !kakaoPolicies.length"
+                                :disabled="!hasUser"
                                 aria-label="권한 대상 서버"
                             >
                                 <option value="">대상 서버 선택</option>
+                                <option v-if="canSelectAllServers" value="*">모든 서버</option>
                                 <option
-                                    v-for="policy in kakaoPolicies"
+                                    v-for="policy in capabilityProfiles"
                                     :key="policy.profileName"
                                     :value="policy.profileName"
                                 >
@@ -1947,6 +1970,10 @@ onMounted(() => {
                                 선택 반영
                             </button>
                         </div>
+                        <p v-if="capabilityProfile === '*'" class="text-xs text-amber-300">
+                            선택한 행동만 현재와 앞으로 추가되는 모든 서버에 허용합니다. 계정 조사 등 다른 권한은
+                            포함하지 않습니다.
+                        </p>
                         <div v-if="selectedCapability" class="text-xs text-zinc-500">
                             {{ capabilities.find((item) => item.permission === selectedCapability)?.description }}
                         </div>

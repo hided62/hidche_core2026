@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 
 import { useToast } from '../composables/useToast';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
+import RoleSummary from '../components/RoleSummary.vue';
 import { createGameTrpc } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
 import { sealPassword } from '../utils/passwordEnvelope';
@@ -640,7 +641,7 @@ onBeforeUnmount(() => {
                     <tr>
                         <th class="legacy-bg1">등급</th>
                         <td colspan="2">{{ gradeLabel }}</td>
-                        <td colspan="3">{{ account.roles.join(', ') || '-' }}</td>
+                        <td colspan="3"><RoleSummary :roles="account.roles" /></td>
                     </tr>
                     <tr>
                         <th class="legacy-bg1">가입일시</th>

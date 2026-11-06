@@ -24,6 +24,19 @@ capability로 분리되며 포괄 운영 권한은 사용하지 않습니다. Ga
 profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필요합니다.
 일반 사용자와 권한이 없는 관리자는 Gateway 릴리스 영역을 사용할 수 없습니다.
 
+사용자 관리의 `접근 · 권한`에서 PROFILE 기능은 개별 서버 또는 `모든 서버`를
+선택합니다. 모든 서버는 기존 `<permission>:*` 역할로 저장하며, 현재 및 앞으로
+추가되는 서버에 해당 행동만 허용합니다. 기능 목록의 `scopes`에 `*`가 있는
+관리자만 전체 범위를 선택할 수 있고, 서버별 관리자에게는 보유 범위만 표시합니다.
+실제 변경에는 `admin.users.manage`와 변경할 역할에 대한 기존 검사가 모두 적용됩니다.
+예를 들어 `admin.playAudit.read:*`는 플레이 감사 조회만 허용하며,
+계정 조사에는 별도 전역 `admin.playAudit.accounts`가 필요합니다.
+
+계정과 관리자 계정 상세의 권한 표시는 같은 행동·instance의 명시적 서버 목록을
+`admin.profiles.runtime:{che, kwe, pwe}:default`처럼 묶습니다. 이 표기는 읽기용이며
+저장 역할과 API 입력은 기존 문자열을 유지합니다. 명시적인 모든 현 서버 목록도
+자동으로 `*`로 바꾸지 않습니다. instance가 다르면 별도로 표시합니다.
+
 ### 일괄 업데이트
 
 일괄 업데이트는 새 종류의 배포 엔진이 아니라 기존 Gateway release와 profile

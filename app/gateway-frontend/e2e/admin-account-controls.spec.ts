@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
+import { formatRoleGroups } from '../src/utils/roleDisplay';
 
 const response = (data: unknown) => ({ result: { data } });
 const operationNames = (route: Route): string[] => {
@@ -7,8 +8,14 @@ const operationNames = (route: Route): string[] => {
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
 };
 
-const installFixture = async (page: Page) => {
+const installFixture = async (page: Page, scopes = ['*']) => {
     const requests: Array<{ operation: string; body: unknown }> = [];
+    let roles = [
+        'user',
+        'admin.profiles.runtime:che:default',
+        'admin.profiles.runtime:kwe:default',
+        'admin.profiles.runtime:pwe:default',
+    ];
     let deleteAfter: string | null = null;
     let graceUntil: string | null = null;
     let username = 'target';
@@ -59,6 +66,7 @@ const installFixture = async (page: Page) => {
                         description: '지정 profile의 시작, 정지와 실행 상태를 관리합니다.',
                         risk: 'HIGH',
                         scope: 'PROFILE',
+                        scopes,
                     },
                     {
                         permission: 'admin.audit.read',
@@ -70,6 +78,15 @@ const installFixture = async (page: Page) => {
                 ]);
             }
             if (operation === 'admin.audit.list') return response(auditHistory);
+            if (operation === 'account.notifications.get')
+                return response({
+                    capability: { enabled: false, publicKey: null },
+                    eventTypes: [],
+                    profiles: [],
+                    preferences: [],
+                    subscriptionCount: 0,
+                    currentDeviceSubscribed: false,
+                });
             if (operation === 'admin.users.getLocalAccountStatus') return response({ enabled: false });
             if (operation === 'admin.users.list') {
                 return response({
@@ -111,12 +128,20 @@ const installFixture = async (page: Page) => {
             if (operation === 'admin.profiles.listNavigation') return response([]);
             if (operation === 'admin.profiles.list') return response([]);
             if (operation === 'admin.profiles.listScenarios') return response([]);
+            if (operation === 'admin.users.updateRoles') {
+                const input = (body as Record<string, { roles: string[]; mode: string }>)['0'];
+                roles =
+                    input.mode === 'grant'
+                        ? [...new Set([...roles, ...input.roles])]
+                        : roles.filter((role) => !input.roles.includes(role));
+                return response({ roles });
+            }
             if (operation === 'admin.users.lookup') {
                 return response({
                     id: 'target-user',
                     username,
                     displayName,
-                    roles: ['user'],
+                    roles,
                     sanctions: {},
                     oauthType: 'KAKAO',
                     oauthId: 'fixture-kakao-stable-id',
@@ -328,4 +353,159 @@ test('operates OAuth grace and scheduled deletion with reasoned audit history', 
         JSON.stringify(geometry)
     );
     await page.screenshot({ path: testInfo.outputPath('gateway-admin-account-controls-mobile.png'), fullPage: true });
+});
+
+for (const width of [1365, 390]) {
+    test(`groups server roles and applies all-server action at ${width}px`, async ({ page }, testInfo) => {
+        const requests = await installFixture(page);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('admin/users');
+        await page.getByRole('button', { name: /target.*대상 사용자/ }).click();
+        const summary = page.getByLabel('보유 권한');
+        await expect(summary).toContainText('admin.profiles.runtime:{che, kwe, pwe}:default');
+        await page.getByRole('button', { name: /접근 · 권한/ }).click();
+        await page.getByLabel('관리 기능 권한').selectOption('admin.profiles.runtime');
+        const server = page.getByLabel('권한 대상 서버');
+        await server.selectOption('*');
+        await expect(server).toHaveValue('*');
+        await expect(page.getByText(/선택한 행동만 현재와 앞으로 추가되는 모든 서버에 허용/)).toBeVisible();
+        await server.focus();
+        await server.click();
+        await page.screenshot({ path: testInfo.outputPath('all-servers-selected.png'), fullPage: true });
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: '선택 반영', exact: true }).click();
+        const input = page.getByPlaceholder('admin, moderator 등');
+        await expect(input).toHaveValue('admin.profiles.runtime:*');
+        await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('모든 서버 실행 관리 허용');
+        const apply = page.getByRole('button', { name: '적용', exact: true });
+        await apply.hover();
+        await apply.focus();
+        await expect(apply).toBeFocused();
+        await apply.click();
+        await expect(summary).toContainText('admin.profiles.runtime:* (모든 서버)');
+        const update = requests.find(({ operation }) => operation === 'admin.users.updateRoles');
+        expect(update?.body).toMatchObject({
+            '0': { roles: ['admin.profiles.runtime:*'], mode: 'grant' },
+        });
+        // 전역 기능은 서버 선택이 없고, 다른 서버로 범위를 암묵적으로 옮기지 않는다.
+        await page.getByLabel('관리 기능 권한').selectOption('admin.users.manage');
+        await expect(server).toHaveCount(0);
+        await page.getByLabel('관리 기능 권한').selectOption('admin.profiles.runtime');
+        await expect(server).toHaveValue('');
+        await page.getByRole('button', { name: '선택 반영', exact: true }).click();
+        await expect(page.getByText('대상 서버를 선택하세요.', { exact: true }).first()).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await summary.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                left: rect.left,
+                right: rect.right,
+                width: rect.width,
+                viewportWidth: innerWidth,
+                overflowWrap: style.overflowWrap,
+                documentOverflow: document.documentElement.scrollWidth - innerWidth,
+                text: element.textContent,
+            };
+        });
+        await writeFile(testInfo.outputPath('permission-geometry.json'), JSON.stringify(geometry, null, 2));
+        expect(geometry.right).toBeLessThanOrEqual(width);
+        expect(geometry.documentOverflow).toBe(0);
+        await writeFile(testInfo.outputPath('permissions.html'), await page.content());
+        await page.screenshot({ path: testInfo.outputPath('permissions.png'), fullPage: true });
+    });
+}
+
+test('limits the server selector to the administrators own action scope', async ({ page }) => {
+    await installFixture(page, ['che:default']);
+    await page.goto('admin/users');
+    await page.getByRole('button', { name: /target.*대상 사용자/ }).click();
+    await page.getByRole('button', { name: /접근 · 권한/ }).click();
+    await page.getByLabel('관리 기능 권한').selectOption('admin.profiles.runtime');
+    const server = page.getByLabel('권한 대상 서버');
+    await expect(server.locator('option[value="*"]')).toHaveCount(0);
+    await server.selectOption('che:default');
+    await page.getByRole('button', { name: '선택 반영', exact: true }).click();
+    await expect(page.getByPlaceholder('admin, moderator 등')).toHaveValue('admin.profiles.runtime:che:default');
+});
+
+test('keeps action and instance boundaries when formatting explicit grants', () => {
+    const roles = [
+        'user',
+        'admin.profiles.runtime:che:default',
+        'admin.profiles.runtime:kwe:default',
+        'admin.profiles.runtime:che:season2',
+        'admin.profiles.runtime:hwe:season2',
+        'admin.playAudit.read:che:default',
+        'admin.playAudit.accounts',
+        'admin.profiles.deploy',
+        'admin.profiles.deploy:*',
+    ];
+    expect(formatRoleGroups(roles)).toEqual([
+        'user',
+        'admin.profiles.runtime:{che, kwe}:default',
+        'admin.profiles.runtime:{che, hwe}:season2',
+        'admin.playAudit.read:che:default',
+        'admin.playAudit.accounts',
+        'admin.profiles.deploy',
+        'admin.profiles.deploy:* (모든 서버)',
+    ]);
+    expect(roles[1]).toBe('admin.profiles.runtime:che:default');
+    expect(formatRoleGroups([])).toEqual([]);
+});
+
+test('shows grouped roles on the account page after direct navigation and refresh', async ({ page }, testInfo) => {
+    await installFixture(page);
+    let showGroupedRoles = false;
+    await page.route('**/gateway/api/trpc/account.get*', async (route) => {
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify([
+                response({
+                    id: 'target-user',
+                    username: 'target',
+                    displayName: '대상 사용자',
+                    roles: showGroupedRoles
+                        ? [
+                              'user',
+                              ...['che', 'kwe', 'pwe', 'hwe', 'twe', 'nya', 'pya'].flatMap((profile) => [
+                                  `admin.profiles.runtime:${profile}:default`,
+                                  `admin.playAudit.read:${profile}:default`,
+                              ]),
+                              'admin.profiles.deploy:*',
+                          ]
+                        : ['user'],
+                    oauthType: 'NONE',
+                    createdAt: '2026-07-20T00:00:00.000Z',
+                    thirdPartyUse: false,
+                    icons: [],
+                    maxActiveIcons: 5,
+                    deleteAfter: null,
+                }),
+            ]),
+        });
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('account');
+    await expect(page.getByLabel('보유 권한')).toHaveText('user');
+    const baselineOverflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    showGroupedRoles = true;
+    await page.reload();
+    const summary = page.getByLabel('보유 권한');
+    await expect(summary).toContainText('admin.profiles.runtime:{che, kwe, pwe, hwe, twe, nya, pya}:default');
+    await expect(summary).toContainText('admin.profiles.deploy:* (모든 서버)');
+    await expect(summary).not.toContainText('admin.playAudit.accounts');
+    await page.evaluate(() => document.fonts.ready);
+    const geometry = await summary.evaluate((element) => ({
+        right: element.getBoundingClientRect().right,
+        viewport: innerWidth,
+        cellRight: element.closest('td')!.getBoundingClientRect().right,
+        documentOverflow: document.documentElement.scrollWidth - innerWidth,
+        overflowWrap: getComputedStyle(element).overflowWrap,
+    }));
+    expect(geometry.right).toBeLessThanOrEqual(geometry.cellRight);
+    expect(geometry.documentOverflow).toBe(baselineOverflow);
+    await writeFile(testInfo.outputPath('account-permissions-geometry.json'), JSON.stringify(geometry, null, 2));
+    await writeFile(testInfo.outputPath('account-permissions.html'), await page.content());
+    await page.screenshot({ path: testInfo.outputPath('account-permissions.png'), fullPage: true });
 });
