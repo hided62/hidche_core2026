@@ -269,6 +269,7 @@ const buildCaller = (
         flushPublisher,
         userIconUpload,
         kakaoProfile,
+        kakaoClient,
         sentTalkMessages,
         refreshTokenCalls,
         sealPassword,
@@ -640,11 +641,17 @@ describe('gateway auth flow', () => {
         });
         setSessionHeader(register.sessionToken);
         const start = await caller.auth.kakaoStart({ mode: 'verify' });
-        const verified = await caller.auth.kakaoExchange({
+        const choice = await caller.auth.kakaoExchange({
             code: 'oauth-code',
             state: start.state,
         });
 
+        if (choice.status !== 'account_recovery') throw new Error('Expected link confirmation.');
+        const verified = await caller.auth.kakaoLinkWithPassword({
+            oauthSessionId: choice.oauthSessionId,
+            username: 'verify-user',
+            credential: sealPassword('verify-password'),
+        });
         expect(verified.status).toBe('otp');
         if (verified.status !== 'otp') {
             throw new Error('Expected Kakao OTP challenge.');
@@ -685,11 +692,6 @@ describe('gateway auth flow', () => {
         });
         emailOwner.passwordResetRequired = true;
         await users.markKakaoTalkVerified(emailOwner.id, new Date(Date.now() + 60_000));
-        await users.setKakaoReplacementApproval(emailOwner.id, {
-            until: new Date(Date.now() + 60_000),
-            approvedByUserId: 'admin-user-id',
-            reason: '이메일 보존 계정의 교체 승인',
-        });
         kakaoProfile.id = 'different-kakao-id';
 
         const start = await caller.auth.kakaoStart({ mode: 'login' });
@@ -715,15 +717,16 @@ describe('gateway auth flow', () => {
         });
         expect(passwordSet.status).toBe('otp');
         expect(sentTalkMessages).toHaveLength(1);
+        expect(await users.findByOauthId('KAKAO', 'original-kakao-id')).toMatchObject({ id: emailOwner.id });
+        expect((await users.findById(emailOwner.id))?.passwordResetRequired).toBe(true);
+        if (passwordSet.status !== 'otp') throw new Error('Expected OTP.');
+        const code = sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
+        await caller.auth.kakaoOtp({ challengeId: passwordSet.challengeId, code: code! });
         expect(await users.findByOauthId('KAKAO', 'original-kakao-id')).toBeNull();
-        expect(await users.isKakaoIdentityRetired('original-kakao-id')).toBe(true);
-        expect(await users.findByOauthId('KAKAO', 'different-kakao-id')).toMatchObject({
-            id: emailOwner.id,
-            username: 'email-owner',
-            email: 'tester@example.com',
-        });
-        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'kakao-account-replaced');
-        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'password-changed');
+        expect(await users.isKakaoIdentityRetired('original-kakao-id')).toBe(false);
+        expect(await users.findDetachedKakaoOwner('original-kakao-id')).toBe(emailOwner.id);
+        expect(await users.findByOauthId('KAKAO', 'different-kakao-id')).toMatchObject({ id: emailOwner.id });
+        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(emailOwner.id, 'kakao-account-relinked');
     });
 
     it('requires a one-time password setup before an imported Kakao account can receive a session', async () => {
@@ -896,42 +899,41 @@ describe('gateway auth flow', () => {
         });
     });
 
-    it('replaces an approved Kakao identity, retires the old ID, and invalidates older sessions', async () => {
-        const { caller, users, sessions, kakaoProfile, setSessionHeader } = buildCaller({
-            kakaoId: 'new-kakao-id',
-            kakaoEmail: 'new-kakao@example.com',
-        });
-        const user = await users.createUser({
+    it('completes an approved administrator replacement only after fresh talk proof and keeps old-ID ownership', async () => {
+        const f = buildCaller({ kakaoId: 'new-kakao-id', kakaoEmail: 'new-kakao@example.com' });
+        const user = await f.users.createUser({
             username: 'approved-replacement-user',
             password: 'replacement-password',
             oauth: { type: 'KAKAO', id: 'old-kakao-id', email: 'old-kakao@example.com', info: {} },
         });
-        const oldSession = await sessions.createSession(user);
-        setSessionHeader(oldSession.sessionToken);
-        await users.setKakaoReplacementApproval(user.id, {
-            until: new Date(Date.now() + 60_000),
-            approvedByUserId: 'admin-user-id',
-            reason: '사용자 본인 확인 완료',
+        await f.users.updateRoles(user.id, ['admin']);
+        await f.users.setKakaoReplacementApproval(user.id, {
+            until: new Date(Date.now() + 60000),
+            approvedByUserId: 'operator',
+            reason: '본인 확인 완료',
         });
-
-        const start = await caller.auth.kakaoStart({ mode: 'verify', sessionToken: oldSession.sessionToken });
-        const result = await caller.auth.kakaoExchange({ code: 'oauth-code', state: start.state });
-        expect(result).toMatchObject({ status: 'otp', successStatus: 'verified' });
-        expect(await users.findById(user.id)).toMatchObject({
+        const old = await f.sessions.createSession(user);
+        f.setSessionHeader(old.sessionToken);
+        const start = await f.caller.auth.kakaoStart({ mode: 'verify' });
+        const choice = await f.caller.auth.kakaoExchange({ code: 'code', state: start.state });
+        if (choice.status !== 'account_recovery') throw new Error('Expected confirmation.');
+        const otp = await f.caller.auth.kakaoResolveAccount({
+            oauthSessionId: choice.oauthSessionId,
+            action: 'link_existing',
+        });
+        if (otp.status !== 'otp') throw new Error('Expected OTP.');
+        expect((await f.users.findById(user.id))?.oauthId).toBe('old-kakao-id');
+        expect(await f.caller.auth.me({ sessionToken: old.sessionToken })).not.toBeNull();
+        const code = f.sentTalkMessages.at(-1)?.match(/인증 코드는 (\d{4})/)?.[1];
+        await f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: code! });
+        expect(await f.users.findById(user.id)).toMatchObject({
             oauthId: 'new-kakao-id',
-            email: 'new-kakao@example.com',
-            kakaoReplacementApprovedUntil: undefined,
             authRevision: 1,
+            kakaoReplacementApprovedUntil: undefined,
         });
-        await expect(users.isKakaoIdentityRetired('old-kakao-id')).resolves.toBe(true);
-        await expect(caller.auth.me({ sessionToken: oldSession.sessionToken })).resolves.toBeNull();
-
-        kakaoProfile.id = 'old-kakao-id';
-        kakaoProfile.email = 'old-kakao@example.com';
-        const retiredStart = await caller.auth.kakaoStart({ mode: 'login' });
-        await expect(
-            caller.auth.kakaoExchange({ code: 'oauth-code', state: retiredStart.state })
-        ).rejects.toMatchObject({ code: 'FORBIDDEN', message: expect.stringContaining('영구 폐기') });
+        expect(await f.users.isKakaoIdentityRetired('old-kakao-id')).toBe(false);
+        expect(await f.users.findDetachedKakaoOwner('old-kakao-id')).toBe(user.id);
+        expect(await f.caller.auth.me({ sessionToken: old.sessionToken })).toBeNull();
     });
 
     it('synchronizes a changed email by stable Kakao ID during Kakao login', async () => {
@@ -1133,22 +1135,12 @@ describe('gateway auth flow', () => {
     });
 
     it('blocks Kakao login while a ban is active', async () => {
-        const { caller, users, sealPassword, setSessionHeader } = buildCaller();
-        const register = await caller.auth.registerLocal({
+        const { caller, users } = buildCaller();
+        await users.createUser({
             username: 'kakao-banned-user',
-            credential: sealPassword('kakao-banned-password'),
-            displayName: '카카오제재유저',
-            termsAgreed: true,
-            privacyAgreed: true,
-            thirdPartyUse: false,
+            password: 'kakao-banned-password',
+            oauth: { type: 'KAKAO', id: '1', email: 'tester@example.com', info: {} },
         });
-        setSessionHeader(register.sessionToken);
-        const verifyStart = await caller.auth.kakaoStart({ mode: 'verify' });
-        await caller.auth.kakaoExchange({
-            code: 'oauth-code',
-            state: verifyStart.state,
-        });
-
         const stored = await users.findByUsername('kakao-banned-user');
         expect(stored).not.toBeNull();
         if (stored) {
@@ -1946,5 +1938,232 @@ describe('account deletion cancellation', () => {
             f.caller.auth.login({ username: user.username, credential: f.sealPassword('secretpass') })
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
         expect(canCancelDeletion({ ...legacy!, legacyMemberNo: undefined }, new Date('2026-11-07'))).toBe(false);
+    });
+});
+
+describe('staged Kakao self recovery', () => {
+    const prepare = async (
+        options: { differentEmail?: boolean; resetPassword?: boolean; privileged?: boolean } = {}
+    ) => {
+        const f = buildCaller({
+            kakaoId: 'new-self-kakao',
+            kakaoEmail: options.differentEmail ? 'new@example.test' : 'owner@example.test',
+        });
+        const user = await f.users.createUser({
+            username: 'self-recover',
+            password: 'originalpass',
+            oauth: { type: 'KAKAO', id: 'old-self-kakao', email: 'owner@example.test', info: {} },
+        });
+        if (options.privileged) await f.users.updateRoles(user.id, ['admin']);
+        user.passwordResetRequired = options.resetPassword ?? false;
+        user.kakaoTalkVerifiedUntil = new Date(Date.now() + 86400000).toISOString();
+        const old = await f.sessions.createSession(user);
+        const start = await f.caller.auth.kakaoStart({ mode: 'login' });
+        const choice = await f.caller.auth.kakaoExchange({ code: 'code', state: start.state });
+        return { ...f, user, old, choice };
+    };
+    const otpCode = (f: { sentTalkMessages: string[] }): string =>
+        f.sentTalkMessages.at(-1)!.match(/인증 코드는 (\d{4})/)![1]!;
+
+    it('recovers an ordinary matching-email account without approval and only commits after fresh OTP', async () => {
+        const f = await prepare();
+        if (f.choice.status !== 'account_recovery') throw new Error('Expected confirmation.');
+        const oldChallenge = await f.oauthSessions.createLoginChallenge({
+            userId: f.user.id,
+            code: '1111',
+            attemptsRemaining: 3,
+            expiresAt: new Date(Date.now() + 180000).toISOString(),
+            createdAt: new Date().toISOString(),
+            authRevision: 0,
+            oauthId: 'old-self-kakao',
+        });
+        const otp = await f.caller.auth.kakaoResolveAccount({
+            oauthSessionId: f.choice.oauthSessionId,
+            action: 'link_existing',
+        });
+        if (otp.status !== 'otp') throw new Error('Expected fresh OTP despite a cached proof.');
+        expect((await f.users.findById(f.user.id))?.oauthId).toBe('old-self-kakao');
+        expect(await f.caller.auth.me({ sessionToken: f.old.sessionToken })).not.toBeNull();
+        expect(await f.users.findDetachedKakaoOwner('old-self-kakao')).toBeNull();
+        await expect(f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: '0000' })).rejects.toBeDefined();
+        expect((await f.users.findById(f.user.id))?.oauthId).toBe('old-self-kakao');
+        expect((await f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: otpCode(f) })).status).toBe('login');
+        expect(await f.caller.auth.me({ sessionToken: f.old.sessionToken })).toBeNull();
+        await expect(f.caller.auth.kakaoOtp({ challengeId: oldChallenge.id, code: '1111' })).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+        });
+        expect(await f.users.findDetachedKakaoOwner('old-self-kakao')).toBe(f.user.id);
+        expect(await f.users.isKakaoIdentityRetired('old-self-kakao')).toBe(false);
+        await expect(f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: otpCode(f) })).rejects.toBeDefined();
+        f.kakaoProfile.id = 'old-self-kakao';
+        const start = await f.caller.auth.kakaoStart({ mode: 'login' });
+        const choice = await f.caller.auth.kakaoExchange({ code: 'code', state: start.state });
+        if (choice.status !== 'account_recovery') throw new Error('Expected same-owner recovery.');
+        const back = await f.caller.auth.kakaoResolveAccount({
+            oauthSessionId: choice.oauthSessionId,
+            action: 'link_existing',
+        });
+        if (back.status !== 'otp') throw new Error('Expected OTP.');
+        await f.caller.auth.kakaoOtp({ challengeId: back.challengeId, code: otpCode(f) });
+        expect((await f.users.findById(f.user.id))?.oauthId).toBe('old-self-kakao');
+        await expect(
+            f.users.createUser({
+                username: 'claim-other',
+                password: 'secretpass',
+                oauth: { type: 'KAKAO', id: 'new-self-kakao', email: 'other@example.test', info: {} },
+            })
+        ).rejects.toThrow();
+    });
+
+    it('accepts the old password for a different email, keeps retries possible and verifies new talk ownership', async () => {
+        const f = await prepare({ differentEmail: true });
+        if (f.choice.status !== 'join') throw new Error('Expected no email match.');
+        await expect(
+            f.caller.auth.kakaoLinkWithPassword({
+                oauthSessionId: f.choice.oauthSessionId,
+                username: f.user.username,
+                credential: f.sealPassword('wrongpass'),
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        const otp = await f.caller.auth.kakaoLinkWithPassword({
+            oauthSessionId: f.choice.oauthSessionId,
+            username: f.user.username,
+            credential: f.sealPassword('originalpass'),
+        });
+        if (otp.status !== 'otp') throw new Error('Expected OTP.');
+        expect((await f.users.findById(f.user.id))?.email).toBe('owner@example.test');
+        await f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: otpCode(f) });
+        expect(await f.users.findById(f.user.id)).toMatchObject({
+            oauthId: 'new-self-kakao',
+            email: 'new@example.test',
+        });
+    });
+
+    it('keeps migrated passwords and old identities intact until the final OTP commit', async () => {
+        const f = await prepare({ resetPassword: true });
+        if (f.choice.status !== 'account_recovery') throw new Error('Expected recovery.');
+        const setup = await f.caller.auth.kakaoResolveAccount({
+            oauthSessionId: f.choice.oauthSessionId,
+            action: 'link_existing',
+        });
+        if (setup.status !== 'password_setup') throw new Error('Expected password setup.');
+        const hash = f.user.passwordHash;
+        const otp = await f.caller.auth.kakaoSetPassword({
+            oauthSessionId: setup.oauthSessionId,
+            credential: f.sealPassword('new-valid-pass'),
+        });
+        if (otp.status !== 'otp') throw new Error('Expected OTP.');
+        expect(f.user.passwordHash).toBe(hash);
+        expect(f.user.passwordResetRequired).toBe(true);
+        await f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: otpCode(f) });
+        expect(f.user.passwordResetRequired).toBe(false);
+        expect(await f.users.verifyPassword(f.user, 'new-valid-pass')).toBe(true);
+    });
+
+    it('still requires approval for privileged accounts even with the password', async () => {
+        const f = await prepare({ privileged: true });
+        if (f.choice.status !== 'account_recovery') throw new Error('Expected recovery.');
+        await expect(
+            f.caller.auth.kakaoLinkWithPassword({
+                oauthSessionId: f.choice.oauthSessionId,
+                username: f.user.username,
+                credential: f.sealPassword('originalpass'),
+            })
+        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+        expect(f.user.oauthId).toBe('old-self-kakao');
+    });
+
+    it.each(['roles', 'password', 'sanction', 'identity', 'expired', 'provider'] as const)(
+        'does not commit if %s changes during OTP',
+        async (change) => {
+            const f = await prepare();
+            if (f.choice.status !== 'account_recovery') throw new Error('Expected recovery.');
+            const otp = await f.caller.auth.kakaoResolveAccount({
+                oauthSessionId: f.choice.oauthSessionId,
+                action: 'link_existing',
+            });
+            if (otp.status !== 'otp') throw new Error('Expected OTP.');
+            if (change === 'roles') await f.users.updateRoles(f.user.id, ['admin']);
+            if (change === 'password') await f.users.updatePassword(f.user.id, 'changed-elsewhere');
+            if (change === 'sanction')
+                await f.users.updateSanctions(f.user.id, {
+                    bannedUntil: new Date(Date.now() + 86400000).toISOString(),
+                });
+            if (change === 'identity') f.user.authRevision = 1;
+            if (change === 'expired') {
+                const challenge = await f.oauthSessions.getLoginChallengeForUser(f.user.id);
+                const pending = await f.oauthSessions.getSession(challenge!.oauthSessionId!);
+                pending!.createdAt = new Date(Date.now() - 301000).toISOString();
+            }
+            if (change === 'provider') f.kakaoProfile.id = 'another-kakao';
+            await expect(
+                f.caller.auth.kakaoOtp({ challengeId: otp.challengeId, code: otpCode(f) })
+            ).rejects.toBeDefined();
+            expect(f.user.oauthId).toBe('old-self-kakao');
+            expect(await f.users.findDetachedKakaoOwner('old-self-kakao')).toBeNull();
+        }
+    );
+
+    it('does not change any identity when sending the new talk challenge fails', async () => {
+        const f = await prepare();
+        if (f.choice.status !== 'account_recovery') throw new Error('Expected recovery.');
+        vi.spyOn(f.kakaoClient, 'sendTalkMessage').mockRejectedValue(new Error('synthetic provider failure'));
+        await expect(
+            f.caller.auth.kakaoResolveAccount({ oauthSessionId: f.choice.oauthSessionId, action: 'link_existing' })
+        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: '카카오톡 인증 코드를 보내지 못했습니다.' });
+        expect(f.user.oauthId).toBe('old-self-kakao');
+        expect(await f.caller.auth.me({ sessionToken: f.old.sessionToken })).not.toBeNull();
+    });
+
+    it('checks password-based recovery over real HTTP before issuing the new challenge', async () => {
+        const f = await prepare({ differentEmail: true });
+        if (f.choice.status !== 'join') throw new Error('Expected join fallback.');
+        const app = fastify();
+        await app.register(fastifyTRPCPlugin, {
+            prefix: '/gateway/api/trpc',
+            trpcOptions: { router: appRouter, ...trpcJsonBodyHttpServerOptions, createContext: () => f.context },
+        });
+        try {
+            const address = await app.listen({ host: '127.0.0.1', port: 0 });
+            const post = (name: string, input: object) =>
+                fetch(`${address}/gateway/api/trpc/${name}`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(input),
+                });
+            expect(
+                (
+                    await post('auth.kakaoLinkWithPassword', {
+                        oauthSessionId: f.choice.oauthSessionId,
+                        username: f.user.username,
+                        credential: f.sealPassword('incorrect'),
+                    })
+                ).status
+            ).toBe(401);
+            expect(
+                (
+                    await post('auth.kakaoLinkWithPassword', {
+                        oauthSessionId: 'invalid',
+                        username: f.user.username,
+                        credential: f.sealPassword('originalpass'),
+                    })
+                ).status
+            ).toBe(400);
+            const response = await post('auth.kakaoLinkWithPassword', {
+                oauthSessionId: f.choice.oauthSessionId,
+                username: f.user.username,
+                credential: f.sealPassword('originalpass'),
+            });
+            expect(response.status).toBe(200);
+            const data = (await response.json()) as { result: { data: { status: string; challengeId: string } } };
+            expect(data.result.data.status).toBe('otp');
+            expect(f.user.oauthId).toBe('old-self-kakao');
+            expect(
+                (await post('auth.kakaoOtp', { challengeId: data.result.data.challengeId, code: otpCode(f) })).status
+            ).toBe(200);
+            expect(f.user.oauthId).toBe('new-self-kakao');
+        } finally {
+            await app.close();
+        }
     });
 });

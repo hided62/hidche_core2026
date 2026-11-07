@@ -194,16 +194,17 @@ export const requireKakaoTalkProof = async (options: {
     kakaoClient: KakaoOAuthClient;
     oauthSessions: OAuthSessionStore;
     publicBaseUrl: string;
+    oauthSessionId?: string;
     now?: Date;
 }): Promise<KakaoOtpRequired | null> => {
     const now = options.now ?? new Date();
     const validUntil = parseDate(options.user.kakaoTalkVerifiedUntil);
-    if (validUntil && isAfter(validUntil, now)) {
+    if (!options.oauthSessionId && validUntil && isAfter(validUntil, now)) {
         return null;
     }
 
     const active = await options.oauthSessions.getLoginChallengeForUser(options.user.id);
-    if (active) {
+    if (active && active.oauthSessionId === options.oauthSessionId) {
         return {
             status: 'otp',
             challengeId: active.id,
@@ -215,6 +216,9 @@ export const requireKakaoTalkProof = async (options: {
     const expiresAt = addSeconds(now, KAKAO_OTP_TTL_SECONDS);
     const challenge = await options.oauthSessions.createLoginChallenge({
         userId: options.user.id,
+        authRevision: options.user.authRevision ?? 0,
+        ...(options.user.oauthId ? { oauthId: options.user.oauthId } : {}),
+        ...(options.oauthSessionId ? { oauthSessionId: options.oauthSessionId } : {}),
         code: String(randomInt(1000, 10_000)),
         attemptsRemaining: KAKAO_OTP_ATTEMPTS,
         expiresAt: expiresAt.toISOString(),
@@ -246,7 +250,7 @@ export const verifyKakaoTalkChallenge = async (options: {
     oauthSessions: OAuthSessionStore;
     users: UserRepository;
     now?: Date;
-}): Promise<{ user: UserRecord; validUntil: string }> => {
+}): Promise<{ user: UserRecord; validUntil: string; pendingLinkSessionId?: string }> => {
     const now = options.now ?? new Date();
     const result = await options.oauthSessions.verifyLoginChallenge(options.challengeId, options.code, now);
     if (result.status === 'expired') {
@@ -268,11 +272,27 @@ export const verifyKakaoTalkChallenge = async (options: {
     }
 
     const user = await options.users.findById(result.userId);
-    if (!user || user.oauthType !== 'KAKAO' || !user.oauthId) {
+    if (!user || (!result.oauthSessionId && (user.oauthType !== 'KAKAO' || !user.oauthId))) {
         throw new KakaoVerificationError('REAUTH_REQUIRED', '카카오 계정 연결 정보를 찾지 못했습니다.');
     }
+    if (
+        result.authRevision === undefined ||
+        result.authRevision !== (user.authRevision ?? 0) ||
+        (result.oauthId && result.oauthId !== user.oauthId)
+    )
+        throw new KakaoVerificationError('REAUTH_REQUIRED', '계정 인증 정보가 변경되었습니다. 다시 로그인해 주세요.');
     const proofValidUntil = addDays(now, KAKAO_TALK_VERIFICATION_DAYS);
-    const verified = await options.users.markKakaoTalkVerified(user.id, proofValidUntil);
+    if (result.oauthSessionId)
+        return { user, validUntil: proofValidUntil.toISOString(), pendingLinkSessionId: result.oauthSessionId };
+    const verified = await options.users
+        .markKakaoTalkVerified(user.id, proofValidUntil, result.authRevision, result.oauthId)
+        .catch((error: unknown) => {
+            throw new KakaoVerificationError(
+                'REAUTH_REQUIRED',
+                '계정 인증 정보가 변경되었습니다. 다시 로그인해 주세요.',
+                { cause: error }
+            );
+        });
     return { user: verified, validUntil: proofValidUntil.toISOString() };
 };
 

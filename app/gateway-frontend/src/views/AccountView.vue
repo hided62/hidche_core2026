@@ -87,11 +87,6 @@ const currentProfile = computed(() =>
 const notificationEventTypes = computed(
     () => (notificationState.value?.eventTypes ?? []) as readonly WebPushEventType[]
 );
-const kakaoReplacementApproved = computed(
-    () =>
-        Boolean(account.value?.kakaoReplacementApprovedUntil) &&
-        new Date(account.value!.kakaoReplacementApprovedUntil!).getTime() > Date.now()
-);
 
 const sessionToken = (): string | null => window.localStorage.getItem('sammo-session-token');
 
@@ -321,7 +316,7 @@ const changePassword = async (): Promise<void> => {
 const startKakaoReplacement = async (): Promise<void> => {
     if (
         !window.confirm(
-            '새 카카오 계정 연결이 끝나면 기존 카카오 계정은 영구 폐기되어 다시 가입하거나 연결할 수 없습니다. 계속하시겠습니까?'
+            '새 카카오톡 인증을 완료하면 로그인에 사용할 카카오 계정이 바뀌고 기존 세션이 종료됩니다. 계속하시겠습니까?'
         )
     ) {
         return;
@@ -667,7 +662,7 @@ onBeforeUnmount(() => {
                                 · 교체 승인 {{ formatServerDateTime(account.kakaoReplacementApprovedUntil) }}까지
                             </template>
                             <button
-                                v-if="kakaoReplacementApproved"
+                                v-if="account.oauthType === 'KAKAO'"
                                 class="skin-button compact"
                                 type="button"
                                 :disabled="busy"

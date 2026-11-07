@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { parseJson } from '@sammo-ts/common';
+import type { KakaoLinkAuthorization, KakaoLinkSnapshot } from './kakaoLinkPolicy.js';
+import type { PasswordEnvelopeInput } from './passwordEnvelope.js';
 
 export type OAuthMode = 'login' | 'change_pw' | 'verify';
 
@@ -22,7 +24,12 @@ export interface OAuthPendingState {
 export interface OAuthSession {
     id: string;
     mode: OAuthMode;
-    intent?: 'register' | 'link_existing' | 'rejoin' | 'password_setup';
+    intent?: 'register' | 'link_existing' | 'rejoin' | 'password_setup' | 'identity_link';
+    identityLink?: {
+        expected: KakaoLinkSnapshot;
+        authorization: KakaoLinkAuthorization;
+        credential?: PasswordEnvelopeInput;
+    };
     targetUserId?: string;
     kakaoId: string;
     email: string;
@@ -34,6 +41,9 @@ export interface OAuthSession {
 }
 
 export interface KakaoLoginChallenge {
+    authRevision?: number;
+    oauthId?: string;
+    oauthSessionId?: string;
     id: string;
     userId: string;
     code: string;
@@ -43,7 +53,7 @@ export interface KakaoLoginChallenge {
 }
 
 export type KakaoLoginChallengeResult =
-    | { status: 'verified'; userId: string }
+    | { status: 'verified'; userId: string; oauthSessionId?: string; authRevision?: number; oauthId?: string }
     | { status: 'mismatch'; attemptsRemaining: number; expiresAt: string }
     | { status: 'locked'; expiresAt: string }
     | { status: 'expired' };
@@ -55,6 +65,7 @@ export interface OAuthSessionStore {
     consumePendingState(state: string): Promise<OAuthPendingState | null>;
     createSession(session: Omit<OAuthSession, 'id'>): Promise<OAuthSession>;
     consumeSession(sessionId: string): Promise<OAuthSession | null>;
+    getSession(sessionId: string): Promise<OAuthSession | null>;
     getLoginChallengeForUser(userId: string): Promise<KakaoLoginChallenge | null>;
     createLoginChallenge(challenge: Omit<KakaoLoginChallenge, 'id'>): Promise<KakaoLoginChallenge>;
     verifyLoginChallenge(challengeId: string, code: string, now?: Date): Promise<KakaoLoginChallengeResult>;
@@ -100,7 +111,7 @@ local userKey = ARGV[2] .. challenge.userId
 if redis.call('GET', userKey) == challenge.id then
     redis.call('DEL', userKey)
 end
-return cjson.encode({ status = 'verified', userId = challenge.userId })
+return cjson.encode({ status = 'verified', userId = challenge.userId, oauthSessionId = challenge.oauthSessionId, authRevision = challenge.authRevision, oauthId = challenge.oauthId })
 `;
 
 const consumeOnceScript = `
@@ -186,6 +197,11 @@ export class RedisOAuthSessionStore implements OAuthSessionStore {
             EX: this.ttlSeconds,
         });
         return stored;
+    }
+
+    async getSession(sessionId: string): Promise<OAuthSession | null> {
+        const raw = await this.client.get(this.sessionKey(sessionId));
+        return raw ? parseJson<OAuthSession>(raw) : null;
     }
 
     async consumeSession(sessionId: string): Promise<OAuthSession | null> {
@@ -296,6 +312,10 @@ export class InMemoryOAuthSessionStore implements OAuthSessionStore {
         return stored;
     }
 
+    async getSession(sessionId: string): Promise<OAuthSession | null> {
+        return this.sessions.get(sessionId) ?? null;
+    }
+
     async consumeSession(sessionId: string): Promise<OAuthSession | null> {
         const session = this.sessions.get(sessionId) ?? null;
         if (session) {
@@ -357,6 +377,12 @@ export class InMemoryOAuthSessionStore implements OAuthSessionStore {
         if (this.userLoginChallenges.get(challenge.userId) === challengeId) {
             this.userLoginChallenges.delete(challenge.userId);
         }
-        return { status: 'verified', userId: challenge.userId };
+        return {
+            status: 'verified',
+            userId: challenge.userId,
+            ...(challenge.authRevision !== undefined ? { authRevision: challenge.authRevision } : {}),
+            ...(challenge.oauthId ? { oauthId: challenge.oauthId } : {}),
+            ...(challenge.oauthSessionId ? { oauthSessionId: challenge.oauthSessionId } : {}),
+        };
     }
 }

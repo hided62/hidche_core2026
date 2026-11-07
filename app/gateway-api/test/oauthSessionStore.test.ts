@@ -104,6 +104,34 @@ describe.skipIf(!redisUrl)('RedisOAuthSessionStore Kakao state', () => {
         }
     });
 
+    it('preserves the exact pending OAuth session and old identity revision in a one-use challenge', async () => {
+        const challenge = await store.createLoginChallenge({
+            userId: randomUUID(),
+            code: '1234',
+            attemptsRemaining: 3,
+            expiresAt: new Date(Date.now() + 180000).toISOString(),
+            createdAt: new Date().toISOString(),
+            oauthSessionId: randomUUID(),
+            authRevision: 7,
+            oauthId: 'identity-before-change',
+        });
+        userIds.add(challenge.userId);
+        challengeIds.add(challenge.id);
+        const results = await Promise.all([
+            store.verifyLoginChallenge(challenge.id, '1234'),
+            store.verifyLoginChallenge(challenge.id, '1234'),
+        ]);
+        expect(results.filter((r) => r.status === 'verified')).toEqual([
+            {
+                status: 'verified',
+                userId: challenge.userId,
+                oauthSessionId: challenge.oauthSessionId,
+                authRevision: 7,
+                oauthId: 'identity-before-change',
+            },
+        ]);
+    });
+
     it('atomically consumes a successful code once', async () => {
         const challenge = await createChallenge();
 

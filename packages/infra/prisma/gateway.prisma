@@ -126,6 +126,20 @@ model AppUser {
   @@map("app_user")
 }
 
+// 교체 이력을 보존하며 이전 ID는 같은 서비스 계정만 다시 연결할 수 있다.
+model KakaoIdentityLinkHistory {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  previousOauthId String   @map("previous_oauth_id")
+  nextOauthId     String   @map("next_oauth_id")
+  authorization   String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([previousOauthId, createdAt])
+  @@index([userId, createdAt])
+  @@map("kakao_identity_link_history")
+}
+
 model RetiredKakaoIdentity {
   id               String   @id @default(uuid())
   oauthId          String   @unique @map("oauth_id")

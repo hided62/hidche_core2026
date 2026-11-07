@@ -2,12 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGatewayPostgresConnector, type GatewayPrismaClient } from '@sammo-ts/infra';
 
+import { snapshotKakaoLink } from '../src/auth/kakaoLinkPolicy.js';
 import { createPostgresUserRepository } from '../src/auth/postgresUserRepository.js';
 
 const databaseUrl = process.env.GATEWAY_RUNTIME_ACTION_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const firstUserId = 'f28aa8ce-6bd0-45e5-a127-056de53e3161';
 const secondUserId = '8f610116-64bd-4f18-bf7f-eae1737b227c';
+const bootstrapId = '00000000-0000-4000-8000-000000000042';
+const selfUserId = '00000000-0000-4000-8000-000000000043';
 const oldKakaoId = 'account-identity-old-kakao';
 const newKakaoId = 'account-identity-new-kakao';
 
@@ -30,9 +33,34 @@ integration('account identity PostgreSQL transaction', () => {
         db = connector.prisma;
         closeDb = () => connector.disconnect();
         await db.retiredKakaoIdentity.deleteMany({ where: { oauthId: { in: [oldKakaoId, newKakaoId] } } });
-        await db.appUser.deleteMany({ where: { id: { in: [firstUserId, secondUserId] } } });
+        await db.kakaoIdentityLinkHistory.deleteMany({
+            where: { userId: { in: [firstUserId, secondUserId, selfUserId] } },
+        });
+        await db.appUser.deleteMany({ where: { id: { in: [firstUserId, secondUserId, bootstrapId, selfUserId] } } });
         await db.appUser.createMany({
             data: [
+                {
+                    id: bootstrapId,
+                    loginId: 'identity-bootstrap',
+                    displayName: '복구통합관리자',
+                    passwordHash: 'not-used',
+                    passwordSalt: 'not-used',
+                    roles: ['superuser'],
+                    sanctions: {},
+                    createdAt: new Date('2000-01-01'),
+                },
+                {
+                    id: selfUserId,
+                    loginId: 'identity-self',
+                    displayName: '직접복구계정',
+                    passwordHash: 'not-used',
+                    passwordSalt: 'not-used',
+                    roles: ['user'],
+                    sanctions: {},
+                    oauthType: 'KAKAO',
+                    oauthId: 'self-db-old',
+                    email: 'self-db@example.test',
+                },
                 {
                     id: firstUserId,
                     loginId: 'identity-integration-one',
@@ -63,7 +91,10 @@ integration('account identity PostgreSQL transaction', () => {
 
     afterAll(async () => {
         await db?.retiredKakaoIdentity.deleteMany({ where: { oauthId: { in: [oldKakaoId, newKakaoId] } } });
-        await db?.appUser.deleteMany({ where: { id: { in: [firstUserId, secondUserId] } } });
+        await db?.kakaoIdentityLinkHistory.deleteMany({
+            where: { userId: { in: [firstUserId, secondUserId, selfUserId] } },
+        });
+        await db?.appUser.deleteMany({ where: { id: { in: [firstUserId, secondUserId, bootstrapId, selfUserId] } } });
         await closeDb?.();
     });
 
@@ -159,5 +190,94 @@ integration('account identity PostgreSQL transaction', () => {
         expect(restored?.authRevision).toBe(revision + 1);
         expect(restored?.oauthId).toBe(before?.oauthId);
         expect(restored?.sanctions).toEqual(before?.sanctions);
+    });
+    it('commits identity, imported password, proof and history together, and restricts former identities to their owner', async () => {
+        const users = createPostgresUserRepository(db);
+        await db.appUser.update({ where: { id: selfUserId }, data: { passwordResetRequired: true } });
+        const before = await users.findById(selfUserId);
+        const now = new Date();
+        const input = {
+            expected: snapshotKakaoLink(before!),
+            authorization: 'EMAIL' as const,
+            oauthId: 'self-db-new',
+            email: 'self-db@example.test',
+            oauthInfo: {},
+            verifiedAt: now,
+            talkVerifiedUntil: new Date(now.getTime() + 86400000),
+            password: 'new-self-password',
+        };
+        const restored = await users.completeKakaoIdentityLink(selfUserId, input);
+        expect(restored).toMatchObject({
+            oauthId: 'self-db-new',
+            passwordResetRequired: false,
+            authRevision: (before?.authRevision ?? 0) + 1,
+        });
+        expect(await users.verifyPassword(restored, 'new-self-password')).toBe(true);
+        expect(await users.findDetachedKakaoOwner('self-db-old')).toBe(selfUserId);
+        expect(await users.isKakaoIdentityRetired('self-db-old')).toBe(false);
+        expect(await db.kakaoIdentityLinkHistory.count({ where: { userId: selfUserId } })).toBe(1);
+        await expect(users.completeKakaoIdentityLink(selfUserId, input)).rejects.toThrow();
+        await expect(
+            users.createUser({
+                username: 'identity-history-claim',
+                password: 'secretpass',
+                oauth: { type: 'KAKAO', id: 'self-db-old', email: 'claim@example.test', info: {} },
+            })
+        ).rejects.toThrow();
+        const prior = await users.findById(selfUserId);
+        await users.completeKakaoIdentityLink(selfUserId, {
+            ...input,
+            expected: snapshotKakaoLink(prior!),
+            oauthId: 'self-db-old',
+        });
+        expect((await users.findById(selfUserId))?.oauthId).toBe('self-db-old');
+        const snapshot = await users.findById(selfUserId);
+        const conflicting = await users.findById(secondUserId);
+        await expect(
+            users.completeKakaoIdentityLink(selfUserId, {
+                ...input,
+                expected: snapshotKakaoLink(snapshot!),
+                oauthId: conflicting!.oauthId!,
+                password: 'must-not-be-saved',
+            })
+        ).rejects.toThrow();
+        expect((await users.findById(selfUserId))?.passwordHash).toBe(snapshot?.passwordHash);
+        expect(await db.kakaoIdentityLinkHistory.count({ where: { userId: selfUserId } })).toBe(2);
+        await expect(
+            users.markKakaoTalkVerified(selfUserId, new Date(Date.now() + 10000), 0, 'self-db-old')
+        ).rejects.toThrow();
+    });
+
+    it('allows only one concurrent recovery against the same PostgreSQL snapshot', async () => {
+        const users = createPostgresUserRepository(db);
+        const user = await users.findById(selfUserId);
+        const input = {
+            expected: snapshotKakaoLink(user!),
+            authorization: 'EMAIL' as const,
+            email: 'self-db@example.test',
+            oauthInfo: {},
+            verifiedAt: new Date(),
+            talkVerifiedUntil: new Date(Date.now() + 86400000),
+        };
+        const results = await Promise.allSettled(
+            ['self-db-race-one', 'self-db-race-two'].map((oauthId) =>
+                users.completeKakaoIdentityLink(selfUserId, { ...input, oauthId })
+            )
+        );
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+        expect((await users.findById(selfUserId))?.authRevision).toBe((user?.authRevision ?? 0) + 1);
+    });
+    it('keeps former identity ownership after the service account is deleted', async () => {
+        const users = createPostgresUserRepository(db);
+        await users.deleteUser(selfUserId);
+        expect(await users.findDetachedKakaoOwner('self-db-old')).toBe(selfUserId);
+        await expect(
+            users.createUser({
+                username: 'deleted-owner-claim',
+                password: 'secretpass',
+                oauth: { type: 'KAKAO', id: 'self-db-old', email: 'deleted-owner-claim@example.test', info: {} },
+            })
+        ).rejects.toThrow();
     });
 });

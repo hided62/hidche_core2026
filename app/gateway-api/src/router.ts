@@ -24,6 +24,12 @@ import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 import { isGatewaySessionCurrent } from './auth/sessionValidity.js';
 import { GameSessionLimitError } from './auth/sessionService.js';
 import { assertLoginAllowed, canCancelDeletion, completeGatewayLogin } from './auth/deletionRecovery.js';
+import {
+    beginPendingKakaoLink,
+    finishPendingKakaoLink,
+    requestPendingKakaoOtp,
+    validatePendingKakaoProfile,
+} from './auth/pendingKakaoLink.js';
 import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 import type { GatewayApiContext } from './context.js';
 import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
@@ -394,57 +400,30 @@ export const appRouter = router({
                         });
                     }
                     const oauthInfo = oauthInfoFromToken(token, tokenIssuedAt, localUser.oauthInfo);
-                    let verified: UserRecord;
-                    const replacingKakao =
-                        localUser.oauthType === 'KAKAO' &&
-                        Boolean(localUser.oauthId) &&
-                        localUser.oauthId !== profile.kakaoId;
-                    if (replacingKakao) {
-                        try {
-                            verified = await ctx.users.replaceKakaoWithApprovedIdentity(localUser.id, {
-                                oauthId: profile.kakaoId,
-                                email: profile.email,
-                                oauthInfo,
-                                verifiedAt: new Date(),
-                            });
-                        } catch (error) {
-                            throw new TRPCError({
-                                code: 'PRECONDITION_FAILED',
-                                message: '관리자의 카카오 계정 교체 승인이 없거나 만료되었습니다.',
-                                cause: error,
-                            });
-                        }
-                    } else if (existingById?.id !== localUser.id && localUser.oauthType !== 'KAKAO') {
-                        try {
-                            verified = await ctx.users.linkKakao(localUser.id, {
-                                oauthId: profile.kakaoId,
-                                email: profile.email,
-                                oauthInfo,
-                                verifiedAt: new Date(),
-                            });
-                        } catch (error) {
-                            throw new TRPCError({
-                                code: 'CONFLICT',
-                                message: '이미 다른 계정에 연결된 카카오 계정입니다.',
-                                cause: error,
-                            });
-                        }
-                    } else {
-                        try {
-                            verified = await ctx.users.syncKakaoIdentity(localUser.id, profile.email, oauthInfo);
-                        } catch (error) {
-                            throw new TRPCError({
-                                code: 'CONFLICT',
-                                message: '이미 다른 계정에서 사용 중인 카카오 이메일입니다. 관리자에게 문의해 주세요.',
-                                cause: error,
-                            });
-                        }
+                    if (localUser.oauthType !== 'KAKAO' || localUser.oauthId !== profile.kakaoId) {
+                        const stored = await ctx.oauthSessions.createSession({
+                            mode: pending.mode,
+                            intent: 'link_existing',
+                            targetUserId: localUser.id,
+                            kakaoId: profile.kakaoId,
+                            email: profile.email,
+                            accessToken: token.accessToken,
+                            refreshToken: token.refreshToken,
+                            accessTokenValidUntil: oauthInfo.accessTokenValidUntil!,
+                            refreshTokenValidUntil: oauthInfo.refreshTokenValidUntil,
+                            createdAt: new Date().toISOString(),
+                        });
+                        return {
+                            status: 'account_recovery' as const,
+                            action: 'link_existing' as const,
+                            oauthSessionId: stored.id,
+                            email: stored.email,
+                            passwordRequired: localUser.email?.toLowerCase() !== profile.email,
+                        };
                     }
+                    const verified = await ctx.users.syncKakaoIdentity(localUser.id, profile.email, oauthInfo);
                     const refreshed = (await ctx.users.findById(verified.id)) ?? verified;
-                    await ctx.flushPublisher.publishUserFlush(
-                        refreshed.id,
-                        replacingKakao ? 'kakao-account-replaced' : 'kakao-verified'
-                    );
+                    await ctx.flushPublisher.publishUserFlush(refreshed.id, 'kakao-verified');
                     return finishKakaoLoginOrRequestPasswordSetup(ctx, refreshed, token.accessToken, 'verified');
                 }
 
@@ -515,8 +494,20 @@ export const appRouter = router({
                     return finishKakaoLoginOrRequestPasswordSetup(ctx, synced, token.accessToken, 'login');
                 }
 
+                const detachedOwnerId = await ctx.users.findDetachedKakaoOwner(profile.kakaoId);
+                const detachedOwner = detachedOwnerId ? await ctx.users.findById(detachedOwnerId) : null;
+                if (
+                    detachedOwnerId &&
+                    (!detachedOwner || (existingByEmail && existingByEmail.id !== detachedOwnerId))
+                ) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이전 계정에 귀속된 카카오 계정입니다. 관리자에게 복구를 요청해 주세요.',
+                    });
+                }
+                const recoveryTarget = detachedOwner ?? existingByEmail;
                 const joinOauthInfo = oauthInfoFromToken(token, tokenIssuedAt);
-                const recoveryIntent = existingByEmail
+                const recoveryIntent = recoveryTarget
                     ? ('link_existing' as const)
                     : alreadyRegisteredWithKakao
                       ? ('rejoin' as const)
@@ -524,7 +515,7 @@ export const appRouter = router({
                 const stored = await ctx.oauthSessions.createSession({
                     mode: pending.mode,
                     intent: recoveryIntent,
-                    targetUserId: existingByEmail?.id,
+                    targetUserId: recoveryTarget?.id,
                     kakaoId: profile.kakaoId,
                     email: profile.email,
                     accessToken: token.accessToken,
@@ -540,6 +531,9 @@ export const appRouter = router({
                         action: recoveryIntent,
                         oauthSessionId: stored.id,
                         email: stored.email,
+                        passwordRequired: recoveryTarget
+                            ? recoveryTarget.email?.toLowerCase() !== profile.email
+                            : false,
                     };
                 }
 
@@ -557,7 +551,7 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const oauthSession = await ctx.oauthSessions.consumeSession(input.oauthSessionId);
+                const oauthSession = await ctx.oauthSessions.getSession(input.oauthSessionId);
                 if (!oauthSession) {
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',
@@ -571,6 +565,8 @@ export const appRouter = router({
                     });
                 }
 
+                if (!(await ctx.oauthSessions.consumeSession(input.oauthSessionId)))
+                    throw new TRPCError({ code: 'UNAUTHORIZED', message: '카카오 계정 확인이 이미 사용되었습니다.' });
                 if (input.action === 'rejoin') {
                     const [oauthOwner, emailOwner] = await Promise.all([
                         ctx.users.findByOauthId('KAKAO', oauthSession.kakaoId),
@@ -611,7 +607,7 @@ export const appRouter = router({
                     ctx.users.findByEmail(oauthSession.email),
                     ctx.users.findByOauthId('KAKAO', oauthSession.kakaoId),
                 ]);
-                if (!targetUser || emailOwner?.id !== targetUser.id) {
+                if (!targetUser || (emailOwner && emailOwner.id !== targetUser.id)) {
                     throw new TRPCError({
                         code: 'CONFLICT',
                         message:
@@ -626,46 +622,40 @@ export const appRouter = router({
                 }
                 assertLoginAllowed(targetUser);
 
-                const oauthInfo: UserOAuthInfo = {
-                    accessToken: oauthSession.accessToken,
-                    refreshToken: oauthSession.refreshToken,
-                    accessTokenValidUntil: oauthSession.accessTokenValidUntil,
-                    refreshTokenValidUntil: oauthSession.refreshTokenValidUntil,
-                };
-                let linked: UserRecord;
-                try {
-                    const replacement =
-                        targetUser.oauthType === 'KAKAO' &&
-                        Boolean(targetUser.oauthId) &&
-                        targetUser.oauthId !== oauthSession.kakaoId;
-                    linked = replacement
-                        ? await ctx.users.replaceKakaoWithApprovedIdentity(targetUser.id, {
-                              oauthId: oauthSession.kakaoId,
-                              email: oauthSession.email,
-                              oauthInfo,
-                              verifiedAt: new Date(),
-                          })
-                        : await ctx.users.relinkKakaoByEmail(targetUser.id, {
-                              oauthId: oauthSession.kakaoId,
-                              email: oauthSession.email,
-                              oauthInfo,
-                              verifiedAt: new Date(),
-                          });
-                } catch (error) {
+                return beginPendingKakaoLink(ctx, targetUser, oauthSession);
+            }),
+        kakaoLinkWithPassword: procedure
+            .input(z.object({ oauthSessionId: z.string().uuid(), username: zUsername, credential: zPasswordEnvelope }))
+            .mutation(async ({ ctx, input }) => {
+                const oauth = await ctx.oauthSessions.getSession(input.oauthSessionId);
+                if (!oauth || !['register', 'rejoin', 'link_existing'].includes(oauth.intent ?? 'register'))
                     throw new TRPCError({
-                        code: targetUser.oauthType === 'KAKAO' ? 'PRECONDITION_FAILED' : 'CONFLICT',
-                        message:
-                            targetUser.oauthType === 'KAKAO'
-                                ? '기존 카카오 계정 교체에는 관리자 승인이 필요합니다.'
-                                : '카카오 계정 연결 상태가 변경되었습니다. 처음부터 다시 진행해 주세요.',
-                        cause: error,
+                        code: 'UNAUTHORIZED',
+                        message: '카카오 연결 확인이 만료되었습니다. 다시 로그인해 주세요.',
                     });
-                }
-                await ctx.flushPublisher.publishUserFlush(
-                    linked.id,
-                    targetUser.oauthType === 'KAKAO' ? 'kakao-account-replaced' : 'kakao-account-relinked'
-                );
-                return finishKakaoLoginOrRequestPasswordSetup(ctx, linked, oauthSession.accessToken, 'login');
+                await validatePendingKakaoProfile(ctx, oauth);
+                const user = await ctx.users.findByUsername(input.username);
+                const password = openPassword(ctx.passwordEnvelope, input.credential);
+                if (
+                    !user ||
+                    !(await ctx.users.verifyPassword(user, password)) ||
+                    (oauth.targetUserId && oauth.targetUserId !== user.id)
+                )
+                    throw new TRPCError({
+                        code: 'UNAUTHORIZED',
+                        message: '기존 계정명 또는 비밀번호가 일치하지 않습니다.',
+                    });
+                const emailOwner = await ctx.users.findByEmail(oauth.email);
+                if (emailOwner && emailOwner.id !== user.id)
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '새 카카오 이메일이 다른 계정에 연결되어 있습니다. 관리자에게 문의해 주세요.',
+                    });
+                if (!(await ctx.oauthSessions.consumeSession(oauth.id)))
+                    throw new TRPCError({ code: 'UNAUTHORIZED', message: '카카오 연결 확인이 이미 사용되었습니다.' });
+                const refreshed = await ctx.users.findById(user.id);
+                if (!refreshed) throw new TRPCError({ code: 'UNAUTHORIZED' });
+                return beginPendingKakaoLink(ctx, refreshed, oauth, true);
             }),
         kakaoSetPassword: procedure
             .input(
@@ -676,6 +666,19 @@ export const appRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const password = openPassword(ctx.passwordEnvelope, input.credential);
+                const staged = await ctx.oauthSessions.getSession(input.oauthSessionId);
+                if (staged?.intent === 'identity_link' && staged.identityLink && staged.targetUserId) {
+                    await validatePendingKakaoProfile(ctx, staged);
+                    const user = await ctx.users.findById(staged.targetUserId);
+                    if (!user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+                    if (!(await ctx.oauthSessions.consumeSession(staged.id)))
+                        throw new TRPCError({ code: 'UNAUTHORIZED' });
+                    const next = await ctx.oauthSessions.createSession({
+                        ...staged,
+                        identityLink: { ...staged.identityLink, credential: input.credential },
+                    });
+                    return requestPendingKakaoOtp(ctx, next, user);
+                }
                 const oauthSession = await ctx.oauthSessions.consumeSession(input.oauthSessionId);
                 if (!oauthSession || oauthSession.intent !== 'password_setup' || !oauthSession.targetUserId) {
                     throw new TRPCError({
@@ -976,6 +979,13 @@ export const appRouter = router({
                     oauthSessions: ctx.oauthSessions,
                     users: ctx.users,
                 }).catch((error: unknown) => throwKakaoVerificationError(error));
+                if (verified.pendingLinkSessionId)
+                    return finishPendingKakaoLink(
+                        ctx,
+                        verified.pendingLinkSessionId,
+                        verified.user.id,
+                        verified.validUntil
+                    );
                 return {
                     ...(await completeGatewayLogin(ctx, verified.user, 'login')),
                     validUntil: verified.validUntil,

@@ -12,7 +12,11 @@ export const procedure = t.procedure.use(async ({ ctx, path, getRawInput, next }
     const raw: unknown = await getRawInput();
     const input = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
     const resolveSubject = async (): Promise<string | undefined> => {
-        if (path === 'auth.login' && typeof input.username === 'string' && input.username.length <= 64) {
+        if (
+            (path === 'auth.login' || path === 'auth.kakaoLinkWithPassword') &&
+            typeof input.username === 'string' &&
+            input.username.length <= 64
+        ) {
             return `login:${input.username.trim().toLocaleLowerCase('en-US')}`;
         }
         if (

@@ -103,6 +103,7 @@ const EXPENSIVE_ACTIONS = new Set([
     'auth.bootstrapLocal',
     'auth.kakaoExchange',
     'auth.kakaoResolveAccount',
+    'auth.kakaoLinkWithPassword',
     'auth.kakaoSetPassword',
     'auth.register',
     'auth.registerLocal',

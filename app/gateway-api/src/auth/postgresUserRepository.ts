@@ -1,3 +1,6 @@
+import { authorizeKakaoLink, matchesKakaoLinkSnapshot } from './kakaoLinkPolicy.js';
+import { assertLoginAllowed } from './deletionRecovery.js';
+import type { CompleteKakaoLinkInput } from './userRepository.js';
 import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createPasswordHasher, type PasswordHasher } from './passwordHasher.js';
@@ -175,6 +178,91 @@ export const createPostgresUserRepository = (
     hasher: PasswordHasher = createPasswordHasher()
 ): UserRepository => {
     return {
+        async findDetachedKakaoOwner(oauthId: string): Promise<string | null> {
+            const row = await prisma.kakaoIdentityLinkHistory.findFirst({
+                where: { previousOauthId: oauthId },
+                orderBy: { createdAt: 'desc' },
+                select: { userId: true },
+            });
+            return row?.userId ?? null;
+        },
+        async completeKakaoIdentityLink(userId: string, input: CompleteKakaoLinkInput): Promise<UserRecord> {
+            const password = input.password ? await hasher.hash(input.password) : undefined;
+            return prisma.$transaction(
+                async (tx) => {
+                    const row = await tx.appUser.findUnique({ where: { id: userId } });
+                    if (!row) throw new Error('Kakao recovery account no longer exists.');
+                    const user = mapUser(row);
+                    assertLoginAllowed(user);
+                    if (!matchesKakaoLinkSnapshot(user, input.expected))
+                        throw new Error('Kakao recovery account changed.');
+                    const first = await tx.appUser.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+                    if (
+                        authorizeKakaoLink(
+                            user,
+                            input.email,
+                            input.authorization === 'PASSWORD',
+                            first?.id,
+                            input.verifiedAt
+                        ) !== input.authorization
+                    )
+                        throw new Error('Kakao recovery authorization changed.');
+                    if (user.passwordResetRequired && !password) throw new Error('A new password is required.');
+                    const [owner, emailOwner, retired, detached] = await Promise.all([
+                        tx.appUser.findUnique({ where: { oauthId: input.oauthId }, select: { id: true } }),
+                        tx.appUser.findUnique({ where: { email: input.email.toLowerCase() }, select: { id: true } }),
+                        tx.retiredKakaoIdentity.findUnique({ where: { oauthId: input.oauthId }, select: { id: true } }),
+                        tx.kakaoIdentityLinkHistory.findFirst({
+                            where: { previousOauthId: input.oauthId, userId: { not: userId } },
+                        }),
+                    ]);
+                    if (
+                        retired ||
+                        detached ||
+                        (owner && owner.id !== userId) ||
+                        (emailOwner && emailOwner.id !== userId)
+                    )
+                        throw new Error('Kakao recovery identity ownership changed.');
+                    if (user.oauthId && user.oauthId !== input.oauthId) {
+                        await tx.kakaoIdentityLinkHistory.create({
+                            data: {
+                                userId,
+                                previousOauthId: user.oauthId,
+                                nextOauthId: input.oauthId,
+                                authorization: input.authorization,
+                            },
+                        });
+                    }
+                    // OTP까지 확인한 새 연결과 비밀번호/인증 revision을 하나의 transaction에 저장한다.
+                    return mapUser(
+                        await tx.appUser.update({
+                            where: { id: userId },
+                            data: {
+                                oauthType: 'KAKAO',
+                                oauthId: input.oauthId,
+                                email: input.email.toLowerCase(),
+                                oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
+                                kakaoVerifiedAt: input.verifiedAt,
+                                kakaoTalkVerifiedUntil: input.talkVerifiedUntil,
+                                authRevision: { increment: 1 },
+                                sessionRevokedBefore: input.verifiedAt,
+                                kakaoReplacementApprovedUntil: null,
+                                kakaoReplacementApprovedByUserId: null,
+                                kakaoReplacementReason: null,
+                                ...(password
+                                    ? {
+                                          passwordHash: password.hash,
+                                          passwordSalt: password.salt,
+                                          passwordResetRequired: false,
+                                      }
+                                    : {}),
+                            },
+                        })
+                    );
+                },
+                { isolationLevel: 'Serializable' }
+            );
+        },
         async findById(id: string): Promise<UserRecord | null> {
             const row = await prisma.appUser.findUnique({
                 where: {
@@ -286,6 +374,12 @@ export const createPostgresUserRepository = (
                           if (retired) {
                               throw new Error('Kakao identity is permanently retired.');
                           }
+                          if (
+                              await tx.kakaoIdentityLinkHistory.findFirst({
+                                  where: { previousOauthId: input.oauth!.id },
+                              })
+                          )
+                              throw new Error('Kakao identity belongs to a former service account.');
                           return tx.appUser.create({ data });
                       },
                       { isolationLevel: 'Serializable' }
@@ -340,9 +434,18 @@ export const createPostgresUserRepository = (
             });
             return mapUser(row);
         },
-        async markKakaoTalkVerified(userId: string, validUntil: Date): Promise<UserRecord> {
+        async markKakaoTalkVerified(
+            userId: string,
+            validUntil: Date,
+            authRevision?: number,
+            oauthId?: string
+        ): Promise<UserRecord> {
             const row = await prisma.appUser.update({
-                where: { id: userId },
+                where: {
+                    id: userId,
+                    ...(authRevision !== undefined ? { authRevision } : {}),
+                    ...(oauthId ? { oauthId } : {}),
+                },
                 data: { kakaoTalkVerifiedUntil: validUntil },
             });
             return mapUser(row);
@@ -357,6 +460,12 @@ export const createPostgresUserRepository = (
                     if (retired) {
                         throw new Error('Kakao identity is permanently retired.');
                     }
+                    if (
+                        await tx.kakaoIdentityLinkHistory.findFirst({
+                            where: { previousOauthId: input.oauthId, userId: { not: userId } },
+                        })
+                    )
+                        throw new Error('Kakao identity belongs to another service account.');
                     const row = await tx.appUser.update({
                         where: { id: userId },
                         data: {
@@ -384,6 +493,12 @@ export const createPostgresUserRepository = (
                     if (retired) {
                         throw new Error('Kakao identity is permanently retired.');
                     }
+                    if (
+                        await tx.kakaoIdentityLinkHistory.findFirst({
+                            where: { previousOauthId: input.oauthId, userId: { not: userId } },
+                        })
+                    )
+                        throw new Error('Kakao identity belongs to another service account.');
                     const updated = await tx.appUser.updateMany({
                         where: {
                             id: userId,
@@ -444,13 +559,17 @@ export const createPostgresUserRepository = (
                         throw new Error('Kakao account replacement is not approved.');
                     }
                     const normalizedEmail = input.email.toLowerCase();
-                    const [oauthOwner, emailOwner, retired] = await Promise.all([
+                    const [oauthOwner, emailOwner, retired, detached] = await Promise.all([
                         tx.appUser.findUnique({ where: { oauthId: input.oauthId }, select: { id: true } }),
                         tx.appUser.findUnique({ where: { email: normalizedEmail }, select: { id: true } }),
                         tx.retiredKakaoIdentity.findUnique({ where: { oauthId: input.oauthId }, select: { id: true } }),
+                        tx.kakaoIdentityLinkHistory.findFirst({
+                            where: { previousOauthId: input.oauthId, userId: { not: userId } },
+                        }),
                     ]);
                     if (
                         retired ||
+                        detached ||
                         (oauthOwner && oauthOwner.id !== userId) ||
                         (emailOwner && emailOwner.id !== userId)
                     ) {

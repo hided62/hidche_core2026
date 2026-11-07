@@ -1,3 +1,6 @@
+import { authorizeKakaoLink, matchesKakaoLinkSnapshot } from './kakaoLinkPolicy.js';
+import { assertLoginAllowed } from './deletionRecovery.js';
+import type { CompleteKakaoLinkInput } from './userRepository.js';
 import { randomUUID } from 'node:crypto';
 
 import { createPasswordHasher, type PasswordHasher } from './passwordHasher.js';
@@ -29,6 +32,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
     const usersByOauthId = new Map<string, UserRecord>();
     const usersByEmail = new Map<string, UserRecord>();
     const retiredKakaoIds = new Set<string>();
+    const detachedKakaoOwners = new Map<string, string>();
     const iconsById = new Map<string, UserIconRecord>();
     const specialAccessGrantsById = new Map<string, SpecialAccountAccessGrantRecord>();
 
@@ -42,6 +46,62 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
         ).toISOString();
 
     return {
+        async findDetachedKakaoOwner(oauthId: string): Promise<string | null> {
+            return detachedKakaoOwners.get(oauthId) ?? null;
+        },
+        async completeKakaoIdentityLink(userId: string, input: CompleteKakaoLinkInput): Promise<UserRecord> {
+            const password = input.password ? await hasher.hash(input.password) : undefined;
+            const user = [...usersByName.values()].find((row) => row.id === userId);
+            if (!user || !matchesKakaoLinkSnapshot(user, input.expected))
+                throw new Error('Kakao recovery account changed.');
+            assertLoginAllowed(user);
+            if (
+                authorizeKakaoLink(
+                    user,
+                    input.email,
+                    input.authorization === 'PASSWORD',
+                    input.firstUserId,
+                    input.verifiedAt
+                ) !== input.authorization
+            )
+                throw new Error('Kakao recovery authorization changed.');
+            const email = input.email.toLowerCase();
+            const owner = usersByOauthId.get(`KAKAO:${input.oauthId}`);
+            const emailOwner = usersByEmail.get(email);
+            const detached = detachedKakaoOwners.get(input.oauthId);
+            if (
+                retiredKakaoIds.has(input.oauthId) ||
+                (detached && detached !== userId) ||
+                (owner && owner.id !== userId) ||
+                (emailOwner && emailOwner.id !== userId)
+            )
+                throw new Error('Kakao recovery identity ownership changed.');
+            if (user.passwordResetRequired && !password) throw new Error('A new password is required.');
+            if (user.oauthId && user.oauthId !== input.oauthId) {
+                detachedKakaoOwners.set(user.oauthId, userId);
+                usersByOauthId.delete(`KAKAO:${user.oauthId}`);
+            }
+            if (user.email) usersByEmail.delete(user.email.toLowerCase());
+            Object.assign(user, {
+                oauthType: 'KAKAO',
+                oauthId: input.oauthId,
+                email,
+                oauthInfo: input.oauthInfo,
+                kakaoVerifiedAt: input.verifiedAt.toISOString(),
+                kakaoTalkVerifiedUntil: input.talkVerifiedUntil.toISOString(),
+                authRevision: (user.authRevision ?? 0) + 1,
+                sessionRevokedBefore: input.verifiedAt.toISOString(),
+                kakaoReplacementApprovedUntil: undefined,
+                kakaoReplacementApprovedByUserId: undefined,
+                kakaoReplacementReason: undefined,
+                ...(password
+                    ? { passwordHash: password.hash, passwordSalt: password.salt, passwordResetRequired: false }
+                    : {}),
+            });
+            usersByOauthId.set(`KAKAO:${input.oauthId}`, user);
+            usersByEmail.set(email, user);
+            return user;
+        },
         async findById(id: string): Promise<UserRecord | null> {
             for (const user of usersByName.values()) {
                 if (user.id === id) {
@@ -103,6 +163,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             if (
                 input.oauth &&
                 (retiredKakaoIds.has(input.oauth.id) ||
+                    detachedKakaoOwners.has(input.oauth.id) ||
                     usersByOauthId.has(`${input.oauth.type}:${input.oauth.id}`) ||
                     usersByEmail.has(input.oauth.email.toLowerCase()))
             ) {
@@ -204,9 +265,19 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
             }
             throw new Error('User not found.');
         },
-        async markKakaoTalkVerified(userId: string, validUntil: Date): Promise<UserRecord> {
+        async markKakaoTalkVerified(
+            userId: string,
+            validUntil: Date,
+            authRevision?: number,
+            oauthId?: string
+        ): Promise<UserRecord> {
             for (const user of usersByName.values()) {
                 if (user.id === userId) {
+                    if (
+                        (authRevision !== undefined && (user.authRevision ?? 0) !== authRevision) ||
+                        (oauthId && user.oauthId !== oauthId)
+                    )
+                        throw new Error('Kakao identity changed.');
                     user.kakaoTalkVerifiedUntil = validUntil.toISOString();
                     return user;
                 }
@@ -305,6 +376,7 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createPass
                     !user.kakaoReplacementApprovedByUserId ||
                     !user.kakaoReplacementReason ||
                     retiredKakaoIds.has(input.oauthId) ||
+                    (detachedKakaoOwners.has(input.oauthId) && detachedKakaoOwners.get(input.oauthId) !== userId) ||
                     (oauthOwner && oauthOwner.id !== userId) ||
                     (emailOwner && emailOwner.id !== userId)
                 ) {

@@ -26,12 +26,19 @@ const email = ref('');
 const username = ref('');
 const password = ref('');
 const confirmPassword = ref('');
+const linkUsername = ref('');
+const linkPassword = ref('');
+const passwordLinkOpen = ref(false);
+const handlePasswordLinkToggle = (event: Event): void => {
+    if (event.currentTarget instanceof HTMLDetailsElement) passwordLinkOpen.value = event.currentTarget.open;
+};
 const displayName = ref('');
 const termsAgreed = ref(false);
 const privacyAgreed = ref(false);
 const thirdPartyUse = ref(false);
 const accountRecovery = ref<{
     action: 'link_existing' | 'rejoin';
+    passwordRequired?: boolean;
     oauthSessionId: string;
     email: string;
 } | null>(null);
@@ -102,18 +109,9 @@ const resolveAccount = async (): Promise<void> => {
             action: accountRecovery.value.action,
         });
         accountRecovery.value = null;
-        if (result.status === 'deletion_pending') {
-            handleDeletionPending(result);
-            return;
-        }
         if (result.status === 'otp') {
             otpChallenge.value = result;
             otpSuccessStatus.value = result.successStatus;
-            return;
-        }
-        if (result.status === 'login') {
-            window.localStorage.setItem('sammo-session-token', result.sessionToken);
-            await router.replace('/lobby');
             return;
         }
         if (result.status === 'password_setup') {
@@ -126,6 +124,36 @@ const resolveAccount = async (): Promise<void> => {
         email.value = result.email;
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '카카오 계정 연결을 완료하지 못했습니다.';
+    } finally {
+        submitting.value = false;
+    }
+};
+
+const linkWithPassword = async (): Promise<void> => {
+    const sessionId = accountRecovery.value?.oauthSessionId || oauthSessionId.value;
+    if (!sessionId || submitting.value) return;
+    submitting.value = true;
+    errorMessage.value = '';
+    try {
+        const credential = await sealPassword(linkPassword.value);
+        const result = await trpc.auth.kakaoLinkWithPassword.mutate({
+            oauthSessionId: sessionId,
+            username: linkUsername.value,
+            credential,
+        });
+        linkPassword.value = '';
+        accountRecovery.value = null;
+        oauthSessionId.value = '';
+        if (result.status === 'otp') {
+            otpChallenge.value = result;
+            otpSuccessStatus.value = result.successStatus;
+        } else {
+            passwordSetupSessionId.value = result.oauthSessionId;
+            passwordSetupSuccessStatus.value = result.successStatus;
+            email.value = result.email;
+        }
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '기존 계정 비밀번호를 확인하지 못했습니다.';
     } finally {
         submitting.value = false;
     }
@@ -224,13 +252,15 @@ onMounted(() => {
             <section class="oauth-card">
                 <h2>
                     {{
-                        deletionPending
-                            ? '탈퇴 취소'
-                            : accountRecovery
-                              ? '카카오 계정 연결 확인'
-                              : passwordSetupSessionId
-                                ? '새 비밀번호 설정'
-                                : '회원가입'
+                        passwordLinkOpen && (oauthSessionId || accountRecovery)
+                            ? '기존 계정 연결'
+                            : deletionPending
+                              ? '탈퇴 취소'
+                              : accountRecovery
+                                ? '카카오 계정 연결 확인'
+                                : passwordSetupSessionId
+                                  ? '새 비밀번호 설정'
+                                  : '회원가입'
                     }}
                 </h2>
                 <p v-if="loading" class="oauth-message">카카오 인증을 확인하는 중...</p>
@@ -241,17 +271,32 @@ onMounted(() => {
                     @restored="handleOtpVerified"
                     @cancel="router.replace('/')"
                 />
-                <div v-else-if="accountRecovery" class="recovery-panel" role="group" aria-label="카카오 계정 연결 확인">
-                    <p v-if="accountRecovery.action === 'link_existing'">
+                <div
+                    v-else-if="accountRecovery && !passwordLinkOpen"
+                    class="recovery-panel"
+                    role="group"
+                    aria-label="카카오 계정 연결 확인"
+                >
+                    <p v-if="accountRecovery.action === 'link_existing' && !accountRecovery.passwordRequired">
                         <strong>{{ accountRecovery.email }}</strong> 이메일로 보존된 기존 계정이 있습니다. 이 계정에
                         카카오 로그인을 연결해드릴까요?
+                    </p>
+                    <p v-else-if="accountRecovery.passwordRequired">
+                        새 카카오 이메일로 기존 연결을 확인했습니다. 이메일이 다르거나 추가 확인이 필요한 계정은
+                        아래에서 기존 계정 비밀번호를 확인해 주세요. 비밀번호를 모르면 관리자에게 복구를 요청해 주세요.
                     </p>
                     <p v-else>
                         <strong>{{ accountRecovery.email }}</strong> 이메일은 카카오에 이미 가입된 연결이 있지만 이
                         서비스에서 연결할 계정을 찾지 못했습니다. 새 계정으로 재가입하시겠습니까?
                     </p>
                     <div class="recovery-actions">
-                        <button class="register-button" type="button" :disabled="submitting" @click="resolveAccount">
+                        <button
+                            v-if="!accountRecovery.passwordRequired"
+                            class="register-button"
+                            type="button"
+                            :disabled="submitting"
+                            @click="resolveAccount"
+                        >
                             {{
                                 submitting
                                     ? '처리 중...'
@@ -303,7 +348,7 @@ onMounted(() => {
                     </button>
                     <RouterLink class="back-link" to="/">취소</RouterLink>
                 </form>
-                <form v-else-if="oauthSessionId" @submit.prevent="register">
+                <form v-else-if="oauthSessionId && !passwordLinkOpen" @submit.prevent="register">
                     <div class="form-row">
                         <label for="oauth-email">카카오 이메일</label>
                         <input id="oauth-email" :value="email" readonly />
@@ -358,6 +403,37 @@ onMounted(() => {
                         {{ submitting ? '가입 중...' : '가입' }}
                     </button>
                 </form>
+                <details
+                    v-if="oauthSessionId || accountRecovery"
+                    class="password-link-panel"
+                    :open="accountRecovery?.passwordRequired || passwordLinkOpen"
+                    @toggle="handlePasswordLinkToggle"
+                >
+                    <summary>기존 계정 비밀번호로 연결</summary>
+                    <form aria-label="기존 비밀번호로 카카오 연결" @submit.prevent="linkWithPassword">
+                        <p>
+                            기존 카카오 인증을 사용할 수 없어도, 기존 계정 비밀번호와 새 카카오톡 인증으로 연결할 수
+                            있습니다.
+                        </p>
+                        <div class="form-row">
+                            <label for="link-username">기존 계정명</label>
+                            <input id="link-username" v-model="linkUsername" autocomplete="username" required />
+                        </div>
+                        <div class="form-row">
+                            <label for="link-password">기존 비밀번호</label>
+                            <input
+                                id="link-password"
+                                v-model="linkPassword"
+                                type="password"
+                                autocomplete="current-password"
+                                required
+                            />
+                        </div>
+                        <button class="register-button" type="submit" :disabled="submitting">
+                            {{ submitting ? '확인 중...' : '비밀번호 확인 후 연결' }}
+                        </button>
+                    </form>
+                </details>
                 <p v-if="errorMessage" class="oauth-error" role="alert">{{ errorMessage }}</p>
                 <RouterLink v-if="!loading && !oauthSessionId && !deletionPending" class="back-link" to="/"
                     >돌아가기</RouterLink
@@ -408,6 +484,17 @@ onMounted(() => {
     display: grid;
     gap: 12px;
     padding: 18px;
+}
+
+.password-link-panel {
+    margin: 18px;
+}
+.password-link-panel summary {
+    cursor: pointer;
+    color: #6db9ff;
+}
+.password-link-panel p {
+    line-height: 1.6;
 }
 
 .recovery-panel {

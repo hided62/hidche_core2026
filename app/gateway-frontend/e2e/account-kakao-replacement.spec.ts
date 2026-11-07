@@ -7,7 +7,7 @@ const operationNames = (route: Route): string[] => {
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
 };
 
-const installFixture = async (page: Page) => {
+const installFixture = async (page: Page, approved = true) => {
     const requests: Array<{ operation: string; body: string }> = [];
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-session-token', 'kakao-replacement-session');
@@ -33,7 +33,7 @@ const installFixture = async (page: Page) => {
                     nextRetireAt: null,
                     thirdPartyUse: false,
                     deleteAfter: null,
-                    kakaoReplacementApprovedUntil: new Date(Date.now() + 86_400_000).toISOString(),
+                    kakaoReplacementApprovedUntil: approved ? new Date(Date.now() + 86_400_000).toISOString() : null,
                 });
             }
             if (operation === 'account.notifications.get') {
@@ -63,7 +63,7 @@ const installFixture = async (page: Page) => {
     return requests;
 };
 
-test('starts an approved Kakao replacement with explicit permanent-retirement confirmation', async ({
+test('starts a Kakao replacement with confirmation before authenticating the new account', async ({
     page,
 }, testInfo) => {
     const requests = await installFixture(page);
@@ -88,7 +88,7 @@ test('starts an approved Kakao replacement with explicit permanent-retirement co
 
     await button.click();
     await expect(page).toHaveURL(/replacement=started/);
-    expect(confirmation).toContain('기존 카카오 계정은 영구 폐기');
+    expect(confirmation).toContain('새 카카오톡 인증을 완료하면');
     const startRequest = requests.find(({ operation }) => operation === 'auth.kakaoStart');
     expect(startRequest?.body).toContain('verify');
     expect(startRequest?.body).toContain('kakao-replacement-session');
@@ -104,4 +104,14 @@ test('starts an approved Kakao replacement with explicit permanent-retirement co
     expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
     await writeFile(testInfo.outputPath('account-kakao-replacement-mobile-geometry.json'), JSON.stringify(geometry));
     await page.screenshot({ path: testInfo.outputPath('account-kakao-replacement-mobile.png'), fullPage: true });
+});
+
+test('offers ordinary users account replacement without an administrator approval', async ({ page }) => {
+    const requests = await installFixture(page, false);
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.goto('account');
+    await expect(page.getByText(/교체 승인 .*까지/)).toHaveCount(0);
+    await page.getByRole('button', { name: '새 카카오 계정으로 교체', exact: true }).click();
+    await expect(page).toHaveURL(/replacement=started/);
+    expect(requests.some(({ operation }) => operation === 'auth.kakaoStart')).toBe(true);
 });

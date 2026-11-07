@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "controllerProtocol": 2,
-    "gatewaySchemaHead": "20261022000000_add_open_requests",
+    "gatewaySchemaHead": "20261107000000_kakao_identity_link_history",
     "gameSchemaHead": "20260916080000_index_play_audit_decision_month",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

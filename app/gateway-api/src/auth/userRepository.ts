@@ -1,3 +1,4 @@
+import type { KakaoLinkAuthorization, KakaoLinkSnapshot } from './kakaoLinkPolicy.js';
 export interface UserRecord {
     id: string;
     username: string;
@@ -155,7 +156,21 @@ export interface CreateUserInput {
     };
 }
 
+export interface CompleteKakaoLinkInput {
+    firstUserId?: string;
+    expected: KakaoLinkSnapshot;
+    authorization: KakaoLinkAuthorization;
+    oauthId: string;
+    email: string;
+    oauthInfo: UserOAuthInfo;
+    verifiedAt: Date;
+    talkVerifiedUntil: Date;
+    password?: string;
+}
+
 export interface UserRepository {
+    findDetachedKakaoOwner(oauthId: string): Promise<string | null>;
+    completeKakaoIdentityLink(userId: string, input: CompleteKakaoLinkInput): Promise<UserRecord>;
     findById(id: string): Promise<UserRecord | null>;
     findByIds(ids: string[]): Promise<UserRecord[]>;
     findByUsername(username: string): Promise<UserRecord | null>;
@@ -168,7 +183,12 @@ export interface UserRepository {
     updatePassword(userId: string, password: string): Promise<void>;
     updateOAuthInfo(userId: string, oauthInfo: UserOAuthInfo): Promise<void>;
     syncKakaoIdentity(userId: string, email: string, oauthInfo: UserOAuthInfo): Promise<UserRecord>;
-    markKakaoTalkVerified(userId: string, validUntil: Date): Promise<UserRecord>;
+    markKakaoTalkVerified(
+        userId: string,
+        validUntil: Date,
+        authRevision?: number,
+        oauthId?: string
+    ): Promise<UserRecord>;
     linkKakao(
         userId: string,
         input: {
