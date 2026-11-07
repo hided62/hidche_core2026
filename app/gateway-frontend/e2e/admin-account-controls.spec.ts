@@ -8,7 +8,16 @@ const operationNames = (route: Route): string[] => {
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
 };
 
-const installFixture = async (page: Page, scopes = ['*']) => {
+const installFixture = async (
+    page: Page,
+    scopes = ['*'],
+    deletion: {
+        deleteAfter?: string;
+        cancelFails?: boolean;
+        flushPublished?: boolean;
+        beforeCancel?: () => Promise<void>;
+    } = {}
+) => {
     const requests: Array<{ operation: string; body: unknown }> = [];
     let roles = [
         'user',
@@ -16,7 +25,7 @@ const installFixture = async (page: Page, scopes = ['*']) => {
         'admin.profiles.runtime:kwe:default',
         'admin.profiles.runtime:pwe:default',
     ];
-    let deleteAfter: string | null = null;
+    let deleteAfter: string | null = deletion.deleteAfter ?? null;
     let graceUntil: string | null = null;
     let username = 'target';
     let displayName = '대상 사용자';
@@ -40,8 +49,9 @@ const installFixture = async (page: Page, scopes = ['*']) => {
     await page.route('**/gateway/api/trpc/**', async (route) => {
         const operations = operationNames(route);
         const body = route.request().postDataJSON() as unknown;
+        for (const operation of operations) requests.push({ operation, body });
+        if (operations.includes('admin.users.cancelDeletion')) await deletion.beforeCancel?.();
         const results = operations.map((operation) => {
-            requests.push({ operation, body });
             if (operation === 'me') {
                 return response({
                     id: 'admin-user',
@@ -246,6 +256,25 @@ const installFixture = async (page: Page, scopes = ['*']) => {
                     reason: '탈퇴 요청 접수',
                 });
                 return response({ ok: true, deleteAfter });
+            }
+            if (operation === 'admin.users.cancelDeletion') {
+                if (deletion.cancelFails)
+                    return {
+                        error: {
+                            message: '계정 상태가 변경되었습니다. 다시 조회해 주세요.',
+                            code: -32009,
+                            data: { code: 'CONFLICT', httpStatus: 409 },
+                        },
+                    };
+                deleteAfter = null;
+                const input = (body as Record<string, { reason: string }>)['0'];
+                auditHistory.unshift({
+                    ...auditHistory[0],
+                    id: 'audit-cancel-deletion',
+                    action: 'admin.users.cancelDeletion',
+                    reason: input.reason,
+                });
+                return response({ ok: true, deleteAfter: null, flushPublished: deletion.flushPublished ?? true });
             }
             throw new Error(`Unhandled tRPC operation: ${operation}`);
         });
@@ -508,4 +537,122 @@ test('shows grouped roles on the account page after direct navigation and refres
     await writeFile(testInfo.outputPath('account-permissions-geometry.json'), JSON.stringify(geometry, null, 2));
     await writeFile(testInfo.outputPath('account-permissions.html'), await page.content());
     await page.screenshot({ path: testInfo.outputPath('account-permissions.png'), fullPage: true });
+});
+
+for (const viewport of [
+    { name: 'desktop', width: 1200, height: 900 },
+    { name: 'mobile', width: 390, height: 844 },
+]) {
+    test(`cancels an expired deletion with a reason, confirmation and audit on ${viewport.name}`, async ({
+        page,
+    }, testInfo) => {
+        await page.setViewportSize(viewport);
+        let complete: (() => void) | undefined;
+        const requests = await installFixture(page, ['*'], {
+            deleteAfter: '2020-01-01T00:00:00Z',
+            beforeCancel: () =>
+                new Promise<void>((resolve) => {
+                    complete = resolve;
+                }),
+        });
+        await page.goto('admin/users');
+        const target = page.getByRole('button', { name: /target.*대상 사용자/ });
+        await target.click();
+        await page.getByRole('button', { name: /탈퇴 · 이력/ }).click();
+        const panel = page.getByRole('heading', { name: '관리자 탈퇴 예약', exact: true }).locator('..');
+        const cancel = panel.getByRole('button', { name: '탈퇴 취소', exact: true });
+        await expect(cancel).toBeEnabled();
+        await cancel.click();
+        expect(requests.filter(({ operation }) => operation === 'admin.users.cancelDeletion')).toHaveLength(0);
+        await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 후 탈퇴 취소');
+        page.once('dialog', (dialog) => dialog.dismiss());
+        await cancel.click();
+        expect(requests.filter(({ operation }) => operation === 'admin.users.cancelDeletion')).toHaveLength(0);
+        await page.evaluate(() => document.fonts.ready);
+        await cancel.hover();
+        await expect
+            .poll(() => cancel.evaluate((el) => getComputedStyle(el).backgroundColor))
+            .toBe('oklch(0.546 0.245 262.881)');
+        await page.mouse.down();
+        expect(await cancel.evaluate((el) => el.matches(':active'))).toBe(true);
+        await page.mouse.move(1, 1);
+        await page.mouse.up();
+        await cancel.focus();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Shift+Tab');
+        await expect(cancel).toBeFocused();
+        const geometry = await panel.evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            const button = el.querySelectorAll('button')[1]!;
+            const buttonRect = button.getBoundingClientRect();
+            const style = getComputedStyle(button);
+            return {
+                x: rect.x,
+                width: rect.width,
+                height: rect.height,
+                viewport: innerWidth,
+                right: rect.right,
+                buttonWidth: buttonRect.width,
+                buttonHeight: buttonRect.height,
+                textAlign: style.textAlign,
+                fontSize: style.fontSize,
+                focus: button.matches(':focus-visible'),
+                html: el.outerHTML,
+                documentOverflow: document.documentElement.scrollWidth - innerWidth,
+            };
+        });
+        expect(geometry.documentOverflow).toBe(0);
+        expect(geometry.right).toBeLessThanOrEqual(viewport.width);
+        expect(geometry.buttonHeight).toBeGreaterThanOrEqual(40);
+        expect(geometry.focus).toBe(true);
+        await writeFile(testInfo.outputPath('admin-deletion-geometry-style.json'), JSON.stringify(geometry, null, 2));
+        await writeFile(testInfo.outputPath('admin-deletion-panel.html'), geometry.html);
+        await page.screenshot({ path: testInfo.outputPath('admin-deletion-before.png'), fullPage: true });
+        page.once('dialog', (dialog) => dialog.accept());
+        await cancel.click();
+        await expect(cancel).toBeDisabled();
+        await expect(panel.getByRole('button', { name: '보존 기간 후 탈퇴 예약' })).toBeDisabled();
+        await expect
+            .poll(() => requests.filter(({ operation }) => operation === 'admin.users.cancelDeletion').length)
+            .toBe(1);
+        expect(complete).toBeDefined();
+        complete!();
+        await expect(panel.getByRole('status')).toHaveText('탈퇴 예약을 취소했습니다.');
+        await expect(cancel).toBeDisabled();
+        await expect(target).not.toContainText('탈퇴 예약');
+        await expect(page.getByText('SUCCEEDED · admin.users.cancelDeletion').first()).toBeVisible();
+        const request = requests.find(({ operation }) => operation === 'admin.users.cancelDeletion');
+        expect(Object.values(request!.body as Record<string, unknown>)).toEqual([
+            { userId: 'target-user', reason: '본인 확인 후 탈퇴 취소' },
+        ]);
+        await page.reload();
+        await target.click();
+        await page.getByRole('button', { name: /탈퇴 · 이력/ }).click();
+        await expect(cancel).toBeDisabled();
+        await page.screenshot({ path: testInfo.outputPath('admin-deletion-after.png'), fullPage: true });
+    });
+}
+
+test('keeps the pending deletion visible on failure and reports delayed flush as committed success', async ({
+    page,
+}) => {
+    const requests = await installFixture(page, ['*'], { deleteAfter: '2020-01-01T00:00:00Z', cancelFails: true });
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.goto('admin/users');
+    await page.getByRole('button', { name: /target.*대상 사용자/ }).click();
+    await page.getByRole('button', { name: /탈퇴 · 이력/ }).click();
+    const panel = page.getByRole('heading', { name: '관리자 탈퇴 예약', exact: true }).locator('..');
+    await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 후 복구');
+    await panel.getByRole('button', { name: '탈퇴 취소', exact: true }).click();
+    await expect(panel.getByRole('status')).toContainText('다시 조회해 주세요.');
+    await expect(panel.getByRole('button', { name: '탈퇴 취소', exact: true })).toBeEnabled();
+    expect(requests.filter(({ operation }) => operation === 'admin.users.cancelDeletion')).toHaveLength(1);
+    await installFixture(page, ['*'], { deleteAfter: '2020-01-01T00:00:00Z', flushPublished: false });
+    await page.reload();
+    await page.getByRole('button', { name: /target.*대상 사용자/ }).click();
+    await page.getByRole('button', { name: /탈퇴 · 이력/ }).click();
+    await page.getByPlaceholder('권한·제재·복구·탈퇴 조치 사유 (필수)').fill('본인 확인 후 복구');
+    await panel.getByRole('button', { name: '탈퇴 취소', exact: true }).click();
+    await expect(panel.getByRole('status')).toContainText('탈퇴 예약은 취소되었습니다.');
+    await expect(panel.getByRole('button', { name: '탈퇴 취소', exact: true })).toBeDisabled();
 });

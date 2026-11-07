@@ -1161,6 +1161,31 @@ export const adminRouter = router({
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-scheduled-withdrawal');
                 return { ok: true, deleteAfter: deleteAfter.toISOString() };
             }),
+        cancelDeletion: userAdminProcedure
+            .input(z.object({ userId: z.string().min(1), reason: z.string().trim().min(3).max(200) }))
+            .mutation(async ({ ctx, input }) => {
+                const user = await ctx.users.findById(input.userId);
+                if (!user) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+                assertTargetUserManageable(requireAdminAuth(ctx), user);
+                if (!user.deleteAfter) {
+                    throw new TRPCError({ code: 'CONFLICT', message: '탈퇴 예약이 없는 계정입니다.' });
+                }
+                // 관리자 복구는 보존 기한과 무관하게 허용하되, 조회한 예약만 해제한다.
+                // revision 증가로 이전 session과 사용자 복구 증명의 재사용을 막는다.
+                if (!(await ctx.users.cancelDeletion(user.id, user.deleteAfter, user.authRevision ?? 0))) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '계정 상태가 변경되었습니다. 다시 조회해 주세요.',
+                    });
+                }
+                let flushPublished = true;
+                try {
+                    await ctx.flushPublisher.publishUserFlush(user.id, 'admin-cancelled-withdrawal');
+                } catch {
+                    flushPublished = false;
+                }
+                return { ok: true, deleteAfter: null, flushPublished };
+            }),
         forceDelete: userAdminProcedure
             .input(
                 z.object({

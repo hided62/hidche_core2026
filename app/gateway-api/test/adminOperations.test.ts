@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
@@ -25,6 +25,7 @@ const buildCaller = async (
     createOperation: GatewayProfileRepository['createOperation'],
     options: {
         adminRoles?: string[];
+        flushError?: Error;
         firstUserIsAdmin?: boolean;
         runtimeActionCreateError?: unknown;
         initialNotice?: string;
@@ -242,6 +243,7 @@ const buildCaller = async (
             sessions,
             flushPublisher: {
                 publishUserFlush: async (userId, reason, metadata) => {
+                    if (options.flushError) throw options.flushError;
                     flushes.push({
                         userId,
                         reason,
@@ -2214,6 +2216,94 @@ describe('Gateway administrator account controls', () => {
                 reason: '관리자 자기 삭제 차단 확인',
             })
         ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it.each([new Date('2020-01-01T00:00:00Z'), new Date('2099-01-01T00:00:00Z')])(
+        'lets a user administrator cancel deletion dated %s with an audited reason',
+        async (deadline) => {
+            const harness = await buildCaller(unusedCreateOperation, {
+                adminRoles: ['user', 'admin.users.manage'],
+                firstUserIsAdmin: false,
+            });
+            const target = await harness.users.createUser({ username: 'restore-target', password: 'secretpass' });
+            await harness.users.updateSanctions(target.id, { bannedUntil: '2099-01-01T00:00:00Z' });
+            await harness.users.scheduleDeletion(target.id, deadline);
+            const before = structuredClone(await harness.users.findById(target.id));
+            expect(
+                await harness.caller.admin.users.cancelDeletion({
+                    userId: target.id,
+                    reason: '고객 본인 확인 후 탈퇴 취소',
+                })
+            ).toEqual({ ok: true, deleteAfter: null, flushPublished: true });
+            const after = await harness.users.findById(target.id);
+            expect(after?.deleteAfter).toBeUndefined();
+            expect(after?.authRevision).toBe((before?.authRevision ?? 0) + 1);
+            expect(after?.sanctions).toEqual(before?.sanctions);
+            expect(after?.passwordHash).toBe(before?.passwordHash);
+            expect(after?.oauthId).toBe(before?.oauthId);
+            expect(harness.flushes).toContainEqual({ userId: target.id, reason: 'admin-cancelled-withdrawal' });
+            expect(harness.auditEvents.map((event) => event.outcome)).toEqual(['STARTED', 'SUCCEEDED']);
+            expect(harness.auditEvents[1]).toMatchObject({
+                action: 'admin.users.cancelDeletion',
+                capability: 'admin.users.manage',
+                actorUserId: harness.admin.id,
+                targetId: target.id,
+                reason: '고객 본인 확인 후 탈퇴 취소',
+            });
+            await expect(
+                harness.caller.admin.users.cancelDeletion({ userId: target.id, reason: '중복 취소 요청' })
+            ).rejects.toMatchObject({ code: 'CONFLICT' });
+            expect(harness.auditEvents.at(-1)).toMatchObject({ outcome: 'FAILED', errorCode: 'CONFLICT' });
+        }
+    );
+
+    it('denies missing scope, protected root targets, bad reasons and missing targets without mutation', async () => {
+        for (const roles of [['admin.notice.manage'], ['admin.users.manage']]) {
+            const h = await buildCaller(unusedCreateOperation, { adminRoles: roles, firstUserIsAdmin: false });
+            const target = await h.users.createUser({ username: 'protected-restore', password: 'secretpass' });
+            await h.users.updateRoles(target.id, ['superuser']);
+            await h.users.scheduleDeletion(target.id, new Date('2020-01-01'));
+            const cancel = vi.spyOn(h.users, 'cancelDeletion');
+            await expect(
+                h.caller.admin.users.cancelDeletion({ userId: target.id, reason: '권한 없는 복구 시도' })
+            ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+            expect(cancel).not.toHaveBeenCalled();
+            expect(h.flushes).toHaveLength(0);
+            expect(h.auditEvents.at(-1)).toMatchObject({ outcome: 'FAILED', errorCode: 'FORBIDDEN' });
+        }
+        const h = await buildCaller(unusedCreateOperation);
+        await expect(h.caller.admin.users.cancelDeletion({ userId: h.admin.id, reason: '  ' })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        await expect(
+            h.caller.admin.users.cancelDeletion({ userId: 'missing-user', reason: '없는 계정 복구' })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('keeps a newer deletion reservation when compare-and-swap fails', async () => {
+        const h = await buildCaller(unusedCreateOperation);
+        const target = await h.users.createUser({ username: 'rescheduled-restore', password: 'secretpass' });
+        await h.users.scheduleDeletion(target.id, new Date('2020-01-01'));
+        vi.spyOn(h.users, 'cancelDeletion').mockImplementation(async () => {
+            await h.users.scheduleDeletion(target.id, new Date('2099-01-01'));
+            return false;
+        });
+        await expect(
+            h.caller.admin.users.cancelDeletion({ userId: target.id, reason: '재예약 충돌 확인' })
+        ).rejects.toMatchObject({ code: 'CONFLICT' });
+        expect((await h.users.findById(target.id))?.deleteAfter).toBe('2099-01-01T00:00:00.000Z');
+        expect(h.flushes).toHaveLength(0);
+    });
+
+    it('reports a committed cancellation as success when flush delivery fails', async () => {
+        const h = await buildCaller(unusedCreateOperation, { flushError: new Error('synthetic flush failure') });
+        const target = await h.users.createUser({ username: 'flush-restore', password: 'secretpass' });
+        await h.users.scheduleDeletion(target.id, new Date('2020-01-01'));
+        expect(
+            await h.caller.admin.users.cancelDeletion({ userId: target.id, reason: '고객 요청 복구' })
+        ).toMatchObject({ ok: true, flushPublished: false });
+        expect((await h.users.findById(target.id))?.deleteAfter).toBeUndefined();
+        expect(h.auditEvents.at(-1)).toMatchObject({ outcome: 'SUCCEEDED' });
     });
 
     it('prevents a delegated administrator from changing a root administrator', async () => {

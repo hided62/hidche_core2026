@@ -505,4 +505,46 @@ describe('admin security over HTTP transport', () => {
             },
         });
     });
+    it('requires a valid authorized administrator to cancel deletion over HTTP and invalidates prior sessions', async () => {
+        const h = await createHarness();
+        await h.users.scheduleDeletion(h.target.id, new Date('2020-01-01'));
+        const input = { userId: h.target.id, reason: '본인 확인 후 관리자 복구' };
+        expect((await postTrpc(h.baseUrl, 'admin.users.cancelDeletion', input)).response.status).toBe(401);
+        expect(
+            (await postTrpc(h.baseUrl, 'admin.users.cancelDeletion', input, h.targetSessionToken)).response.status
+        ).toBe(403);
+        expect(
+            (await postTrpc(h.baseUrl, 'admin.users.cancelDeletion', { ...input, reason: ' ' }, h.adminSessionToken))
+                .response.status
+        ).toBe(400);
+        await h.users.updateRoles(h.target.id, ['superuser']);
+        expect(
+            (await postTrpc(h.baseUrl, 'admin.users.cancelDeletion', input, h.adminSessionToken)).response.status
+        ).toBe(403);
+        expect(h.flushes).toHaveLength(0);
+        expect((await h.users.findById(h.target.id))?.deleteAfter).toBeDefined();
+        await h.users.updateRoles(h.target.id, ['user']);
+        expect(
+            (await postTrpc(h.baseUrl, 'admin.users.cancelDeletion', input, h.adminSessionToken)).response.status
+        ).toBe(200);
+        expect((await h.users.findById(h.target.id))?.deleteAfter).toBeUndefined();
+        const me = await fetch(`${h.baseUrl}/trpc/me`, { headers: { 'x-session-token': h.targetSessionToken } });
+        expect(await me.json()).toMatchObject({ result: { data: null } });
+        expect(
+            (await postTrpc(h.baseUrl, 'admin.users.cancelDeletion', input, h.adminSessionToken)).response.status
+        ).toBe(409);
+        const noScope = await createHarness(['user', 'admin.notice.manage']);
+        await noScope.users.scheduleDeletion(noScope.target.id, new Date('2020-01-01'));
+        expect(
+            (
+                await postTrpc(
+                    noScope.baseUrl,
+                    'admin.users.cancelDeletion',
+                    { userId: noScope.target.id, reason: '사용자 관리 권한 없음' },
+                    noScope.adminSessionToken
+                )
+            ).response.status
+        ).toBe(403);
+        expect((await noScope.users.findById(noScope.target.id))?.deleteAfter).toBeDefined();
+    });
 });

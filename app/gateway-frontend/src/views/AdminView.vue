@@ -367,6 +367,13 @@ type AdminClient = {
                 deleteAfter: string;
             }>;
         };
+        cancelDeletion: {
+            mutate: (input: { userId: string; reason: string }) => Promise<{
+                ok: boolean;
+                deleteAfter: null;
+                flushPublished: boolean;
+            }>;
+        };
     };
     profiles: {
         list: {
@@ -632,6 +639,7 @@ const restrictionNotes = ref('');
 const restrictionStatus = ref('');
 
 const forceDeleteStatus = ref('');
+const deletionActionBusy = ref(false);
 const deletionRetentionDays = ref(30);
 const kakaoGraceUntil = ref('');
 const kakaoGraceStatus = ref('');
@@ -1485,7 +1493,7 @@ const clearRestriction = async () => {
 };
 
 const scheduleDeleteUser = async () => {
-    if (!userResult.value) {
+    if (!userResult.value || deletionActionBusy.value) {
         return;
     }
     const reason = requireUserActionReason();
@@ -1496,6 +1504,7 @@ const scheduleDeleteUser = async () => {
             return;
         }
     }
+    deletionActionBusy.value = true;
     try {
         const result = await adminClient.users.scheduleDeletion.mutate({
             userId: userResult.value.id,
@@ -1507,6 +1516,33 @@ const scheduleDeleteUser = async () => {
         await Promise.all([refreshUserHistory(), loadUserDirectory()]);
     } catch (error) {
         forceDeleteStatus.value = '탈퇴 예약 실패';
+    } finally {
+        deletionActionBusy.value = false;
+    }
+};
+
+const cancelDeleteUser = async (): Promise<void> => {
+    const target = userResult.value;
+    if (!target?.deleteAfter || deletionActionBusy.value) return;
+    const reason = requireUserActionReason();
+    if (!reason || !window.confirm('선택한 계정의 탈퇴 예약을 취소하시겠습니까?')) return;
+    deletionActionBusy.value = true;
+    try {
+        const result = await adminClient.users.cancelDeletion.mutate({ userId: target.id, reason });
+        if (userResult.value?.id === target.id) {
+            userResult.value = { ...userResult.value, deleteAfter: undefined };
+            forceDeleteStatus.value = result.flushPublished
+                ? '탈퇴 예약을 취소했습니다.'
+                : '탈퇴 예약은 취소되었습니다. 게임 접속 정보 갱신이 지연되고 있습니다.';
+            await refreshUserHistory();
+        }
+        await loadUserDirectory();
+    } catch (error) {
+        if (userResult.value?.id === target.id) {
+            forceDeleteStatus.value = error instanceof Error ? error.message : '탈퇴 예약 취소 실패';
+        }
+    } finally {
+        deletionActionBusy.value = false;
     }
 };
 
@@ -2292,6 +2328,9 @@ onMounted(() => {
                         class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4"
                     >
                         <h4 class="text-base font-semibold text-red-400">관리자 탈퇴 예약</h4>
+                        <p v-if="userResult?.deleteAfter" class="text-sm text-zinc-300">
+                            삭제 예정일: {{ formatServerDateTime(userResult.deleteAfter) }}
+                        </p>
                         <input
                             v-model.number="deletionRetentionDays"
                             type="number"
@@ -2299,16 +2338,25 @@ onMounted(() => {
                             max="90"
                             class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                             aria-label="탈퇴 전 보존 일수"
-                            :disabled="!hasUser"
+                            :disabled="!hasUser || deletionActionBusy"
                         />
-                        <button
-                            class="bg-red-700 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded"
-                            :disabled="!hasUser"
-                            @click="scheduleDeleteUser"
-                        >
-                            보존 기간 후 탈퇴 예약
-                        </button>
-                        <div class="text-xs text-zinc-500">{{ forceDeleteStatus }}</div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button
+                                class="bg-red-700 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded"
+                                :disabled="!hasUser || deletionActionBusy"
+                                @click="scheduleDeleteUser"
+                            >
+                                보존 기간 후 탈퇴 예약
+                            </button>
+                            <button
+                                class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded disabled:opacity-50"
+                                :disabled="!userResult?.deleteAfter || deletionActionBusy"
+                                @click="cancelDeleteUser"
+                            >
+                                탈퇴 취소
+                            </button>
+                        </div>
+                        <div class="text-xs text-zinc-500" role="status">{{ forceDeleteStatus }}</div>
                     </div>
 
                     <div
