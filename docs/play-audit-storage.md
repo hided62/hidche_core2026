@@ -49,6 +49,9 @@ tablespace 파일만 백업하는 것으로 복구를 보장하지 않는다.
 1. 전체 DB의 일관된 압축 backup을 ZFS에 만들고 checksum, archive 읽기, 실제 복원을 확인한다.
 2. DB 보존 DEPLOY로 writer/reader/migration을 함께 적용한다.
 3. profile 상태를 기록하고 공식 STOP으로 쓰기를 중단한다. 원래 STOPPED인 profile은 유지한다.
+   가오픈까지 1시간 이상 남은 RESERVED는 runtimeExpected=false이므로 예약을 유지할 수 있다.
+   실제 process 비기동과 identity/hash 안정성을 확인하고 export의 예상 상태를 RESERVED로 고정한다.
+   유지보수 중 RESET 등으로 identity가 바뀌면 해당 profile을 새로 export/검증하며 이전 자료를 덮어쓰지 않는다.
 4. 각 schema에서 현재 serverId의 8개 감사 테이블을 일관되게 export한다.
    월 child는 현재 월 header와 join하고 결정 chunk는 현재 결정 header와 join한다.
 5. 격리 DB에서 복원·건수·내용 hash를 검증한다. 이전 기수는 전체 ZFS backup에 남는다.
