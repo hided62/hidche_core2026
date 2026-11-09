@@ -3,7 +3,10 @@
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createGamePostgresConnector, pruneDeliveredReadModelOutbox } from '../packages/infra/dist/index.js';
-import { prunePreviousAuditBatch } from '../app/game-engine/dist/index.js';
+
+// PM2/호출자가 넘긴 turn-daemon 역할로 engine root의 자동 기동 경로에 들어가지 않는다.
+process.env.GAME_ENGINE_ROLE = 'audit-maintenance';
+const { prunePreviousAuditBatch } = await import('../app/game-engine/dist/index.js');
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
