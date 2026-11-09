@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { asRecord, type TurnCheckpoint } from '@sammo-ts/common';
-import { createGamePostgresConnector } from '@sammo-ts/infra';
+import { createGamePostgresConnector, decodeAuditDecisionSteps } from '@sammo-ts/infra';
 import { createTurnDaemonRuntime, seedScenarioToDatabase } from '@sammo-ts/game-engine';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -39,7 +39,7 @@ const verify = async (progress: unknown[]) => {
             include: { chunks: { orderBy: { ordinal: 'asc' } } },
         });
         assert(row && row.chunks.length, `Missing actual NPC ${JSON.stringify(selection)} decision`);
-        const steps = row.chunks.flatMap((chunk) => (Array.isArray(chunk.steps) ? chunk.steps : []));
+        const steps = row.chunks.flatMap((chunk) => decodeAuditDecisionSteps(chunk.steps));
         assert.equal(steps.length, row.stepCount);
         assert.equal(asRecord(steps[0]).kind, 'DECISION_START');
         assert(steps.some((step) => asRecord(step).kind === 'DECISION_END'));

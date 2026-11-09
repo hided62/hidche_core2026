@@ -2,7 +2,12 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import fastify from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { asRecord } from '@sammo-ts/common';
-import { createGamePostgresConnector, createRedisConnector, GamePrisma } from '@sammo-ts/infra';
+import {
+    decodeAuditDecisionSteps,
+    createGamePostgresConnector,
+    createRedisConnector,
+    GamePrisma,
+} from '@sammo-ts/infra';
 import { createTurnDaemonRuntime, seedScenarioToDatabase, type TurnDaemonRuntime } from '@sammo-ts/game-engine';
 import { appRouter } from '../src/router.js';
 import { DatabaseTurnDaemonTransport } from '../src/daemon/databaseTransport.js';
@@ -255,12 +260,10 @@ integration(
                 include: { chunks: { orderBy: { ordinal: 'asc' } } },
             });
             const procedures = nationDecision.chunks.flatMap((chunk) =>
-                Array.isArray(chunk.steps)
-                    ? chunk.steps
-                          .map(asRecord)
-                          .filter((step) => step.kind === 'PROCEDURE_START')
-                          .map((step) => step.procedure)
-                    : []
+                decodeAuditDecisionSteps(chunk.steps)
+                    .map(asRecord)
+                    .filter((step) => step.kind === 'PROCEDURE_START')
+                    .map((step) => step.procedure)
             );
             expect(procedures).toEqual(['NPC포상']);
             expect(configuration(await call('getPolicy', {}))).toEqual(configuration(withoutRecruitment));

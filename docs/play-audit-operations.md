@@ -5,6 +5,9 @@
 관리한다. 아래 적용 절차는 각 프로필의 DB 보존 업데이트를 위한 것이며,
 문서에 기능이 기재되어 있다고 운영 DB에 적용된 것은 아니다.
 
+저장량 최적화, 중지된 프로필 정리, ZFS 이전과 rollback은
+[저장량과 운영 정리](play-audit-storage.md)를 따른다.
+
 ## 지금 사용할 수 있는 기능
 
 | 화면     | 사용할 수 있는 정보                                                                                                               | 읽을 때 주의할 점                                                            |
@@ -55,7 +58,7 @@
 ## DB migration과 적용 순서
 
 정식 game migration에 감사 테이블과 인덱스가 포함되어 있다. `prisma db push`나
-수동 CREATE TABLE로 대신 적용하지 않는다. 현재 game chain은58개이며 다음 감사
+수동 CREATE TABLE로 대신 적용하지 않는다. 현재 game chain은59개이며 다음 감사
 migration들을 포함한다. 기존 기록을 삭제하거나 지난달 상세를 역산하지 않는다.
 
 | migration                                             | 준비되는 저장소/제약                                                  |
@@ -69,6 +72,7 @@ migration들을 포함한다. 기존 기록을 삭제하거나 지난달 상세�
 | `20260916060000_widen_play_audit_ticks`               | 월 표본/정책 tick을 BIGINT로 확장하여 약60개월 이후 INTEGER 초과 방지 |
 | `20260916070000_add_play_audit_decision`              | NPC/자동턴 결정 요약과 순서별 상세 chunk, bounded 정리용 FK/index     |
 | `20260916080000_index_play_audit_decision_month`      | 기존 장수 인덱스를 월 조건 포함 인덱스로 교체하여 기수 전체 조회 방지 |
+| `20261109000000_compact_play_audit_storage`           | 무손실 압축 chunk 형식과 작은 JSON inline 압축 설정                   |
 
 운영은 [릴리스 절차](release-operations.md)의 **DB 보존 버전 업데이트**로 해당 고정
 commit을 적용한다. 이 기능을 켜기 위해 시나리오를 초기화할 필요는 없다. 수동 환경의

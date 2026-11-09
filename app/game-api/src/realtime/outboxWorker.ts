@@ -76,7 +76,7 @@ export class ReadModelOutboxWorker implements ReadModelOutboxWakeup {
         this.leaseMs = normalizePositiveInteger(options.leaseMs, 30_000);
         this.retentionMs = normalizePositiveInteger(options.retentionMs, 24 * 60 * 60 * 1_000);
         this.pruneIntervalMs = normalizePositiveInteger(options.pruneIntervalMs, 60_000);
-        this.pruneLimit = normalizePositiveInteger(options.pruneLimit, 100);
+        this.pruneLimit = Math.min(500, normalizePositiveInteger(options.pruneLimit, 500));
         this.owner = options.owner ?? `game-api:${profileName}:${process.pid}:${randomUUID()}`;
         this.now = options.now ?? (() => new Date());
         this.onError = options.onError ?? (() => undefined);
@@ -109,11 +109,17 @@ export class ReadModelOutboxWorker implements ReadModelOutboxWakeup {
 
         const now = this.now();
         if (now.getTime() >= this.nextPruneAt) {
-            this.nextPruneAt = now.getTime() + this.pruneIntervalMs;
-            await pruneDeliveredReadModelOutbox(this.db, {
-                deliveredBefore: new Date(now.getTime() - this.retentionMs),
-                limit: this.pruneLimit,
-            });
+            // backlog가 있으면 다음 dispatch에서도 이어서 정리한다. 평상시에는 낮은 빈도로 확인한다.
+            // 한 호출은 최대 10 batch/50ms이며 각 SQL도 최대 500행이다.
+            const started = performance.now();
+            for (let batch = 0; batch < 10; batch += 1) {
+                const deleted = await pruneDeliveredReadModelOutbox(this.db, {
+                    deliveredBefore: new Date(now.getTime() - this.retentionMs),
+                    limit: this.pruneLimit,
+                });
+                this.nextPruneAt = deleted < this.pruneLimit ? now.getTime() + this.pruneIntervalMs : 0;
+                if (deleted < this.pruneLimit || performance.now() - started >= 50) break;
+            }
         }
         return result;
     }

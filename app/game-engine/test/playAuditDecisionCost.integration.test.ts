@@ -1,7 +1,12 @@
 import { writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import {
+    decodeAuditDecisionSteps,
+    createGamePostgresConnector,
+    type GamePrisma,
+    type GamePrismaClient,
+} from '@sammo-ts/infra';
 import { persistAuditDecisions } from '../src/playAudit/decisionPersistence.js';
 import { buildAuditDecisionFixture } from './fixtures/playAuditDecision.js';
 
@@ -61,11 +66,15 @@ describe.skipIf(!databaseUrl)('decision storage cost probe', () => {
         >`
             SELECT
                 (SELECT count(*) FROM play_audit_decision) AS headers,
-                (SELECT sum(jsonb_array_length(steps)) FROM play_audit_decision_chunk) AS steps,
+                (SELECT sum(step_count) FROM play_audit_decision) AS steps,
                 (SELECT sum(pg_column_size(d)) FROM play_audit_decision d) AS "headerBytes",
                 (SELECT sum(pg_column_size(c)) FROM play_audit_decision_chunk c) AS "chunkBytes"
         `;
         expect(Number(storage!.steps)).toBe(201 * 302);
+        const chunks = await db.playAuditDecisionChunk.findMany({ select: { steps: true } });
+        expect(chunks.reduce((total, chunk) => total + decodeAuditDecisionSteps(chunk.steps).length, 0)).toBe(
+            201 * 302
+        );
         const relations = await db.$queryRaw<
             { name: string; tableBytes: bigint; indexBytes: bigint; totalBytes: bigint }[]
         >`
@@ -99,7 +108,8 @@ describe.skipIf(!databaseUrl)('decision storage cost probe', () => {
         `;
         const metrics = {
             scope: 'synthetic 201 decisions, 302 steps each; isolated schema, warm local reads',
-            limitations: 'Not production p95; no gameplay baseline, WAL or retained heap measurement. SQL counts cover only the persistence transaction. Repetitive synthetic steps compress well. Relation allocation can retain space from previous runs.',
+            limitations:
+                'Not production p95; no gameplay baseline, WAL or retained heap measurement. SQL counts cover only the persistence transaction. Repetitive synthetic steps compress well. Relation allocation can retain space from previous runs.',
             decisions: 201,
             steps: Number(storage!.steps),
             chunks: 603,
