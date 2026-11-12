@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import type { HostBootMonitor } from '../turn/hostBootMonitor.js';
 
 export interface TurnDaemonLeaseToken {
     profile: string;
@@ -14,6 +15,7 @@ export interface DatabaseTurnDaemonLeaseOptions {
     ownerId?: string;
     leaseDurationMs?: number;
     heartbeat?: boolean;
+    hostBootMonitor?: HostBootMonitor;
 }
 
 export class TurnDaemonLeaseUnavailableError extends Error {
@@ -45,6 +47,7 @@ export class DatabaseTurnDaemonLease {
     private readonly ownerId: string;
     private readonly leaseDurationMs: number;
     private readonly heartbeatEnabled: boolean;
+    private readonly hostBootMonitor?: HostBootMonitor;
     private token: TurnDaemonLeaseToken | null = null;
     private heartbeatTimer: NodeJS.Timeout | null = null;
     private expiryTimer: NodeJS.Timeout | null = null;
@@ -63,6 +66,7 @@ export class DatabaseTurnDaemonLease {
         this.ownerId = options.ownerId ?? randomUUID();
         this.leaseDurationMs = normalizeLeaseDuration(options.leaseDurationMs);
         this.heartbeatEnabled = options.heartbeat ?? true;
+        this.hostBootMonitor = options.hostBootMonitor;
     }
 
     static async connect(
@@ -75,6 +79,8 @@ export class DatabaseTurnDaemonLease {
     }
 
     async acquire(): Promise<TurnDaemonLeaseToken | null> {
+        await this.checkHostBoot();
+        if (this.lost) throw this.getLossError();
         const requestStartedAt = performance.now();
         const rows = await this.db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
             INSERT INTO "turn_daemon_lease" (
@@ -145,6 +151,12 @@ export class DatabaseTurnDaemonLease {
         return new TurnDaemonLeaseLostError(this.profile, this.lossReason);
     }
 
+    async checkHostBoot(): Promise<void> {
+        if (!this.lost && (await this.hostBootMonitor?.hasChanged())) {
+            this.markLost('Host boot identity changed; restart with a fresh database snapshot.');
+        }
+    }
+
     async renew(): Promise<boolean> {
         const token = this.token;
         if (!token || this.lost || this.renewalInFlight) {
@@ -153,6 +165,8 @@ export class DatabaseTurnDaemonLease {
         const requestStartedAt = performance.now();
         this.renewalInFlight = true;
         try {
+            await this.checkHostBoot();
+            if (this.lost) return false;
             const rows = await this.db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
                 UPDATE "turn_daemon_lease"
                 SET
@@ -180,6 +194,7 @@ export class DatabaseTurnDaemonLease {
     }
 
     async assertActive(transaction?: GamePrisma.TransactionClient): Promise<void> {
+        await this.checkHostBoot();
         const token = this.token;
         if (!token || this.lost) {
             throw this.getLossError();
@@ -207,12 +222,13 @@ export class DatabaseTurnDaemonLease {
         this.stopExpiryWatchdog();
         const token = this.token;
         this.token = null;
-        if (!token || this.lost) {
+        if (!token) {
             return;
         }
         await this.db.$executeRaw(GamePrisma.sql`
             UPDATE "turn_daemon_lease"
-            SET "lease_until" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+            SET "clock_ready" = FALSE,
+                "lease_until" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
                 "heartbeat_at" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             WHERE
                 "profile" = ${token.profile}

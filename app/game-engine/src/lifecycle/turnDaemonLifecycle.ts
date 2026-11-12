@@ -45,6 +45,7 @@ export interface TurnDaemonLifecycleDeps {
     commandResponder?: TurnDaemonCommandResponder;
     pauseGate?: () => Promise<boolean>;
     stateManager?: Pick<EngineStateManager, 'transaction'>;
+    runErrorRetry?: { wait(error: unknown): Promise<boolean>; reset(): void };
 }
 
 export class TurnDaemonLifecycle {
@@ -59,6 +60,7 @@ export class TurnDaemonLifecycle {
     private readonly commandResponder?: TurnDaemonCommandResponder;
     private readonly pauseGate?: () => Promise<boolean>;
     private readonly stateManager?: Pick<EngineStateManager, 'transaction'>;
+    private readonly runErrorRetry?: TurnDaemonLifecycleDeps['runErrorRetry'];
     private readonly options: TurnDaemonLifecycleOptions;
 
     private status: TurnDaemonStatus;
@@ -79,6 +81,7 @@ export class TurnDaemonLifecycle {
         this.commandResponder = deps.commandResponder;
         this.pauseGate = deps.pauseGate;
         this.stateManager = deps.stateManager;
+        this.runErrorRetry = deps.runErrorRetry;
         this.options = options;
         this.status = {
             state: 'idle',
@@ -192,8 +195,9 @@ export class TurnDaemonLifecycle {
             // 수동 실행 요청도 가오픈·정지·재조정의 턴 실행 gate를 통과해야 한다.
             // 사용자 명령 처리는 루프 시작에서 계속하되 시간 진행은 여기서 분리한다.
             if (this.pendingRun) {
-                await this.runOnce(this.pendingRun);
+                const pending = this.pendingRun;
                 this.pendingRun = null;
+                await this.runOnce(pending);
                 continue;
             }
 
@@ -447,6 +451,15 @@ export class TurnDaemonLifecycle {
             };
             result = this.stateManager ? await this.stateManager.transaction(runAndFlush) : await runAndFlush();
         } catch (error) {
+            // savepoint 복원이 성공한 획득 충돌만 대기한다. 복원 실패/AggregateError나
+            // 저장 중 소유권 상실을 자동 재실행하면 중복 효과를 숨길 수 있다.
+            if (this.stateManager && (await this.runErrorRetry?.wait(error))) {
+                this.status.running = false;
+                this.status.state = 'idle';
+                this.pendingRun = pending;
+                return;
+            }
+            this.runErrorRetry?.reset();
             this.status.running = false;
             this.status.state = 'paused';
             this.status.paused = true;
@@ -459,6 +472,7 @@ export class TurnDaemonLifecycle {
         }
 
         await this.applyRunResult(result, startMs);
+        this.runErrorRetry?.reset();
         this.status.state = 'idle';
         try {
             await this.hooks?.publishEvents?.(result);

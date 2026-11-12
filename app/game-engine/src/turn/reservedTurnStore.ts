@@ -129,6 +129,14 @@ export class ReservedTurnLeaseConflictError extends Error {
     }
 }
 
+/** 실행 전 획득 충돌만 재시도한다. flush/finalize의 소유권 상실과 구분한다. */
+export class ReservedTurnLeaseBusyError extends ReservedTurnLeaseConflictError {
+    constructor(queueKey: string) {
+        super(queueKey);
+        this.name = 'ReservedTurnLeaseBusyError';
+    }
+}
+
 export class InMemoryReservedTurnStore {
     private readonly generalTurns = new Map<number, ReservedTurnEntry[]>();
     private readonly nationTurns = new Map<string, ReservedTurnEntry[]>();
@@ -249,11 +257,7 @@ export class InMemoryReservedTurnStore {
             }
         };
         pruneNationKeys(Array.from(this.nationTurns.keys()), (key) => this.nationTurns.delete(key));
-        for (const keys of [
-            this.dirtyNationKeys,
-            this.pendingNationInitializationKeys,
-            this.leasedNationKeys,
-        ]) {
+        for (const keys of [this.dirtyNationKeys, this.pendingNationInitializationKeys, this.leasedNationKeys]) {
             for (const key of Array.from(keys)) {
                 const nationId = Number(key.split(':', 1)[0]);
                 if (deletedNations.has(nationId)) {
@@ -376,7 +380,7 @@ export class InMemoryReservedTurnStore {
             }
         }
         if (claimed.count !== 1) {
-            throw new ReservedTurnLeaseConflictError(`general:${generalId}`);
+            throw new ReservedTurnLeaseBusyError(`general:${generalId}`);
         }
         this.leasedGeneralIds.add(generalId);
         return !retainedExistingLease;
@@ -427,7 +431,7 @@ export class InMemoryReservedTurnStore {
             }
         }
         if (claimed.count !== 1) {
-            throw new ReservedTurnLeaseConflictError(`nation:${nationId}:${officerLevel}`);
+            throw new ReservedTurnLeaseBusyError(`nation:${nationId}:${officerLevel}`);
         }
         this.leasedNationKeys.add(buildNationKey(nationId, officerLevel));
         return !retainedExistingLease;
@@ -904,6 +908,24 @@ export class InMemoryReservedTurnStore {
         await this.persistChanges(this.prisma, changes);
         this.acknowledgeDirtyState(changes);
     }
+
+    /** 실행 루프 종료 뒤 호출한다. rollback으로 journal에서 빠진 DB 임대도 해제한다. */
+    async releaseOwnedLeases(): Promise<void> {
+        const results = await Promise.allSettled([
+            this.prisma.generalTurnRevision?.updateMany({
+                where: { leaseOwner: this.leaseOwner },
+                data: { leaseOwner: null, leaseExpiresAt: null },
+            }),
+            this.prisma.nationTurnRevision?.updateMany({
+                where: { leaseOwner: this.leaseOwner },
+                data: { leaseOwner: null, leaseExpiresAt: null },
+            }),
+        ]);
+        const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+        if (errors.length) throw new AggregateError(errors, 'Reserved turn lease cleanup failed.');
+        this.leasedGeneralIds.clear();
+        this.leasedNationKeys.clear();
+    }
 }
 
 export const createReservedTurnStore = async (options: ReservedTurnStoreOptions): Promise<ReservedTurnStoreHandle> => {
@@ -918,6 +940,12 @@ export const createReservedTurnStore = async (options: ReservedTurnStoreOptions)
     await store.loadAll();
     return {
         store,
-        close: () => connector.disconnect(),
+        close: async () => {
+            try {
+                await store.releaseOwnedLeases();
+            } finally {
+                await connector.disconnect();
+            }
+        },
     };
 };

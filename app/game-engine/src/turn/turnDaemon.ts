@@ -108,6 +108,8 @@ import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lif
 import { EngineStateManager } from './engineStateManager.js';
 import { applyRuntimeClockShift } from './runtimeClockShift.js';
 import { applyRuntimeGameSettings } from './runtimeGameSettings.js';
+import { createReservedTurnLeaseRetry } from './reservedTurnLeaseRetry.js';
+import type { HostBootMonitor } from './hostBootMonitor.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -134,6 +136,7 @@ export interface TurnDaemonRuntimeOptions {
     leaseDurationMs?: number;
     leaseOwnerId?: string;
     enableLeaseHeartbeat?: boolean;
+    hostBootMonitor?: HostBootMonitor;
     /**
      * Isolated, single-process fixture acceleration only. Reserved turns are
      * loaded once and no concurrent API writer may touch this database.
@@ -985,6 +988,7 @@ const createTurnDaemonRuntimeWithLease = async (
         prepareClockRecovery = dbHooks.prepareRealtimeRecovery;
         prunePreviousAudit = dbHooks.prunePreviousAudit;
         close = async () => {
+            await adminActionConsumer?.stop();
             if (auctionBidder) {
                 await auctionBidder.close();
             }
@@ -995,12 +999,15 @@ const createTurnDaemonRuntimeWithLease = async (
                 await tournamentRewardFinalizer.close();
             }
             await dbHooks.close();
-            if (reservedTurnStoreHandle) {
-                await reservedTurnStoreHandle.close();
+            try {
+                await reservedTurnStoreHandle?.close();
+            } finally {
+                try {
+                    await gatewayGate?.close();
+                } finally {
+                    await turnDaemonLease?.close();
+                }
             }
-            await gatewayGate?.close();
-            await adminActionConsumer?.stop();
-            await turnDaemonLease?.close();
         };
     } else if (reservedTurnStoreHandle) {
         hooks = {
@@ -1009,9 +1016,12 @@ const createTurnDaemonRuntimeWithLease = async (
             },
         };
         close = async () => {
-            await reservedTurnStoreHandle.close();
-            await gatewayGate?.close();
             await adminActionConsumer?.stop();
+            try {
+                await reservedTurnStoreHandle.close();
+            } finally {
+                await gatewayGate?.close();
+            }
         };
     } else if (gatewayGate) {
         hooks = {
@@ -1070,12 +1080,17 @@ const createTurnDaemonRuntimeWithLease = async (
     const baseClose = close;
     close = async () => {
         stopClockProjectionWorker();
-        await baseClose();
-        await neutralAuctionRegistrar.close();
-        if (redisConnector) {
-            await redisConnector.disconnect();
-        }
-        await commandConnector?.disconnect();
+        const baseResults = await Promise.allSettled([baseClose()]);
+        // queue 임대 정리 실패도 다른 연결/worker의 종료를 막지 않게 한다.
+        const results = await Promise.allSettled([
+            neutralAuctionRegistrar.close(),
+            redisConnector?.disconnect(),
+            commandConnector?.disconnect(),
+        ]);
+        const failures = [...baseResults, ...results].flatMap((result) =>
+            result.status === 'rejected' ? [result.reason] : []
+        );
+        if (failures.length) throw new AggregateError(failures, 'Turn daemon connection cleanup failed.');
     };
 
     const resolvedControlQueue = options.controlQueue ?? databaseCommandQueue ?? controlQueue;
@@ -1109,7 +1124,8 @@ const createTurnDaemonRuntimeWithLease = async (
             processor,
             hooks,
             pauseGate: createRuntimePauseGate({
-                assertLease: () => {
+                assertLease: async () => {
+                    await turnDaemonLease?.checkHostBoot();
                     if (turnDaemonLease?.isLost()) throw turnDaemonLease.getLossError();
                 },
                 shouldPause: async () => (await pauseGate?.()) ?? false,
@@ -1127,6 +1143,9 @@ const createTurnDaemonRuntimeWithLease = async (
             // accumulated world before every due tick in that isolated mode;
             // production and gateway-managed runtimes keep rollback savepoints.
             stateManager: options.exclusiveFastForward ? undefined : stateManager,
+            runErrorRetry: createReservedTurnLeaseRetry({
+                onWait: (queueKey) => console.info(`[turn-daemon] waiting for reserved turn lease: ${queueKey}`),
+            }),
         },
         { profile: options.profile, defaultBudget }
     );
@@ -1179,6 +1198,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
               ownerId: options.leaseOwnerId,
               leaseDurationMs: options.leaseDurationMs,
               heartbeat: options.enableLeaseHeartbeat,
+              hostBootMonitor: options.hostBootMonitor,
           })
         : null;
     if (turnDaemonLease && !(await turnDaemonLease.acquire())) {
