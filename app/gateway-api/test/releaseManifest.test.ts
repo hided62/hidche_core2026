@@ -39,7 +39,7 @@ describe('readReleaseManifest', () => {
         await expect(readReleaseManifest(workspaceRoot)).resolves.toMatchObject({
             controllerProtocol: RELEASE_CONTROLLER_PROTOCOL,
             gatewaySchemaHead: '20261107000000_kakao_identity_link_history',
-            gameSchemaHead: '20261114010000_high_churn_bigint_ids',
+            gameSchemaHead: '20261114020000_reserved_turn_slot_primary_keys',
         });
     });
 

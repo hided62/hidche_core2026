@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { prunePreviousAuditBatch } from '../playAudit/retention.js';
 import { randomBytes } from 'node:crypto';
 
@@ -497,7 +498,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                             );
                         }
                     }
-                    await prisma.gameHistory.upsert({
+                    await upsertWithoutSequence(prisma.gameHistory, {
                         where: { serverId: worldMeta.serverId },
                         create: {
                             serverId: worldMeta.serverId,

@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit } from '@sammo-ts/common';
@@ -94,7 +95,13 @@ export const enqueueDeferredGeneralAccess = async (
     }
     await redis.eval(ENQUEUE_SCRIPT, {
         keys: [activeKey(profileName)],
-        arguments: [String(generalId), auth.user.id, String(weight), String(now.getTime()), String(ACTIVE_BATCH_TTL_MS)],
+        arguments: [
+            String(generalId),
+            auth.user.id,
+            String(weight),
+            String(now.getTime()),
+            String(ACTIVE_BATCH_TTL_MS),
+        ],
     });
     return true;
 };
@@ -258,9 +265,10 @@ export const flushDeferredGeneralAccessBatch = async (
         ),
         missing_periods AS (
             INSERT INTO "traffic_period" (
-                "world_state_id", "year", "month", "started_at", "last_refresh", "refresh", "online"
+                "id", "world_state_id", "year", "month", "started_at", "last_refresh", "refresh", "online"
             )
             SELECT
+                ${existingRowIdOrNext('traffic_period', GamePrisma.sql`stable_id.world_state_id = ${worldState.id} AND stable_id.year = (missing_key / 12)::INTEGER AND stable_id.month = (missing_key % 12 + 1)::INTEGER`)},
                 ${worldState.id},
                 (missing_key / 12)::INTEGER,
                 (missing_key % 12 + 1)::INTEGER,
@@ -281,9 +289,10 @@ export const flushDeferredGeneralAccessBatch = async (
         ),
         period_upsert AS (
             INSERT INTO "traffic_period" (
-                "world_state_id", "year", "month", "started_at", "last_refresh", "refresh", "online"
+                "id", "world_state_id", "year", "month", "started_at", "last_refresh", "refresh", "online"
             )
             SELECT
+                ${existingRowIdOrNext('traffic_period', GamePrisma.sql`stable_id.world_state_id = ${worldState.id} AND stable_id.year = ${worldState.currentYear} AND stable_id.month = ${worldState.currentMonth}`)},
                 ${worldState.id},
                 ${worldState.currentYear},
                 ${worldState.currentMonth},
@@ -343,10 +352,11 @@ export const flushDeferredGeneralAccessBatch = async (
         ),
         access_updates AS (
             INSERT INTO "general_access_log" (
-                "general_id", "user_id", "last_refresh", "refresh", "refresh_total",
+                "id", "general_id", "user_id", "last_refresh", "refresh", "refresh_total",
                 "refresh_score", "refresh_score_total"
             )
             SELECT
+                ${existingRowIdOrNext('general_access_log', GamePrisma.sql`stable_id.general_id = resolved."general_id"`)},
                 resolved."general_id",
                 resolved."user_id",
                 resolved."last_refresh",
@@ -471,11 +481,9 @@ export class DeferredGeneralAccessWorker {
                     await this.redis.del(key);
                     return;
                 }
-                await this.redis.set(
-                    key,
-                    JSON.stringify({ nextAccessAt: state.nextAccessAt.toISOString() }),
-                    { PX: Math.max(1, state.nextAccessAt.getTime() - now.getTime()) }
-                );
+                await this.redis.set(key, JSON.stringify({ nextAccessAt: state.nextAccessAt.toISOString() }), {
+                    PX: Math.max(1, state.nextAccessAt.getTime() - now.getTime()),
+                });
             })
         );
     }

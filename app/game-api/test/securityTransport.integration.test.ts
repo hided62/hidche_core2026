@@ -969,7 +969,7 @@ integration('game API security over HTTP transport', () => {
         const telemetryAfter = await readAccessTelemetryState();
         expect(telemetryAfter.periods).toEqual([
             {
-                id: expect.any(Number),
+                id: expect.any(BigInt),
                 worldStateId: fixtureWorldId,
                 year: 190,
                 month: 1,
@@ -992,7 +992,7 @@ integration('game API security over HTTP transport', () => {
         ]);
         expect(telemetryAfter.accessLogs).toEqual([
             {
-                id: expect.any(Number),
+                id: expect.any(BigInt),
                 generalId,
                 userId,
                 lastRefresh: trafficPeriod.lastRefresh,
@@ -1548,8 +1548,8 @@ integration('game API security over HTTP transport', () => {
                 arg,
             }))
         ).toEqual(databaseAfter.generalTurns);
-        expect(new Set(committedGeneralTurns.map(({ id }) => id)).size).toBe(30);
-        expect(committedGeneralTurns.every(({ id, createdAt }) => id > 0 && createdAt instanceof Date)).toBe(true);
+        expect(new Set(committedGeneralTurns.map(({ generalId, turnIdx }) => `${generalId}:${turnIdx}`)).size).toBe(30);
+        expect(committedGeneralTurns.every(({ createdAt }) => createdAt instanceof Date)).toBe(true);
         expect(allowedTablesAfter.generalTurnRevisions.filter((row) => row.generalId !== generalId)).toEqual(
             allowedTablesBefore.generalTurnRevisions.filter((row) => row.generalId !== generalId)
         );
@@ -1567,7 +1567,7 @@ integration('game API security over HTTP transport', () => {
         );
         expect(allowedTablesAfter.generalAccessLogs.filter((row) => row.generalId === generalId)).toEqual([
             {
-                id: expect.any(Number),
+                id: expect.any(BigInt),
                 generalId,
                 userId,
                 lastRefresh: null,
@@ -1733,8 +1733,14 @@ integration('game API security over HTTP transport', () => {
                 arg,
             }))
         ).toEqual(expectedTurns);
-        expect(new Set(committedNationTurns.map(({ id }) => id)).size).toBe(12);
-        expect(committedNationTurns.every(({ id, createdAt }) => id > 0 && createdAt instanceof Date)).toBe(true);
+        expect(
+            new Set(
+                committedNationTurns.map(
+                    ({ nationId, officerLevel, turnIdx }) => `${nationId}:${officerLevel}:${turnIdx}`
+                )
+            ).size
+        ).toBe(12);
+        expect(committedNationTurns.every(({ createdAt }) => createdAt instanceof Date)).toBe(true);
         expect(
             allowedTablesAfter.nationTurnRevisions.filter(
                 (row) => row.nationId !== ownerNationId || row.officerLevel !== 5
@@ -1763,7 +1769,7 @@ integration('game API security over HTTP transport', () => {
         );
         expect(allowedTablesAfter.generalAccessLogs.filter((row) => row.generalId === sameNationGeneralId)).toEqual([
             {
-                id: expect.any(Number),
+                id: expect.any(BigInt),
                 generalId: sameNationGeneralId,
                 userId: sameNationUserId,
                 lastRefresh: null,
@@ -1880,8 +1886,14 @@ integration('game API security over HTTP transport', () => {
                 arg,
             }))
         ).toEqual(committed.nationTurns);
-        expect(new Set(committedNationTurns.map(({ id }) => id)).size).toBe(12);
-        expect(committedNationTurns.every(({ id, createdAt }) => id > 0 && createdAt instanceof Date)).toBe(true);
+        expect(
+            new Set(
+                committedNationTurns.map(
+                    ({ nationId, officerLevel, turnIdx }) => `${nationId}:${officerLevel}:${turnIdx}`
+                )
+            ).size
+        ).toBe(12);
+        expect(committedNationTurns.every(({ createdAt }) => createdAt instanceof Date)).toBe(true);
         expect(
             allowedTablesAfter.nationTurnRevisions.filter(
                 (row) => row.nationId !== ownerNationId || row.officerLevel !== 12
@@ -1910,7 +1922,7 @@ integration('game API security over HTTP transport', () => {
         );
         expect(allowedTablesAfter.generalAccessLogs.filter((row) => row.generalId === generalId)).toEqual([
             {
-                id: expect.any(Number),
+                id: expect.any(BigInt),
                 generalId,
                 userId,
                 lastRefresh: null,
@@ -2868,7 +2880,7 @@ integration('game API security over HTTP transport', () => {
                     result: {
                         data: {
                             coverage: 'IDENTIFIED_LOGS_ONLY',
-                            items: [{ id: ownLogs[index]!.id }],
+                            items: [{ id: Number(ownLogs[index]!.id) }],
                             nextCursor: null,
                         },
                     },
@@ -2877,17 +2889,19 @@ integration('game API security over HTTP transport', () => {
             }
             expect(
                 (await get('generalLogs', admin, { generalId: logGeneralId, type: 'generalHistory', limit: 1 })).body
-            ).toMatchObject({ result: { data: { items: [{ id: latest.id }], nextCursor: latest.id } } });
+            ).toMatchObject({
+                result: { data: { items: [{ id: Number(latest.id) }], nextCursor: Number(latest.id) } },
+            });
             expect(
                 (
                     await get('generalLogs', admin, {
                         generalId: logGeneralId,
                         type: 'generalHistory',
                         limit: 1,
-                        cursor: latest.id,
+                        cursor: Number(latest.id),
                     })
                 ).body
-            ).toMatchObject({ result: { data: { items: [{ id: ownLogs[0]!.id }], nextCursor: null } } });
+            ).toMatchObject({ result: { data: { items: [{ id: Number(ownLogs[0]!.id) }], nextCursor: null } } });
             for (const invalid of [
                 { limit: 201 },
                 { cursor: 0 },

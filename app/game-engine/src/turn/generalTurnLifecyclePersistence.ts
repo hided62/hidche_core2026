@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import {
     asRecord,
@@ -77,7 +78,7 @@ const persistPostRetirementRankValues = async (
         return;
     }
     for (const row of buildPersistedRankRows(event.after)) {
-        await prisma.rankData.upsert({
+        await upsertWithoutSequence(prisma.rankData, {
             where: { generalId_type: { generalId: row.generalId, type: row.type } },
             update: { nationId: row.nationId, value: row.value },
             create: row,
@@ -142,7 +143,7 @@ const settleInheritance = async (
     );
     const total = Math.trunc(previous + refund + settlement.totalEarned);
 
-    await prisma.inheritancePoint.upsert({
+    await upsertWithoutSequence(prisma.inheritancePoint, {
         where: { userId_key: { userId, key: 'previous' } },
         update: { value: total },
         create: { userId, key: 'previous', value: total },
@@ -152,7 +153,7 @@ const settleInheritance = async (
             ([key, value]) => key === 'max_belong' || points.has(key) || value !== 0
         );
         for (const [key, value] of retainedEntries) {
-            await prisma.inheritancePoint.upsert({
+            await upsertWithoutSequence(prisma.inheritancePoint, {
                 where: { userId_key: { userId, key } },
                 update: { value },
                 create: { userId, key, value },
@@ -367,7 +368,7 @@ const archiveGeneral = async (
         records: { battleResult: battleResults },
         availability: { battleResultLogs: true },
     };
-    await prisma.oldGeneral.upsert({
+    await upsertWithoutSequence(prisma.oldGeneral, {
         where: { by_no: { serverId, generalNo: event.generalId } },
         update: {
             owner: event.before.userId ?? null,

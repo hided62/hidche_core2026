@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { TRPCError } from '@trpc/server';
 import { CLOCK_OPERATION_PERSISTENCE_LOCK, GamePrisma, acquireGameSchemaAdvisoryXactLock } from '@sammo-ts/infra';
 import { z } from 'zod';
@@ -223,7 +224,7 @@ export const bettingRouter = router({
                     world.currentMonth,
                     `${input.amount} 포인트를 베팅에 사용`
                 );
-                await ctx.db.rankData.upsert({
+                await upsertWithoutSequence(ctx.db.rankData, {
                     where: {
                         generalId_type: {
                             generalId: general.id,
@@ -245,7 +246,7 @@ export const bettingRouter = router({
                 });
             }
 
-            await ctx.db.nationBet.upsert({
+            await upsertWithoutSequence(ctx.db.nationBet, {
                 where: {
                     bettingId_userId_selectionKey: {
                         bettingId: input.bettingId,

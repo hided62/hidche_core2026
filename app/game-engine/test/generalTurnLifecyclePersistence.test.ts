@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import { persistGeneralLifecycleEvents } from '../src/turn/generalTurnLifecyclePersistence.js';
 import type { GeneralLifecycleEvent } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral } from '../src/turn/types.js';
+
+// This harness begins without the durable archive/point row.
+const missingRecordUpdate = async (): Promise<never> => {
+    throw new GamePrisma.PrismaClientKnownRequestError('fixture record missing', {
+        code: 'P2025',
+        clientVersion: 'fixture',
+    });
+};
 
 const archivedGeneral = (): TurnGeneral => ({
     id: 91,
@@ -65,12 +73,13 @@ describe('general lifecycle archive history', () => {
                 ]),
             },
             rankData: {
+                update: missingRecordUpdate,
                 findMany: vi.fn(async () => [
                     { type: 'warnum', value: 2 },
                     { type: 'killnum', value: 1 },
                 ]),
             },
-            oldGeneral: { upsert },
+            oldGeneral: { update: missingRecordUpdate, upsert },
         } as unknown as GamePrisma.TransactionClient;
         const event: GeneralLifecycleEvent = {
             generalId: general.id,
@@ -137,6 +146,7 @@ describe('general lifecycle archive history', () => {
                 updateMany: vi.fn(async () => ({ count: 1 })),
             },
             rankData: {
+                update: missingRecordUpdate,
                 findMany: vi.fn(async () => [
                     { type: 'warnum', value: 10 },
                     { type: 'inherit_earned', value: 123 },
@@ -156,6 +166,7 @@ describe('general lifecycle archive history', () => {
                 update: vi.fn(async () => undefined),
             },
             inheritancePoint: {
+                update: missingRecordUpdate,
                 findMany: vi.fn(async () => [{ key: 'previous', value: 0 }]),
                 upsert: vi.fn(async () => undefined),
                 deleteMany: vi.fn(async () => ({ count: 0 })),

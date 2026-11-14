@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { createHash } from 'node:crypto';
 
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
@@ -44,7 +45,7 @@ export const persistYearbookSnapshot = async (
         globalAction,
     });
 
-    await transaction.yearbookHistory.upsert({
+    await upsertWithoutSequence(transaction.yearbookHistory, {
         where: {
             profileName_year_month_sourceId: {
                 profileName: snapshot.serverId,

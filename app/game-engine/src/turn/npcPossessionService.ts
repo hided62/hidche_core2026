@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { randomInt } from 'node:crypto';
 
 import { asNumber, asRecord, GAME_TICKS_PER_TURN, JosaUtil, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
@@ -337,18 +338,12 @@ export const reserveNpcPossessionCandidates = async (options: {
         }
         return toReservation(inFlightToken, options.createdGameTick, ticksPerSecond);
     }
-    if (
-        existing &&
-        (existing.validUntilTick === null || Number(existing.validUntilTick) < options.createdGameTick)
-    ) {
+    if (existing && (existing.validUntilTick === null || Number(existing.validUntilTick) < options.createdGameTick)) {
         await db.npcSelectionToken.deleteMany({
             where: {
                 ownerUserId: userId,
                 nonce: existing.nonce,
-                OR: [
-                    { validUntilTick: null },
-                    { validUntilTick: { lt: BigInt(options.createdGameTick) } },
-                ],
+                OR: [{ validUntilTick: null }, { validUntilTick: { lt: BigInt(options.createdGameTick) } }],
             },
         });
         existing = null;
@@ -425,9 +420,7 @@ export const reserveNpcPossessionCandidates = async (options: {
     const validUntilTick = options.createdGameTick + Math.round(validSeconds * ticksPerSecond);
     const pickMoreFromTick = options.createdGameTick + Math.round(pickMoreSeconds * ticksPerSecond);
     const validUntil = new Date(now.getTime() + validSeconds * 1000);
-    const refreshedPickMoreFrom = new Date(
-        now.getTime() + pickMoreSeconds * 1000
-    );
+    const refreshedPickMoreFrom = new Date(now.getTime() + pickMoreSeconds * 1000);
     const nonce = randomInt(0, 0x10000000);
 
     if (existing) {
@@ -566,7 +559,7 @@ export const possessNpcGeneral = async (options: {
         },
     });
 
-    await db.generalAccessLog.upsert({
+    await upsertWithoutSequence(db.generalAccessLog, {
         where: { generalId },
         update: {
             userId,

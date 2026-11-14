@@ -901,7 +901,6 @@ describe('appRouter', () => {
         const general = buildGeneralRow({ id: 11, meta: { autorun_limit: 2408 } });
         const generalTurns: GeneralTurnRow[] = [
             {
-                id: 1n,
                 generalId: 11,
                 turnIdx: 0,
                 actionCode: 'che_화계',
@@ -922,7 +921,6 @@ describe('appRouter', () => {
         const general = buildGeneralRow({ id: 12, nationId: 3, officerLevel: 5 });
         const nationTurns: NationTurnRow[] = [
             {
-                id: 1n,
                 nationId: 3,
                 officerLevel: 5,
                 turnIdx: 0,
@@ -1008,7 +1006,6 @@ describe('appRouter', () => {
                 general,
                 generalTurns: [
                     {
-                        id: 1n,
                         generalId: general.id,
                         turnIdx: 0,
                         actionCode: 'che_훈련',
@@ -1016,7 +1013,6 @@ describe('appRouter', () => {
                         createdAt: new Date(),
                     },
                     {
-                        id: 2n,
                         generalId: general.id,
                         turnIdx: 1,
                         actionCode: 'che_사기진작',

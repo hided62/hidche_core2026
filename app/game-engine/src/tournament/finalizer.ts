@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { areSeasonRecordsFinalized } from '../turn/seasonRecords.js';
 import { JosaUtil, asRecord } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma } from '@sammo-ts/infra';
@@ -256,7 +257,7 @@ export const createTournamentRewardFinalizer = async (options: {
 
         const recordsFinalized = await areSeasonRecordsFinalized(db, world.getState().meta.serverId);
         for (const entry of recordsFinalized ? [] : pointUpdates) {
-            await db.inheritancePoint.upsert({
+            await upsertWithoutSequence(db.inheritancePoint, {
                 where: {
                     userId_key: { userId: entry.userId!, key: 'tournament' },
                 },

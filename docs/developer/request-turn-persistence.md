@@ -77,6 +77,24 @@ Lease를 잃은 process는 fencing 검사에서 commit하지 못합니다.
 `InMemoryTurnWorld`에서 읽습니다. 따라서 flush 실패 뒤 다음 run도 복원된
 checkpoint에서 시작합니다.
 
+## 내부 ID와 처리 순서
+
+예약턴의 순서는 `turnIdx`, 변경 감지는 revision, 실행 권한은 lease/fencing으로
+판정합니다. `GeneralTurn`은 `(generalId, turnIdx)`, `NationTurn`은
+`(nationId, officerLevel, turnIdx)` 기본키를 사용합니다. 기존 transaction 안의
+삭제·재삽입 순서를 유지하면서 사용하지 않는 자동 ID/sequence를 제거했습니다.
+
+접속 기록·현재 월 통계·랭킹·유산 포인트·베팅·보존 기록/연감은 갱신 시 기존 ID를
+유지하고 신규 업무 키에만 ID를 발급합니다. Prisma 갱신은
+`packages/infra/src/stableRowId.ts`의 `upsertWithoutSequence()`가 먼저 UPDATE하고,
+미존재 결과인 P2025에서만 원래 upsert로 생성합니다. 제약 위반·다른 오류는 그대로
+전파하고, 새 키의 동시 생성 경합은 ON CONFLICT가 처리합니다. raw SQL은 같은
+module의 `existingRowIdOrNext()`로 기존 ID를 재사용합니다.
+
+`input_event.sequence`, 외교 감사 sequence, outbox/log ID는 실행 순서·cursor·
+claim/완료 식별자이므로 자동 증가를 유지합니다. 새 행 생성의 rollback이나 동시
+생성 경합에서 생기는 sequence gap은 정상이며 번호를 되감지 않습니다.
+
 ## 저장 위치
 
 | 상태                                | 기준                                 |

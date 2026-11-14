@@ -1,12 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { normalizeArchivedGeneral, type ArchivedJsonValue } from '@sammo-ts/common';
-import type { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma } from '@sammo-ts/infra';
 import { LogCategory, LogScope, type City, type Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { persistUnificationFinalization, resolveStoredInheritancePoint } from '../src/turn/unificationPersistence.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
+
+// This harness begins without the durable archive/point row.
+const missingRecordUpdate = async (): Promise<never> => {
+    throw new GamePrisma.PrismaClientKnownRequestError('fixture record missing', {
+        code: 'P2025',
+        clientVersion: 'fixture',
+    });
+};
 
 const buildWorld = (): InMemoryTurnWorld => {
     const turnTime = new Date('0190-07-01T00:00:00.000Z');
@@ -206,6 +214,7 @@ describe('persistUnificationFinalization', () => {
                 create: vi.fn().mockResolvedValue({}),
             },
             inheritancePoint: {
+                update: missingRecordUpdate,
                 findMany: vi.fn().mockResolvedValue([
                     { userId: 'user-1', key: 'previous', value: 100 },
                     { userId: 'user-1', key: 'unifier', value: 7 },
@@ -216,6 +225,7 @@ describe('persistUnificationFinalization', () => {
             inheritanceResult: { create: inheritanceResultCreate },
             inheritanceLog: { create: inheritanceLogCreate },
             rankData: {
+                update: missingRecordUpdate,
                 findMany: vi.fn().mockResolvedValue([
                     { generalId: 1, type: 'warnum', value: 15 },
                     { generalId: 1, type: 'killnum', value: 9 },
@@ -251,10 +261,11 @@ describe('persistUnificationFinalization', () => {
                 ),
             },
             oldNation: {
+                update: missingRecordUpdate,
                 upsert: oldNationUpsert,
                 findMany: vi.fn().mockResolvedValue([]),
             },
-            oldGeneral: { upsert: oldGeneralUpsert },
+            oldGeneral: { update: missingRecordUpdate, upsert: oldGeneralUpsert },
             emperor: { create: emperorCreate },
         });
         await expect(persistUnificationFinalization(transaction, input, buildWorld())).resolves.toEqual({

@@ -68,8 +68,6 @@ describe.skipIf(!databaseUrl)('rank data bigint PostgreSQL persistence', () => {
 
     it('reloads bigint IDs for high churn queues, logs, upserts and the traffic foreign key', async () => {
         const tables = [
-            'general_turn',
-            'nation_turn',
             'general_access_log',
             'diplomacy',
             'inheritance_point',
@@ -93,10 +91,6 @@ describe.skipIf(!databaseUrl)('rank data bigint PostgreSQL persistence', () => {
                     },
                 });
                 const rows = await Promise.all([
-                    tx.generalTurn.create({ data: { generalId, turnIdx: 0, actionCode: 'fixture' } }),
-                    tx.nationTurn.create({
-                        data: { nationId: 3, officerLevel: 12, turnIdx: 0, actionCode: 'fixture' },
-                    }),
                     tx.generalAccessLog.create({ data: { generalId } }),
                     tx.diplomacy.create({ data: { srcNationId: 3, destNationId: 4, stateCode: 0 } }),
                     tx.inheritancePoint.create({ data: { userId: 'bigint-fixture', key: 'previous', value: 123 } }),
@@ -109,6 +103,14 @@ describe.skipIf(!databaseUrl)('rank data bigint PostgreSQL persistence', () => {
                     }),
                 ]);
                 expect(rows.every((row) => row.id > 2_147_483_647n)).toBe(true);
+                const generalQueue = await tx.generalTurn.create({
+                    data: { generalId, turnIdx: 0, actionCode: 'fixture' },
+                });
+                const nationQueue = await tx.nationTurn.create({
+                    data: { nationId: 3, officerLevel: 12, turnIdx: 0, actionCode: 'fixture' },
+                });
+                expect(generalQueue).not.toHaveProperty('id');
+                expect(nationQueue).not.toHaveProperty('id');
                 const period = await tx.trafficPeriod.create({
                     data: {
                         worldStateId: world.id,
@@ -122,7 +124,7 @@ describe.skipIf(!databaseUrl)('rank data bigint PostgreSQL persistence', () => {
                 });
                 expect(period.id).toBeGreaterThan(2_147_483_647n);
                 expect(period.generals[0]?.periodId).toBe(period.id);
-                expect((await tx.logEntry.findUniqueOrThrow({ where: { id: rows[5]!.id } })).text).toBe('fixture');
+                expect((await tx.logEntry.findUniqueOrThrow({ where: { id: rows[3]!.id } })).text).toBe('fixture');
                 throw new Error('high churn fixture rollback');
             })
         ).rejects.toThrow('high churn fixture rollback');

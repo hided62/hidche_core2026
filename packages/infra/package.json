@@ -22,6 +22,7 @@
         "verify:migration:account-icon": "sh scripts/verify-account-icon-migration.sh",
         "verify:migration:kakao-talk": "sh scripts/verify-kakao-talk-migration.sh",
         "verify:migration:npc-selection": "sh scripts/verify-npc-selection-token-migration.sh",
+        "verify:migration:reserved-turn-keys": "node scripts/verify-reserved-turn-key-migration.mjs",
         "verify:migration:rank-data": "node scripts/verify-rank-data-bigint-migration.mjs",
         "verify:migration:outbox-utc": "sh scripts/verify-game-outbox-utc-wall-migration.sh",
         "verify:migration:time-domains": "sh scripts/verify-time-domain-migration.sh",

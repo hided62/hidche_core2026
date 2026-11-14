@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
     DeferredGeneralAccessWorker,
+    flushDeferredGeneralAccessBatch,
     enqueueDeferredGeneralAccess,
     getDeferredGeneralAccessLimit,
 } from '../src/services/deferredGeneralAccess.js';
@@ -91,7 +92,7 @@ liveIntegration('deferred general access with PostgreSQL and Redis', () => {
             await redis.disconnect();
         }
         if (db) {
-            await db.generalAccessBatch.deleteMany({ where: { id: batchId } });
+            await db.generalAccessBatch.deleteMany({ where: { id: { startsWith: batchId } } });
             await db.generalAccessLog.deleteMany({ where: { generalId } });
             await db.general.deleteMany({ where: { id: generalId } });
             await db.worldState.deleteMany({ where: { id: worldStateId } });
@@ -153,9 +154,19 @@ liveIntegration('deferred general access with PostgreSQL and Redis', () => {
             nextAccessAt,
         });
 
+        const counters =
+            await db.$queryRaw`SELECT 'access' AS kind,last_value FROM general_access_log_id_seq UNION ALL SELECT 'period',last_value FROM traffic_period_id_seq`;
+        const accessId = (await db.generalAccessLog.findUniqueOrThrow({ where: { generalId } })).id;
+        await flushDeferredGeneralAccessBatch(workerDb as never, `${batchId}-second`, [
+            { generalId, userId, weight: 1, lastRefresh: now },
+        ]);
+        expect(
+            await db.$queryRaw`SELECT 'access' AS kind,last_value FROM general_access_log_id_seq UNION ALL SELECT 'period',last_value FROM traffic_period_id_seq`
+        ).toEqual(counters);
+        expect((await db.generalAccessLog.findUniqueOrThrow({ where: { generalId } })).id).toBe(accessId);
         await worker.flushOnce();
         await expect(db.generalAccessLog.findUniqueOrThrow({ where: { generalId } })).resolves.toMatchObject({
-            refreshTotal: 2,
+            refreshTotal: 3,
         });
     });
 });

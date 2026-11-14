@@ -69,8 +69,7 @@ const buildDb = (autorunLimit: number | null = null) => {
             },
             createMany: async ({ data }: GeneralTurnCreateManyArgs) => {
                 const dataList = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
-                const rows: GeneralTurnRow[] = dataList.map((row, index: number) => ({
-                    id: BigInt(index + 1),
+                const rows: GeneralTurnRow[] = dataList.map((row) => ({
                     generalId: row.generalId as number,
                     turnIdx: row.turnIdx as number,
                     actionCode: row.actionCode as string,
@@ -136,8 +135,7 @@ const buildDb = (autorunLimit: number | null = null) => {
             },
             createMany: async ({ data }: NationTurnCreateManyArgs) => {
                 const dataList = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
-                const rows: NationTurnRow[] = dataList.map((row, index: number) => ({
-                    id: BigInt(index + 1),
+                const rows: NationTurnRow[] = dataList.map((row) => ({
                     nationId: row.nationId as number,
                     officerLevel: row.officerLevel as number,
                     turnIdx: row.turnIdx as number,
@@ -207,7 +205,6 @@ describe('reservedTurns', () => {
             async () =>
                 [
                     {
-                        id: 1n,
                         nationId: 4,
                         officerLevel: 12,
                         turnIdx: 1,
@@ -216,7 +213,6 @@ describe('reservedTurns', () => {
                         createdAt: new Date(),
                     },
                     {
-                        id: 2n,
                         nationId: 4,
                         officerLevel: 10,
                         turnIdx: 0,
@@ -414,7 +410,6 @@ describe('reservedTurns', () => {
         nationRevisions.set('6:12', 2);
         nationTurns.set('6:12', [
             {
-                id: 1n,
                 nationId: 6,
                 officerLevel: 12,
                 turnIdx: 0,
@@ -423,7 +418,6 @@ describe('reservedTurns', () => {
                 createdAt: new Date(),
             },
             {
-                id: 2n,
                 nationId: 6,
                 officerLevel: 12,
                 turnIdx: 1,

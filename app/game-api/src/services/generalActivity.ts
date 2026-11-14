@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { GamePrisma } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../context.js';
@@ -20,11 +21,13 @@ export const recordGeneralActivity = async (
     const written = await ctx.db.$executeRaw(
         GamePrisma.sql`
             INSERT INTO general_access_log (
+                id,
                 general_id,
                 user_id,
                 last_action_at
             )
             SELECT
+                ${existingRowIdOrNext('general_access_log', GamePrisma.sql`stable_id.general_id = "general".id`)},
                 id,
                 ${user.id},
                 ${now}

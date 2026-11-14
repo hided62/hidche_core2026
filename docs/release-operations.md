@@ -116,8 +116,11 @@ server build는 기존 Turbo cache를 재사용할 수 있지만, 자원 보호�
   profile frontend release task의 `NODE_OPTIONS`만 덮어쓰며 server package Turbo
   build와 배포 후 PM2 process의 heap은 바꾸지 않습니다. 전용 heap을 늘릴 때는
   runtime container hard limit과 전체 process RSS를 먼저 확인합니다.
-- migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
-  유지됩니다.
+- migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성을
+  버전별로 확인합니다. `20261114020000_reserved_turn_slot_primary_keys`는 미사용
+  예약턴 ID/sequence를 제거하므로 구형 Prisma client로 단독 rollback할 수 없습니다.
+  Profile의 모든 구형 game process를 정지한 뒤 matching client로 전환하며,
+  복구는 forward fix 또는 검증한 사전 DB backup의 restore 경로를 사용합니다.
 
 ## Commit worktree 자동 정리
 

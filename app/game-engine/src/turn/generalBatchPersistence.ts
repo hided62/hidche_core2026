@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { GamePrisma, type TurnEngineGeneralUpdateInput } from '@sammo-ts/infra';
 
 // Fixed schema identifiers only; all row values remain bound parameters.
@@ -91,8 +92,8 @@ export const persistGeneralAccessScores = async (
     for (let offset = 0; offset < updates.length; offset += GENERAL_UPDATE_BATCH_SIZE) {
         const batch = updates.slice(offset, offset + GENERAL_UPDATE_BATCH_SIZE);
         await database.$executeRaw(GamePrisma.sql`
-            INSERT INTO "general_access_log" ("general_id", "user_id", "refresh_score_total")
-            VALUES ${GamePrisma.join(batch.map((row) => GamePrisma.sql`(${row.generalId}, ${row.userId}, ${row.refreshScoreTotal})`))}
+            INSERT INTO "general_access_log" ("id", "general_id", "user_id", "refresh_score_total")
+            VALUES ${GamePrisma.join(batch.map((row) => GamePrisma.sql`(${existingRowIdOrNext('general_access_log', GamePrisma.sql`stable_id.general_id = ${row.generalId}`)}, ${row.generalId}, ${row.userId}, ${row.refreshScoreTotal})`))}
             ON CONFLICT ("general_id") DO UPDATE
             SET "refresh_score_total" = EXCLUDED."refresh_score_total"
         `);

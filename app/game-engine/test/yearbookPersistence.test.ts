@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import { persistYearbookSnapshot } from '../src/turn/yearbookPersistence.js';
+
+// This harness begins without the durable archive/point row.
+const missingRecordUpdate = async (): Promise<never> => {
+    throw new GamePrisma.PrismaClientKnownRequestError('fixture record missing', {
+        code: 'P2025',
+        clientVersion: 'fixture',
+    });
+};
 
 describe('persistYearbookSnapshot', () => {
     it('archives canonical summary logs and compatible action logs together in descending ID order', async () => {
@@ -14,7 +22,7 @@ describe('persistYearbookSnapshot', () => {
         const upsert = vi.fn().mockResolvedValue(undefined);
         const transaction = {
             logEntry: { findMany },
-            yearbookHistory: { upsert },
+            yearbookHistory: { update: missingRecordUpdate, upsert },
         } as unknown as GamePrisma.TransactionClient;
 
         await persistYearbookSnapshot(transaction, {

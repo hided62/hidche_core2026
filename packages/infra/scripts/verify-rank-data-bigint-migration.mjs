@@ -53,6 +53,11 @@ const readIndexes = async (table) =>
     ).rows;
 try {
     await fs.cp(path.join(packageRoot, 'prisma'), path.join(temp, 'prisma'), { recursive: true });
+    for (const name of await fs.readdir(path.join(temp, 'prisma', 'migrations'))) {
+        if (/^\d/.test(name) && name > targets.at(-1)) {
+            await fs.rm(path.join(temp, 'prisma', 'migrations', name), { recursive: true });
+        }
+    }
     for (const target of targets) await fs.rm(path.join(temp, 'prisma', 'migrations', target), { recursive: true });
     await fs.writeFile(
         config,

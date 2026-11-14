@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma, type InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
@@ -424,7 +425,7 @@ const cancelGameInTransaction = async (
             earnedPointRetentionPercent: request.earnedPointRetentionPercent,
         });
         const currentPoint = pointsByUser.get(userId)?.get('previous') ?? 0;
-        await prisma.inheritancePoint.upsert({
+        await upsertWithoutSequence(prisma.inheritancePoint, {
             where: { userId_key: { userId, key: 'previous' } },
             update: { value: calculated.finalPoint },
             create: { userId, key: 'previous', value: calculated.finalPoint },
@@ -470,7 +471,7 @@ const cancelGameInTransaction = async (
         }
         for (const general of activeGenerals) {
             if (!general.userId || general.npcState >= 2) continue;
-            await prisma.oldGeneral.upsert({
+            await upsertWithoutSequence(prisma.oldGeneral, {
                 where: { by_no: { serverId, generalNo: general.id } },
                 update: {
                     owner: general.userId,

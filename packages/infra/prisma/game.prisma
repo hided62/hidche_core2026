@@ -679,14 +679,13 @@ model Troop {
 }
 
 model GeneralTurn {
-  id         BigInt   @id @default(autoincrement())
   generalId  Int      @map("general_id")
   turnIdx    Int      @map("turn_idx")
   actionCode String   @map("action_code")
   arg        Json     @default(dbgenerated("'{}'::jsonb"))
   createdAt  DateTime @default(now()) @map("created_at")
 
-  @@unique([generalId, turnIdx])
+  @@id([generalId, turnIdx])
   @@map("general_turn")
 }
 
@@ -701,7 +700,6 @@ model GeneralTurnRevision {
 }
 
 model NationTurn {
-  id           BigInt   @id @default(autoincrement())
   nationId     Int      @map("nation_id")
   officerLevel Int      @map("officer_level")
   turnIdx      Int      @map("turn_idx")
@@ -709,7 +707,7 @@ model NationTurn {
   arg          Json     @default(dbgenerated("'{}'::jsonb"))
   createdAt    DateTime @default(now()) @map("created_at")
 
-  @@unique([nationId, officerLevel, turnIdx])
+  @@id([nationId, officerLevel, turnIdx])
   @@map("nation_turn")
 }
 

@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { z } from 'zod';
 
 import { asNumber, asRecord, GAME_TICKS_PER_TURN, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
@@ -567,11 +568,7 @@ const assertGeneralIdSnapshotMatches = async (db: DatabaseClient, world: InMemor
     }
 };
 
-const clearUnusedReservations = async (
-    db: DatabaseClient,
-    userId: string,
-    nowTick: number
-): Promise<void> => {
+const clearUnusedReservations = async (db: DatabaseClient, userId: string, nowTick: number): Promise<void> => {
     await db.selectPoolEntry.updateMany({
         where: {
             generalId: null,
@@ -914,7 +911,7 @@ export const createGeneralFromSelectionPool = async (options: {
     if (occupied.count === 0) {
         throw new Error('장수 등록 중 선택 후보 점유에 실패했습니다.');
     }
-    await db.generalAccessLog.upsert({
+    await upsertWithoutSequence(db.generalAccessLog, {
         where: { generalId },
         update: { userId, lastRefresh: options.operationalAcceptedAt },
         create: { generalId, userId, lastRefresh: options.operationalAcceptedAt },

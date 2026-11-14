@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
@@ -209,12 +210,12 @@ const cancelPendingUniqueAuctions = async (
             if (!bidder?.userId || bidder.userId !== dbBidder?.userId) {
                 throw new Error(`Unification auction refund owner is unavailable: ${planned.auctionId}.`);
             }
-            await transaction.inheritancePoint.upsert({
+            await upsertWithoutSequence(transaction.inheritancePoint, {
                 where: { userId_key: { userId: bidder.userId, key: 'previous' } },
                 update: { value: { increment: highest.amount } },
                 create: { userId: bidder.userId, key: 'previous', value: highest.amount },
             });
-            await transaction.rankData.upsert({
+            await upsertWithoutSequence(transaction.rankData, {
                 where: {
                     generalId_type: { generalId: bidder.id, type: 'inherit_spent_dyn' },
                 },
@@ -345,7 +346,7 @@ export const persistUnificationFinalization = async (
         ) as Record<(typeof ALL_MERGED_INHERITANCE_KEYS)[number], number>;
         const total = Math.floor(previous + Object.values(mergedPoints).reduce((sum, value) => sum + value, 0));
 
-        await transaction.inheritancePoint.upsert({
+        await upsertWithoutSequence(transaction.inheritancePoint, {
             where: { userId_key: { userId, key: 'previous' } },
             update: { value: total },
             create: { userId, key: 'previous', value: total },
@@ -508,7 +509,7 @@ export const persistUnificationFinalization = async (
         }),
         generationKey: input.generationKey,
     };
-    await transaction.oldNation.upsert({
+    await upsertWithoutSequence(transaction.oldNation, {
         where: { serverId_nation_sourceId: { serverId, nation: input.winnerNationId, sourceId: 0 } },
         update: { data: asJson(winnerData), date: input.completedAt },
         create: {
@@ -525,7 +526,7 @@ export const persistUnificationFinalization = async (
         generals: neutralGenerals.map((general) => general.id),
         generationKey: input.generationKey,
     };
-    await transaction.oldNation.upsert({
+    await upsertWithoutSequence(transaction.oldNation, {
         where: { serverId_nation_sourceId: { serverId, nation: 0, sourceId: 0 } },
         update: { data: neutralData, date: input.completedAt },
         create: { serverId, nation: 0, sourceId: 0, data: neutralData, date: input.completedAt },
@@ -572,7 +573,7 @@ export const persistUnificationFinalization = async (
             availability: { battleResultLogs: true },
             generationKey: input.generationKey,
         };
-        await transaction.oldGeneral.upsert({
+        await upsertWithoutSequence(transaction.oldGeneral, {
             where: { by_no: { serverId, generalNo: general.id } },
             update: {
                 owner: general.userId ?? null,

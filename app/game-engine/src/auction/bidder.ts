@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { randomUUID } from 'node:crypto';
 
@@ -580,8 +581,8 @@ export const createAuctionBidder = async (options: {
                         }
                         await tx.$executeRaw(
                             GamePrisma.sql`
-                                INSERT INTO rank_data (nation_id, general_id, type, value)
-                                SELECT nation_id, id, 'inherit_spent_dyn', ${morePoint}
+                                INSERT INTO rank_data (id, nation_id, general_id, type, value)
+                                SELECT ${existingRowIdOrNext('rank_data', GamePrisma.sql`stable_id.general_id = "general".id AND stable_id.type = 'inherit_spent_dyn'`)}, nation_id, id, 'inherit_spent_dyn', ${morePoint}
                                 FROM general
                                 WHERE id = ${command.generalId}
                                 ON CONFLICT (general_id, type)
@@ -598,8 +599,9 @@ export const createAuctionBidder = async (options: {
                             }
                             await tx.$executeRaw(
                                 GamePrisma.sql`
-                                    INSERT INTO inheritance_point (user_id, key, value, updated_at)
+                                    INSERT INTO inheritance_point (id, user_id, key, value, updated_at)
                                     VALUES (
+                                        ${existingRowIdOrNext('inheritance_point', GamePrisma.sql`stable_id.user_id = ${prevUserId} AND stable_id.key = 'previous'`)},
                                         ${prevUserId},
                                         'previous',
                                         ${highestBid.amount},

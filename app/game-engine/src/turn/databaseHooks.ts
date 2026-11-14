@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { persistAuditDecisions } from '../playAudit/decisionPersistence.js';
 import { collectPlayAudit, markAuditGap } from '../playAudit/bestEffort.js';
 import { persistAuditDiplomacyEvents, withPlayAuditSavepoint } from '@sammo-ts/infra';
@@ -697,12 +698,12 @@ const persistNationBettingFinish = async (
         });
         const previousPoint = existing?.value ?? 0;
         const nextPoint = previousPoint + reward.amount;
-        await prisma.inheritancePoint.upsert({
+        await upsertWithoutSequence(prisma.inheritancePoint, {
             where: { userId_key: { userId: reward.userId, key: 'previous' } },
             update: { value: nextPoint },
             create: { userId: reward.userId, key: 'previous', value: nextPoint },
         });
-        await prisma.rankData.upsert({
+        await upsertWithoutSequence(prisma.rankData, {
             where: {
                 generalId_type: {
                     generalId: reward.generalId,
@@ -1574,7 +1575,7 @@ export const createDatabaseTurnHooks = async (
                     }
                 }
                 for (const entry of grouped.values()) {
-                    await prisma.inheritancePoint.upsert({
+                    await upsertWithoutSequence(prisma.inheritancePoint, {
                         where: { userId_key: { userId: entry.userId, key: entry.key } },
                         update: { value: { increment: entry.amount } },
                         create: { userId: entry.userId, key: entry.key, value: entry.amount },
@@ -1642,7 +1643,7 @@ export const createDatabaseTurnHooks = async (
                 }
                 await Promise.all(
                     deletedNationSnapshots.map((snapshot) =>
-                        prisma.oldNation.upsert({
+                        upsertWithoutSequence(prisma.oldNation, {
                             where: {
                                 serverId_nation_sourceId: {
                                     serverId,

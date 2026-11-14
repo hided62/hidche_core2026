@@ -25,7 +25,7 @@ const deferredBatchId = `deferred-access-${endpointGeneralId}`;
 
 const endpointAuth = (roles = ['user']): GameSessionTokenPayload => ({
     version: 1,
-    profile: `${yearbookProfile}:default`,
+    profile: yearbookProfile,
     issuedAt: '2026-07-26T00:00:00.000Z',
     expiresAt: '2026-07-27T00:00:00.000Z',
     sessionId: `access-session-${endpointGeneralId}`,
@@ -167,6 +167,9 @@ integration('general access tracking persistence', () => {
             scoreStartedAt: new Date('2026-07-26T03:00:00.000Z'),
         };
         await upsertGeneralAccess(db, { ...firstWindow, weight: 2 });
+        const counters =
+            await db.$queryRaw`SELECT 'access' AS kind,last_value FROM general_access_log_id_seq UNION ALL SELECT 'period',last_value FROM traffic_period_id_seq`;
+        const accessId = (await db.generalAccessLog.findUniqueOrThrow({ where: { generalId } })).id;
         await Promise.all(
             Array.from({ length: 20 }, (_, index) =>
                 upsertGeneralAccess(db, {
@@ -177,6 +180,10 @@ integration('general access tracking persistence', () => {
             )
         );
 
+        expect(
+            await db.$queryRaw`SELECT 'access' AS kind,last_value FROM general_access_log_id_seq UNION ALL SELECT 'period',last_value FROM traffic_period_id_seq`
+        ).toEqual(counters);
+        expect((await db.generalAccessLog.findUniqueOrThrow({ where: { generalId } })).id).toBe(accessId);
         expect(await db.generalAccessLog.findUniqueOrThrow({ where: { generalId } })).toMatchObject({
             userId: 'access-user-a',
             refresh: 22,

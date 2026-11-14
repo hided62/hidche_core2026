@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { asRecord, resolveAccessLimitLevel, resolveAccessRefreshLimit, type AccessLimitLevel } from '@sammo-ts/common';
 import { acquireGameSchemaAdvisoryXactLock, GENERAL_ACCESS_PERSISTENCE_LOCK, GamePrisma } from '@sammo-ts/infra';
 
@@ -269,6 +270,7 @@ export const upsertGeneralAccess = async (
                     RETURNING id
                 )
                 INSERT INTO traffic_period (
+                    id,
                     world_state_id,
                     year,
                     month,
@@ -277,6 +279,7 @@ export const upsertGeneralAccess = async (
                     refresh
                 )
                 VALUES (
+                    ${existingRowIdOrNext('traffic_period', GamePrisma.sql`stable_id.world_state_id = ${input.worldStateId} AND stable_id.year = ${input.year} AND stable_id.month = ${input.month}`)},
                     ${input.worldStateId},
                     ${input.year},
                     ${input.month},
@@ -341,6 +344,7 @@ export const upsertGeneralAccess = async (
         await transaction.$executeRaw(
             GamePrisma.sql`
                 INSERT INTO general_access_log (
+                    id,
                     general_id,
                     user_id,
                     last_refresh,
@@ -350,6 +354,7 @@ export const upsertGeneralAccess = async (
                     refresh_score_total
                 )
                 VALUES (
+                    ${existingRowIdOrNext('general_access_log', GamePrisma.sql`stable_id.general_id = ${input.generalId}`)},
                     ${input.generalId},
                     ${input.userId},
                     ${input.now},

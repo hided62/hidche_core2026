@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { randomUUID } from 'node:crypto';
 
 import { asRecord, JosaUtil } from '@sammo-ts/common';
@@ -289,8 +290,8 @@ const openUniqueAuction = async (
     });
     await db.$executeRaw(
         GamePrisma.sql`
-            INSERT INTO rank_data (nation_id, general_id, type, value)
-            VALUES (${general.nationId}, ${general.id}, 'inherit_spent_dyn', ${command.amount})
+            INSERT INTO rank_data (id, nation_id, general_id, type, value)
+            VALUES (${existingRowIdOrNext('rank_data', GamePrisma.sql`stable_id.general_id = ${general.id} AND stable_id.type = 'inherit_spent_dyn'`)}, ${general.nationId}, ${general.id}, 'inherit_spent_dyn', ${command.amount})
             ON CONFLICT (general_id, type)
             DO UPDATE SET
                 nation_id = EXCLUDED.nation_id,

@@ -219,6 +219,21 @@ no-op, unique/FK/index, runtime query와 reload를 확인합니다. 기존 migra
 Prisma reload, 유일성 및 transaction rollback을 검증합니다. `log_entry`·`inheritance_log`의 API 숫자 cursor는
 `Number.MAX_SAFE_INTEGER`까지 정확성을 보장하며 그 이상은 명시적으로 거부합니다.
 
+### 예약턴 복합키와 일반 갱신 ID 회귀
+
+`RESERVED_TURN_MIGRATION_TEST_DATABASE_URL`을 격리 개발 DB에 주입해
+`pnpm --filter @sammo-ts/infra verify:migration:reserved-turn-keys`를 실행합니다.
+기존 기수의 명령·인자·시간·revision·lease 보존, 자연키 유일성, queue 교체 rollback,
+sequence 제거, 새 schema 전체 migration과 deploy 재실행을 확인합니다.
+이전 `verify:migration:rank-data`는 64비트 확장 당시의 migration head까지만
+검사합니다. 이후 예약턴 ID를 제거한 현재 전체 chain은 새 검증기가 소유합니다.
+
+`stableRowId.integration.test.ts`는 `IMMEDIATE_ACTION_DATABASE_URL` 전용 schema에서
+실제 Prisma의 기존 ID 보존, 원자적 increment, 신규 키 동시 생성, 미존재 fallback의
+transaction 생존, 제약 위반 전파와 rollback을 검사합니다. 접속량/지연 접속량 및
+batch 저장 test는 같은 행을 갱신할 때 sequence가 증가하지 않는지도 확인합니다.
+예약 API의 실제 HTTP 권한 행렬과 daemon/API lease 통합 검증도 함께 실행합니다.
+
 ## 결과 기록
 
 Report에는 실행 명령, commit, 서비스와 fixture, pass/fail/skip 수, baseline

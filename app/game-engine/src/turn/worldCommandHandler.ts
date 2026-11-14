@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { handleCityOfficeRequest, settleCityOfficeRequests } from './cityOfficeRequests.js';
 import type {
     TurnDaemonCommandHandler,
@@ -2864,8 +2865,8 @@ const insertVoteSelection = async (
     }
     const createdAt = new Date();
     const rows = await ctx.commandDb.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
-        INSERT INTO vote (vote_id, general_id, nation_id, selection, created_at)
-        SELECT poll.id,
+        INSERT INTO vote (id, vote_id, general_id, nation_id, selection, created_at)
+        SELECT ${existingRowIdOrNext('vote', GamePrisma.sql`stable_id.vote_id = poll.id AND stable_id.general_id = ${general.id}`)}, poll.id,
             ${general.id},
             ${general.nationId},
             CAST(${JSON.stringify(selection)} AS jsonb),

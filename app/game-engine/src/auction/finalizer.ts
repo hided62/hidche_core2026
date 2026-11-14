@@ -1,3 +1,4 @@
+import { existingRowIdOrNext } from '@sammo-ts/infra';
 import { resolveMessageTargetIcon } from '@sammo-ts/logic';
 import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
 import { ActionLogger, ItemLoader, LogFormat, isItemKey, type MessageDraft } from '@sammo-ts/logic';
@@ -212,8 +213,8 @@ const refundInheritancePoint = async (options: {
     }
     await prisma.$executeRaw(
         GamePrisma.sql`
-            INSERT INTO inheritance_point (user_id, key, value, updated_at)
-            VALUES (${userId}, 'previous', ${amount}, ${new Date()})
+            INSERT INTO inheritance_point (id, user_id, key, value, updated_at)
+            VALUES (${existingRowIdOrNext('inheritance_point', GamePrisma.sql`stable_id.user_id = ${userId} AND stable_id.key = 'previous'`)}, ${userId}, 'previous', ${amount}, ${new Date()})
             ON CONFLICT (user_id, key)
             DO UPDATE SET
                 value = inheritance_point.value + EXCLUDED.value,

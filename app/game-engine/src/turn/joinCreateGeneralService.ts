@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { areSeasonRecordsFinalized } from './seasonRecords.js';
 import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { acquireGameSchemaAdvisoryXactLock, GamePrisma } from '@sammo-ts/infra';
@@ -246,7 +247,7 @@ const applyInheritanceUser = async (
 };
 
 const setInheritancePoint = async (db: DatabaseClient, userId: string, value: number): Promise<void> => {
-    await db.inheritancePoint.upsert({
+    await upsertWithoutSequence(db.inheritancePoint, {
         where: { userId_key: { userId, key: 'previous' } },
         update: { value },
         create: { userId, key: 'previous', value },
@@ -860,7 +861,7 @@ export const createGeneralFromJoin = async (options: {
     await db.generalTurnRevision.create({
         data: { generalId, revision: 0 },
     });
-    await db.generalAccessLog.upsert({
+    await upsertWithoutSequence(db.generalAccessLog, {
         where: { generalId },
         update: { userId: input.userId, lastRefresh: operationalAcceptedAt },
         create: {

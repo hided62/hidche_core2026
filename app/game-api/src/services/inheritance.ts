@@ -1,3 +1,4 @@
+import { upsertWithoutSequence } from '@sammo-ts/infra';
 import { asNumber, asRecord } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 import {
@@ -132,7 +133,7 @@ export const setInheritancePoint = async (
     key: InheritPointKey,
     value: number
 ): Promise<void> => {
-    await db.inheritancePoint.upsert({
+    await upsertWithoutSequence(db.inheritancePoint, {
         where: {
             userId_key: {
                 userId,

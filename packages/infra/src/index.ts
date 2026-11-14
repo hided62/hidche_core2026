@@ -16,3 +16,4 @@ export * from './messageEnvelope.js';
 export * from './webPushOutbox.js';
 export * from './playAuditBestEffort.js';
 export * from './playAuditDecisionCodec.js';
+export * from './stableRowId.js';

@@ -198,6 +198,23 @@ integration('general batch persistence', () => {
             );
         });
         expect(writes).toBe(2);
+        const originalIds = (
+            await db.generalAccessLog.findMany({
+                where: { generalId: { gte: firstId, lte: firstId + GENERAL_UPDATE_BATCH_SIZE } },
+                orderBy: { generalId: 'asc' },
+            })
+        ).map((row) => row.id);
+        const sequence = await db.$queryRaw`SELECT last_value FROM general_access_log_id_seq`;
+        await db.$transaction((tx) => persistGeneralAccessScores(tx, updates));
+        expect(
+            (
+                await db.generalAccessLog.findMany({
+                    where: { generalId: { gte: firstId, lte: firstId + GENERAL_UPDATE_BATCH_SIZE } },
+                    orderBy: { generalId: 'asc' },
+                })
+            ).map((row) => row.id)
+        ).toEqual(originalIds);
+        expect(await db.$queryRaw`SELECT last_value FROM general_access_log_id_seq`).toEqual(sequence);
         expect(await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: firstId } })).toMatchObject({
             userId: 'original-owner',
             lastRefresh: at,
