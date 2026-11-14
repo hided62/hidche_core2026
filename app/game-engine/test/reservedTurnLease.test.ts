@@ -169,6 +169,18 @@ const buildHarness = (initialRevision: RevisionRow | null = null) => {
 };
 
 describe('reserved turn daemon lease', () => {
+    it('cleans both persisted lease kinds even after their journal is rolled back', async () => {
+        const harness = buildHarness();
+        const snapshot = harness.store.captureTransactionState();
+        await harness.store.prepareTurnsForExecution(7, { nationId: 3, officerLevel: 12 });
+        harness.store.restoreState(snapshot);
+        expect(harness.store.getQueueCounts()).toMatchObject({ leasedGeneralQueues: 0, leasedNationQueues: 0 });
+        await harness.store.releaseOwnedLeases();
+        expect(harness.getRevision()).toMatchObject({ leaseOwner: null, leaseExpiresAt: null, revision: 0 });
+        expect(harness.getNationRevision()).toMatchObject({ leaseOwner: null, leaseExpiresAt: null, revision: 0 });
+        expect(harness.generalDeleteMany).not.toHaveBeenCalled();
+    });
+
     it('prunes deleted general and nation queues together with their journal state', () => {
         const harness = buildHarness();
         harness.store.ensureGeneralTurns(7);

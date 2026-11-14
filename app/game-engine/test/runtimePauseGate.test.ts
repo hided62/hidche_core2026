@@ -3,12 +3,36 @@ import type { GameClockPhase } from '@sammo-ts/common';
 import { createRuntimePauseGate } from '../src/turn/runtimePauseGate.js';
 
 describe('runtime pause clock boundary', () => {
+    it('awaits a host authority check before reading profile state or changing the clock', async () => {
+        const calls: string[] = [];
+        const gate = createRuntimePauseGate({
+            assertLease: async () => {
+                await Promise.resolve();
+                calls.push('host');
+                throw new Error('host changed');
+            },
+            shouldPause: async () => {
+                calls.push('profile');
+                return false;
+            },
+            isExplicitlyPaused: () => false,
+            getPhase: () => 'RUNNING',
+            prepareRecovery: async () => {
+                calls.push('recovery');
+            },
+            synchronize: async () => {},
+        });
+        await expect(gate()).rejects.toThrow('host changed');
+        expect(calls).toEqual(['host']);
+    });
     it('freezes a live error pause before commands, resumes without restart, and does not freeze twice', async () => {
         let phase: GameClockPhase = 'RUNNING';
         let paused = true;
         const calls: string[] = [];
         const gate = createRuntimePauseGate({
-            assertLease: () => calls.push('lease'),
+            assertLease: () => {
+                calls.push('lease');
+            },
             shouldPause: async () => paused,
             isExplicitlyPaused: () => paused,
             getPhase: () => phase,

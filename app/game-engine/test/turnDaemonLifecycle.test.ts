@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ManualClock } from '@sammo-ts/common';
 import { TurnDaemonLeaseLostError } from '../src/lifecycle/databaseTurnDaemonLease.js';
+import { ReservedTurnLeaseBusyError } from '../src/turn/reservedTurnStore.js';
+import { createReservedTurnLeaseRetry } from '../src/turn/reservedTurnLeaseRetry.js';
 
 import {
     InMemoryControlQueue,
@@ -15,6 +17,68 @@ import {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
+    it('rolls back a busy queue, checks the operator gate, and retries an explicit run exactly once', async () => {
+        const now = new Date('2026-11-12T00:00:00Z');
+        const queue = new InMemoryControlQueue();
+        queue.enqueue({ type: 'run', reason: 'manual', targetTime: now.toISOString() });
+        let resource = 10;
+        let runs = 0;
+        const stateManager = new EngineStateManager();
+        stateManager.register('resource', {
+            capture: () => resource,
+            restore: (value) => {
+                resource = value;
+            },
+        });
+        const onRunError = vi.fn();
+        const flushChanges = vi.fn();
+        const gate = vi.fn(async () => false);
+        const retry = createReservedTurnLeaseRetry({
+            sleep: async () => {
+                expect(resource).toBe(10);
+            },
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(now.getTime()),
+                controlQueue: queue,
+                stateManager,
+                runErrorRetry: retry,
+                getNextTickTime: (value) => addMinutes(value, 5),
+                pauseGate: gate,
+                stateStore: {
+                    loadLastTurnTime: async () => now,
+                    loadNextGeneralTurnTime: async () => null,
+                    saveLastTurnTime: async () => {},
+                    loadCheckpoint: async () => undefined,
+                    saveCheckpoint: async () => {},
+                },
+                processor: {
+                    run: async () => {
+                        resource -= 2;
+                        if (++runs === 1) throw new ReservedTurnLeaseBusyError('general:7');
+                        queue.enqueue({ type: 'shutdown' });
+                        return {
+                            lastTurnTime: now.toISOString(),
+                            processedGenerals: 1,
+                            processedTurns: 0,
+                            durationMs: 0,
+                            partial: false,
+                        };
+                    },
+                },
+                hooks: { onRunError, flushChanges },
+            },
+            { profile: 'che', defaultBudget: { budgetMs: 100, maxGenerals: 1, catchUpCap: 1 } }
+        );
+        await lifecycle.start();
+        expect(runs).toBe(2);
+        expect(resource).toBe(8);
+        expect(gate.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(flushChanges).toHaveBeenCalledOnce();
+        expect(onRunError).not.toHaveBeenCalled();
+    });
+
     it.each([false, true])('reports a fatal lease gate and exits even if reporting fails (%s)', async (reportFails) => {
         const now = new Date('2026-09-09T17:30:00Z');
         const error = new TurnDaemonLeaseLostError('che:default');

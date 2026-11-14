@@ -15,3 +15,4 @@ export * from './playAuditDiplomacy.js';
 export * from './messageEnvelope.js';
 export * from './webPushOutbox.js';
 export * from './playAuditBestEffort.js';
+export * from './playAuditDecisionCodec.js';

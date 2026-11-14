@@ -20,7 +20,7 @@ describe('audit retention scheduling', () => {
         expect(prune).toHaveBeenCalledTimes(1);
         await vi.advanceTimersByTimeAsync(30_001);
         expect(prune).toHaveBeenCalledTimes(3);
-        await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(100);
         expect(prune).toHaveBeenCalledTimes(4);
         await vi.advanceTimersByTimeAsync(600_000);
         expect(prune).toHaveBeenCalledTimes(4);

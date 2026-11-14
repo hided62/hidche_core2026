@@ -17,7 +17,7 @@ export const startAuditRetentionWorker = (options: {
         timer.unref();
     };
     const run = async () => {
-        let delay = 1000;
+        let delay = 100;
         try {
             const result = await options.prune();
             if (result.status === 'complete' || result.status === 'identityChanged') stopped = true;

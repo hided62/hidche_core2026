@@ -8,6 +8,7 @@ import { createTurnDaemonMemoryReporter } from './turnDaemonMemoryReporter.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { retryTurnDaemonLeaseStartup } from './leaseStartupRetry.js';
 import { TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
+import { loadHostBootMonitor } from './hostBootMonitor.js';
 
 export interface TurnDaemonCliOptions {
     profile?: string;
@@ -80,6 +81,7 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
         throw new Error(`GAME_CLOCK_MODE must be realtime or manual: ${rawGameClockMode}`);
     }
     const gameClockMode = rawGameClockMode as GameClockMode | undefined;
+    const hostBootMonitor = await loadHostBootMonitor(env);
 
     const runtime = await retryTurnDaemonLeaseStartup(() =>
         createTurnDaemonRuntime({
@@ -95,6 +97,7 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
             pauseGateIntervalMs,
             adminActionIntervalMs,
             gameClockMode,
+            hostBootMonitor,
         })
     ).catch(async (error: unknown) => {
         // 중복 starter가 정상 owner를 멈추면 안 된다. 그 밖의 초기화 실패는

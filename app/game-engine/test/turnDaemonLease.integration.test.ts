@@ -207,6 +207,39 @@ integration('database turn daemon lease and fencing', () => {
         expect(row.ownerId).toBe(firstToken ? 'owner-a' : 'owner-b');
     });
 
+    it('fences a host boot change inside a transaction before mutation, without expiring the DB lease', async () => {
+        const profile = `${profilePrefix}host-boot`;
+        let changed = false;
+        const lease = await DatabaseTurnDaemonLease.connect(databaseUrl!, {
+            profile,
+            ownerId: 'saved-vm-owner',
+            heartbeat: false,
+            leaseDurationMs: 60_000,
+            hostBootMonitor: { hasChanged: async () => changed },
+        });
+        leases.push(lease);
+        await lease.acquire();
+        await lease.markClockReady();
+        changed = true;
+        let committed = false;
+        await expect(
+            db.$transaction(async (transaction) => {
+                await lease.assertActive(transaction);
+                committed = true;
+            })
+        ).rejects.toBeInstanceOf(TurnDaemonLeaseLostError);
+        expect(committed).toBe(false);
+        expect(lease.isLost()).toBe(true);
+        expect(await lease.renew()).toBe(false);
+        // The monitor does not force-clear ownership or bypass the successor's fencing.
+        expect((await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).ownerId).toBe('saved-vm-owner');
+        const next = await createLease(profile, 'fresh-vm-owner');
+        expect(await next.acquire()).toBeNull();
+        await lease.release();
+        expect((await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).clockReady).toBe(false);
+        expect((await next.acquire())?.fencingEpoch).toBe(2n);
+    });
+
     it('persists and evaluates lease wall time as UTC under a non-UTC database session', async () => {
         const profile = `${profilePrefix}utc-wall`;
         const zonedUrl = new URL(databaseUrl!);

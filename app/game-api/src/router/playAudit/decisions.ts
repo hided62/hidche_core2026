@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import type { GamePrisma } from '@sammo-ts/infra';
+import { decodeAuditDecisionSteps, type GamePrisma } from '@sammo-ts/infra';
 import { auditProcedure, monthOrdinal, readAudit, readAuditWorld, zAuditMonth } from './shared.js';
 
 const zEffectivePolicy = z.object({
@@ -275,7 +275,7 @@ export const decisionDetail = auditProcedure
                 decision: project(row),
                 chunks: chunks.slice(0, input.limit).map((chunk) => ({
                     ordinal: chunk.ordinal,
-                    steps: z.array(zStep).max(128).parse(chunk.steps),
+                    steps: z.array(zStep).max(128).parse(decodeAuditDecisionSteps(chunk.steps)),
                 })),
                 nextCursor:
                     chunks.length && chunks.at(-1)!.ordinal + 1 < Math.ceil(row.stepCount / 128)

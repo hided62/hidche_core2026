@@ -1,4 +1,4 @@
-import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
+import { encodeAuditDecisionSteps, type GamePrisma, type InputJsonValue } from '@sammo-ts/infra';
 import { auditPolicyHash } from './policy.js';
 import type { PendingAuditDecision } from './decision.js';
 
@@ -50,7 +50,9 @@ export const persistAuditDecisions = async (
                 chunks.push({
                     decisionId: decision.id,
                     ordinal: start / AUDIT_DECISION_CHUNK_STEPS,
-                    steps: decision.steps.slice(start, start + AUDIT_DECISION_CHUNK_STEPS) as InputJsonValue,
+                    steps: encodeAuditDecisionSteps(
+                        decision.steps.slice(start, start + AUDIT_DECISION_CHUNK_STEPS) as InputJsonValue[]
+                    ),
                 });
                 if (chunks.length === BATCH) {
                     await tx.playAuditDecisionChunk.createMany({ data: chunks, skipDuplicates: true });

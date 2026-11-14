@@ -45,6 +45,28 @@ const createFixture = (rows: readonly object[]) => {
 };
 
 describe('ReadModelOutboxWorker', () => {
+    it('drains more than one full retention batch rather than leaving a permanent 100-per-minute backlog', async () => {
+        let now = new Date('2026-11-09T00:00:00Z');
+        const fixture = createFixture([]);
+        fixture.queryRaw
+            .mockReset()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ id: 1n }, { id: 2n }])
+            .mockResolvedValueOnce([{ id: 3n }, { id: 4n }])
+            .mockResolvedValueOnce([]);
+        const worker = new ReadModelOutboxWorker(fixture.db, fixture.redis, 'che:default', {
+            intervalMs: 60000,
+            pruneLimit: 2,
+            now: () => now,
+        });
+        now = new Date('2026-11-09T00:01:00Z');
+        worker.start();
+        await vi.waitFor(() => expect(fixture.queryRaw).toHaveBeenCalledTimes(4));
+        await worker.stop();
+        const query = fixture.queryRaw.mock.calls[1]?.[0] as { sql: string };
+        expect(query.sql).toContain('FOR UPDATE SKIP LOCKED');
+        expect(query.sql).toContain('ORDER BY "delivered_at", "available_at", "id"');
+    });
     it('publishes a survey-style global front-status invalidation without a turn daemon', async () => {
         const fixture = createFixture([{ id: 10n, payload: payload('front.global'), attempts: 1 }]);
         const worker = new ReadModelOutboxWorker(fixture.db, fixture.redis, 'che:default', {

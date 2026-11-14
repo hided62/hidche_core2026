@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { decodeAuditDecisionSteps, createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 import { persistAuditDecisions } from '../src/playAudit/decisionPersistence.js';
 import { buildAuditExecutionFixture, buildAuditDecisionFixture as draft } from './fixtures/playAuditDecision.js';
 import { prunePreviousAuditBatch } from '../src/playAudit/retention.js';
@@ -36,7 +36,40 @@ integration('decision persistence and bounded retention', () => {
     });
     it('rolls back gameplay/header/chunks on insert failure, retries and rejects divergent replay', async () => {
         const decision = draft('decision-one');
-        if (decision.steps[0]?.kind === 'DECISION_START') decision.steps[0].effectivePolicy = {"schemaVersion":1,"general":{"priority":["징병"],"flags":{"징병":true,"출병":false}},"nation":{"priority":["천도"],"flags":{"천도":true},"values":{"reqNationGold":4321,"reqNationRice":100,"reqHumanWarUrgentGold":100,"reqHumanWarUrgentRice":100,"reqHumanWarRecommandGold":100,"reqHumanWarRecommandRice":100,"reqHumanDevelGold":100,"reqHumanDevelRice":100,"reqNpcWarGold":100,"reqNpcWarRice":100,"reqNpcDevelGold":100,"reqNpcDevelRice":100,"minimumResourceActionAmount":100,"maximumResourceActionAmount":100,"minNpcWarLeadership":100,"minWarCrew":100,"minNpcRecruitCityPopulation":100,"safeRecruitCityPopulationRatio":100,"properWarTrainAtmos":100,"cureThreshold":100},"combatForce":{"1":[2,3]},"supportForce":[4],"developForce":[5]}};
+        if (decision.steps[0]?.kind === 'DECISION_START')
+            decision.steps[0].effectivePolicy = {
+                schemaVersion: 1,
+                general: { priority: ['징병'], flags: { 징병: true, 출병: false } },
+                nation: {
+                    priority: ['천도'],
+                    flags: { 천도: true },
+                    values: {
+                        reqNationGold: 4321,
+                        reqNationRice: 100,
+                        reqHumanWarUrgentGold: 100,
+                        reqHumanWarUrgentRice: 100,
+                        reqHumanWarRecommandGold: 100,
+                        reqHumanWarRecommandRice: 100,
+                        reqHumanDevelGold: 100,
+                        reqHumanDevelRice: 100,
+                        reqNpcWarGold: 100,
+                        reqNpcWarRice: 100,
+                        reqNpcDevelGold: 100,
+                        reqNpcDevelRice: 100,
+                        minimumResourceActionAmount: 100,
+                        maximumResourceActionAmount: 100,
+                        minNpcWarLeadership: 100,
+                        minWarCrew: 100,
+                        minNpcRecruitCityPopulation: 100,
+                        safeRecruitCityPopulationRatio: 100,
+                        properWarTrainAtmos: 100,
+                        cureThreshold: 100,
+                    },
+                    combatForce: { '1': [2, 3] },
+                    supportForce: [4],
+                    developForce: [5],
+                },
+            };
         decision.summary.codeVersion = 'a'.repeat(40);
         decision.summary.executionCoverage = 'ATTEMPTS';
         decision.steps.push({ ...decision.steps[0]!, ...buildAuditExecutionFixture(), sequence: 302 });
@@ -85,7 +118,7 @@ integration('decision persistence and bounded retention', () => {
             orderBy: { ordinal: 'asc' },
         });
         expect(chunks).toHaveLength(3);
-        expect(chunks.flatMap((chunk) => chunk.steps)).toEqual(decision.steps);
+        expect(chunks.flatMap((chunk) => decodeAuditDecisionSteps(chunk.steps))).toEqual(decision.steps);
         await expect(
             db.$transaction((tx) =>
                 persistAuditDecisions(tx, [{ ...decision, summary: { ...decision.summary, completed: true } }])
@@ -109,10 +142,34 @@ integration('decision persistence and bounded retention', () => {
         expect(await db.playAuditDecisionChunk.count({ where: { decisionId: 'decision-one' } })).toBe(204);
         expect(await db.playAuditDecision.count({ where: { id: 'decision-one' } })).toBe(1);
         expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'progress', deleted: 200 });
-        expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'progress', deleted: 4 });
-        expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'progress', deleted: 1 });
+        expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'progress', deleted: 5 });
         expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'complete', deleted: 0 });
         expect(await db.playAuditDecision.count()).toBe(1);
         expect(await db.playAuditDecisionChunk.count()).toBe(3);
+    });
+    it('removes many small decisions in one bounded batch and rolls chunks back on header failure', async () => {
+        const decisions = Array.from({ length: 100 }, (_, index) => {
+            const row = draft(`batch-old-${index}`, 'batch-old');
+            return { ...row, steps: [row.steps[0]!, row.steps.at(-1)!] };
+        });
+        await db.$transaction((tx) => persistAuditDecisions(tx, decisions));
+        await db.$executeRawUnsafe(
+            `CREATE OR REPLACE FUNCTION decision_header_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'header fixture rollback'; END $$`
+        );
+        await db.$executeRawUnsafe(
+            `CREATE TRIGGER decision_header_failure BEFORE DELETE ON play_audit_decision FOR EACH ROW EXECUTE FUNCTION decision_header_failure()`
+        );
+        try {
+            await expect(prunePreviousAuditBatch(db, 'decision-current')).rejects.toThrow();
+            expect(
+                await db.playAuditDecisionChunk.count({ where: { decisionId: { in: decisions.map(({ id }) => id) } } })
+            ).toBe(100);
+        } finally {
+            await db.$executeRawUnsafe('DROP TRIGGER decision_header_failure ON play_audit_decision');
+            await db.$executeRawUnsafe('DROP FUNCTION decision_header_failure()');
+        }
+        expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'progress', deleted: 200 });
+        expect(await db.playAuditDecision.count()).toBe(1);
+        expect(await prunePreviousAuditBatch(db, 'decision-current')).toEqual({ status: 'complete', deleted: 0 });
     });
 });

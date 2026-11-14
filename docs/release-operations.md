@@ -376,6 +376,18 @@ Hyper-V의 VM 정지/재개, 체크포인트 또는 host 시간 보정은 게스
 NTP 로그와 Windows Hyper-V/백업 작업 이력을 대조합니다. lease 기간을 늘리거나
 시간 동기화를 임의로 끄는 것으로 해결하지 않습니다.
 
+예약턴의 실행 전 임대 충돌은 메모리 rollback 뒤 1초 간격, 한 구간 최대 301초 동안
+해제·만료를 기다립니다. flush/finalize의 ownership 상실은 재시도하지 않습니다.
+종료 시에는 rollback으로 journal에서 사라진 자기 owner의 queue 임대도 DB에서
+해제합니다. 다른 owner와 queue 내용/revision은 보존합니다. 대기 중에도 매 loop의
+운영자 pause/stop과 daemon gate를 통과하며 상한을 넘으면 기존 오류 정지를 유지합니다.
+
+Windows의 저장·복원으로 guest 이벤트가 없을 때를 위한 선택적 boot identity 확인은
+[Windows Node.js 에이전트 설치와 Linux 연결](./developer/host-boot-recovery.md)을 따릅니다.
+`TURN_HOST_BOOT_URL`과 private `TURN_HOST_BOOT_KEY_FILE`을 함께 설정하면 인증된
+식별자 변경을 기존 lease 상실/재기동으로 처리합니다. 통신 실패는 기존 복구를
+막지 않으며 운영자의 PAUSED/STOPPED를 자동 해제하지 않습니다.
+
 Turn daemon의 DB persistence interactive transaction은 연결 획득 대기(`maxWait`)
 10초와 callback 실행(`timeout`) 30초를 각각 제한합니다. Prisma 기본 연결 대기
 2초는 일시적인 DB 지연에도 callback 시작 전 `P2028`로 서버를 PAUSED로 만들 수

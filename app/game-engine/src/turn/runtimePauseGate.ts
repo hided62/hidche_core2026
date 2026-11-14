@@ -2,7 +2,7 @@ import type { GameClockPhase } from '@sammo-ts/common';
 
 /** Gateway의 실행 gate와 durable 시계를 명령 claim 전에 맞춘다. */
 export const createRuntimePauseGate = (options: {
-    assertLease(): void;
+    assertLease(): void | Promise<void>;
     shouldPause(): Promise<boolean>;
     getPhase(): GameClockPhase;
     isExplicitlyPaused(): boolean;
@@ -11,7 +11,7 @@ export const createRuntimePauseGate = (options: {
 }): (() => Promise<boolean>) => {
     let lastPaused: boolean | null = null;
     return async () => {
-        options.assertLease();
+        await options.assertLease();
         const paused = await options.shouldPause();
         const phase = options.getPhase();
         // 오류 정지는 Gateway 상태만 PAUSED로 바꿀 수 있다. 그대로 두면 가입은

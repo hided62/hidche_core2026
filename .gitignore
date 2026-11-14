@@ -89,6 +89,7 @@ web_modules/
 .env.local
 .env.ci
 .env.ops
+tools/host-recovery/*.key
 tools/legacy-db-migration/migration-plan.json
 tools/legacy-db-migration/secrets/
 

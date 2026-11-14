@@ -195,8 +195,9 @@ export const pruneDeliveredReadModelOutbox = async (
             SELECT "id"
             FROM "read_model_outbox"
             WHERE "delivered_at" < ${input.deliveredBefore}
-            ORDER BY "id"
+            ORDER BY "delivered_at", "available_at", "id"
             LIMIT ${limit}
+            FOR UPDATE SKIP LOCKED
         )
         RETURNING "id"
     `);
