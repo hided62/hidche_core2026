@@ -2,6 +2,6 @@
     "formatVersion": 1,
     "controllerProtocol": 2,
     "gatewaySchemaHead": "20261107000000_kakao_identity_link_history",
-    "gameSchemaHead": "20261109000000_compact_play_audit_storage",
+    "gameSchemaHead": "20261114010000_high_churn_bigint_ids",
     "components": ["gateway-api", "gateway-frontend", "release-controller", "game-api", "game-engine", "game-frontend"]
 }

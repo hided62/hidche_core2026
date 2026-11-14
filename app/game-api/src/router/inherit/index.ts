@@ -1,3 +1,4 @@
+import { withSafeIntegerId } from '@sammo-ts/common';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -38,7 +39,6 @@ const BUFF_KEYS: InheritBuffType[] = [
 
 const UNIQUE_ITEM_SLOT_ORDER: readonly ItemSlot[] = ['horse', 'weapon', 'book', 'item'];
 
-const POSTGRES_INTEGER_MAX = 2_147_483_647;
 const MIN_INHERIT_BUFF_LEVEL = 1;
 const MAX_INHERIT_BUFF_LEVEL = 5;
 
@@ -283,7 +283,7 @@ export const inheritRouter = router({
     getLogs: authedProcedure
         .input(
             z.object({
-                lastId: z.number().int().min(1).max(POSTGRES_INTEGER_MAX).optional(),
+                lastId: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
             })
         )
         .query(async ({ ctx, input }) => {
@@ -300,7 +300,7 @@ export const inheritRouter = router({
                 take: 30,
                 select: { id: true, year: true, month: true, text: true, createdAt: true },
             });
-            return logs;
+            return logs.map(withSafeIntegerId);
         }),
     buyHiddenBuff: engineAuthedProcedure
         .input(

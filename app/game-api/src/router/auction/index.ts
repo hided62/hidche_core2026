@@ -1,3 +1,4 @@
+import { toSafeInteger } from '@sammo-ts/common';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -281,7 +282,7 @@ export const auctionRouter = router({
             callerAlias,
             remainPoint: point?.value ?? 0,
             recentLogs: recentLogs.map((log) => ({
-                id: log.id,
+                id: toSafeInteger(log.id),
                 text: log.text,
                 createdAt: log.createdAt.toISOString(),
             })),
@@ -444,7 +445,10 @@ export const auctionRouter = router({
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [
-            { score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)), value: String(auction.id) },
+            {
+                score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)),
+                value: String(auction.id),
+            },
         ]);
 
         return { ok: true };
@@ -521,7 +525,10 @@ export const auctionRouter = router({
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [
-            { score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)), value: String(auction.id) },
+            {
+                score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)),
+                value: String(auction.id),
+            },
         ]);
 
         return { ok: true };
@@ -659,7 +666,10 @@ export const auctionRouter = router({
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
         const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [
-            { score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)), value: String(auction.id) },
+            {
+                score: resolveAuctionTimerScore(gameTime, nextCloseAt, BigInt(result.closeTick)),
+                value: String(auction.id),
+            },
         ]);
 
         return { ok: true };

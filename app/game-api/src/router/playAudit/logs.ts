@@ -1,3 +1,4 @@
+import { toSafeInteger, withSafeIntegerId } from '@sammo-ts/common';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { auditProcedure, monthOrdinal, readAudit, readAuditWorld } from './shared.js';
@@ -53,8 +54,8 @@ export const generalLogs = auditProcedure
                 ...world,
                 type: input.type,
                 coverage: world.serverId ? ('IDENTIFIED_LOGS_ONLY' as const) : ('IDENTITY_MISSING' as const),
-                items: rows.slice(0, input.limit),
-                nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.id : null,
+                items: rows.slice(0, input.limit).map(withSafeIntegerId),
+                nextCursor: rows.length > input.limit ? toSafeInteger(rows[input.limit - 1]!.id) : null,
             };
         })
     );

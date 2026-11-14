@@ -33,7 +33,7 @@ type LogQuery = {
     select: { id: true; text: true; createdAt: true };
 };
 
-const buildContext = (findMany: (query: LogQuery) => Promise<Array<{ id: number; text: string }>>) =>
+const buildContext = (findMany: (query: LogQuery) => Promise<Array<{ id: number | bigint; text: string }>>) =>
     ({
         auth,
         profile: { id: 'che', name: 'che:default', scenario: 'default' },
@@ -92,6 +92,22 @@ describe('general.getRecentRecords', () => {
             take: 16,
             select: { id: true, text: true, createdAt: true },
         });
+    });
+
+    it('returns exact numeric JSON cursors above int4 and trims a bigint cursor row', async () => {
+        const findMany = vi.fn(async () => [
+            { id: 2_147_483_650n, text: '최신' },
+            { id: 2_147_483_648n, text: '이전 cursor' },
+        ]);
+        const caller = appRouter.createCaller(buildContext(findMany));
+        const result = await caller.general.getRecentRecords({
+            lastGeneralRecordId: 2_147_483_648,
+            lastWorldHistoryId: 2_147_483_648,
+        });
+        expect(result.global).toEqual([{ id: 2_147_483_650, text: '최신' }]);
+        expect(result.general).toEqual(result.global);
+        expect(result.history).toEqual(result.global);
+        expect(() => JSON.stringify(result)).not.toThrow();
     });
 
     it('caps an initial bucket at the legacy 15-row limit', async () => {

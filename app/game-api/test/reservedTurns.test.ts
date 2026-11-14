@@ -70,7 +70,7 @@ const buildDb = (autorunLimit: number | null = null) => {
             createMany: async ({ data }: GeneralTurnCreateManyArgs) => {
                 const dataList = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
                 const rows: GeneralTurnRow[] = dataList.map((row, index: number) => ({
-                    id: index + 1,
+                    id: BigInt(index + 1),
                     generalId: row.generalId as number,
                     turnIdx: row.turnIdx as number,
                     actionCode: row.actionCode as string,
@@ -137,7 +137,7 @@ const buildDb = (autorunLimit: number | null = null) => {
             createMany: async ({ data }: NationTurnCreateManyArgs) => {
                 const dataList = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
                 const rows: NationTurnRow[] = dataList.map((row, index: number) => ({
-                    id: index + 1,
+                    id: BigInt(index + 1),
                     nationId: row.nationId as number,
                     officerLevel: row.officerLevel as number,
                     turnIdx: row.turnIdx as number,
@@ -203,26 +203,29 @@ const buildDb = (autorunLimit: number | null = null) => {
 
 describe('reservedTurns', () => {
     it('loads multiple nation officer queues with two batched queries and preserves defaults', async () => {
-        const findTurns = vi.fn(async () => [
-            {
-                id: 1,
-                nationId: 4,
-                officerLevel: 12,
-                turnIdx: 1,
-                actionCode: 'che_징병',
-                arg: { amount: 100 },
-                createdAt: new Date(),
-            },
-            {
-                id: 2,
-                nationId: 4,
-                officerLevel: 10,
-                turnIdx: 0,
-                actionCode: 'che_훈련',
-                arg: {},
-                createdAt: new Date(),
-            },
-        ] satisfies NationTurnRow[]);
+        const findTurns = vi.fn(
+            async () =>
+                [
+                    {
+                        id: 1n,
+                        nationId: 4,
+                        officerLevel: 12,
+                        turnIdx: 1,
+                        actionCode: 'che_징병',
+                        arg: { amount: 100 },
+                        createdAt: new Date(),
+                    },
+                    {
+                        id: 2n,
+                        nationId: 4,
+                        officerLevel: 10,
+                        turnIdx: 0,
+                        actionCode: 'che_훈련',
+                        arg: {},
+                        createdAt: new Date(),
+                    },
+                ] satisfies NationTurnRow[]
+        );
         const findRevisions = vi.fn(async () => [
             { nationId: 4, officerLevel: 12, revision: 7, updatedAt: new Date() },
         ]);
@@ -411,7 +414,7 @@ describe('reservedTurns', () => {
         nationRevisions.set('6:12', 2);
         nationTurns.set('6:12', [
             {
-                id: 1,
+                id: 1n,
                 nationId: 6,
                 officerLevel: 12,
                 turnIdx: 0,
@@ -420,7 +423,7 @@ describe('reservedTurns', () => {
                 createdAt: new Date(),
             },
             {
-                id: 2,
+                id: 2n,
                 nationId: 6,
                 officerLevel: 12,
                 turnIdx: 1,

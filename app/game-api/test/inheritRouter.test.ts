@@ -108,7 +108,7 @@ const buildContext = (options: {
     inheritancePoint?: number;
     inheritanceRows?: Array<{ key: string; value: number }>;
     rankRows?: Array<{ type: string; value: number }>;
-    inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
+    inheritanceLogs?: Array<{ id: number | bigint; year: number; month: number; text: string; createdAt: Date }>;
     configConst?: Record<string, unknown>;
     scenarioCode?: string;
     configMap?: Record<string, unknown>;
@@ -460,11 +460,11 @@ describe('inherit router actor and permission boundaries', () => {
     it('loads the first inheritance-log page without an out-of-range integer cursor', async () => {
         const createdAt = new Date('2026-07-26T00:00:00Z');
         const fixture = buildContext({
-            inheritanceLogs: [{ id: 2_147_483_647, year: 200, month: 4, text: '경계 로그', createdAt }],
+            inheritanceLogs: [{ id: 2_147_483_648n, year: 200, month: 4, text: '경계 로그', createdAt }],
         });
 
         await expect(appRouter.createCaller(fixture.context).inherit.getLogs({})).resolves.toEqual([
-            { id: 2_147_483_647, year: 200, month: 4, text: '경계 로그', createdAt },
+            { id: 2_147_483_648, year: 200, month: 4, text: '경계 로그', createdAt },
         ]);
         expect(fixture.inheritanceLogFindMany).toHaveBeenCalledWith({
             where: { userId: 'user-1' },
@@ -478,23 +478,26 @@ describe('inherit router actor and permission boundaries', () => {
         const fixture = buildContext({ inheritanceLogs: [] });
         const caller = appRouter.createCaller(fixture.context);
 
-        await expect(caller.inherit.getLogs({ lastId: 2_147_483_647 })).resolves.toEqual([]);
+        await expect(caller.inherit.getLogs({ lastId: 2_147_483_648 })).resolves.toEqual([]);
         expect(fixture.inheritanceLogFindMany).toHaveBeenCalledWith({
-            where: { userId: 'user-1', id: { lt: 2_147_483_647 } },
+            where: { userId: 'user-1', id: { lt: 2_147_483_648 } },
             orderBy: { id: 'desc' },
             take: 30,
             select: { id: true, year: true, month: true, text: true, createdAt: true },
         });
     });
 
-    it.each([0, -1, 1.5, 2_147_483_648])('rejects an invalid inheritance-log cursor: %s', async (lastId) => {
-        const fixture = buildContext({});
+    it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+        'rejects an invalid inheritance-log cursor: %s',
+        async (lastId) => {
+            const fixture = buildContext({});
 
-        await expect(appRouter.createCaller(fixture.context).inherit.getLogs({ lastId })).rejects.toMatchObject({
-            code: 'BAD_REQUEST',
-        });
-        expect(fixture.inheritanceLogFindMany).not.toHaveBeenCalled();
-    });
+            await expect(appRouter.createCaller(fixture.context).inherit.getLogs({ lastId })).rejects.toMatchObject({
+                code: 'BAD_REQUEST',
+            });
+            expect(fixture.inheritanceLogFindMany).not.toHaveBeenCalled();
+        }
+    );
 
     it('delegates the authenticated actor and maps a missing-general daemon rejection', async () => {
         const fixture = buildContext({

@@ -208,6 +208,17 @@ no-op, unique/FK/index, runtime query와 reload를 확인합니다. 기존 migra
 파일과 checksum은 수정하지 않습니다. `prisma db push`는 격리 fixture의
 일시적 schema 준비에만 사용합니다.
 
+### 랭킹·고빈도 저장 ID 확장 회귀
+
+격리된 개발 DB URL을 환경으로 주입해 `RANK_DATA_MIGRATION_TEST_DATABASE_URL=...`
+`pnpm --filter @sammo-ts/infra verify:migration:rank-data`를 실행합니다. URL은 출력하지
+않습니다. 검증기는 소유한 UUID schema에서 INT 시퀀스 소진을 재현하고 10개 대상의 기존 데이터·
+인덱스·접속 통계 FK 보존, BIGINT 전환, 전체 migration과 두 번째 deploy의 no-op을 검사합니다.
+실제 턴 저장 SQL은 조건부 runner의 `IMMEDIATE_ACTION_DATABASE_URL`과
+`rankDataPersistence.integration.test.ts`가 batch 경계, ID 재사용, 32비트 초과 ID의
+Prisma reload, 유일성 및 transaction rollback을 검증합니다. `log_entry`·`inheritance_log`의 API 숫자 cursor는
+`Number.MAX_SAFE_INTEGER`까지 정확성을 보장하며 그 이상은 명시적으로 거부합니다.
+
 ## 결과 기록
 
 Report에는 실행 명령, commit, 서비스와 fixture, pass/fail/skip 수, baseline

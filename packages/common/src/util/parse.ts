@@ -86,3 +86,17 @@ export const parseJson = <T>(raw: string | null): T | null => {
         return null;
     }
 };
+
+/** Preserve numeric API cursors beyond int4 without silently rounding a bigint. */
+export const toSafeInteger = (value: bigint | number): number => {
+    const result = Number(value);
+    if (!Number.isSafeInteger(result)) {
+        throw new RangeError('Integer exceeds the exact numeric transport range');
+    }
+    return result;
+};
+
+export const withSafeIntegerId = <Row extends { id: bigint | number }>(row: Row): Omit<Row, 'id'> & { id: number } => ({
+    ...row,
+    id: toSafeInteger(row.id),
+});

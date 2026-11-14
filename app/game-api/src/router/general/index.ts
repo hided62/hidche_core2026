@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getBillByLevel, LogCategory, LogScope } from '@sammo-ts/logic';
-import { asRecord, readOfficeRequest, type RankDataType } from '@sammo-ts/common';
+import { asRecord, readOfficeRequest, toSafeInteger, withSafeIntegerId, type RankDataType } from '@sammo-ts/common';
 
 import type { GameApiContext } from '../../context.js';
 import {
@@ -588,10 +588,7 @@ export const getGeneralContext = async (ctx: GameApiContext) => {
             recentWar: general.recentWarTime?.toISOString() ?? null,
             defenceTrain: settings.defence_train,
             killTurn: readNumber(metaRecord.killturn ?? metaRecord.killTurn, 0),
-            remainingMinutes: resolveRemainingMinutes(
-                general.turnTime,
-                gameTime.now
-            ),
+            remainingMinutes: resolveRemainingMinutes(general.turnTime, gameTime.now),
             crewTypeId: general.crewTypeId,
             crewTypeName: crewTypeDetails.get(general.crewTypeId)?.name ?? '-',
             crewTypeInfo: crewTypeDetails.get(general.crewTypeId) ?? null,
@@ -916,7 +913,7 @@ export const generalRouter = router({
             return {
                 type: input.type,
                 logs: logs.map((entry) => ({
-                    id: entry.id,
+                    id: toSafeInteger(entry.id),
                     text: entry.text,
                 })),
             };
@@ -966,9 +963,9 @@ export const generalRouter = router({
             ]);
 
             return {
-                global: trimRecentRecords(global, input.lastGeneralRecordId),
-                general: trimRecentRecords(general, input.lastGeneralRecordId),
-                history: trimRecentRecords(history, input.lastWorldHistoryId),
+                global: trimRecentRecords(global.map(withSafeIntegerId), input.lastGeneralRecordId),
+                general: trimRecentRecords(general.map(withSafeIntegerId), input.lastGeneralRecordId),
+                history: trimRecentRecords(history.map(withSafeIntegerId), input.lastWorldHistoryId),
             };
         }),
     // 메인 화면은 SSE invalidation, 탭 복귀와 직접 갱신이 같은 read model을

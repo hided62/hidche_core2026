@@ -119,7 +119,7 @@ export interface RealtimeReadModelBaseline {
 }
 
 export type PersistedVisibleLogRow = {
-    id: number;
+    id: number | bigint;
     scope: LogScope;
     category: LogCategory;
     generalId: number | null;
@@ -831,17 +831,28 @@ const buildPersistedGeneralMeta = (
 
 const RANK_DATA_UPSERT_BATCH_SIZE = 1_000;
 
-const upsertRankRows = async (
+export const upsertRankRows = async (
     prisma: GamePrisma.TransactionClient,
     rows: Array<{ generalId: number; nationId: number; type: string; value: number }>
 ): Promise<void> => {
     for (let offset = 0; offset < rows.length; offset += RANK_DATA_UPSERT_BATCH_SIZE) {
         const batch = rows.slice(offset, offset + RANK_DATA_UPSERT_BATCH_SIZE);
+        // Ref와 같은 (장수, 항목) 값을 저장한다. 이미 있는 행의 ID를 재사용해
+        // 매 턴 44종 갱신마다 nextval을 소비하지 않고, 신규 행만 시퀀스를 사용한다.
+        // 동시 신규 insert 경합은 기존 ON CONFLICT 계약으로 처리한다.
         await prisma.$executeRaw(GamePrisma.sql`
-            INSERT INTO "rank_data" ("general_id", "nation_id", "type", "value")
-            VALUES ${GamePrisma.join(
-                batch.map((row) => GamePrisma.sql`(${row.generalId}, ${row.nationId}, ${row.type}, ${row.value})`)
-            )}
+            INSERT INTO "rank_data" ("id", "general_id", "nation_id", "type", "value")
+            SELECT
+                COALESCE(existing."id", nextval(pg_get_serial_sequence('rank_data', 'id'))),
+                incoming."general_id", incoming."nation_id", incoming."type", incoming."value"
+            FROM (VALUES ${GamePrisma.join(
+                batch.map(
+                    (row) =>
+                        GamePrisma.sql`(${row.generalId}::integer, ${row.nationId}::integer, ${row.type}::text, ${row.value}::integer)`
+                )
+            )}) AS incoming("general_id", "nation_id", "type", "value")
+            LEFT JOIN "rank_data" AS existing
+                ON existing."general_id" = incoming."general_id" AND existing."type" = incoming."type"
             ON CONFLICT ("general_id", "type") DO UPDATE
             SET
                 "nation_id" = EXCLUDED."nation_id",
@@ -1129,7 +1140,7 @@ export const createDatabaseTurnHooks = async (
     const persistChanges = async (
         transaction?: GamePrisma.TransactionClient,
         commandCompletion?: { requestId: string; result: TurnDaemonCommandResult },
-        directLogFloor?: number
+        directLogFloor?: number | bigint
     ): Promise<{
         acknowledge: () => void;
         readModelChanges: RealtimeReadModelChanges;

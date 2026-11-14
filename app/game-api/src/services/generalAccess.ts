@@ -230,7 +230,7 @@ export const upsertGeneralAccess = async (
     await db.$transaction(async (transaction) => {
         await acquireGameSchemaAdvisoryXactLock(transaction, GENERAL_ACCESS_PERSISTENCE_LOCK);
         const periodKey = input.year * 12 + input.month - 1;
-        const periodRows = await transaction.$queryRaw<Array<{ id: number }>>(
+        const periodRows = await transaction.$queryRaw<Array<{ id: bigint }>>(
             GamePrisma.sql`
                 WITH latest_period AS (
                     SELECT MAX(year * 12 + month - 1)::INTEGER AS period_key

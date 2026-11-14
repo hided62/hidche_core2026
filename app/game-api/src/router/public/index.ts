@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { asNumber, asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord, withSafeIntegerId } from '@sammo-ts/common';
 import { LEGACY_DEFAULT_MAX_LEVEL, LogCategory, LogScope } from '@sammo-ts/logic';
 import { z } from 'zod';
 
@@ -306,7 +306,7 @@ export const publicRouter = router({
         }
         const snapshot = {
             ...map,
-            history,
+            history: history.map(withSafeIntegerId),
         };
         await ctx.redis.set(cacheKey, JSON.stringify(snapshot), { EX: PUBLIC_CACHE_TTL_SECONDS });
         return snapshot;

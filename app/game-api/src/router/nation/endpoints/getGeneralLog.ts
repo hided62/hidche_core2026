@@ -1,3 +1,4 @@
+import { toSafeInteger } from '@sammo-ts/common';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -77,7 +78,7 @@ export const getGeneralLog = accessLimitAuthedInputProcedure(
         type: input.type,
         generalId: target.id,
         logs: logs.map((entry) => ({
-            id: entry.id,
+            id: toSafeInteger(entry.id),
             text: entry.text,
             year: entry.year,
             month: entry.month,

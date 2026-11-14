@@ -38,8 +38,8 @@ const buildContext = () => {
         },
         logEntry: {
             findMany: vi.fn(async () => [
-                { id: 9, text: '<Y>최근 정세</>' },
-                { id: 8, text: '이전 정세' },
+                { id: 9n, text: '<Y>최근 정세</>' },
+                { id: 8n, text: '이전 정세' },
             ]),
         },
         $queryRaw: vi

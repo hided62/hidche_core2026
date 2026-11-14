@@ -1,3 +1,4 @@
+import { withSafeIntegerId } from '@sammo-ts/common';
 import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
@@ -129,6 +130,6 @@ export const getNationInfo = authedProcedure.query(async ({ ctx }) => {
             name: city.name,
             capital: city.id === nation.capitalCityId,
         })),
-        history,
+        history: history.map(withSafeIntegerId),
     };
 });

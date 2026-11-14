@@ -372,7 +372,7 @@ model NpcSelectionToken {
 }
 
 model GeneralAccessLog {
-  id                Int       @id @default(autoincrement())
+  id                BigInt    @id @default(autoincrement())
   generalId         Int       @unique @map("general_id")
   userId            String?   @map("user_id")
   lastRefresh       DateTime? @map("last_refresh")
@@ -396,7 +396,7 @@ model GeneralAccessBatch {
 }
 
 model TrafficPeriod {
-  id           Int      @id @default(autoincrement())
+  id           BigInt   @id @default(autoincrement())
   worldStateId Int      @map("world_state_id")
   year         Int
   month        Int
@@ -414,7 +414,7 @@ model TrafficPeriod {
 }
 
 model TrafficPeriodGeneral {
-  periodId    Int      @map("period_id")
+  periodId    BigInt   @map("period_id")
   generalId   Int      @map("general_id")
   userId      String?  @map("user_id")
   refresh     Int      @default(0)
@@ -482,7 +482,7 @@ model MessageAction {
 }
 
 model RankData {
-  id        Int    @id @default(autoincrement())
+  id        BigInt @id @default(autoincrement())
   nationId  Int    @default(0) @map("nation_id")
   generalId Int    @map("general_id")
   type      String @db.VarChar(20)
@@ -679,7 +679,7 @@ model Troop {
 }
 
 model GeneralTurn {
-  id         Int      @id @default(autoincrement())
+  id         BigInt   @id @default(autoincrement())
   generalId  Int      @map("general_id")
   turnIdx    Int      @map("turn_idx")
   actionCode String   @map("action_code")
@@ -701,7 +701,7 @@ model GeneralTurnRevision {
 }
 
 model NationTurn {
-  id           Int      @id @default(autoincrement())
+  id           BigInt   @id @default(autoincrement())
   nationId     Int      @map("nation_id")
   officerLevel Int      @map("officer_level")
   turnIdx      Int      @map("turn_idx")
@@ -726,7 +726,7 @@ model NationTurnRevision {
 }
 
 model Diplomacy {
-  id           Int      @id @default(autoincrement())
+  id           BigInt   @id @default(autoincrement())
   srcNationId  Int      @map("src_nation_id")
   destNationId Int      @map("dest_nation_id")
   stateCode    Int      @map("state_code")
@@ -790,7 +790,7 @@ model Event {
 }
 
 model LogEntry {
-  id        Int         @id @default(autoincrement())
+  id        BigInt      @id @default(autoincrement())
   serverId  String?     @map("server_id")
   scope     LogScope
   category  LogCategory
@@ -812,7 +812,7 @@ model LogEntry {
 }
 
 model ErrorLog {
-  id        Int      @id @default(autoincrement())
+  id        BigInt   @id @default(autoincrement())
   category  String
   source    String?  @map("source")
   message   String
@@ -825,7 +825,7 @@ model ErrorLog {
 }
 
 model InheritancePoint {
-  id        Int      @id @default(autoincrement())
+  id        BigInt   @id @default(autoincrement())
   userId    String   @map("user_id")
   key       String
   value     Float    @default(0)
@@ -878,7 +878,7 @@ model NationBet {
 }
 
 model InheritanceLog {
-  id        Int      @id @default(autoincrement())
+  id        BigInt   @id @default(autoincrement())
   legacyId  Int?     @unique @map("legacy_id")
   userId    String   @map("user_id")
   serverId  String?  @map("server_id")
