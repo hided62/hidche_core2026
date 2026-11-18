@@ -48,6 +48,7 @@ export interface TurnCommandAvailability {
     name: string;
     turnDurationText?: string;
     costText?: string;
+    statExperienceText?: string;
     reqArg: boolean;
     possible: boolean;
     status: AvailabilityStatus;
@@ -150,6 +151,39 @@ const REF_GENERAL_COMMAND_GROUPS = [
     category: string;
     commands: ReadonlyArray<GeneralTurnCommandKey>;
 }>;
+
+// Ref 명령 선택기의 경험 종류를 복원하며, 결과나 병종에 따라 달라지는 경우는 따로 표시한다.
+const GENERAL_COMMAND_STAT_EXPERIENCE = {
+    '통솔 경험': [
+        'che_강행',
+        'che_귀환',
+        'che_등용',
+        'che_모병',
+        'che_사기진작',
+        'che_선동',
+        'che_숙련전환',
+        'che_이동',
+        'che_전투태세',
+        'che_정착장려',
+        'che_주민선정',
+        'che_증여',
+        'che_집합',
+        'che_징병',
+        'che_첩보',
+        'che_헌납',
+        'che_훈련',
+        'cr_맹훈련',
+    ],
+    '무력 경험': ['che_성벽보수', 'che_수비강화', 'che_치안강화', 'che_탈취', 'che_파괴'],
+    '지력 경험': ['che_기술연구', 'che_농지개간', 'che_상업투자', 'che_화계'],
+    '무작위 능력치 경험': ['che_군량매매', 'che_단련', 'che_물자조달', 'che_인재탐색'],
+    '무작위 능력치 경험 가능': ['che_견문'],
+    '병종별 능력치 경험': ['che_출병'],
+} as const satisfies Record<string, readonly GeneralTurnCommandKey[]>;
+
+const statExperienceByCommand = new Map<string, string>(
+    Object.entries(GENERAL_COMMAND_STAT_EXPERIENCE).flatMap(([text, keys]) => keys.map((key) => [key, text] as const))
+);
 
 const REF_NATION_COMMAND_GROUPS = [
     {
@@ -858,11 +892,13 @@ const buildGroups = (
         // 개인·국가 모두 실행 정의의 준비 턴과 마지막 실행 턴을 표시한다.
         const turnDurationText = getTurnDurationText(entry.definition);
         const costText = getCommandCostText(entry, ctx, view, env);
+        const statExperienceText = scope === 'general' ? statExperienceByCommand.get(entry.definition.key) : undefined;
         const value: TurnCommandAvailability = {
             key: entry.definition.key,
             name: entry.definition.name,
             ...(turnDurationText ? { turnDurationText } : {}),
             ...(costText ? { costText } : {}),
+            ...(statExperienceText ? { statExperienceText } : {}),
             reqArg: entry.reqArg,
             inputFields: entry.inputFields,
             ...availability,

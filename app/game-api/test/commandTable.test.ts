@@ -504,6 +504,37 @@ describe('buildTurnCommandTable', () => {
         }
     });
 
+    it('projects stat experience hints for general commands without promising a fixed stat increase', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState(),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+        const find = (key: string) => table.general.flatMap(({ values }) => values).find((entry) => entry.key === key);
+        const expected = {
+            che_선동: '통솔 경험',
+            che_탈취: '무력 경험',
+            che_파괴: '무력 경험',
+            che_화계: '지력 경험',
+            che_이동: '통솔 경험',
+            che_수비강화: '무력 경험',
+            che_상업투자: '지력 경험',
+            che_물자조달: '무작위 능력치 경험',
+            che_인재탐색: '무작위 능력치 경험',
+            che_견문: '무작위 능력치 경험 가능',
+            che_출병: '병종별 능력치 경험',
+        };
+        for (const [key, statExperienceText] of Object.entries(expected)) {
+            expect(find(key)).toMatchObject({ statExperienceText });
+        }
+        expect(find('휴식')?.statExperienceText).toBeUndefined();
+        expect(
+            table.nation.flatMap(({ values }) => values).every(({ statExperienceText }) => !statExperienceText)
+        ).toBe(true);
+    });
+
     it('projects the Ref twenty-year non-aggression end-year window', async () => {
         const table = await buildTurnCommandTable({
             worldState: buildWorldState(),

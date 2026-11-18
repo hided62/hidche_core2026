@@ -1545,6 +1545,77 @@ test('shows speciality reset cooldowns and reserves special user commands from t
     await picker.screenshot({ path: test.info().outputPath('special-user-commands-mobile-500.png') });
 });
 
+test('shows stat experience next to strategy commands and preserves reservation on desktop and mobile', async ({
+    page,
+}, testInfo) => {
+    const strategy = commandTable.general.find(({ category }) => category === '계략')!;
+    const requests = await install(page, false, {
+        general: [
+            {
+                ...strategy,
+                values: strategy.values.map((command, index) => ({
+                    ...command,
+                    statExperienceText: ['지력 경험', '통솔 경험', '무력 경험', '무력 경험'][index],
+                    costText: '금 500 · 쌀 500',
+                })),
+            },
+        ],
+        nation: [],
+        inputOptions,
+    });
+    for (const viewport of [
+        { width: 1365, height: 900 },
+        { width: 390, height: 844 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto(gamePath('/'));
+        await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+        const picker = page.getByTestId('command-picker');
+        const fire = picker.getByRole('button', { name: /화계.*지력 경험/ });
+        await expect(picker.locator('.command-stat-experience')).toHaveText([
+            '(지력 경험)',
+            '(통솔 경험)',
+            '(무력 경험)',
+            '(무력 경험)',
+        ]);
+        await expect(fire.locator('.command-cost')).toHaveText('금 500 · 쌀 500');
+        await expect(fire).toHaveClass(/blocked reservable/);
+        await expect(fire).toHaveAttribute('title', '현재 조건에서는 실행할 수 없습니다.');
+        await expect(fire).toBeEnabled();
+        await page.evaluate(() => document.fonts.ready);
+        await fire.hover();
+        await fire.focus();
+        await expect(fire).toBeFocused();
+        const geometry = await picker.locator('.command-item').evaluateAll((buttons) =>
+            buttons.map((button) => {
+                const experience = button.querySelector('.command-stat-experience')!;
+                return {
+                    button: button.getBoundingClientRect().toJSON(),
+                    hint: experience.getBoundingClientRect().toJSON(),
+                    overflow: button.scrollWidth - button.clientWidth,
+                    hintFont: getComputedStyle(experience).font,
+                };
+            })
+        );
+        expect(geometry.every(({ button, hint, overflow }) => overflow <= 0 && hint.right <= button.right)).toBe(true);
+        const artifact = `general-stat-experience-${viewport.width}`;
+        await writeFile(
+            testInfo.outputPath(`${artifact}.json`),
+            JSON.stringify({ url: page.url(), geometry }, null, 2)
+        );
+        await writeFile(testInfo.outputPath(`${artifact}.html`), await picker.evaluate((element) => element.outerHTML));
+        await picker.screenshot({ path: testInfo.outputPath(`${artifact}.png`) });
+        await fire.click();
+        const form = page.getByTestId('command-argument-form');
+        await form.locator('select').first().selectOption('2');
+        await page.getByRole('button', { name: '화계 입력', exact: true }).click();
+        await expect(page.locator('[data-command-scope="general"] .action-column > div').first()).toHaveText(
+            '【허창】에 화계실행'
+        );
+    }
+    expect(JSON.stringify(requests)).toContain('"action":"che_화계","args":{"destCityId":2}');
+});
+
 test('shows general command durations from metadata on desktop and mobile', async ({ page }) => {
     const requests = await install(page, false, {
         general: [

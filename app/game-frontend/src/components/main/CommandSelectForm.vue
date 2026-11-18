@@ -1,30 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import type { CommandAvailability, CommandGroup, CommandTable } from '../command/types';
 import SkeletonLines from '../ui/SkeletonLines.vue';
 
-type CommandAvailability = {
-    key: string;
-    name: string;
-    turnDurationText?: string;
-    costText?: string;
-    reqArg: boolean;
-    status: 'available' | 'blocked' | 'needsInput' | 'unknown';
-    possible: boolean;
-    reason?: string;
-};
-
-type CommandGroup = {
-    category: string;
-    values: CommandAvailability[];
-};
-
-type CommandTable = {
-    general: CommandGroup[];
-    nation: CommandGroup[];
-};
-
 const props = defineProps<{
-    commandTable: CommandTable | null;
+    commandTable: Pick<CommandTable, 'general' | 'nation'> | null;
     loading: boolean;
     activeCategory?: string;
     scope?: 'all' | 'general' | 'nation';
@@ -162,7 +142,12 @@ const commandTitle = (command: CommandAvailability) =>
                     :title="commandTitle(command)"
                     @click="emit('select', command.key)"
                 >
-                    <span class="command-name">{{ command.name }}</span>
+                    <span class="command-heading">
+                        <span class="command-name">{{ command.name }}</span>
+                        <small v-if="command.statExperienceText" class="command-stat-experience">
+                            ({{ command.statExperienceText }})
+                        </small>
+                    </span>
                     <small v-if="command.turnDurationText" class="command-duration">
                         /{{ command.turnDurationText }}
                     </small>
@@ -247,6 +232,13 @@ const commandTitle = (command: CommandAvailability) =>
 
 .command-name {
     font-weight: 600;
+}
+
+.command-stat-experience {
+    display: inline-block;
+    margin-inline-start: 0.3em;
+    font-size: var(--sammo-font-size-smaller);
+    white-space: nowrap;
 }
 
 .command-duration {

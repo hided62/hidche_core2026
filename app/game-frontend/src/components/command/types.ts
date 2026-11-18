@@ -86,6 +86,7 @@ export type CommandAvailability = {
     name: string;
     turnDurationText?: string;
     costText?: string;
+    statExperienceText?: string;
     reqArg: boolean;
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;
