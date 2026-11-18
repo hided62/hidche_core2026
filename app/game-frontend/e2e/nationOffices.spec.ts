@@ -461,12 +461,29 @@ test('personnel selects an informed general and reports the JosaUtil-composed re
         /허저/,
         /장료/,
     ]);
-    await picker.getByPlaceholder('장수명·도시·관직·특성 검색').fill('장료');
+    const search = picker.getByPlaceholder('장수명·도시·관직·특성 검색');
+    const vacancy = picker.getByRole('button', { name: /공석으로 두기/ });
+    await expect(vacancy).toBeVisible();
+    await search.fill('  ');
+    await expect(vacancy).toBeVisible();
+    await search.fill('허창');
+    await expect(vacancy).toHaveCount(0);
+    expect(await picker.locator('.personnel-picker-card').count()).toBeGreaterThan(1);
+    await search.fill('없는장수');
+    await expect(vacancy).toHaveCount(0);
+    await expect(picker.getByText('검색 조건에 맞는 후보가 없습니다.')).toBeVisible();
+    await search.clear();
+    await expect(vacancy).toBeVisible();
+    await search.fill('장료');
+    await expect(vacancy).toHaveCount(0);
     const candidate = picker.getByRole('button', { name: /장료/ });
     await expect(candidate).toContainText('허창 · 일반 장수');
     await expect(candidate).toContainText('통솔70');
     await expect(candidate).toContainText('소속10년');
     await expect(candidate).toContainText('병력100');
+    await search.press('Tab');
+    await expect(candidate).toBeFocused();
+    expect(state.appointedGeneralId).toBeUndefined();
     await candidate.hover();
     expect(await candidate.evaluate((button) => getComputedStyle(button).cursor)).toBe('pointer');
     await candidate.focus();
@@ -588,6 +605,52 @@ test('personnel reflows row-level appointments at 500px and 390px without gradie
     expect(narrowChiefWidth).toBeGreaterThan(194);
     expect(narrowChiefWidth).toBeLessThan(196);
     await screenshot(page, 'core-personnel-mobile-rows.png');
+});
+
+test('personnel hides vacancy during mobile search and keeps intentional vacancy available after clearing', async ({
+    page,
+}, testInfo) => {
+    const state: FixtureState = { role: 'head', rate: 20 };
+    await installFixture(page, state);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoOffice(page, 'nation/personnel');
+    const change = page.getByRole('button', { name: '허창 태수 변경하기', exact: true });
+    await change.click();
+    const picker = page.getByTestId('personnel-selection-dialog');
+    const search = picker.getByRole('searchbox');
+    const vacancy = picker.getByRole('button', { name: /공석으로 두기/ });
+    await expect(search).toBeFocused();
+    await expect(vacancy).toBeVisible();
+    await search.fill('장료');
+    await expect(picker.getByRole('button', { name: /장료/ })).toBeVisible();
+    await expect(vacancy).toHaveCount(0);
+    await expect(picker).toHaveCSS('transform', 'none');
+    await page.evaluate(() => document.fonts.ready);
+    const geometry = await picker.evaluate((element) => ({
+        url: location.href,
+        rect: element.getBoundingClientRect().toJSON(),
+        overflow: element.scrollWidth - element.clientWidth,
+        candidateFont: getComputedStyle(element.querySelector('.personnel-picker-card')!).font,
+    }));
+    expect(geometry.overflow).toBeLessThanOrEqual(0);
+    await writeFile(testInfo.outputPath('personnel-search-mobile.json'), JSON.stringify(geometry, null, 2));
+    await writeFile(testInfo.outputPath('personnel-search-mobile.html'), await picker.evaluate((el) => el.outerHTML));
+    await screenshot(page, 'personnel-search-mobile.png');
+    await search.press('Escape');
+    await expect(picker).toBeHidden();
+    await expect(change).toBeFocused();
+    expect(state.appointedGeneralId).toBeUndefined();
+
+    await change.click();
+    await search.fill('장료');
+    await expect(vacancy).toHaveCount(0);
+    await search.clear();
+    await vacancy.click();
+    await acceptAppConfirmation(page, '허창 태수직을 비우시겠습니까?');
+    await expect(page.getByTestId('game-toast')).toContainText('관직을 비웠습니다.');
+    expect(state.appointedGeneralId).toBe(0);
+    expect(state.appointedCityId).toBe(1);
+    expect(state.appointedOfficerLevel).toBe(4);
 });
 
 test('personnel chooses a kick target in the informed picker and double-confirms a user general', async ({ page }) => {

@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
 
                     <div class="personnel-picker-results" aria-label="선택 후보">
                         <button
-                            v-if="vacancyLabel"
+                            v-if="vacancyLabel && !normalizedQuery"
                             type="button"
                             class="personnel-picker-card vacancy-card"
                             :class="{ selected: selectedId === 0 }"
