@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SystemClock } from '@sammo-ts/common';
+import {
+    hasRealtimeReadModelInvalidation,
+    parseReadModelOutboxPayload,
+    readModelOutboxPayloadToChanges,
+    resolveRealtimeReadModelInvalidation,
+    SystemClock,
+    type TurnDaemonCommand,
+} from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 import type { MapDefinition, ScenarioConfig, ScenarioMeta, TurnSchedule } from '@sammo-ts/logic';
 
@@ -182,6 +189,7 @@ integration('immediate general action persistence', () => {
             },
         });
         await db.message.deleteMany({ where: { mailbox: { in: [generalId, generalId + 1] } } });
+        await db.troop.deleteMany({ where: { troopLeaderId: generalId } });
         await db.general.deleteMany({ where: { id: { in: [generalId, generalId + 1] } } });
         await db.city.deleteMany({ where: { id: cityId } });
         await db.nation.deleteMany({ where: { id: { gte: existingNationId } } });
@@ -292,11 +300,173 @@ integration('immediate general action persistence', () => {
             },
         });
         await db.message.deleteMany({ where: { mailbox: { in: [generalId, generalId + 1] } } });
+        await db.troop.deleteMany({ where: { troopLeaderId: generalId } });
         await db.general.deleteMany({ where: { id: { in: [generalId, generalId + 1] } } });
         await db.city.deleteMany({ where: { id: cityId } });
         await db.nation.deleteMany({ where: { id: { gte: existingNationId } } });
         await db.worldState.deleteMany({ where: { id: worldId } });
         await disconnect?.();
+    });
+
+    it('commits troop commands with world state, read-model changes, and no lobby refresh', async () => {
+        const memberId = generalId + 1;
+        const memberUserId = 'immediate-troop-member';
+        const leaderUserId = general.userId!;
+        await db.general.update({ where: { id: generalId }, data: { nationId: existingNationId } });
+        await db.general.create({
+            data: {
+                id: memberId,
+                userId: memberUserId,
+                name: '부대원',
+                nationId: existingNationId,
+                cityId,
+                turnTime: general.turnTime,
+                meta: { killturn: 24 },
+            },
+        });
+
+        const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+        });
+        const handler = createTurnDaemonCommandHandler({ world });
+        const queue = new DatabaseTurnDaemonCommandQueue(db);
+        await queue.initialize();
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        const stateManager = new EngineStateManager();
+        stateManager.register('world', {
+            capture: () => world.captureState(),
+            restore: (saved) => world.restoreState(saved),
+        });
+
+        type TroopCommand = Extract<TurnDaemonCommand, { type: `troop${string}` }>;
+        const execute = (id: string, command: TroopCommand) =>
+            stateManager.transaction(() =>
+                hooks.hooks.executeCommand!(id, async (context) => {
+                    const result = await handler.handle({ ...command, requestId: id }, context);
+                    if (!result) throw new Error('Missing troop command result.');
+                    return result;
+                })
+            );
+        const checkWorld = async (name: string | null, memberTroopId: number) => {
+            const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+            const expectedTroop = name === null ? null : { id: generalId, nationId: existingNationId, name };
+            expect(world.getTroopById(generalId)).toEqual(expectedTroop);
+            expect(reloaded.snapshot.troops.find(({ id }) => id === generalId) ?? null).toEqual(expectedTroop);
+            for (const [id, troopId] of [
+                [generalId, name === null ? 0 : generalId],
+                [memberId, memberTroopId],
+            ]) {
+                expect(world.getGeneralById(id)?.troopId).toBe(troopId);
+                expect(reloaded.snapshot.generals.find((entry) => entry.id === id)?.troopId).toBe(troopId);
+            }
+        };
+
+        const leader = { generalId, userId: leaderUserId };
+        const member = { generalId: memberId, userId: memberUserId };
+        const join = { type: 'troopJoin', ...member, troopId: generalId } as const;
+        const steps: {
+            command: TroopCommand;
+            name: string | null;
+            memberTroopId: number;
+            changedGenerals: number[];
+        }[] = [
+            {
+                command: { type: 'troopCreate', ...leader, troopName: '백마대' },
+                name: '백마대',
+                memberTroopId: 0,
+                changedGenerals: [generalId],
+            },
+            { command: join, name: '백마대', memberTroopId: generalId, changedGenerals: [memberId] },
+            {
+                command: { type: 'troopRename', ...leader, troopId: generalId, troopName: '청룡대' },
+                name: '청룡대',
+                memberTroopId: generalId,
+                changedGenerals: [],
+            },
+            {
+                command: { type: 'troopKick', ...leader, troopId: generalId, targetGeneralId: memberId },
+                name: '청룡대',
+                memberTroopId: 0,
+                changedGenerals: [memberId],
+            },
+            { command: join, name: '청룡대', memberTroopId: generalId, changedGenerals: [memberId] },
+            {
+                command: { type: 'troopExit', ...member },
+                name: '청룡대',
+                memberTroopId: 0,
+                changedGenerals: [memberId],
+            },
+            { command: join, name: '청룡대', memberTroopId: generalId, changedGenerals: [memberId] },
+            {
+                command: { type: 'troopExit', ...leader },
+                name: null,
+                memberTroopId: 0,
+                changedGenerals: [generalId, memberId],
+            },
+        ];
+        try {
+            for (const [index, { command, name, memberTroopId, changedGenerals }] of steps.entries()) {
+                const id = `${requestId}:troop:${index}`;
+                await db.inputEvent.create({
+                    data: {
+                        requestId: id,
+                        target: 'ENGINE',
+                        eventType: command.type,
+                        actorUserId: command.userId,
+                        payload: { ...command, requestId: id },
+                    },
+                });
+                expect(await queue.drain()).toMatchObject([{ ...command, requestId: id }]);
+                if (command.type === 'troopRename') {
+                    const outboxCount = await db.readModelOutbox.count();
+                    await db.$executeRaw`ALTER TABLE read_model_outbox ADD CONSTRAINT troop_command_rollback CHECK (false) NOT VALID`;
+                    try {
+                        await expect(execute(id, command)).rejects.toThrow('troop_command_rollback');
+                        await checkWorld('백마대', generalId);
+                        expect(hooks.takeCommittedReadModelChangeReceipt()).toBeNull();
+                        await expect(db.readModelOutbox.count()).resolves.toBe(outboxCount);
+                        await expect(
+                            db.inputEvent.findUniqueOrThrow({ where: { requestId: id } })
+                        ).resolves.toMatchObject({
+                            status: 'PROCESSING',
+                            result: null,
+                        });
+                    } finally {
+                        await db.$executeRaw`ALTER TABLE read_model_outbox DROP CONSTRAINT troop_command_rollback`;
+                    }
+                }
+
+                const result = await execute(id, command);
+                expect(result).toMatchObject({ type: command.type, ok: true, generalId: command.generalId });
+                await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId: id } })).resolves.toMatchObject({
+                    status: 'SUCCEEDED',
+                    result,
+                });
+                await checkWorld(name, memberTroopId);
+
+                const receipt = hooks.takeCommittedReadModelChangeReceipt()!;
+                expect(receipt.invalidation.revisions.map(({ domain, entityId }) => [domain, entityId])).toEqual([
+                    ['dashboard.global', 0],
+                    ...changedGenerals.map((id) => ['general.content', id]),
+                ]);
+                const row = await db.readModelOutbox.findUniqueOrThrow({ where: { id: receipt.outboxId } });
+                const changes = readModelOutboxPayloadToChanges(parseReadModelOutboxPayload(row.payload)!);
+                for (const id of [generalId, memberId, null]) {
+                    const invalidation = resolveRealtimeReadModelInvalidation(changes, {
+                        generalId: id,
+                        cityId,
+                        nationId: existingNationId,
+                    });
+                    expect(invalidation.lobby).toBe(false);
+                    expect(hasRealtimeReadModelInvalidation(invalidation)).toBe(
+                        id !== null && changedGenerals.includes(id)
+                    );
+                }
+            }
+        } finally {
+            await hooks.close();
+        }
     });
 
     it.each([

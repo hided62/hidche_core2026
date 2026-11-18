@@ -26,10 +26,7 @@ import {
     createItemModuleRegistry,
     GeneralActionPipeline,
     isDefenceTrainPenaltyWaivedByScenarioEffect,
-    isValidTroopNameWidth,
     loadItemModules,
-    normalizeTroopName,
-    resolveTroopSecretPermission,
     resolveMessageTargetIcon,
     readDiplomacyMeta,
     type GeneralActionModule,
@@ -59,11 +56,7 @@ import {
 } from './reservedTurnHandler.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { openAuction } from '../auction/opener.js';
-import {
-    hasScenarioStaticEventHandler,
-    IMMEDIATE_TROOP_JOIN_MOVE_HANDLER,
-    LEGACY_TROOP_JOIN_EVENT,
-} from './scenarioStaticEvents.js';
+import { handleTroopCommand, isTroopCommand, type TroopCommand } from './troopCommands.js';
 import {
     createGeneralFromSelectionPool,
     reserveSelectionPool,
@@ -177,11 +170,6 @@ const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
 
 const ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST = [
     'tournamentAdjustGeneral',
-    'troopCreate',
-    'troopJoin',
-    'troopExit',
-    'troopKick',
-    'troopRename',
     'vacation',
     'setMySetting',
     'dropItem',
@@ -198,7 +186,7 @@ const ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST = [
 type ActorBoundGeneralCommandType = (typeof ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST)[number];
 const ACTOR_BOUND_GENERAL_COMMAND_TYPES = new Set<ActorBoundGeneralCommandType>(ACTOR_BOUND_GENERAL_COMMAND_TYPE_LIST);
 
-type ActorBoundGeneralCommand = Extract<TurnDaemonCommand, { type: ActorBoundGeneralCommandType }>;
+type ActorBoundGeneralCommand = TroopCommand | Extract<TurnDaemonCommand, { type: ActorBoundGeneralCommandType }>;
 
 const isActorBoundGeneralCommand = (command: TurnDaemonCommand): command is ActorBoundGeneralCommand =>
     ACTOR_BOUND_GENERAL_COMMAND_TYPES.has(command.type as ActorBoundGeneralCommandType);
@@ -214,7 +202,7 @@ const rejectActorBoundGeneralCommand = (
 });
 
 const validateActorBoundGeneralCommand = async (
-    ctx: CommandHandlerContext,
+    ctx: Pick<CommandHandlerContext, 'world' | 'commandDb'>,
     command: ActorBoundGeneralCommand
 ): Promise<TurnDaemonCommandResult | null> => {
     if (!ctx.commandDb) {
@@ -1345,307 +1333,6 @@ async function handleUpdateRuntimeSettings(
         reprojectedMessages,
         reprojectedVotes,
         checkpoint: ctx.world.getCheckpoint(),
-    };
-}
-
-async function handleTroopJoin(
-    ctx: CommandHandlerContext,
-    command: Extract<TurnDaemonCommand, { type: 'troopJoin' }>
-): Promise<TurnDaemonCommandResult> {
-    const { world } = ctx;
-    const general = world.getGeneralById(command.generalId);
-    if (!general) {
-        return {
-            type: 'troopJoin',
-            ok: false,
-            generalId: command.generalId,
-            troopId: command.troopId,
-            reason: '장수 정보를 찾을 수 없습니다.',
-        };
-    }
-    if (general.troopId !== 0) {
-        return {
-            type: 'troopJoin',
-            ok: false,
-            generalId: command.generalId,
-            troopId: command.troopId,
-            reason: '이미 부대에 소속되어 있습니다.',
-        };
-    }
-    if (general.nationId <= 0) {
-        return {
-            type: 'troopJoin',
-            ok: false,
-            generalId: command.generalId,
-            troopId: command.troopId,
-            reason: '국가에 소속되어 있지 않습니다.',
-        };
-    }
-
-    const troop = world.getTroopById(command.troopId);
-    if (!troop || troop.nationId !== general.nationId) {
-        return {
-            type: 'troopJoin',
-            ok: false,
-            generalId: command.generalId,
-            troopId: command.troopId,
-            reason: '부대가 올바르지 않습니다.',
-        };
-    }
-
-    world.updateGeneral(command.generalId, {
-        troopId: command.troopId,
-    });
-    if (
-        hasScenarioStaticEventHandler(
-            world.getScenarioConfig(),
-            LEGACY_TROOP_JOIN_EVENT,
-            IMMEDIATE_TROOP_JOIN_MOVE_HANDLER
-        )
-    ) {
-        const leader = world.getGeneralById(troop.id);
-        if (
-            leader &&
-            leader.troopId === leader.id &&
-            leader.nationId === general.nationId &&
-            leader.cityId !== general.cityId
-        ) {
-            const city = world.getCityById(leader.cityId);
-            if (city) {
-                world.updateGeneral(command.generalId, {
-                    troopId: command.troopId,
-                    cityId: leader.cityId,
-                });
-                const josaRo = JosaUtil.pick(city.name, '로');
-                world.pushLog({
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.PLAIN,
-                    text: `부대 주둔지인 <G><b>${city.name}</b></>${josaRo} 즉시 이동합니다.`,
-                    generalId: general.id,
-                    meta: {},
-                });
-            }
-        }
-    }
-    return {
-        type: 'troopJoin',
-        ok: true,
-        generalId: command.generalId,
-        troopId: command.troopId,
-    };
-}
-
-async function handleTroopCreate(
-    ctx: CommandHandlerContext,
-    command: Extract<TurnDaemonCommand, { type: 'troopCreate' }>
-): Promise<TurnDaemonCommandResult> {
-    const { world } = ctx;
-    const general = world.getGeneralById(command.generalId);
-    if (!general) {
-        return {
-            type: 'troopCreate',
-            ok: false,
-            generalId: command.generalId,
-            reason: '장수 정보를 찾을 수 없습니다.',
-        };
-    }
-
-    const troopName = normalizeTroopName(command.troopName);
-    if (!troopName) {
-        return { type: 'troopCreate', ok: false, generalId: command.generalId, reason: '부대 이름이 없습니다.' };
-    }
-    if (!isValidTroopNameWidth(troopName)) {
-        return {
-            type: 'troopCreate',
-            ok: false,
-            generalId: command.generalId,
-            reason: '부대 이름은 전각 9자 또는 반각 18자 이하여야 합니다.',
-        };
-    }
-    if (general.troopId !== 0 || world.getTroopById(general.id)) {
-        return {
-            type: 'troopCreate',
-            ok: false,
-            generalId: command.generalId,
-            reason: '이미 부대에 소속되어 있습니다.',
-        };
-    }
-    if (general.nationId <= 0 || !world.getNationById(general.nationId)) {
-        return {
-            type: 'troopCreate',
-            ok: false,
-            generalId: command.generalId,
-            reason: '국가에 소속되어 있지 않습니다.',
-        };
-    }
-
-    const troop = world.createTroop({
-        id: general.id,
-        nationId: general.nationId,
-        name: troopName,
-    });
-    if (!troop) {
-        return {
-            type: 'troopCreate',
-            ok: false,
-            generalId: command.generalId,
-            reason: '부대가 생성되지 않았습니다. 버그일 수 있습니다.',
-        };
-    }
-    world.updateGeneral(general.id, { troopId: general.id });
-    return {
-        type: 'troopCreate',
-        ok: true,
-        generalId: general.id,
-        troopId: troop.id,
-        troopName: troop.name,
-    };
-}
-
-async function handleTroopExit(
-    ctx: CommandHandlerContext,
-    command: Extract<TurnDaemonCommand, { type: 'troopExit' }>
-): Promise<TurnDaemonCommandResult> {
-    const { world } = ctx;
-    const general = world.getGeneralById(command.generalId);
-    if (!general) {
-        return {
-            type: 'troopExit',
-            ok: false,
-            generalId: command.generalId,
-            reason: '장수 정보를 찾을 수 없습니다.',
-        };
-    }
-    if (general.troopId === 0) {
-        return {
-            type: 'troopExit',
-            ok: false,
-            generalId: command.generalId,
-            reason: '부대에 소속되어 있지 않습니다.',
-        };
-    }
-
-    if (general.troopId !== general.id) {
-        world.updateGeneral(command.generalId, {
-            troopId: 0,
-        });
-        return {
-            type: 'troopExit',
-            ok: true,
-            generalId: command.generalId,
-            wasLeader: false,
-        };
-    }
-
-    const troopId = general.troopId;
-    const members = world.listGenerals().filter((entry) => entry.troopId === troopId);
-    for (const member of members) {
-        world.updateGeneral(member.id, { troopId: 0 });
-    }
-    world.removeTroop(troopId);
-    return {
-        type: 'troopExit',
-        ok: true,
-        generalId: command.generalId,
-        wasLeader: true,
-    };
-}
-
-async function handleTroopKick(
-    ctx: CommandHandlerContext,
-    command: Extract<TurnDaemonCommand, { type: 'troopKick' }>
-): Promise<TurnDaemonCommandResult> {
-    const fail = (reason: string): TurnDaemonCommandResult => ({
-        type: 'troopKick',
-        ok: false,
-        generalId: command.generalId,
-        troopId: command.troopId,
-        targetGeneralId: command.targetGeneralId,
-        reason,
-    });
-    const { world } = ctx;
-    const actor = world.getGeneralById(command.generalId);
-    if (!actor) {
-        return fail('장수 정보를 찾을 수 없습니다.');
-    }
-    const troop = world.getTroopById(command.troopId);
-    if (
-        command.generalId !== command.troopId ||
-        actor.troopId !== actor.id ||
-        !troop ||
-        troop.id !== actor.id ||
-        troop.nationId !== actor.nationId
-    ) {
-        return fail('권한이 부족합니다.');
-    }
-
-    const target = world.getGeneralById(command.targetGeneralId);
-    if (!target) {
-        return fail('장수 정보를 찾을 수 없습니다.');
-    }
-    if (target.troopId === 0) {
-        return fail('부대에 소속되어 있지 않습니다.');
-    }
-    if (target.troopId !== command.troopId) {
-        return fail('다른 부대에 소속되어 있습니다.');
-    }
-    if (target.id === command.troopId) {
-        return fail('부대장을 추방할 수 없습니다.');
-    }
-
-    world.updateGeneral(target.id, { troopId: 0 });
-    return {
-        type: 'troopKick',
-        ok: true,
-        generalId: actor.id,
-        troopId: troop.id,
-        targetGeneralId: target.id,
-    };
-}
-
-async function handleTroopRename(
-    ctx: CommandHandlerContext,
-    command: Extract<TurnDaemonCommand, { type: 'troopRename' }>
-): Promise<TurnDaemonCommandResult> {
-    const fail = (reason: string): TurnDaemonCommandResult => ({
-        type: 'troopRename',
-        ok: false,
-        generalId: command.generalId,
-        troopId: command.troopId,
-        reason,
-    });
-    const { world } = ctx;
-    const actor = world.getGeneralById(command.generalId);
-    if (!actor) {
-        return fail('장수 정보를 찾을 수 없습니다.');
-    }
-
-    const nation = world.getNationById(actor.nationId);
-    const permission = resolveTroopSecretPermission(actor, nation?.meta ?? {}, false);
-    if (actor.id !== command.troopId && permission < 4) {
-        return fail('권한이 부족합니다.');
-    }
-
-    const troopName = normalizeTroopName(command.troopName);
-    if (!troopName) {
-        return fail('부대 이름이 없습니다.');
-    }
-    if (!isValidTroopNameWidth(troopName)) {
-        return fail('부대 이름은 전각 9자 또는 반각 18자 이하여야 합니다.');
-    }
-
-    const troop = world.getTroopById(command.troopId);
-    if (!troop || actor.nationId <= 0 || troop.nationId !== actor.nationId) {
-        return fail('부대가 없습니다.');
-    }
-    world.updateTroop(troop.id, { name: troopName });
-    return {
-        type: 'troopRename',
-        ok: true,
-        generalId: actor.id,
-        troopId: troop.id,
-        troopName,
     };
 }
 
@@ -3289,13 +2976,6 @@ export const createTurnDaemonCommandHandler = (options: {
     >;
 
     const handlers: HandlerMap = {
-        troopCreate: (command) =>
-            handleTroopCreate(ctx, command as Extract<TurnDaemonCommand, { type: 'troopCreate' }>),
-        troopJoin: (command) => handleTroopJoin(ctx, command as Extract<TurnDaemonCommand, { type: 'troopJoin' }>),
-        troopExit: (command) => handleTroopExit(ctx, command as Extract<TurnDaemonCommand, { type: 'troopExit' }>),
-        troopKick: (command) => handleTroopKick(ctx, command as Extract<TurnDaemonCommand, { type: 'troopKick' }>),
-        troopRename: (command) =>
-            handleTroopRename(ctx, command as Extract<TurnDaemonCommand, { type: 'troopRename' }>),
         ensureDieOnPrestartStatus: (command) =>
             handleEnsureDieOnPrestartStatus(
                 ctx,
@@ -3392,6 +3072,14 @@ export const createTurnDaemonCommandHandler = (options: {
             command,
             executionContext?: TurnDaemonCommandExecutionContext
         ): Promise<TurnDaemonCommandResult | null> => {
+            if (isTroopCommand(command)) {
+                const rejected = await validateActorBoundGeneralCommand(
+                    { world: options.world, commandDb: executionContext?.db },
+                    command
+                );
+                return rejected ?? handleTroopCommand(options.world, command);
+            }
+
             const handler = handlers[command.type];
             if (!handler) {
                 return null;
