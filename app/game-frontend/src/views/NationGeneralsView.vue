@@ -978,10 +978,21 @@ onBeforeUnmount(() => {
                             <template v-else-if="column.id === 'belong'">{{ general.belong }}년</template>
                             <template v-else-if="column.id === 'age'">{{ general.age }}세</template>
                             <template v-else-if="column.id === 'name'">
-                                <span data-general-name :style="{ color: getNpcColor(general.npcState) }">{{
+                                <RouterLink
+                                    v-if="data && data.viewer.permission >= 1"
+                                    class="general-name-link"
+                                    :to="{ name: 'battle-center', query: { generalId: general.id } }"
+                                    :style="{ color: getNpcColor(general.npcState) }"
+                                    target="_blank"
+                                    rel="noopener"
+                                    title="감찰부에서 보기 (새 탭)"
+                                    data-general-name
+                                    >{{ general.name }}</RouterLink
+                                >
+                                <span v-else data-general-name :style="{ color: getNpcColor(general.npcState) }">{{
                                     general.name
-                                }}</span
-                                ><template v-if="general.ownerName"
+                                }}</span>
+                                <template v-if="general.ownerName"
                                     ><br /><small>({{ general.ownerName }})</small></template
                                 >
                             </template>
@@ -1369,6 +1380,14 @@ td {
 .name-cell {
     color: skyblue;
     text-align: left;
+}
+.general-name-link {
+    color: inherit;
+    text-decoration: underline;
+}
+.general-name-link:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 2px;
 }
 .numeric-cell {
     text-align: right;

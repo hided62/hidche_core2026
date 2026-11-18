@@ -387,7 +387,7 @@ const battleCenter = (state: FixtureState) => ({
     ],
 });
 
-const install = async (page: Page, state: FixtureState) => {
+const install = async (page: Page, state: FixtureState, includeAuxiliaryWindows = false) => {
     await page.addInitScript(
         ({ basePath, profile }) => {
             if (location.pathname.startsWith(`${basePath}/`)) {
@@ -397,7 +397,8 @@ const install = async (page: Page, state: FixtureState) => {
         },
         { basePath: gameBasePath, profile: gameProfile }
     );
-    await page.route('**/image/game/**', async (route) => {
+    const routeTarget = includeAuxiliaryWindows ? page.context() : page;
+    await routeTarget.route('**/image/game/**', async (route) => {
         const filename = basename(new URL(route.request().url()).pathname);
         if (
             legacyImageRoot &&
@@ -414,7 +415,7 @@ const install = async (page: Page, state: FixtureState) => {
         }
         await route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') });
     });
-    await page.route(gameTrpcRoute, async (route) => {
+    await routeTarget.route(gameTrpcRoute, async (route) => {
         const operations = operationNames(route);
         const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
         const requestBody =
@@ -670,6 +671,28 @@ const install = async (page: Page, state: FixtureState) => {
                 const pageName = typeof jsonInput.page === 'string' ? jsonInput.page : null;
                 if (pageName) state.accessPages.push(pageName);
                 return response({ recorded: true });
+            }
+            if (operation === 'nation.getGeneralList') {
+                const center = battleCenter(state);
+                return response({
+                    nation: center.nation,
+                    viewer: { generalId: center.me.id, permission: center.me.permissionLevel },
+                    generals: center.generals.map((general) => ({
+                        ...general,
+                        experienceLevel: general.progression.experienceLevel,
+                        dedicationText: general.progression.dedicationText,
+                        honorText: '무명',
+                        cityName: '업',
+                        belong: general.serviceYears,
+                        refreshScoreTotal: 0,
+                        reservedCommands: [],
+                        battleStats: {
+                            ...general.battleStats,
+                            battles: general.warnum,
+                            wins: general.battleStats.kills,
+                        },
+                    })),
+                });
             }
             if (operation === 'nation.getBattleCenter') {
                 if (state.permission === 'member' && !state.battleTenured) {
@@ -2625,6 +2648,70 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await install(page, member);
     await page.reload();
     await expect(page.getByRole('alert')).toContainText('권한이 부족합니다.');
+});
+
+test('세력장수 이름 링크는 선택한 장수의 감찰부를 열고 목록 검색을 보존한다', async ({ page, context }) => {
+    const state: FixtureState = {
+        permission: 'member',
+        battleTenured: true,
+        myset: 3,
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state, true);
+    for (const viewport of [
+        { width: 1365, height: 900 },
+        { width: 390, height: 844 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('nation/generals');
+        const filter = page.getByLabel('장수명 필터');
+        await expect(filter).toBeVisible();
+        await filter.fill('검증장수');
+        const link = page.getByRole('link', { name: '검증장수' });
+        await expect(link).toHaveAttribute('href', `${gameBasePath}/battle-center?generalId=7`);
+        await expect(link).toHaveCSS('text-decoration-line', 'underline');
+        await link.hover();
+        await expect(link).toHaveCSS('cursor', 'pointer');
+        await page.keyboard.press('Tab');
+        await link.focus();
+        await expect(link).toHaveCSS('outline-style', 'solid');
+        await waitForVisualAssets(page);
+        await persistParityArtifact(
+            page,
+            `nation-generals-battle-link-${viewport.width}`,
+            await link.evaluate((element) => ({
+                url: location.href,
+                link: element.outerHTML,
+                cell: element.parentElement!.getBoundingClientRect().toJSON(),
+                rect: element.getBoundingClientRect().toJSON(),
+                color: getComputedStyle(element).color,
+                outline: getComputedStyle(element).outline,
+            }))
+        );
+
+        const opened = context.waitForEvent('page');
+        if (viewport.width > 500) await link.press('Enter');
+        else await link.click();
+        const battle = await opened;
+        await battle.setViewportSize(viewport);
+        await expect(battle).toHaveURL(new RegExp(`${gameBasePath}/battle-center\\?generalId=7$`));
+        await expect(battle.locator('.selector-row select').nth(1)).toHaveValue('7');
+        await expect(battle.locator('.battle-general-card')).toContainText('검증장수');
+        await battle.reload();
+        await expect(battle.locator('.battle-general-card')).toContainText('검증장수');
+        await Promise.all([
+            battle.waitForEvent('close'),
+            battle.getByRole('button', { name: '창 닫기' }).first().click(),
+        ]);
+        await expect(filter).toHaveValue('검증장수');
+        await expect(page.locator('#nation-general-list tbody tr')).toHaveCount(1);
+    }
+
+    state.battleTenured = false;
+    await page.reload();
+    await expect(page.locator('#nation-general-list [data-general-name]').first()).toBeVisible();
+    await expect(page.locator('#nation-general-list a[data-general-name]')).toHaveCount(0);
 });
 
 test('감찰부 하단 창 닫기 버튼은 상단 버튼과 같은 크기를 유지한다', async ({ page }) => {
