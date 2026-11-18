@@ -6,7 +6,7 @@ import { getBillByLevel, LogCategory } from '@sammo-ts/logic';
 import { accessAuthedProcedure } from '../../../trpc.js';
 import {
     loadCrewTypeDisplayNames,
-    loadItemDisplayNames,
+    loadItemDisplayDetails,
     resolveDedicationLevelName,
     resolveOfficerLevelName,
     sanitizeInternalDisplayCode,
@@ -133,7 +133,7 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
         typeof constValues.maxDedLevel === 'number' && Number.isFinite(constValues.maxDedLevel)
             ? Math.max(0, Math.trunc(constValues.maxDedLevel))
             : 30;
-    const [personalityNames, domesticNames, warNames, crewTypeNames, itemNames] = await Promise.all([
+    const [personalityNames, domesticNames, warNames, crewTypeNames, itemDetails] = await Promise.all([
         loadTraitNames(
             generalRows.map((general) => general.personalCode),
             'personality'
@@ -147,7 +147,7 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
             'war'
         ),
         loadCrewTypeDisplayNames(worldState, ctx.profile.id),
-        loadItemDisplayNames(
+        loadItemDisplayDetails(
             generalRows.flatMap((general) => [
                 general.weaponCode,
                 general.bookCode,
@@ -158,7 +158,8 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
     ]);
     const traitName = (code: string, names: Awaited<ReturnType<typeof loadTraitNames>>): string =>
         names.get(code)?.name ?? sanitizeInternalDisplayCode(code);
-    const itemName = (code: string): string => itemNames.get(code) ?? sanitizeInternalDisplayCode(code);
+    const itemName = (code: string): string => itemDetails.get(code)?.name ?? sanitizeInternalDisplayCode(code);
+    const itemInfo = (code: string): string => itemDetails.get(code)?.info ?? '';
 
     const generals = generalRows.map((general) => {
         const meta =
@@ -225,10 +226,21 @@ export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
                 horse: itemName(general.horseCode),
                 item: itemName(general.itemCode),
             },
+            itemInfo: {
+                weapon: itemInfo(general.weaponCode),
+                book: itemInfo(general.bookCode),
+                horse: itemInfo(general.horseCode),
+                item: itemInfo(general.itemCode),
+            },
             traits: {
                 personal: traitName(general.personalCode, personalityNames),
                 specialDomestic: traitName(general.specialCode, domesticNames),
                 specialWar: traitName(general.special2Code, warNames),
+            },
+            traitInfo: {
+                personal: personalityNames.get(general.personalCode)?.info ?? '',
+                specialDomestic: domesticNames.get(general.specialCode)?.info ?? '',
+                specialWar: warNames.get(general.special2Code)?.info ?? '',
             },
             progression: {
                 experienceLevel: metaNumber('explevel'),

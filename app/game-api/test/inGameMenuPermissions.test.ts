@@ -1072,6 +1072,34 @@ describe('battle-center general and user permissions', () => {
         });
     });
 
+    it('projects registered trait and equipment descriptions for battle center viewers', async () => {
+        const me = buildGeneral({ meta: { belong: 3 } });
+        const other = buildGeneral({
+            id: 8,
+            personalCode: 'che_안전',
+            specialCode: 'che_상재',
+            special2Code: 'che_신산',
+            horseCode: 'che_명마_15_적토마',
+            weaponCode: 'unregistered',
+            itemCode: 'che_내정_납금박산로',
+        });
+        const fixture = createContext({ me, targets: [me, other], nationMeta: { secretLimit: 3 } });
+        const result = await appRouter.createCaller(fixture.context).nation.getBattleCenter();
+
+        expect(result.generals.find(({ id }) => id === other.id)).toMatchObject({
+            traitInfo: {
+                personal: expect.stringContaining('징·모병 비용'),
+                specialDomestic: expect.stringContaining('상업 투자'),
+                specialWar: expect.stringContaining('[계략] 화계·탈취·파괴·선동'),
+            },
+            itemInfo: { horse: '통솔 +15', weapon: '', book: '', item: '[내정] 내정 성공률 +15%p' },
+        });
+        expect(result.generals.find(({ id }) => id === me.id)).toMatchObject({
+            traitInfo: { personal: '', specialDomestic: '', specialWar: '' },
+            itemInfo: { horse: '', weapon: '', book: '', item: '' },
+        });
+    });
+
     it('redacts another user action log while allowing own, NPC, chief, and non-private logs', async () => {
         const me = buildGeneral({ meta: { belong: 3, permission: 'normal' } });
         const otherUser = buildGeneral({ id: 8, userId: 'user-8', name: '타유저', npcState: 0 });

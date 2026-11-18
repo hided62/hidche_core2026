@@ -332,8 +332,14 @@ const battleCenter = (state: FixtureState) => ({
             crewTypeId: 1,
             crewTypeName: '보병',
             equipment: { weapon: 'None', book: 'None', horse: 'None', item: 'None' },
-            equipmentNames: { weapon: '-', book: '-', horse: '-', item: '-' },
-            traits: { personal: '-', specialDomestic: '-', specialWar: '-' },
+            equipmentNames: state.richMyInfo
+                ? { weapon: '단도', book: '효경전', horse: '적토마(+15)', item: '납금박산로' }
+                : { weapon: '-', book: '-', horse: '-', item: '-' },
+            itemInfo: state.richMyInfo
+                ? { weapon: '무력 +1', book: '지력 +1', horse: '통솔 +15', item: '내정 성공률 +15%p' }
+                : undefined,
+            traits: state.mainTraits ?? { personal: '-', specialDomestic: '-', specialWar: '-' },
+            traitInfo: state.richMyInfo ? myGeneral(state).general.traitInfo : undefined,
             progression: {
                 experienceLevel: 1,
                 dedicationLevel: 2,
@@ -2712,6 +2718,65 @@ test('세력장수 이름 링크는 선택한 장수의 감찰부를 열고 목�
     await page.reload();
     await expect(page.locator('#nation-general-list [data-general-name]').first()).toBeVisible();
     await expect(page.locator('#nation-general-list a[data-general-name]')).toHaveCount(0);
+});
+
+test('감찰부 특기와 장비는 마우스와 키보드로 설명을 확인할 수 있다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        richMyInfo: true,
+        mainTraits: { personal: '안전', specialDomestic: '상재', specialWar: '신산' },
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+    const card = page.locator('.battle-general-card');
+    const tooltip = page.locator('.tippy-box[data-state="visible"]');
+    for (const viewport of [
+        { width: 1365, height: 900 },
+        { width: 390, height: 844 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('battle-center?generalId=7');
+        await expect(card).toContainText('검증장수');
+        await waitForVisualAssets(page);
+        const cardBefore = await card.boundingBox();
+        for (const [id, description] of [
+            ['special-domestic', '상업 내정 효율이 증가합니다.'],
+            ['special-war', '계략 성공률이 증가합니다.'],
+            ['horse', '통솔 +15'],
+            ['item', '내정 성공률 +15%p'],
+        ]) {
+            const trigger = card.locator(`[data-rich-tooltip="${id}"]`);
+            await trigger.hover();
+            await expect(trigger).toHaveCSS('cursor', 'help');
+            await expect(tooltip).toContainText(description);
+            await page.mouse.move(1, 1);
+            await expect(tooltip).toHaveCount(0);
+        }
+        const war = card.locator('[data-rich-tooltip="special-war"]');
+        await war.focus();
+        await expect(war).toBeFocused();
+        await expect(tooltip.locator('.rich-tooltip-content__line')).toHaveText([
+            '계략 성공률이 증가합니다.',
+            '발동 순서는 레거시와 같습니다.',
+        ]);
+        const cardAfter = await card.boundingBox();
+        expect(cardAfter?.width).toBe(cardBefore?.width);
+        expect(cardAfter?.height).toBe(cardBefore?.height);
+        await persistParityArtifact(page, `battle-center-description-${viewport.width}`, {
+            url: page.url(),
+            card: cardAfter,
+            trigger: await war.boundingBox(),
+            tooltip: await tooltip.boundingBox(),
+            font: await tooltip.evaluate((element) => getComputedStyle(element).font),
+            markup: await tooltip.innerHTML(),
+        });
+        await page.locator('.selector-row select').nth(1).selectOption('8');
+        await expect(card).toContainText('다른장수');
+        await expect(war).not.toHaveAttribute('tabindex', '0');
+        await expect(tooltip).toHaveCount(0);
+    }
 });
 
 test('감찰부 하단 창 닫기 버튼은 상단 버튼과 같은 크기를 유지한다', async ({ page }) => {
