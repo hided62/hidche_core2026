@@ -11,6 +11,7 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { appendJoinedNationIds } from './joinedNations.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ACTION_NAME = '장수를 따라 임관';
@@ -207,6 +208,7 @@ export class ActionDefinition<
                     meta: {
                         ...general.meta,
                         belong: 1,
+                        joinedNations: appendJoinedNationIds(general.meta, destNation.id),
                         officer_city: 0,
                         officerCity: 0,
                     },

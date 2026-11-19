@@ -21,6 +21,7 @@ import type {
 } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { appendJoinedNationIds } from './joinedNations.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
@@ -130,6 +131,7 @@ export class ActionDefinition<
                     ...context.general.meta,
                     officer_city: 0,
                     belong: 1,
+                    joinedNations: appendJoinedNationIds(context.general.meta, args.destNationId),
                 },
             }),
         ];

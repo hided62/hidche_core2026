@@ -12,6 +12,7 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { appendJoinedNationIds } from './joinedNations.js';
 import { JosaUtil } from '@sammo-ts/common';
 
 export interface ResignArgs {}
@@ -100,6 +101,7 @@ export class ActionResolver<
                         ...general.meta,
                         betray: Math.min(9, betrayal + 1),
                         belong: 0,
+                        joinedNations: appendJoinedNationIds(general.meta, nation.id),
                         // Ref resets belong before max_belong is refreshed here.
                         // Preserve that ordering, including its legacy behavior.
                         ...(general.npcState < 2 ? { max_belong: Math.max(0, maxBelong) } : {}),

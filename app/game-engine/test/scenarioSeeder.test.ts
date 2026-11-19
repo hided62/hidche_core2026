@@ -7,7 +7,9 @@ import {
     type RandomAppointmentResolveContext,
 } from '@sammo-ts/logic/actions/turn/general/che_랜덤임관.js';
 import type { ActionContextWorldRef } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createMonthlyBoundaryPreHandler } from '../src/turn/monthlyBoundaryPreHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
@@ -315,6 +317,104 @@ describeDb('scenario database seed', () => {
             const after = await connector.prisma.worldState.findFirstOrThrow();
             expect(after.config).toEqual(persisted.config);
             expect(after.meta).toEqual(persisted.meta);
+        } finally {
+            await connector.disconnect();
+        }
+    });
+
+    test('persists and reloads random appointment history across reserved joins and resignations', async () => {
+        await seedScenarioToDatabase({
+            scenarioId: 1031,
+            databaseUrl,
+            resetTables: true,
+            now: new Date('2030-01-01T00:00:00.000Z'),
+            installOptions: { fiction: 1 },
+        });
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        try {
+            await connector.connect();
+            const db = connector.prisma;
+            const loaded = await loadTurnWorldFromDatabase({ databaseUrl });
+            const [visited, unvisited] = loaded.snapshot.nations.filter((nation) => nation.id > 0).slice(0, 2);
+            const actor = loaded.snapshot.generals.find((general) => general.nationId === 0);
+            if (!visited || !unvisited || !actor) throw new Error('Expected two nations and a neutral general.');
+            for (const nation of loaded.snapshot.nations.filter((nation) => nation.id > 0)) {
+                const eligible = nation.id === visited.id || nation.id === unvisited.id;
+                await db.nation.update({
+                    where: { id: nation.id },
+                    data: { meta: { ...nation.meta, scout: !eligible, gennum: 1 } },
+                });
+            }
+            const eligibleIds = [visited.id, unvisited.id];
+            await db.general.update({
+                where: { id: actor.id },
+                data: { npcState: 0, meta: { ...actor.meta, killturn: 100, joinedNations: [visited.id] } },
+            });
+
+            const executeAndReload = async (action: 'che_랜덤임관' | 'che_하야', waitMonths = 0) => {
+                const { state, snapshot } = await loadTurnWorldFromDatabase({ databaseUrl });
+                const store = new InMemoryReservedTurnStore(db, { maxGeneralTurns: 30, maxNationTurns: 12 });
+                await store.loadAll();
+                let world: InMemoryTurnWorld | null = null;
+                const handler = await createReservedTurnHandler({
+                    reservedTurns: store,
+                    scenarioConfig: snapshot.scenarioConfig,
+                    scenarioMeta: snapshot.scenarioMeta,
+                    map: snapshot.map,
+                    unitSet: snapshot.unitSet,
+                    getWorld: () => world,
+                });
+                world = new InMemoryTurnWorld(state, snapshot, {
+                    schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                    generalTurnHandler: handler,
+                    calendarHandler: createMonthlyBoundaryPreHandler({
+                        getWorld: () => world,
+                        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
+                        commandEnv: buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet),
+                    }),
+                });
+                for (let month = 0; month < waitMonths; month++) {
+                    const next = new Date(world.getState().lastTurnTime.getTime() + state.tickSeconds * 1000);
+                    await world.advanceMonth(next);
+                }
+                store.setGeneralTurn(actor.id, 0, { action, args: {} });
+                world.executeGeneralTurn(world.getGeneralById(actor.id)!);
+                const hooks = await createDatabaseTurnHooks(databaseUrl, world, { reservedTurns: store });
+                try {
+                    await hooks.hooks.flushChanges?.({
+                        lastTurnTime: world.getState().lastTurnTime.toISOString(),
+                        processedGenerals: 1,
+                        processedTurns: 1,
+                        durationMs: 0,
+                        partial: false,
+                    });
+                } finally {
+                    await hooks.close();
+                }
+                const reloaded = await loadTurnWorldFromDatabase({ databaseUrl });
+                return reloaded.snapshot.generals.find(({ id }) => id === actor.id)!;
+            };
+
+            expect(await executeAndReload('che_랜덤임관')).toMatchObject({
+                nationId: unvisited.id,
+                meta: { joinedNations: eligibleIds },
+            });
+            expect(await executeAndReload('che_하야')).toMatchObject({
+                nationId: 0,
+                meta: { joinedNations: eligibleIds, makelimit: 12 },
+            });
+            const reset = await executeAndReload('che_랜덤임관', 12);
+            expect(eligibleIds).toContain(reset.nationId);
+            expect(reset.meta.joinedNations).toEqual([reset.nationId]);
+            expect(await executeAndReload('che_하야')).toMatchObject({
+                nationId: 0,
+                meta: { joinedNations: [reset.nationId], makelimit: 12 },
+            });
+            const otherId = eligibleIds.find((id) => id !== reset.nationId);
+            expect(await executeAndReload('che_랜덤임관', 12)).toMatchObject({
+                nationId: otherId,
+                meta: { joinedNations: [reset.nationId, otherId] },
+            });
         } finally {
             await connector.disconnect();
         }

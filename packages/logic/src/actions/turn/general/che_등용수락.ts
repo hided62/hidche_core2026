@@ -25,6 +25,7 @@ import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { appendJoinedNationIds } from './joinedNations.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { LEGACY_DEFAULT_MAX_LEVEL } from '@sammo-ts/logic/scenario/constants.js';
 
@@ -263,6 +264,7 @@ export class ActionResolver<
                     meta: {
                         ...general.meta,
                         belong: 1,
+                        joinedNations: appendJoinedNationIds(general.meta, general.nationId, destNation.id),
                         permission: 'normal',
                         officer_city: 0,
                         betray: newBetray,

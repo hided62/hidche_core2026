@@ -17,6 +17,7 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { readJoinedNationIds } from './joinedNations.js';
 
 export interface RandomAppointmentArgs {}
 
@@ -167,10 +168,10 @@ export class ActionDefinition<
         context: RandomAppointmentResolveContext<TriggerState>,
         _args: RandomAppointmentArgs
     ): GeneralActionOutcome<TriggerState> {
-        const { general, rng, candidateNations } = context;
+        const { general, rng, candidateNations: eligibleNations } = context;
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        if (candidateNations.length === 0) {
+        if (eligibleNations.length === 0) {
             effects.push(
                 createLogEffect('임관 가능한 국가가 없습니다.', {
                     scope: LogScope.GENERAL,
@@ -180,6 +181,12 @@ export class ActionDefinition<
             );
             return { effects, alternative: { commandKey: 'che_인재탐색', args: {} } };
         }
+
+        const joinedNationIds = readJoinedNationIds(general.meta);
+        const unvisitedNations = eligibleNations.filter(({ nation }) => !joinedNationIds.has(nation.id));
+        // 이번 턴에 임관 가능한 국가를 모두 방문했으면 같은 실행에서 새 순환을 시작한다.
+        const restartCycle = unvisitedNations.length === 0;
+        const candidateNations = restartCycle ? eligibleNations : unvisitedNations;
 
         let picked: CandidateNation<TriggerState> | null;
         if (context.historicalNpcAffinityMode) {
@@ -235,6 +242,7 @@ export class ActionDefinition<
             belong: 1,
             officer_city: 0,
             officerCity: 0,
+            joinedNations: restartCycle ? [destNation.id] : [...joinedNationIds, destNation.id],
         };
 
         const expGain =

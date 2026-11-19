@@ -39,6 +39,7 @@ import {
     type TurnCommandProfile,
 } from '@sammo-ts/logic';
 import { resolveLegacyCompatibleUniqueConfig } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
+import { appendJoinedNationIds } from '@sammo-ts/logic/actions/turn/general/joinedNations.js';
 import { round as roundLegacyInteger, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import {
     cloneItemInventory,
@@ -2034,6 +2035,7 @@ async function handleKick(
     const targetMeta = target.meta;
     const nextMeta: TurnGeneral['meta'] = {
         ...targetMeta,
+        joinedNations: appendJoinedNationIds(targetMeta, target.nationId),
         officerCity: 0,
         officer_city: 0,
         belong: 0,

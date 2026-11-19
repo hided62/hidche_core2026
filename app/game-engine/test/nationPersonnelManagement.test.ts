@@ -378,7 +378,7 @@ describe('nation personnel world commands', () => {
             rice: 1_000,
             experience: 850,
             dedication: 1_700,
-            meta: expect.objectContaining({ belong: 0, permission: 'normal', betray: 2 }),
+            meta: expect.objectContaining({ belong: 0, permission: 'normal', betray: 2, joinedNations: [1] }),
         });
         expect(fixture.world.getGeneralById(4)?.troopId).toBe(0);
         expect(fixture.world.getTroopById(3)).toBeNull();
